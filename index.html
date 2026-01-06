@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar for settings -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>Settings</h2>
+                <button class="close-sidebar" id="closeSidebar">×</button>
+            </div>
+            
+            <!-- API Configuration -->
+            <div class="settings-section">
+                <h3>API Configuration</h3>
+                
+                <label for="providerSelect">Provider</label>
+                <select id="providerSelect">
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai" disabled>OpenAI (Coming Soon)</option>
+                    <option value="google" disabled>Google (Coming Soon)</option>
+                </select>
+                
+                <label for="modelSelect">Model</label>
+                <select id="modelSelect">
+                    <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                    <option value="claude-haiku-4-20250514">Claude Haiku 4</option>
+                </select>
+                
+                <label for="apiKeyInput">API Key</label>
+                <div class="api-key-wrapper">
+                    <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
+                    <button class="toggle-visibility" id="toggleApiKey">👁</button>
+                </div>
+                <p class="help-text">Your key is stored locally and never sent to any server except the AI provider.</p>
+            </div>
+            
+            <!-- Persona Settings -->
+            <div class="settings-section">
+                <h3>Persona</h3>
+                
+                <label for="assistantName">Assistant Name</label>
+                <input type="text" id="assistantName" placeholder="Assistant" value="Assistant">
+                
+                <label for="systemPrompt">System Prompt</label>
+                <textarea id="systemPrompt" rows="6" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
+
+When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.</textarea>
+                <p class="help-text">This defines your assistant's personality and behavior.</p>
+            </div>
+            
+            <!-- Avatar Settings -->
+            <div class="settings-section">
+                <h3>Avatar</h3>
+                
+                <div class="avatar-settings-preview">
+                    <div class="avatar-preview-image" id="avatarPreview">🤖</div>
+                    <div class="avatar-preview-info">
+                        <span id="avatarPreviewName">Assistant</span>
+                        <span class="avatar-preview-status" id="avatarPreviewStatus">Default Avatar</span>
+                    </div>
+                </div>
+                
+                <label>Default Avatar Image</label>
+                <div class="file-upload-wrapper">
+                    <input type="file" id="avatarFileInput" accept="image/*" class="file-input-hidden">
+                    <button type="button" class="file-upload-btn" id="avatarUploadBtn">
+                        📁 Choose Image
+                    </button>
+                    <button type="button" class="file-clear-btn" id="avatarClearBtn" title="Remove image">
+                        ✕
+                    </button>
+                </div>
+                <p class="help-text">Upload an image from your device. Stored locally in your browser.</p>
+                
+                <label>Avatar Size</label>
+                <div class="size-preset-buttons">
+                    <button type="button" class="size-preset-btn" data-size="small">S</button>
+                    <button type="button" class="size-preset-btn active" data-size="medium">M</button>
+                    <button type="button" class="size-preset-btn" data-size="large">L</button>
+                    <button type="button" class="size-preset-btn" data-size="xlarge">XL</button>
+                </div>
+                
+                <label>Avatar Position</label>
+                <div class="position-preset-buttons">
+                    <button type="button" class="position-preset-btn" data-position="top-left">↖</button>
+                    <button type="button" class="position-preset-btn active" data-position="top-right">↗</button>
+                    <button type="button" class="position-preset-btn" data-position="bottom-left">↙</button>
+                    <button type="button" class="position-preset-btn" data-position="bottom-right">↘</button>
+                </div>
+                
+                <div class="checkbox-wrapper">
+                    <input type="checkbox" id="showAvatar" checked>
+                    <label for="showAvatar">Show floating avatar</label>
+                </div>
+            </div>
+            
+            <!-- Expression Settings -->
+            <div class="settings-section">
+                <h3>Expressions</h3>
+                <p class="help-text">Configure avatar expressions. The assistant can change expressions based on mood.</p>
+                
+                <div class="expression-list" id="expressionList">
+                    <!-- Expressions will be populated by JavaScript -->
+                </div>
+                
+                <button class="add-expression-btn" id="addExpressionBtn">+ Add Expression</button>
+            </div>
+            
+            <!-- Actions -->
+            <div class="settings-section">
+                <button class="save-settings" id="saveSettings">Save Settings</button>
+                <button class="clear-chat" id="clearChat">Clear Conversation</button>
+            </div>
+        </aside>
+        
+        <!-- Main chat area -->
+        <main class="chat-container">
+            <!-- Status Bar -->
+            <header class="status-bar">
+                <div class="status-left">
+                    <button class="menu-button" id="openSidebar">☰</button>
+                    <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
+                </div>
+                
+                <div class="status-center">
+                    <div class="status-item">
+                        <span class="status-label">Mood</span>
+                        <span class="status-value" id="statusMood">😊 neutral</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Messages</span>
+                        <span class="status-value" id="statusMessages">0</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Tokens</span>
+                        <span class="status-value" id="statusTokens">~0</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Session</span>
+                        <span class="status-value" id="statusSession">0m</span>
+                    </div>
+                </div>
+                
+                <div class="status-right">
+                    <span class="model-badge" id="modelIndicator">Claude Sonnet 4</span>
+                    <button class="avatar-toggle-btn" id="avatarToggleBtn" title="Toggle Avatar">
+                        👤
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Chat Messages Area -->
+            <div class="chat-area">
+                <div class="messages-container" id="messagesContainer">
+                    <div class="welcome-message">
+                        <h1>Welcome!</h1>
+                        <p>Configure your API key in the settings (☰) to get started.</p>
+                    </div>
+                </div>
+                
+                <!-- Floating Avatar -->
+                <div class="floating-avatar top-right" id="floatingAvatar">
+                    <div class="avatar-frame">
+                        <div class="avatar-image size-medium" id="avatarImage">
+                            <span class="avatar-emoji" id="avatarEmoji">🤖</span>
+                            <img class="avatar-img" id="avatarImg" src="" alt="Avatar" style="display: none;">
+                        </div>
+                    </div>
+                    <div class="avatar-label">
+                        <div class="avatar-name" id="floatingAvatarName">Assistant</div>
+                        <div class="avatar-expression" id="floatingAvatarExpression">neutral</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Input Area -->
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="messageInput" 
+                        placeholder="Type your message..."
+                        rows="1"
+                    ></textarea>
+                    <button class="send-button" id="sendButton" disabled>
+                        <span class="send-icon">➤</span>
+                    </button>
+                </div>
+                <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Expression Edit Modal -->
+    <div class="modal-overlay" id="expressionModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="expressionModalTitle">Edit Expression</h3>
+                <button class="modal-close" id="closeExpressionModal">×</button>
+            </div>
+            <div class="modal-body">
+                <label for="expressionName">Expression Name</label>
+                <input type="text" id="expressionName" placeholder="e.g., happy">
+                
+                <label for="expressionEmoji">Emoji (fallback)</label>
+                <input type="text" id="expressionEmoji" placeholder="e.g., 😊" maxlength="4">
+                
+                <label>Expression Image (optional)</label>
+                <div class="expression-image-preview" id="expressionImagePreview">
+                    <span class="preview-placeholder">No image</span>
+                </div>
+                <div class="file-upload-wrapper">
+                    <input type="file" id="expressionFileInput" accept="image/*" class="file-input-hidden">
+                    <button type="button" class="file-upload-btn" id="expressionUploadBtn">
+                        📁 Choose Image
+                    </button>
+                    <button type="button" class="file-clear-btn" id="expressionClearBtn" title="Remove image">
+                        ✕
+                    </button>
+                </div>
+                <p class="help-text">Upload an image for this expression, or use emoji as fallback.</p>
+                
+                <label for="expressionKeywords">Trigger Keywords (comma-separated)</label>
+                <input type="text" id="expressionKeywords" placeholder="happy, glad, wonderful, great">
+                <p class="help-text">These words in the response will trigger this expression as a fallback.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary" id="deleteExpressionBtn">Delete</button>
+                <button class="modal-btn primary" id="saveExpressionBtn">Save</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
