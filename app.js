@@ -356,7 +356,9 @@ const state = {
         showAvatar: CONFIG.defaults.showAvatar
     },
     expressions: { ...CONFIG.defaultExpressions },
-    conversation: [],
+    // Conversations stored by ID for multi-conversation support
+    conversations: {},
+    activeConversationId: null,
     currentExpression: 'neutral',
     isLoading: false,
     sessionStartTime: Date.now(),
@@ -365,6 +367,78 @@ const state = {
     tempExpressionPreviewUrl: '', // Object URL for preview in modal
     tempExpressionCleared: false // Flag indicating user explicitly cleared the image
 };
+
+// ===== Conversation Helpers =====
+
+/**
+ * Create a new conversation and set it as active
+ * @param {string} [title] - Optional title, defaults to "New Chat"
+ * @returns {string} The new conversation ID
+ */
+function createConversation(title = 'New Chat') {
+    const id = crypto.randomUUID();
+    const now = Date.now();
+
+    state.conversations[id] = {
+        id,
+        title,
+        createdAt: now,
+        updatedAt: now,
+        messages: []
+    };
+
+    state.activeConversationId = id;
+    saveConversations();
+
+    return id;
+}
+
+/**
+ * Get the currently active conversation object
+ * @returns {Object|null} The active conversation or null if none
+ */
+function getActiveConversation() {
+    if (!state.activeConversationId) {
+        return null;
+    }
+    return state.conversations[state.activeConversationId] || null;
+}
+
+/**
+ * Update a conversation with partial data
+ * @param {string} id - The conversation ID to update
+ * @param {Object} updates - Partial updates to apply
+ */
+function updateConversation(id, updates) {
+    if (!state.conversations[id]) {
+        console.warn(`Conversation ${id} not found`);
+        return;
+    }
+
+    state.conversations[id] = {
+        ...state.conversations[id],
+        ...updates,
+        updatedAt: Date.now()
+    };
+
+    saveConversations();
+}
+
+/**
+ * Generate a title from the first user message
+ * @param {string} content - The first message content
+ * @returns {string} A truncated title
+ */
+function generateConversationTitle(content) {
+    const maxLength = 50;
+    const cleaned = content.trim().replace(/\s+/g, ' ');
+
+    if (cleaned.length <= maxLength) {
+        return cleaned;
+    }
+
+    return cleaned.substring(0, maxLength).trim() + '...';
+}
 
 // ===== DOM Elements =====
 const elements = {
@@ -465,7 +539,7 @@ async function init() {
 // ===== Settings Management =====
 function loadSettings() {
     const saved = localStorage.getItem(CONFIG.storageKeys.settings);
-    
+
     if (saved) {
         try {
             const parsed = JSON.parse(saved);
@@ -474,13 +548,56 @@ function loadSettings() {
             console.error('Failed to parse saved settings:', e);
         }
     }
-    
+
     const savedConvo = localStorage.getItem(CONFIG.storageKeys.conversations);
     if (savedConvo) {
         try {
-            state.conversation = JSON.parse(savedConvo);
+            const parsed = JSON.parse(savedConvo);
+
+            // Migration: Check if old format (flat array) or new format (object with IDs)
+            if (Array.isArray(parsed)) {
+                // Old format: flat array of messages
+                // Migrate to new structure
+                if (parsed.length > 0) {
+                    const id = crypto.randomUUID();
+                    const now = Date.now();
+
+                    // Generate title from first user message
+                    const firstUserMsg = parsed.find(m => m.role === 'user');
+                    const title = firstUserMsg
+                        ? generateConversationTitle(firstUserMsg.content)
+                        : 'Migrated Chat';
+
+                    state.conversations = {
+                        [id]: {
+                            id,
+                            title,
+                            createdAt: now,
+                            updatedAt: now,
+                            messages: parsed
+                        }
+                    };
+                    state.activeConversationId = id;
+
+                    // Save migrated data in new format
+                    saveConversations();
+                    console.log('Migrated conversation from flat array to multi-conversation format');
+                }
+            } else if (typeof parsed === 'object' && parsed !== null) {
+                // New format: object with conversation IDs as keys
+                state.conversations = parsed;
+
+                // Set active conversation to the most recently updated one
+                const convos = Object.values(parsed);
+                if (convos.length > 0) {
+                    const mostRecent = convos.reduce((a, b) =>
+                        (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+                    );
+                    state.activeConversationId = mostRecent.id;
+                }
+            }
         } catch (e) {
-            console.error('Failed to parse saved conversation:', e);
+            console.error('Failed to parse saved conversations:', e);
         }
     }
 }
@@ -527,8 +644,8 @@ async function saveSettings() {
     closeSidebar();
 }
 
-function saveConversation() {
-    localStorage.setItem(CONFIG.storageKeys.conversations, JSON.stringify(state.conversation));
+function saveConversations() {
+    localStorage.setItem(CONFIG.storageKeys.conversations, JSON.stringify(state.conversations));
 }
 
 function saveExpressions() {
@@ -661,10 +778,11 @@ function updateStatusBar() {
     // Update mood
     const expr = state.expressions[state.currentExpression] || state.expressions.neutral;
     elements.statusMood.textContent = `${expr.emoji} ${state.currentExpression}`;
-    
+
     // Update message count
-    elements.statusMessages.textContent = state.conversation.length;
-    
+    const activeConvo = getActiveConversation();
+    elements.statusMessages.textContent = activeConvo ? activeConvo.messages.length : 0;
+
     // Update estimated tokens
     elements.statusTokens.textContent = `~${formatNumber(state.estimatedTokens)}`;
 }
@@ -930,8 +1048,11 @@ async function setExpression(exprName) {
 // ===== Conversation Rendering =====
 function renderConversation() {
     elements.messagesContainer.innerHTML = '';
-    
-    if (state.conversation.length === 0) {
+
+    const activeConvo = getActiveConversation();
+    const messages = activeConvo ? activeConvo.messages : [];
+
+    if (messages.length === 0) {
         elements.messagesContainer.innerHTML = `
             <div class="welcome-message">
                 <h1>Welcome!</h1>
@@ -940,11 +1061,11 @@ function renderConversation() {
         `;
         return;
     }
-    
-    state.conversation.forEach(msg => {
+
+    messages.forEach(msg => {
         appendMessage(msg.role, msg.content, false);
     });
-    
+
     scrollToBottom();
 }
 
@@ -953,29 +1074,48 @@ function appendMessage(role, content, save = true) {
     if (welcome) {
         welcome.remove();
     }
-    
+
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
-    
+
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
-    
+
     // For assistant messages, strip expression tags before display
     const displayContent = role === 'assistant' ? stripExpressionTag(content) : content;
     contentDiv.textContent = displayContent;
-    
+
     messageDiv.appendChild(contentDiv);
     elements.messagesContainer.appendChild(messageDiv);
-    
+
     if (save) {
-        state.conversation.push({ role, content: displayContent });
-        saveConversation();
-        
+        // Auto-create conversation if none exists
+        if (!state.activeConversationId) {
+            // Generate title from first user message
+            const title = role === 'user'
+                ? generateConversationTitle(displayContent)
+                : 'New Chat';
+            createConversation(title);
+        }
+
+        const activeConvo = getActiveConversation();
+        if (activeConvo) {
+            activeConvo.messages.push({ role, content: displayContent });
+
+            // Update title from first user message if still default
+            if (activeConvo.messages.length === 1 && role === 'user' && activeConvo.title === 'New Chat') {
+                activeConvo.title = generateConversationTitle(displayContent);
+            }
+
+            activeConvo.updatedAt = Date.now();
+            saveConversations();
+        }
+
         // Update token estimate (rough: 1 token ≈ 4 chars)
         state.estimatedTokens += Math.ceil(content.length / 4);
         updateStatusBar();
     }
-    
+
     scrollToBottom();
 }
 
@@ -1073,7 +1213,10 @@ async function callAPI(userMessage) {
 }
 
 async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt) {
-    const messages = state.conversation.map(msg => ({
+    const activeConvo = getActiveConversation();
+    const conversationMessages = activeConvo ? activeConvo.messages : [];
+
+    const messages = conversationMessages.map(msg => ({
         role: msg.role,
         content: msg.content
     }));
@@ -1356,10 +1499,17 @@ function autoResizeTextarea(textarea) {
 
 async function clearConversation() {
     if (confirm('Are you sure you want to clear the conversation? This cannot be undone.')) {
-        state.conversation = [];
+        // Clear the active conversation's messages
+        const activeConvo = getActiveConversation();
+        if (activeConvo) {
+            activeConvo.messages = [];
+            activeConvo.title = 'New Chat';
+            activeConvo.updatedAt = Date.now();
+            saveConversations();
+        }
+
         state.estimatedTokens = 0;
         state.currentExpression = 'neutral';
-        saveConversation();
         renderConversation();
         updateStatusBar();
         await updateFloatingAvatar();

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "A personal AI assistant with customizable personas",
   "scripts": {
-    "dev": "npx serve ."
+    "dev": "npx http-server . -p 3000 -c-1"
   },
   "keywords": ["ai", "assistant", "claude", "openai", "gemini"],
   "author": "",
