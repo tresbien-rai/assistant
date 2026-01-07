@@ -36,7 +36,8 @@ When responding, you may optionally include an expression tag like [expression: 
     storageKeys: {
         settings: 'ai_assistant_settings',
         conversations: 'ai_assistant_conversations',
-        expressions: 'ai_assistant_expressions'
+        expressions: 'ai_assistant_expressions', // Legacy, kept for migration
+        personas: 'ai_assistant_personas'
     }
 };
 
@@ -344,18 +345,18 @@ async function migrateBase64ToIndexedDB() {
 
 // ===== State Management =====
 const state = {
+    // App-level preferences only (no persona data)
     settings: {
         provider: CONFIG.defaults.provider,
         model: CONFIG.defaults.model,
         apiKey: '',
-        assistantName: CONFIG.defaults.assistantName,
-        systemPrompt: CONFIG.defaults.systemPrompt,
-        avatarKey: '', // Key reference to image in IndexedDB
         avatarSize: CONFIG.defaults.avatarSize,
         avatarPosition: CONFIG.defaults.avatarPosition,
         showAvatar: CONFIG.defaults.showAvatar
     },
-    expressions: { ...CONFIG.defaultExpressions },
+    // Personas stored by ID for multi-persona support
+    personas: {},
+    activePersonaId: null,
     // Conversations stored by ID for multi-conversation support
     conversations: {},
     activeConversationId: null,
@@ -382,6 +383,7 @@ function createConversation(title = 'New Chat') {
     state.conversations[id] = {
         id,
         title,
+        personaId: state.activePersonaId, // Link to current persona
         createdAt: now,
         updatedAt: now,
         messages: []
@@ -438,6 +440,71 @@ function generateConversationTitle(content) {
     }
 
     return cleaned.substring(0, maxLength).trim() + '...';
+}
+
+// ===== Persona Helpers =====
+
+/**
+ * Create a new persona and set it as active
+ * @param {string} [name] - Optional name, defaults to "Assistant"
+ * @returns {string} The new persona ID
+ */
+function createPersona(name = CONFIG.defaults.assistantName) {
+    const id = crypto.randomUUID();
+    const now = Date.now();
+
+    state.personas[id] = {
+        id,
+        name,
+        systemPrompt: CONFIG.defaults.systemPrompt,
+        avatarImageKey: '',
+        expressions: { ...CONFIG.defaultExpressions },
+        createdAt: now,
+        updatedAt: now
+    };
+
+    state.activePersonaId = id;
+    savePersonas();
+
+    return id;
+}
+
+/**
+ * Get the currently active persona object
+ * @returns {Object|null} The active persona or null if none
+ */
+function getActivePersona() {
+    if (!state.activePersonaId) {
+        return null;
+    }
+    return state.personas[state.activePersonaId] || null;
+}
+
+/**
+ * Update a persona with partial data
+ * @param {string} id - The persona ID to update
+ * @param {Object} updates - Partial updates to apply
+ */
+function updatePersona(id, updates) {
+    if (!state.personas[id]) {
+        console.warn(`Persona ${id} not found`);
+        return;
+    }
+
+    state.personas[id] = {
+        ...state.personas[id],
+        ...updates,
+        updatedAt: Date.now()
+    };
+
+    savePersonas();
+}
+
+/**
+ * Save personas to localStorage
+ */
+function savePersonas() {
+    localStorage.setItem(CONFIG.storageKeys.personas, JSON.stringify(state.personas));
 }
 
 // ===== DOM Elements =====
@@ -515,9 +582,8 @@ async function init() {
     // Initialize IndexedDB
     await ImageStore.init();
 
-    // Load settings and expressions (may have been updated by migration)
+    // Load settings and personas (expressions are now part of persona)
     loadSettings();
-    loadExpressions();
 
     // Setup event listeners before UI update
     setupEventListeners();
@@ -539,16 +605,58 @@ async function init() {
 // ===== Settings Management =====
 function loadSettings() {
     const saved = localStorage.getItem(CONFIG.storageKeys.settings);
+    let oldSettings = null;
 
     if (saved) {
         try {
             const parsed = JSON.parse(saved);
-            state.settings = { ...CONFIG.defaults, ...parsed };
+            oldSettings = parsed; // Keep for migration check
+            // Only load app-level settings (not persona fields)
+            state.settings = {
+                provider: parsed.provider || CONFIG.defaults.provider,
+                model: parsed.model || CONFIG.defaults.model,
+                apiKey: parsed.apiKey || '',
+                avatarSize: parsed.avatarSize || CONFIG.defaults.avatarSize,
+                avatarPosition: parsed.avatarPosition || CONFIG.defaults.avatarPosition,
+                showAvatar: parsed.showAvatar !== undefined ? parsed.showAvatar : CONFIG.defaults.showAvatar
+            };
         } catch (e) {
             console.error('Failed to parse saved settings:', e);
         }
     }
 
+    // Load personas
+    const savedPersonas = localStorage.getItem(CONFIG.storageKeys.personas);
+    if (savedPersonas) {
+        try {
+            state.personas = JSON.parse(savedPersonas);
+            // Set active persona to the most recently updated one
+            const personaList = Object.values(state.personas);
+            if (personaList.length > 0) {
+                const mostRecent = personaList.reduce((a, b) =>
+                    (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+                );
+                state.activePersonaId = mostRecent.id;
+            }
+        } catch (e) {
+            console.error('Failed to parse saved personas:', e);
+        }
+    }
+
+    // Migration: Check if we need to migrate from old format
+    // Old format has assistantName in settings and separate expressions
+    if (Object.keys(state.personas).length === 0 && oldSettings && oldSettings.assistantName) {
+        console.log('Migrating from old settings format to personas...');
+        migrateToPersonas(oldSettings);
+    }
+
+    // If still no persona, create a default one
+    if (Object.keys(state.personas).length === 0) {
+        createPersona(CONFIG.defaults.assistantName);
+        console.log('Created default persona');
+    }
+
+    // Load conversations
     const savedConvo = localStorage.getItem(CONFIG.storageKeys.conversations);
     if (savedConvo) {
         try {
@@ -557,12 +665,10 @@ function loadSettings() {
             // Migration: Check if old format (flat array) or new format (object with IDs)
             if (Array.isArray(parsed)) {
                 // Old format: flat array of messages
-                // Migrate to new structure
                 if (parsed.length > 0) {
                     const id = crypto.randomUUID();
                     const now = Date.now();
 
-                    // Generate title from first user message
                     const firstUserMsg = parsed.find(m => m.role === 'user');
                     const title = firstUserMsg
                         ? generateConversationTitle(firstUserMsg.content)
@@ -572,6 +678,7 @@ function loadSettings() {
                         [id]: {
                             id,
                             title,
+                            personaId: state.activePersonaId, // Link to active persona
                             createdAt: now,
                             updatedAt: now,
                             messages: parsed
@@ -579,16 +686,26 @@ function loadSettings() {
                     };
                     state.activeConversationId = id;
 
-                    // Save migrated data in new format
                     saveConversations();
                     console.log('Migrated conversation from flat array to multi-conversation format');
                 }
             } else if (typeof parsed === 'object' && parsed !== null) {
-                // New format: object with conversation IDs as keys
                 state.conversations = parsed;
 
+                // Ensure all conversations have personaId (migration)
+                let needsSave = false;
+                for (const convo of Object.values(state.conversations)) {
+                    if (!convo.personaId && state.activePersonaId) {
+                        convo.personaId = state.activePersonaId;
+                        needsSave = true;
+                    }
+                }
+                if (needsSave) {
+                    saveConversations();
+                }
+
                 // Set active conversation to the most recently updated one
-                const convos = Object.values(parsed);
+                const convos = Object.values(state.conversations);
                 if (convos.length > 0) {
                     const mostRecent = convos.reduce((a, b) =>
                         (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
@@ -602,25 +719,62 @@ function loadSettings() {
     }
 }
 
-function loadExpressions() {
-    const saved = localStorage.getItem(CONFIG.storageKeys.expressions);
-    
-    if (saved) {
+/**
+ * Migrate old settings + expressions format to new personas format
+ */
+function migrateToPersonas(oldSettings) {
+    const id = crypto.randomUUID();
+    const now = Date.now();
+
+    // Load old expressions
+    let expressions = { ...CONFIG.defaultExpressions };
+    const savedExpressions = localStorage.getItem(CONFIG.storageKeys.expressions);
+    if (savedExpressions) {
         try {
-            state.expressions = JSON.parse(saved);
+            expressions = JSON.parse(savedExpressions);
         } catch (e) {
-            console.error('Failed to parse saved expressions:', e);
-            state.expressions = { ...CONFIG.defaultExpressions };
+            console.error('Failed to parse saved expressions during migration:', e);
         }
     }
+
+    // Create persona from old data
+    state.personas[id] = {
+        id,
+        name: oldSettings.assistantName || CONFIG.defaults.assistantName,
+        systemPrompt: oldSettings.systemPrompt || CONFIG.defaults.systemPrompt,
+        avatarImageKey: oldSettings.avatarKey || '',
+        expressions,
+        createdAt: now,
+        updatedAt: now
+    };
+
+    state.activePersonaId = id;
+
+    // Save the new persona
+    savePersonas();
+
+    // Clean up old settings (remove persona fields)
+    const cleanSettings = {
+        provider: oldSettings.provider,
+        model: oldSettings.model,
+        apiKey: oldSettings.apiKey,
+        avatarSize: oldSettings.avatarSize,
+        avatarPosition: oldSettings.avatarPosition,
+        showAvatar: oldSettings.showAvatar
+    };
+    localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(cleanSettings));
+
+    // Remove old expressions storage (now in persona)
+    localStorage.removeItem(CONFIG.storageKeys.expressions);
+
+    console.log('Migration complete: created persona from old settings');
 }
 
 async function saveSettings() {
+    // Save app-level settings
     state.settings.provider = elements.providerSelect.value;
     state.settings.model = elements.modelSelect.value;
     state.settings.apiKey = elements.apiKeyInput.value;
-    state.settings.assistantName = elements.assistantName.value || CONFIG.defaults.assistantName;
-    state.settings.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
     state.settings.showAvatar = elements.showAvatar.checked;
 
     // Get size from active button
@@ -635,9 +789,16 @@ async function saveSettings() {
         state.settings.avatarPosition = activePosition.dataset.position;
     }
 
-    // Note: avatarKey is saved separately when image is uploaded
-
     localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
+
+    // Save persona-specific settings to the active persona
+    const persona = getActivePersona();
+    if (persona) {
+        persona.name = elements.assistantName.value || CONFIG.defaults.assistantName;
+        persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
+        persona.updatedAt = Date.now();
+        savePersonas();
+    }
 
     await updateUI();
     showNotification('Settings saved!', 'success');
@@ -648,18 +809,16 @@ function saveConversations() {
     localStorage.setItem(CONFIG.storageKeys.conversations, JSON.stringify(state.conversations));
 }
 
-function saveExpressions() {
-    localStorage.setItem(CONFIG.storageKeys.expressions, JSON.stringify(state.expressions));
-}
-
 // ===== UI Updates =====
 async function updateUI() {
+    const persona = getActivePersona();
+
     // Update form inputs
     elements.providerSelect.value = state.settings.provider;
     elements.modelSelect.value = state.settings.model;
     elements.apiKeyInput.value = state.settings.apiKey;
-    elements.assistantName.value = state.settings.assistantName;
-    elements.systemPrompt.value = state.settings.systemPrompt;
+    elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
+    elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
     elements.showAvatar.checked = state.settings.showAvatar;
 
     // Update size preset buttons
@@ -673,7 +832,7 @@ async function updateUI() {
     });
 
     // Update header
-    elements.headerAssistantName.textContent = state.settings.assistantName;
+    elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.modelIndicator.textContent = getModelDisplayName(state.settings.model);
 
     // Update avatar preview in settings (async - loads from IndexedDB)
@@ -702,11 +861,13 @@ async function updateAvatarPreview() {
     const preview = elements.avatarPreview;
     const name = elements.avatarPreviewName;
     const status = elements.avatarPreviewStatus;
+    const persona = getActivePersona();
 
-    name.textContent = state.settings.assistantName;
+    name.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
 
-    if (state.settings.avatarKey) {
-        const imageUrl = await ImageStore.get(state.settings.avatarKey);
+    const avatarKey = persona ? persona.avatarImageKey : '';
+    if (avatarKey) {
+        const imageUrl = await ImageStore.get(avatarKey);
         if (imageUrl) {
             preview.innerHTML = `<img src="${imageUrl}" alt="Avatar">`;
             status.textContent = 'Custom Avatar';
@@ -723,6 +884,8 @@ async function updateAvatarPreview() {
 async function updateFloatingAvatar() {
     const avatar = elements.floatingAvatar;
     const image = elements.avatarImage;
+    const persona = getActivePersona();
+    const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
     // Show/hide avatar
     avatar.classList.toggle('hidden', !state.settings.showAvatar);
@@ -738,18 +901,19 @@ async function updateFloatingAvatar() {
 
     // Update image or emoji
     // Priority: expression image > default avatar > emoji
-    const currentExpr = state.expressions[state.currentExpression] || state.expressions.neutral;
+    const currentExpr = expressions[state.currentExpression] || expressions.neutral;
 
     // Try to load expression image from IndexedDB
     let expressionImageUrl = null;
-    if (currentExpr.imageKey) {
+    if (currentExpr && currentExpr.imageKey) {
         expressionImageUrl = await ImageStore.get(currentExpr.imageKey);
     }
 
     // Try to load default avatar from IndexedDB
     let avatarImageUrl = null;
-    if (state.settings.avatarKey) {
-        avatarImageUrl = await ImageStore.get(state.settings.avatarKey);
+    const avatarKey = persona ? persona.avatarImageKey : '';
+    if (avatarKey) {
+        avatarImageUrl = await ImageStore.get(avatarKey);
     }
 
     if (expressionImageUrl) {
@@ -766,17 +930,19 @@ async function updateFloatingAvatar() {
         // Use emoji
         elements.avatarEmoji.style.display = 'block';
         elements.avatarImg.style.display = 'none';
-        elements.avatarEmoji.textContent = currentExpr.emoji || '🤖';
+        elements.avatarEmoji.textContent = (currentExpr && currentExpr.emoji) || '🤖';
     }
 
     // Update name and expression label
-    elements.floatingAvatarName.textContent = state.settings.assistantName;
+    elements.floatingAvatarName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.floatingAvatarExpression.textContent = state.currentExpression;
 }
 
 function updateStatusBar() {
     // Update mood
-    const expr = state.expressions[state.currentExpression] || state.expressions.neutral;
+    const persona = getActivePersona();
+    const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
+    const expr = expressions[state.currentExpression] || expressions.neutral;
     elements.statusMood.textContent = `${expr.emoji} ${state.currentExpression}`;
 
     // Update message count
@@ -822,7 +988,10 @@ async function renderExpressionList() {
     const list = elements.expressionList;
     list.innerHTML = '';
 
-    for (const [name, expr] of Object.entries(state.expressions)) {
+    const persona = getActivePersona();
+    const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
+
+    for (const [name, expr] of Object.entries(expressions)) {
         const item = document.createElement('div');
         item.className = 'expression-item';
         item.onclick = () => openExpressionModal(name);
@@ -861,8 +1030,11 @@ async function openExpressionModal(name = null) {
     state.tempExpressionPreviewUrl = '';
     state.tempExpressionCleared = false;
 
-    if (name && state.expressions[name]) {
-        const expr = state.expressions[name];
+    const persona = getActivePersona();
+    const expressions = persona ? persona.expressions : {};
+
+    if (name && expressions[name]) {
+        const expr = expressions[name];
         elements.expressionModalTitle.textContent = 'Edit Expression';
         elements.expressionName.value = name;
         elements.expressionEmoji.value = expr.emoji;
@@ -918,15 +1090,21 @@ async function saveExpression() {
         return;
     }
 
+    const persona = getActivePersona();
+    if (!persona) {
+        alert('No active persona');
+        return;
+    }
+
     // Determine the image key
     let imageKey = '';
-    const oldExpr = editingExpression ? state.expressions[editingExpression] : null;
+    const oldExpr = editingExpression ? persona.expressions[editingExpression] : null;
     const oldImageKey = oldExpr?.imageKey || '';
 
     try {
         if (state.tempExpressionBlob) {
             // User uploaded a new image - store it with the expression name as key
-            imageKey = `expr_${name}`;
+            imageKey = `expr_${persona.id}_${name}`;
             await ImageStore.store(imageKey, state.tempExpressionBlob);
 
             // If renaming and old key was different, delete old image
@@ -946,7 +1124,7 @@ async function saveExpression() {
                 // Fetch the blob from the old location and store with new key
                 const response = await fetch(oldUrl);
                 const blob = await response.blob();
-                imageKey = `expr_${name}`;
+                imageKey = `expr_${persona.id}_${name}`;
                 await ImageStore.store(imageKey, blob);
                 await ImageStore.delete(oldImageKey);
             }
@@ -962,12 +1140,13 @@ async function saveExpression() {
 
     // If renaming, delete old expression entry
     if (editingExpression && editingExpression !== name) {
-        delete state.expressions[editingExpression];
+        delete persona.expressions[editingExpression];
     }
 
-    state.expressions[name] = { emoji, imageKey, keywords };
+    persona.expressions[name] = { emoji, imageKey, keywords };
+    persona.updatedAt = Date.now();
 
-    saveExpressions();
+    savePersonas();
     await renderExpressionList();
     closeExpressionModal();
 
@@ -981,20 +1160,24 @@ async function saveExpression() {
 async function deleteExpression() {
     if (!editingExpression) return;
 
-    if (Object.keys(state.expressions).length <= 1) {
+    const persona = getActivePersona();
+    if (!persona) return;
+
+    if (Object.keys(persona.expressions).length <= 1) {
         alert('You must have at least one expression');
         return;
     }
 
     if (confirm(`Delete expression "${editingExpression}"?`)) {
         // Delete image from IndexedDB if exists
-        const expr = state.expressions[editingExpression];
+        const expr = persona.expressions[editingExpression];
         if (expr?.imageKey) {
             await ImageStore.delete(expr.imageKey);
         }
 
-        delete state.expressions[editingExpression];
-        saveExpressions();
+        delete persona.expressions[editingExpression];
+        persona.updatedAt = Date.now();
+        savePersonas();
         await renderExpressionList();
         closeExpressionModal();
     }
@@ -1007,28 +1190,31 @@ function updateSystemPromptExpressions() {
 
 // ===== Expression Detection =====
 function detectExpression(text) {
+    const persona = getActivePersona();
+    const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
+
     // First, check for explicit expression tag
     const tagMatch = text.match(/\[expression:\s*(\w+)\]/i);
     if (tagMatch) {
         const exprName = tagMatch[1].toLowerCase();
-        if (state.expressions[exprName]) {
+        if (expressions[exprName]) {
             return exprName;
         }
     }
-    
+
     // Fallback: keyword matching
     const lowerText = text.toLowerCase();
-    
-    for (const [name, expr] of Object.entries(state.expressions)) {
+
+    for (const [name, expr] of Object.entries(expressions)) {
         if (name === 'neutral') continue; // Skip neutral for keyword matching
-        
+
         for (const keyword of expr.keywords) {
             if (lowerText.includes(keyword)) {
                 return name;
             }
         }
     }
-    
+
     // Default to current expression (don't change if nothing detected)
     return state.currentExpression;
 }
@@ -1038,7 +1224,10 @@ function stripExpressionTag(text) {
 }
 
 async function setExpression(exprName) {
-    if (state.expressions[exprName]) {
+    const persona = getActivePersona();
+    const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
+
+    if (expressions[exprName]) {
         state.currentExpression = exprName;
         await updateFloatingAvatar();
         updateStatusBar();
@@ -1051,12 +1240,14 @@ function renderConversation() {
 
     const activeConvo = getActiveConversation();
     const messages = activeConvo ? activeConvo.messages : [];
+    const persona = getActivePersona();
+    const assistantName = persona ? persona.name : CONFIG.defaults.assistantName;
 
     if (messages.length === 0) {
         elements.messagesContainer.innerHTML = `
             <div class="welcome-message">
                 <h1>Welcome!</h1>
-                <p>${state.settings.apiKey ? 'Start chatting with ' + state.settings.assistantName + '!' : 'Configure your API key in the settings (☰) to get started.'}</p>
+                <p>${state.settings.apiKey ? 'Start chatting with ' + assistantName + '!' : 'Configure your API key in the settings (☰) to get started.'}</p>
             </div>
         `;
         return;
@@ -1203,12 +1394,14 @@ async function sendMessage() {
 }
 
 async function callAPI(userMessage) {
-    const { provider, model, apiKey, systemPrompt } = state.settings;
-    
+    const { provider, model, apiKey } = state.settings;
+    const persona = getActivePersona();
+    const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
+
     if (provider === 'anthropic') {
         return await callAnthropicAPI(userMessage, model, apiKey, systemPrompt);
     }
-    
+
     throw new Error(`Provider ${provider} not yet implemented`);
 }
 
@@ -1386,15 +1579,22 @@ async function handleAvatarUpload(file) {
         return;
     }
 
+    const persona = getActivePersona();
+    if (!persona) {
+        alert('No active persona');
+        return;
+    }
+
     try {
         const blob = await ImageStore.fileToBlob(file);
-        const key = 'avatar_main';
+        const key = `avatar_${persona.id}`;
 
         await ImageStore.store(key, blob);
-        state.settings.avatarKey = key;
+        persona.avatarImageKey = key;
+        persona.updatedAt = Date.now();
 
-        // Save key reference to localStorage
-        localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
+        // Save persona
+        savePersonas();
 
         // Update previews
         await updateAvatarPreview();
@@ -1411,11 +1611,15 @@ async function handleAvatarUpload(file) {
  * Clear the avatar image - removes from IndexedDB
  */
 async function clearAvatarImage() {
-    if (state.settings.avatarKey) {
-        await ImageStore.delete(state.settings.avatarKey);
+    const persona = getActivePersona();
+    if (!persona) return;
+
+    if (persona.avatarImageKey) {
+        await ImageStore.delete(persona.avatarImageKey);
     }
-    state.settings.avatarKey = '';
-    localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
+    persona.avatarImageKey = '';
+    persona.updatedAt = Date.now();
+    savePersonas();
     await updateAvatarPreview();
     await updateFloatingAvatar();
 }
