@@ -37,9 +37,362 @@ When responding, you may optionally include an expression tag like [expression: 
         settings: 'ai_assistant_settings',
         conversations: 'ai_assistant_conversations',
         expressions: 'ai_assistant_expressions', // Legacy, kept for migration
-        personas: 'ai_assistant_personas'
+        personas: 'ai_assistant_personas',
+        appData: 'ai_assistant_data', // Unified storage with schema version
+        backup: 'ai_assistant_backup' // Backup before migrations
     }
 };
+
+// ===== Schema Version & Migrations =====
+const CURRENT_SCHEMA_VERSION = 1;
+
+/**
+ * Migration functions indexed by target version.
+ * Each migration transforms data from (version - 1) to version.
+ * Migrations receive the full stored data object and return the migrated version.
+ */
+const migrations = {
+    /**
+     * Migration 1: Initial restructure
+     * - Converts flat conversation array to multi-conversation format
+     * - Converts settings + expressions to personas format
+     * - Migrates Base64 images to IndexedDB keys
+     */
+    1: async (data) => {
+        console.log('[Migration 1] Starting: Initial restructure...');
+        const result = {
+            schemaVersion: 1,
+            settings: {},
+            personas: {},
+            conversations: {},
+            activePersonaId: null,
+            activeConversationId: null
+        };
+
+        // Migrate settings (extract app-level settings only)
+        const oldSettings = data.settings || {};
+        result.settings = {
+            provider: oldSettings.provider || CONFIG.defaults.provider,
+            model: oldSettings.model || CONFIG.defaults.model,
+            apiKey: oldSettings.apiKey || '',
+            avatarSize: oldSettings.avatarSize || CONFIG.defaults.avatarSize,
+            avatarPosition: oldSettings.avatarPosition || CONFIG.defaults.avatarPosition,
+            showAvatar: oldSettings.showAvatar !== undefined ? oldSettings.showAvatar : CONFIG.defaults.showAvatar
+        };
+
+        // Migrate personas
+        if (data.personas && Object.keys(data.personas).length > 0) {
+            // Already has personas - copy them
+            result.personas = data.personas;
+            // Set active to most recently updated
+            const personaList = Object.values(result.personas);
+            if (personaList.length > 0) {
+                const mostRecent = personaList.reduce((a, b) =>
+                    (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+                );
+                result.activePersonaId = mostRecent.id;
+            }
+        } else if (oldSettings.assistantName) {
+            // Migrate from old settings + expressions format
+            console.log('[Migration 1] Converting old settings to persona...');
+            const id = crypto.randomUUID();
+            const now = Date.now();
+
+            let expressions = { ...CONFIG.defaultExpressions };
+            if (data.expressions) {
+                expressions = data.expressions;
+            }
+
+            result.personas[id] = {
+                id,
+                name: oldSettings.assistantName || CONFIG.defaults.assistantName,
+                systemPrompt: oldSettings.systemPrompt || CONFIG.defaults.systemPrompt,
+                avatarImageKey: oldSettings.avatarKey || '',
+                expressions,
+                createdAt: now,
+                updatedAt: now
+            };
+            result.activePersonaId = id;
+        }
+
+        // Create default persona if still none
+        if (Object.keys(result.personas).length === 0) {
+            console.log('[Migration 1] Creating default persona...');
+            const id = crypto.randomUUID();
+            const now = Date.now();
+            result.personas[id] = {
+                id,
+                name: CONFIG.defaults.assistantName,
+                systemPrompt: CONFIG.defaults.systemPrompt,
+                avatarImageKey: '',
+                expressions: { ...CONFIG.defaultExpressions },
+                createdAt: now,
+                updatedAt: now
+            };
+            result.activePersonaId = id;
+        }
+
+        // Migrate conversations
+        if (data.conversations) {
+            if (Array.isArray(data.conversations)) {
+                // Old format: flat array of messages
+                if (data.conversations.length > 0) {
+                    console.log('[Migration 1] Converting flat conversation array...');
+                    const id = crypto.randomUUID();
+                    const now = Date.now();
+
+                    const firstUserMsg = data.conversations.find(m => m.role === 'user');
+                    const title = firstUserMsg
+                        ? generateConversationTitle(firstUserMsg.content)
+                        : 'Migrated Chat';
+
+                    result.conversations[id] = {
+                        id,
+                        title,
+                        personaId: result.activePersonaId,
+                        createdAt: now,
+                        updatedAt: now,
+                        messages: data.conversations
+                    };
+                    result.activeConversationId = id;
+                }
+            } else if (typeof data.conversations === 'object') {
+                // Already multi-conversation format
+                result.conversations = data.conversations;
+
+                // Ensure all conversations have personaId
+                for (const convo of Object.values(result.conversations)) {
+                    if (!convo.personaId && result.activePersonaId) {
+                        convo.personaId = result.activePersonaId;
+                    }
+                }
+
+                // Set active to most recently updated
+                const convos = Object.values(result.conversations);
+                if (convos.length > 0) {
+                    const mostRecent = convos.reduce((a, b) =>
+                        (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+                    );
+                    result.activeConversationId = mostRecent.id;
+                }
+            }
+        }
+
+        // Migrate Base64 images to IndexedDB
+        await migrateBase64ImagesToIndexedDB(result, oldSettings, data.expressions);
+
+        console.log('[Migration 1] Complete.');
+        return result;
+    }
+
+    // Future migrations go here:
+    // 2: async (data) => { ... }
+};
+
+/**
+ * Helper: Migrate Base64 image data to IndexedDB
+ * Called during migration 1 to move images from localStorage to IndexedDB
+ */
+async function migrateBase64ImagesToIndexedDB(result, oldSettings, oldExpressions) {
+    try {
+        await ImageStore.init();
+
+        // Migrate avatar image from old settings
+        if (oldSettings.avatarData && oldSettings.avatarData.startsWith('data:')) {
+            console.log('[Migration 1] Migrating avatar image to IndexedDB...');
+            const blob = ImageStore.dataUrlToBlob(oldSettings.avatarData);
+            const key = 'avatar_main';
+            await ImageStore.store(key, blob);
+
+            // Update the persona's avatar key
+            const persona = Object.values(result.personas)[0];
+            if (persona) {
+                persona.avatarImageKey = key;
+            }
+        }
+
+        // Migrate expression images
+        if (oldExpressions) {
+            for (const [name, expr] of Object.entries(oldExpressions)) {
+                if (expr.imageData && expr.imageData.startsWith('data:')) {
+                    console.log(`[Migration 1] Migrating expression image "${name}" to IndexedDB...`);
+                    const blob = ImageStore.dataUrlToBlob(expr.imageData);
+                    const key = `expr_${name}`;
+                    await ImageStore.store(key, blob);
+
+                    // Update the expression in personas
+                    for (const persona of Object.values(result.personas)) {
+                        if (persona.expressions && persona.expressions[name]) {
+                            persona.expressions[name].imageKey = key;
+                            delete persona.expressions[name].imageData;
+                        }
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('[Migration 1] Failed to migrate images:', error);
+        // Continue with migration even if image migration fails
+    }
+}
+
+/**
+ * Create a backup of current data before running migrations
+ * Keeps only the last 2 backups to save space
+ */
+function createMigrationBackup(data, fromVersion) {
+    try {
+        const backupKey = CONFIG.storageKeys.backup;
+        const existingBackups = JSON.parse(localStorage.getItem(backupKey) || '[]');
+
+        // Add new backup
+        existingBackups.push({
+            timestamp: Date.now(),
+            fromVersion,
+            data
+        });
+
+        // Keep only last 2 backups
+        while (existingBackups.length > 2) {
+            existingBackups.shift();
+        }
+
+        localStorage.setItem(backupKey, JSON.stringify(existingBackups));
+        console.log(`[Migrations] Backup created (from version ${fromVersion})`);
+    } catch (error) {
+        console.error('[Migrations] Failed to create backup:', error);
+        // Don't fail migration if backup fails
+    }
+}
+
+/**
+ * Load current data from all storage keys (handles both old and new formats)
+ */
+function loadStoredData() {
+    // First check for unified storage
+    const unified = localStorage.getItem(CONFIG.storageKeys.appData);
+    if (unified) {
+        try {
+            return JSON.parse(unified);
+        } catch (e) {
+            console.error('[Migrations] Failed to parse unified storage:', e);
+        }
+    }
+
+    // Fall back to loading from separate keys (old format)
+    const data = {
+        schemaVersion: 0 // Missing version means version 0
+    };
+
+    const settings = localStorage.getItem(CONFIG.storageKeys.settings);
+    if (settings) {
+        try {
+            data.settings = JSON.parse(settings);
+        } catch (e) {
+            console.error('[Migrations] Failed to parse settings:', e);
+        }
+    }
+
+    const personas = localStorage.getItem(CONFIG.storageKeys.personas);
+    if (personas) {
+        try {
+            data.personas = JSON.parse(personas);
+        } catch (e) {
+            console.error('[Migrations] Failed to parse personas:', e);
+        }
+    }
+
+    const conversations = localStorage.getItem(CONFIG.storageKeys.conversations);
+    if (conversations) {
+        try {
+            data.conversations = JSON.parse(conversations);
+        } catch (e) {
+            console.error('[Migrations] Failed to parse conversations:', e);
+        }
+    }
+
+    const expressions = localStorage.getItem(CONFIG.storageKeys.expressions);
+    if (expressions) {
+        try {
+            data.expressions = JSON.parse(expressions);
+        } catch (e) {
+            console.error('[Migrations] Failed to parse expressions:', e);
+        }
+    }
+
+    return data;
+}
+
+/**
+ * Save migrated data to unified storage
+ */
+function saveMigratedData(data) {
+    localStorage.setItem(CONFIG.storageKeys.appData, JSON.stringify(data));
+
+    // Also save to individual keys for backward compatibility during transition
+    if (data.settings) {
+        localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(data.settings));
+    }
+    if (data.personas) {
+        localStorage.setItem(CONFIG.storageKeys.personas, JSON.stringify(data.personas));
+    }
+    if (data.conversations) {
+        localStorage.setItem(CONFIG.storageKeys.conversations, JSON.stringify(data.conversations));
+    }
+
+    // Clean up legacy keys that are no longer needed
+    localStorage.removeItem(CONFIG.storageKeys.expressions);
+    localStorage.removeItem('ai_assistant_migration_v1'); // Old migration flag
+}
+
+/**
+ * Run all pending migrations from current version to CURRENT_SCHEMA_VERSION
+ * @returns {Promise<Object>} The migrated data
+ */
+async function runMigrations() {
+    console.log('[Migrations] Checking for pending migrations...');
+
+    let data = loadStoredData();
+    const startVersion = data.schemaVersion || 0;
+
+    console.log(`[Migrations] Current schema version: ${startVersion}, Target: ${CURRENT_SCHEMA_VERSION}`);
+
+    if (startVersion >= CURRENT_SCHEMA_VERSION) {
+        console.log('[Migrations] No migrations needed.');
+        return data;
+    }
+
+    // Create backup before any migrations
+    createMigrationBackup(data, startVersion);
+
+    // Run each migration in sequence
+    for (let version = startVersion + 1; version <= CURRENT_SCHEMA_VERSION; version++) {
+        const migration = migrations[version];
+
+        if (!migration) {
+            console.error(`[Migrations] Missing migration for version ${version}!`);
+            throw new Error(`Missing migration for version ${version}`);
+        }
+
+        console.log(`[Migrations] Running migration ${version}...`);
+
+        try {
+            data = await migration(data);
+            data.schemaVersion = version;
+
+            // Save after each successful migration
+            saveMigratedData(data);
+
+            console.log(`[Migrations] Migration ${version} completed successfully.`);
+        } catch (error) {
+            console.error(`[Migrations] Migration ${version} failed:`, error);
+            throw error;
+        }
+    }
+
+    console.log(`[Migrations] All migrations complete. Now at version ${CURRENT_SCHEMA_VERSION}.`);
+    return data;
+}
 
 // ===== IndexedDB Image Store =====
 // Stores image Blobs in IndexedDB to avoid localStorage size limits.
@@ -260,89 +613,6 @@ const ImageStore = {
     }
 };
 
-// ===== Migration: Base64 to IndexedDB =====
-// Migrates existing Base64 image data from localStorage to IndexedDB
-// This runs once on first load after the migration update
-async function migrateBase64ToIndexedDB() {
-    const migrationKey = 'ai_assistant_migration_v1';
-
-    // Check if migration already done
-    if (localStorage.getItem(migrationKey)) {
-        return false; // Already migrated
-    }
-
-    console.log('ImageStore: Starting migration from Base64 to IndexedDB...');
-    let migrationNeeded = false;
-
-    try {
-        // Initialize IndexedDB first
-        await ImageStore.init();
-
-        // Migrate avatar image from settings
-        const savedSettings = localStorage.getItem(CONFIG.storageKeys.settings);
-        if (savedSettings) {
-            const settings = JSON.parse(savedSettings);
-
-            // Check for old avatarData field (Base64)
-            if (settings.avatarData && settings.avatarData.startsWith('data:')) {
-                console.log('ImageStore: Migrating avatar image...');
-                const blob = ImageStore.dataUrlToBlob(settings.avatarData);
-                await ImageStore.store('avatar_main', blob);
-
-                // Update settings to use key instead of data
-                settings.avatarKey = 'avatar_main';
-                delete settings.avatarData;
-                localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(settings));
-                migrationNeeded = true;
-                console.log('ImageStore: Avatar image migrated successfully');
-            }
-        }
-
-        // Migrate expression images
-        const savedExpressions = localStorage.getItem(CONFIG.storageKeys.expressions);
-        if (savedExpressions) {
-            const expressions = JSON.parse(savedExpressions);
-            let expressionsMigrated = 0;
-
-            for (const [name, expr] of Object.entries(expressions)) {
-                // Check for old imageData field (Base64)
-                if (expr.imageData && expr.imageData.startsWith('data:')) {
-                    console.log(`ImageStore: Migrating expression image for "${name}"...`);
-                    const blob = ImageStore.dataUrlToBlob(expr.imageData);
-                    const key = `expr_${name}`;
-                    await ImageStore.store(key, blob);
-
-                    // Update expression to use key instead of data
-                    expr.imageKey = key;
-                    delete expr.imageData;
-                    expressionsMigrated++;
-                    migrationNeeded = true;
-                }
-            }
-
-            if (expressionsMigrated > 0) {
-                localStorage.setItem(CONFIG.storageKeys.expressions, JSON.stringify(expressions));
-                console.log(`ImageStore: ${expressionsMigrated} expression images migrated successfully`);
-            }
-        }
-
-        // Mark migration as complete
-        localStorage.setItem(migrationKey, Date.now().toString());
-
-        if (migrationNeeded) {
-            console.log('ImageStore: Migration completed successfully!');
-        } else {
-            console.log('ImageStore: No migration needed (no Base64 data found)');
-        }
-
-        return migrationNeeded;
-    } catch (error) {
-        console.error('ImageStore: Migration failed:', error);
-        // Don't set migration key so it can be retried
-        return false;
-    }
-}
-
 // ===== State Management =====
 const state = {
     // App-level preferences only (no persona data)
@@ -505,6 +775,7 @@ function updatePersona(id, updates) {
  */
 function savePersonas() {
     localStorage.setItem(CONFIG.storageKeys.personas, JSON.stringify(state.personas));
+    syncUnifiedStorage();
 }
 
 // ===== DOM Elements =====
@@ -576,14 +847,14 @@ const elements = {
 
 // ===== Initialization =====
 async function init() {
-    // Run migration first (converts Base64 data in localStorage to IndexedDB)
-    await migrateBase64ToIndexedDB();
-
-    // Initialize IndexedDB
+    // Initialize IndexedDB first (needed for migrations)
     await ImageStore.init();
 
-    // Load settings and personas (expressions are now part of persona)
-    loadSettings();
+    // Run migrations (handles all data format upgrades)
+    const migratedData = await runMigrations();
+
+    // Load state from migrated data
+    loadStateFromData(migratedData);
 
     // Setup event listeners before UI update
     setupEventListeners();
@@ -603,171 +874,79 @@ async function init() {
 }
 
 // ===== Settings Management =====
-function loadSettings() {
-    const saved = localStorage.getItem(CONFIG.storageKeys.settings);
-    let oldSettings = null;
 
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            oldSettings = parsed; // Keep for migration check
-            // Only load app-level settings (not persona fields)
-            state.settings = {
-                provider: parsed.provider || CONFIG.defaults.provider,
-                model: parsed.model || CONFIG.defaults.model,
-                apiKey: parsed.apiKey || '',
-                avatarSize: parsed.avatarSize || CONFIG.defaults.avatarSize,
-                avatarPosition: parsed.avatarPosition || CONFIG.defaults.avatarPosition,
-                showAvatar: parsed.showAvatar !== undefined ? parsed.showAvatar : CONFIG.defaults.showAvatar
-            };
-        } catch (e) {
-            console.error('Failed to parse saved settings:', e);
-        }
+/**
+ * Load state from migrated data object
+ * Called after runMigrations() with the fully migrated data
+ */
+function loadStateFromData(data) {
+    // Load settings
+    if (data.settings) {
+        state.settings = {
+            provider: data.settings.provider || CONFIG.defaults.provider,
+            model: data.settings.model || CONFIG.defaults.model,
+            apiKey: data.settings.apiKey || '',
+            avatarSize: data.settings.avatarSize || CONFIG.defaults.avatarSize,
+            avatarPosition: data.settings.avatarPosition || CONFIG.defaults.avatarPosition,
+            showAvatar: data.settings.showAvatar !== undefined ? data.settings.showAvatar : CONFIG.defaults.showAvatar
+        };
     }
 
     // Load personas
-    const savedPersonas = localStorage.getItem(CONFIG.storageKeys.personas);
-    if (savedPersonas) {
-        try {
-            state.personas = JSON.parse(savedPersonas);
-            // Set active persona to the most recently updated one
-            const personaList = Object.values(state.personas);
-            if (personaList.length > 0) {
-                const mostRecent = personaList.reduce((a, b) =>
-                    (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-                );
-                state.activePersonaId = mostRecent.id;
-            }
-        } catch (e) {
-            console.error('Failed to parse saved personas:', e);
+    if (data.personas) {
+        state.personas = data.personas;
+    }
+
+    // Set active persona
+    if (data.activePersonaId && state.personas[data.activePersonaId]) {
+        state.activePersonaId = data.activePersonaId;
+    } else {
+        // Fall back to most recently updated persona
+        const personaList = Object.values(state.personas);
+        if (personaList.length > 0) {
+            const mostRecent = personaList.reduce((a, b) =>
+                (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+            );
+            state.activePersonaId = mostRecent.id;
         }
-    }
-
-    // Migration: Check if we need to migrate from old format
-    // Old format has assistantName in settings and separate expressions
-    if (Object.keys(state.personas).length === 0 && oldSettings && oldSettings.assistantName) {
-        console.log('Migrating from old settings format to personas...');
-        migrateToPersonas(oldSettings);
-    }
-
-    // If still no persona, create a default one
-    if (Object.keys(state.personas).length === 0) {
-        createPersona(CONFIG.defaults.assistantName);
-        console.log('Created default persona');
     }
 
     // Load conversations
-    const savedConvo = localStorage.getItem(CONFIG.storageKeys.conversations);
-    if (savedConvo) {
-        try {
-            const parsed = JSON.parse(savedConvo);
+    if (data.conversations) {
+        state.conversations = data.conversations;
+    }
 
-            // Migration: Check if old format (flat array) or new format (object with IDs)
-            if (Array.isArray(parsed)) {
-                // Old format: flat array of messages
-                if (parsed.length > 0) {
-                    const id = crypto.randomUUID();
-                    const now = Date.now();
-
-                    const firstUserMsg = parsed.find(m => m.role === 'user');
-                    const title = firstUserMsg
-                        ? generateConversationTitle(firstUserMsg.content)
-                        : 'Migrated Chat';
-
-                    state.conversations = {
-                        [id]: {
-                            id,
-                            title,
-                            personaId: state.activePersonaId, // Link to active persona
-                            createdAt: now,
-                            updatedAt: now,
-                            messages: parsed
-                        }
-                    };
-                    state.activeConversationId = id;
-
-                    saveConversations();
-                    console.log('Migrated conversation from flat array to multi-conversation format');
-                }
-            } else if (typeof parsed === 'object' && parsed !== null) {
-                state.conversations = parsed;
-
-                // Ensure all conversations have personaId (migration)
-                let needsSave = false;
-                for (const convo of Object.values(state.conversations)) {
-                    if (!convo.personaId && state.activePersonaId) {
-                        convo.personaId = state.activePersonaId;
-                        needsSave = true;
-                    }
-                }
-                if (needsSave) {
-                    saveConversations();
-                }
-
-                // Set active conversation to the most recently updated one
-                const convos = Object.values(state.conversations);
-                if (convos.length > 0) {
-                    const mostRecent = convos.reduce((a, b) =>
-                        (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-                    );
-                    state.activeConversationId = mostRecent.id;
-                }
-            }
-        } catch (e) {
-            console.error('Failed to parse saved conversations:', e);
+    // Set active conversation
+    if (data.activeConversationId && state.conversations[data.activeConversationId]) {
+        state.activeConversationId = data.activeConversationId;
+    } else {
+        // Fall back to most recently updated conversation
+        const convos = Object.values(state.conversations);
+        if (convos.length > 0) {
+            const mostRecent = convos.reduce((a, b) =>
+                (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+            );
+            state.activeConversationId = mostRecent.id;
         }
     }
+
+    console.log(`Loaded state: ${Object.keys(state.personas).length} personas, ${Object.keys(state.conversations).length} conversations`);
 }
 
 /**
- * Migrate old settings + expressions format to new personas format
+ * Sync all state to the unified storage
+ * Called after any save operation to keep the unified storage in sync
  */
-function migrateToPersonas(oldSettings) {
-    const id = crypto.randomUUID();
-    const now = Date.now();
-
-    // Load old expressions
-    let expressions = { ...CONFIG.defaultExpressions };
-    const savedExpressions = localStorage.getItem(CONFIG.storageKeys.expressions);
-    if (savedExpressions) {
-        try {
-            expressions = JSON.parse(savedExpressions);
-        } catch (e) {
-            console.error('Failed to parse saved expressions during migration:', e);
-        }
-    }
-
-    // Create persona from old data
-    state.personas[id] = {
-        id,
-        name: oldSettings.assistantName || CONFIG.defaults.assistantName,
-        systemPrompt: oldSettings.systemPrompt || CONFIG.defaults.systemPrompt,
-        avatarImageKey: oldSettings.avatarKey || '',
-        expressions,
-        createdAt: now,
-        updatedAt: now
+function syncUnifiedStorage() {
+    const data = {
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        settings: state.settings,
+        personas: state.personas,
+        conversations: state.conversations,
+        activePersonaId: state.activePersonaId,
+        activeConversationId: state.activeConversationId
     };
-
-    state.activePersonaId = id;
-
-    // Save the new persona
-    savePersonas();
-
-    // Clean up old settings (remove persona fields)
-    const cleanSettings = {
-        provider: oldSettings.provider,
-        model: oldSettings.model,
-        apiKey: oldSettings.apiKey,
-        avatarSize: oldSettings.avatarSize,
-        avatarPosition: oldSettings.avatarPosition,
-        showAvatar: oldSettings.showAvatar
-    };
-    localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(cleanSettings));
-
-    // Remove old expressions storage (now in persona)
-    localStorage.removeItem(CONFIG.storageKeys.expressions);
-
-    console.log('Migration complete: created persona from old settings');
+    localStorage.setItem(CONFIG.storageKeys.appData, JSON.stringify(data));
 }
 
 async function saveSettings() {
@@ -797,7 +976,10 @@ async function saveSettings() {
         persona.name = elements.assistantName.value || CONFIG.defaults.assistantName;
         persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
         persona.updatedAt = Date.now();
-        savePersonas();
+        savePersonas(); // This also syncs to unified storage
+    } else {
+        // Sync to unified storage if no persona update
+        syncUnifiedStorage();
     }
 
     await updateUI();
@@ -807,6 +989,7 @@ async function saveSettings() {
 
 function saveConversations() {
     localStorage.setItem(CONFIG.storageKeys.conversations, JSON.stringify(state.conversations));
+    syncUnifiedStorage();
 }
 
 // ===== UI Updates =====
