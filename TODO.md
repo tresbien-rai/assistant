@@ -20,7 +20,7 @@
 
 ### High Priority
 
-- [ ] **Markdown rendering** - Render assistant responses as markdown (code blocks, lists, links, etc.)
+- [x] **Markdown rendering** - Render all messages as markdown with syntax highlighting (marked.js + highlight.js)
 - [ ] **Conversation sidebar** - UI to switch between conversations, create new ones, delete old ones
 - [ ] **Persona switcher** - UI to switch between personas, create/edit/delete personas
 

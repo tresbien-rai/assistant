@@ -43,6 +43,65 @@ When responding, you may optionally include an expression tag like [expression: 
     }
 };
 
+// ===== Markdown Rendering =====
+
+/**
+ * Configure marked.js for Markdown rendering with syntax highlighting
+ */
+marked.setOptions({
+    breaks: true,       // Convert \n to <br> in paragraphs
+    gfm: true,          // GitHub Flavored Markdown
+    headerIds: false,   // Don't add IDs to headers (cleaner output)
+    mangle: false       // Don't escape email addresses
+});
+
+/**
+ * Custom renderer to add syntax highlighting to code blocks
+ */
+const markedRenderer = new marked.Renderer();
+
+// Override code block rendering to use highlight.js
+markedRenderer.code = function(code, language) {
+    // Handle the case where marked passes an object instead of separate params
+    if (typeof code === 'object') {
+        language = code.lang;
+        code = code.text;
+    }
+
+    const validLanguage = language && hljs.getLanguage(language);
+    const highlighted = validLanguage
+        ? hljs.highlight(code, { language }).value
+        : hljs.highlightAuto(code).value;
+
+    const langClass = validLanguage ? ` class="language-${language}"` : '';
+    return `<pre><code${langClass}>${highlighted}</code></pre>`;
+};
+
+// Make links open in new tab
+markedRenderer.link = function(href, title, text) {
+    // Handle the case where marked passes an object
+    if (typeof href === 'object') {
+        text = href.text;
+        title = href.title;
+        href = href.href;
+    }
+
+    const titleAttr = title ? ` title="${title}"` : '';
+    return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;
+};
+
+marked.setOptions({ renderer: markedRenderer });
+
+/**
+ * Render Markdown content to HTML
+ * @param {string} content - Raw markdown text
+ * @returns {string} - HTML string
+ */
+function renderMarkdown(content) {
+    if (!content) return '';
+    return marked.parse(content);
+}
+
 // ===== Schema Version & Migrations =====
 const CURRENT_SCHEMA_VERSION = 1;
 
@@ -1457,7 +1516,8 @@ function appendMessage(role, content, save = true) {
 
     // For assistant messages, strip expression tags before display
     const displayContent = role === 'assistant' ? stripExpressionTag(content) : content;
-    contentDiv.textContent = displayContent;
+    // Render Markdown to HTML
+    contentDiv.innerHTML = renderMarkdown(displayContent);
 
     messageDiv.appendChild(contentDiv);
     elements.messagesContainer.appendChild(messageDiv);
