@@ -1133,6 +1133,243 @@ body {
     color: var(--error);
 }
 
+/* ===== Model Management Modal ===== */
+.modal-large {
+    max-width: 600px;
+}
+
+.manage-models-btn {
+    width: 100%;
+    padding: 8px 12px;
+    margin-top: 8px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.manage-models-btn:hover {
+    background-color: var(--bg-secondary);
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.model-section {
+    margin-bottom: 20px;
+}
+
+.model-section h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+}
+
+.modal-divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 20px 0;
+}
+
+/* Saved Models List */
+.saved-models-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.saved-model-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background-color: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.saved-model-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.saved-model-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.saved-model-id {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+.delete-model-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+}
+
+.delete-model-btn:hover {
+    background-color: rgba(255, 107, 107, 0.2);
+    color: var(--error);
+}
+
+.empty-state {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 20px;
+    background-color: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+}
+
+/* Fetch Models Section */
+.fetch-models-section {
+    margin-bottom: 16px;
+}
+
+.fetch-models-btn {
+    width: 100%;
+    padding: 10px 16px;
+    background-color: var(--accent);
+    border: none;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.fetch-models-btn:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+}
+
+.fetch-models-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Available Models Grid */
+.available-models-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.available-model-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: all 0.2s;
+}
+
+.available-model-card:hover:not(.already-added) {
+    border-color: var(--accent);
+}
+
+.available-model-card.already-added {
+    opacity: 0.6;
+}
+
+.available-model-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.available-model-id {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    word-break: break-all;
+}
+
+.add-available-model-btn {
+    margin-top: 6px;
+    padding: 6px 10px;
+    background-color: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: white;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-available-model-btn:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+}
+
+.add-available-model-btn:disabled {
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: default;
+}
+
+/* Manual Add Divider */
+.manual-add-divider {
+    display: flex;
+    align-items: center;
+    margin: 20px 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.manual-add-divider::before,
+.manual-add-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.manual-add-divider span {
+    padding: 0 12px;
+}
+
+/* Manual Add Form */
+.manual-add-form {
+    display: flex;
+    flex-direction: column;
+}
+
+.add-model-btn {
+    padding: 10px 16px;
+    background-color: var(--accent);
+    border: none;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-model-btn:hover {
+    background-color: var(--accent-hover);
+}
+
 /* ===== Overlay for sidebar ===== */
 .sidebar-overlay {
     position: fixed;

@@ -11,6 +11,7 @@
 - [x] Multi-conversation support (conversation IDs, titles)
 - [x] Multi-persona support (persona IDs, separate from settings)
 - [x] Schema versioning and migration system
+- [x] Custom model management with API suggestions
 
 ## In Progress
 

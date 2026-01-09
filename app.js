@@ -103,7 +103,7 @@ function renderMarkdown(content) {
 }
 
 // ===== Schema Version & Migrations =====
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 /**
  * Migration functions indexed by target version.
@@ -242,10 +242,22 @@ const migrations = {
 
         console.log('[Migration 1] Complete.');
         return result;
-    }
+    },
 
-    // Future migrations go here:
-    // 2: async (data) => { ... }
+    /**
+     * Migration 2: Add custom models support
+     * - Adds customModels array for user-defined models
+     */
+    2: async (data) => {
+        console.log('[Migration 2] Starting: Adding customModels support...');
+
+        // Add customModels array if not present
+        data.customModels = data.customModels || [];
+        data.schemaVersion = 2;
+
+        console.log('[Migration 2] Complete.');
+        return data;
+    }
 };
 
 /**
@@ -689,6 +701,8 @@ const state = {
     // Conversations stored by ID for multi-conversation support
     conversations: {},
     activeConversationId: null,
+    // User-defined models (id, name pairs)
+    customModels: [],
     currentExpression: 'neutral',
     isLoading: false,
     sessionStartTime: Date.now(),
@@ -880,7 +894,19 @@ const elements = {
     expressionKeywords: document.getElementById('expressionKeywords'),
     saveExpressionBtn: document.getElementById('saveExpressionBtn'),
     deleteExpressionBtn: document.getElementById('deleteExpressionBtn'),
-    
+
+    // Model management
+    manageModelsBtn: document.getElementById('manageModelsBtn'),
+    modelModal: document.getElementById('modelModal'),
+    closeModelModal: document.getElementById('closeModelModal'),
+    savedModelsList: document.getElementById('savedModelsList'),
+    noModelsMessage: document.getElementById('noModelsMessage'),
+    fetchModelsBtn: document.getElementById('fetchModelsBtn'),
+    availableModelsGrid: document.getElementById('availableModelsGrid'),
+    newModelId: document.getElementById('newModelId'),
+    newModelName: document.getElementById('newModelName'),
+    addModelBtn: document.getElementById('addModelBtn'),
+
     // Chat area
     messagesContainer: document.getElementById('messagesContainer'),
     messageInput: document.getElementById('messageInput'),
@@ -975,6 +1001,11 @@ function loadStateFromData(data) {
         state.conversations = data.conversations;
     }
 
+    // Load custom models
+    if (data.customModels) {
+        state.customModels = data.customModels;
+    }
+
     // Set active conversation
     if (data.activeConversationId && state.conversations[data.activeConversationId]) {
         state.activeConversationId = data.activeConversationId;
@@ -1002,6 +1033,7 @@ function syncUnifiedStorage() {
         settings: state.settings,
         personas: state.personas,
         conversations: state.conversations,
+        customModels: state.customModels,
         activePersonaId: state.activePersonaId,
         activeConversationId: state.activeConversationId
     };
@@ -1057,7 +1089,7 @@ async function updateUI() {
 
     // Update form inputs
     elements.providerSelect.value = state.settings.provider;
-    elements.modelSelect.value = state.settings.model;
+    populateModelDropdown(); // Populate from customModels
     elements.apiKeyInput.value = state.settings.apiKey;
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
@@ -1210,11 +1242,16 @@ function formatNumber(num) {
 }
 
 function getModelDisplayName(modelId) {
-    const modelNames = {
-        'claude-sonnet-4-20250514': 'Claude Sonnet 4',
-        'claude-haiku-4-20250514': 'Claude Haiku 4'
-    };
-    return modelNames[modelId] || modelId;
+    if (!modelId) return 'No model selected';
+
+    // Look up in custom models
+    const customModel = state.customModels.find(m => m.id === modelId);
+    if (customModel) {
+        return customModel.name;
+    }
+
+    // Fallback to model ID
+    return modelId;
 }
 
 function updateSendButtonState() {
@@ -1428,6 +1465,282 @@ async function deleteExpression() {
 function updateSystemPromptExpressions() {
     // This could automatically update the system prompt with available expressions
     // For now, we'll leave it manual since users customize their prompts
+}
+
+// ===== Model Management =====
+
+/**
+ * Fetch available models from Anthropic API
+ * @returns {Promise<Array>} Array of { id, display_name } objects
+ */
+async function fetchAvailableModels() {
+    if (!state.settings.apiKey) {
+        throw new Error('API key required to fetch models');
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/models', {
+        headers: {
+            'x-api-key': state.settings.apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+        }
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error?.message || `Failed to fetch models: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.data || [];
+}
+
+/**
+ * Add a custom model to the list
+ * @param {string} id - The model ID
+ * @param {string} name - The display name
+ * @returns {boolean} True if added, false if already exists
+ */
+function addCustomModel(id, name) {
+    if (!id || !name) return false;
+
+    // Check if already exists
+    const exists = state.customModels.some(m => m.id === id);
+    if (exists) return false;
+
+    state.customModels.push({ id, name });
+    saveCustomModels();
+    return true;
+}
+
+/**
+ * Remove a custom model from the list
+ * @param {string} id - The model ID to remove
+ */
+function removeCustomModel(id) {
+    const index = state.customModels.findIndex(m => m.id === id);
+    if (index === -1) return;
+
+    state.customModels.splice(index, 1);
+    saveCustomModels();
+
+    // If the removed model was selected, clear selection
+    if (state.settings.model === id) {
+        state.settings.model = state.customModels.length > 0 ? state.customModels[0].id : '';
+        localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
+    }
+}
+
+/**
+ * Save custom models to storage
+ */
+function saveCustomModels() {
+    syncUnifiedStorage();
+}
+
+/**
+ * Populate the model dropdown from customModels
+ */
+function populateModelDropdown() {
+    const select = elements.modelSelect;
+    select.innerHTML = '';
+
+    if (state.customModels.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No models - click Manage Models';
+        option.disabled = true;
+        option.selected = true;
+        select.appendChild(option);
+        select.disabled = true;
+    } else {
+        select.disabled = false;
+        state.customModels.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.id;
+            option.textContent = model.name;
+            if (model.id === state.settings.model) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+
+        // If selected model not in list, select first one
+        if (!state.customModels.some(m => m.id === state.settings.model)) {
+            state.settings.model = state.customModels[0].id;
+            select.value = state.settings.model;
+        }
+    }
+
+    // Update status bar
+    elements.modelIndicator.textContent = getModelDisplayName(state.settings.model);
+}
+
+/**
+ * Render the saved models list in the modal
+ */
+function renderSavedModelsList() {
+    const container = elements.savedModelsList;
+    container.innerHTML = '';
+
+    if (state.customModels.length === 0) {
+        elements.noModelsMessage.style.display = 'block';
+        return;
+    }
+
+    elements.noModelsMessage.style.display = 'none';
+
+    state.customModels.forEach(model => {
+        const item = document.createElement('div');
+        item.className = 'saved-model-item';
+        item.innerHTML = `
+            <div class="saved-model-info">
+                <span class="saved-model-name">${model.name}</span>
+                <span class="saved-model-id">${model.id}</span>
+            </div>
+            <button class="delete-model-btn" data-model-id="${model.id}" title="Delete model">×</button>
+        `;
+        container.appendChild(item);
+    });
+
+    // Add delete button listeners
+    container.querySelectorAll('.delete-model-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const modelId = e.target.dataset.modelId;
+            if (confirm(`Delete model "${getModelDisplayName(modelId)}"?`)) {
+                removeCustomModel(modelId);
+                renderSavedModelsList();
+                populateModelDropdown();
+            }
+        });
+    });
+}
+
+/**
+ * Render available models grid after fetching from API
+ * @param {Array} models - Array of { id, display_name } from API
+ */
+function renderAvailableModelsGrid(models) {
+    const grid = elements.availableModelsGrid;
+    grid.innerHTML = '';
+    grid.style.display = 'grid';
+
+    if (models.length === 0) {
+        grid.innerHTML = '<p class="help-text">No models available</p>';
+        return;
+    }
+
+    models.forEach(model => {
+        const alreadyAdded = state.customModels.some(m => m.id === model.id);
+        const card = document.createElement('div');
+        card.className = `available-model-card ${alreadyAdded ? 'already-added' : ''}`;
+        card.innerHTML = `
+            <span class="available-model-name">${model.display_name}</span>
+            <span class="available-model-id">${model.id}</span>
+            <button class="add-available-model-btn" data-model-id="${model.id}" data-model-name="${model.display_name}" ${alreadyAdded ? 'disabled' : ''}>
+                ${alreadyAdded ? 'Added' : '+ Add'}
+            </button>
+        `;
+        grid.appendChild(card);
+    });
+
+    // Add click listeners for add buttons
+    grid.querySelectorAll('.add-available-model-btn:not([disabled])').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const modelId = e.target.dataset.modelId;
+            const modelName = e.target.dataset.modelName;
+            if (addCustomModel(modelId, modelName)) {
+                renderSavedModelsList();
+                populateModelDropdown();
+                // Update the button
+                e.target.textContent = 'Added';
+                e.target.disabled = true;
+                e.target.closest('.available-model-card').classList.add('already-added');
+            }
+        });
+    });
+}
+
+/**
+ * Open the model management modal
+ */
+function openModelModal() {
+    renderSavedModelsList();
+    elements.availableModelsGrid.style.display = 'none';
+    elements.availableModelsGrid.innerHTML = '';
+    elements.newModelId.value = '';
+    elements.newModelName.value = '';
+
+    // Disable fetch button if no API key
+    elements.fetchModelsBtn.disabled = !state.settings.apiKey;
+
+    elements.modelModal.classList.add('visible');
+}
+
+/**
+ * Close the model management modal
+ */
+function closeModelModal() {
+    elements.modelModal.classList.remove('visible');
+}
+
+/**
+ * Handle fetch models button click
+ */
+async function handleFetchModels() {
+    const btn = elements.fetchModelsBtn;
+    const originalText = btn.textContent;
+
+    try {
+        btn.disabled = true;
+        btn.textContent = 'Fetching...';
+
+        const models = await fetchAvailableModels();
+        renderAvailableModelsGrid(models);
+    } catch (error) {
+        console.error('Failed to fetch models:', error);
+        alert(`Failed to fetch models: ${error.message}`);
+    } finally {
+        btn.disabled = !state.settings.apiKey;
+        btn.textContent = originalText;
+    }
+}
+
+/**
+ * Handle manual add model button click
+ */
+function handleAddModelManually() {
+    const id = elements.newModelId.value.trim();
+    const name = elements.newModelName.value.trim();
+
+    if (!id) {
+        alert('Please enter a model ID');
+        return;
+    }
+
+    if (!name) {
+        alert('Please enter a display name');
+        return;
+    }
+
+    if (addCustomModel(id, name)) {
+        renderSavedModelsList();
+        populateModelDropdown();
+        elements.newModelId.value = '';
+        elements.newModelName.value = '';
+
+        // Update available grid if visible
+        if (elements.availableModelsGrid.style.display !== 'none') {
+            const addedCard = elements.availableModelsGrid.querySelector(`[data-model-id="${id}"]`);
+            if (addedCard) {
+                addedCard.textContent = 'Added';
+                addedCard.disabled = true;
+                addedCard.closest('.available-model-card')?.classList.add('already-added');
+            }
+        }
+    } else {
+        alert('Model already exists');
+    }
 }
 
 // ===== Expression Detection =====
@@ -1775,7 +2088,20 @@ function setupEventListeners() {
             closeExpressionModal();
         }
     });
-    
+
+    // Model management modal
+    elements.manageModelsBtn.addEventListener('click', openModelModal);
+    elements.closeModelModal.addEventListener('click', closeModelModal);
+    elements.fetchModelsBtn.addEventListener('click', handleFetchModels);
+    elements.addModelBtn.addEventListener('click', handleAddModelManually);
+
+    // Close model modal on overlay click
+    elements.modelModal.addEventListener('click', (e) => {
+        if (e.target === elements.modelModal) {
+            closeModelModal();
+        }
+    });
+
     // Message input
     elements.messageInput.addEventListener('input', () => {
         updateSendButtonState();
