@@ -10,114 +10,141 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Sidebar for settings -->
+        <!-- Sidebar with tabs -->
         <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h2>Settings</h2>
+            <!-- Tab Bar -->
+            <div class="sidebar-tabs">
+                <button class="sidebar-tab active" data-tab="chats">Chats</button>
+                <button class="sidebar-tab" data-tab="settings">Settings</button>
+                <button class="sidebar-tab" data-tab="personas">Personas</button>
                 <button class="close-sidebar" id="closeSidebar">×</button>
             </div>
-            
-            <!-- API Configuration -->
-            <div class="settings-section">
-                <h3>API Configuration</h3>
-                
-                <label for="providerSelect">Provider</label>
-                <select id="providerSelect">
-                    <option value="anthropic">Anthropic (Claude)</option>
-                    <option value="openai" disabled>OpenAI (Coming Soon)</option>
-                    <option value="google" disabled>Google (Coming Soon)</option>
-                </select>
-                
-                <label for="modelSelect">Model</label>
-                <select id="modelSelect">
-                    <!-- Models populated dynamically from customModels -->
-                </select>
-                <button type="button" class="manage-models-btn" id="manageModelsBtn">Manage Models</button>
 
-                <label for="apiKeyInput">API Key</label>
-                <div class="api-key-wrapper">
-                    <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
-                    <button class="toggle-visibility" id="toggleApiKey">👁</button>
+            <!-- Chats Tab Content -->
+            <div class="tab-content active" id="chatsTab" data-tab="chats">
+                <div class="tab-header">
+                    <select id="personaFilter" class="persona-filter">
+                        <!-- Populated dynamically -->
+                    </select>
                 </div>
-                <p class="help-text">Your key is stored locally and never sent to any server except the AI provider.</p>
+                <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
+                <div class="conversation-list" id="conversationList">
+                    <!-- Populated dynamically -->
+                </div>
+                <p class="empty-state" id="noConversationsMessage">No conversations yet. Start chatting!</p>
             </div>
-            
-            <!-- Persona Settings -->
-            <div class="settings-section">
-                <h3>Persona</h3>
-                
-                <label for="assistantName">Assistant Name</label>
-                <input type="text" id="assistantName" placeholder="Assistant" value="Assistant">
-                
-                <label for="systemPrompt">System Prompt</label>
-                <textarea id="systemPrompt" rows="6" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
+
+            <!-- Settings Tab Content -->
+            <div class="tab-content" id="settingsTab" data-tab="settings">
+                <!-- API Configuration -->
+                <div class="settings-section">
+                    <h3>API Configuration</h3>
+
+                    <label for="providerSelect">Provider</label>
+                    <select id="providerSelect">
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="openai" disabled>OpenAI (Coming Soon)</option>
+                        <option value="google" disabled>Google (Coming Soon)</option>
+                    </select>
+
+                    <label for="modelSelect">Model</label>
+                    <select id="modelSelect">
+                        <!-- Models populated dynamically from customModels -->
+                    </select>
+                    <button type="button" class="manage-models-btn" id="manageModelsBtn">Manage Models</button>
+
+                    <label for="apiKeyInput">API Key</label>
+                    <div class="api-key-wrapper">
+                        <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
+                        <button class="toggle-visibility" id="toggleApiKey">👁</button>
+                    </div>
+                    <p class="help-text">Your key is stored locally and never sent to any server except the AI provider.</p>
+                </div>
+
+                <!-- Persona Settings -->
+                <div class="settings-section">
+                    <h3>Current Persona</h3>
+
+                    <label for="assistantName">Assistant Name</label>
+                    <input type="text" id="assistantName" placeholder="Assistant" value="Assistant">
+
+                    <label for="systemPrompt">System Prompt</label>
+                    <textarea id="systemPrompt" rows="6" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
 
 When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.</textarea>
-                <p class="help-text">This defines your assistant's personality and behavior.</p>
-            </div>
-            
-            <!-- Avatar Settings -->
-            <div class="settings-section">
-                <h3>Avatar</h3>
-                
-                <div class="avatar-settings-preview">
-                    <div class="avatar-preview-image" id="avatarPreview">🤖</div>
-                    <div class="avatar-preview-info">
-                        <span id="avatarPreviewName">Assistant</span>
-                        <span class="avatar-preview-status" id="avatarPreviewStatus">Default Avatar</span>
+                    <p class="help-text">This defines your assistant's personality and behavior.</p>
+                </div>
+
+                <!-- Avatar Settings -->
+                <div class="settings-section">
+                    <h3>Avatar</h3>
+
+                    <div class="avatar-settings-preview">
+                        <div class="avatar-preview-image" id="avatarPreview">🤖</div>
+                        <div class="avatar-preview-info">
+                            <span id="avatarPreviewName">Assistant</span>
+                            <span class="avatar-preview-status" id="avatarPreviewStatus">Default Avatar</span>
+                        </div>
+                    </div>
+
+                    <label>Default Avatar Image</label>
+                    <div class="file-upload-wrapper">
+                        <input type="file" id="avatarFileInput" accept="image/*" class="file-input-hidden">
+                        <button type="button" class="file-upload-btn" id="avatarUploadBtn">
+                            📁 Choose Image
+                        </button>
+                        <button type="button" class="file-clear-btn" id="avatarClearBtn" title="Remove image">
+                            ✕
+                        </button>
+                    </div>
+                    <p class="help-text">Upload an image from your device. Stored locally in your browser.</p>
+
+                    <label>Avatar Size</label>
+                    <div class="size-preset-buttons">
+                        <button type="button" class="size-preset-btn" data-size="small">S</button>
+                        <button type="button" class="size-preset-btn active" data-size="medium">M</button>
+                        <button type="button" class="size-preset-btn" data-size="large">L</button>
+                        <button type="button" class="size-preset-btn" data-size="xlarge">XL</button>
+                    </div>
+
+                    <label>Avatar Position</label>
+                    <div class="position-preset-buttons">
+                        <button type="button" class="position-preset-btn" data-position="top-left">↖</button>
+                        <button type="button" class="position-preset-btn active" data-position="top-right">↗</button>
+                        <button type="button" class="position-preset-btn" data-position="bottom-left">↙</button>
+                        <button type="button" class="position-preset-btn" data-position="bottom-right">↘</button>
+                    </div>
+
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="showAvatar" checked>
+                        <label for="showAvatar">Show floating avatar</label>
                     </div>
                 </div>
-                
-                <label>Default Avatar Image</label>
-                <div class="file-upload-wrapper">
-                    <input type="file" id="avatarFileInput" accept="image/*" class="file-input-hidden">
-                    <button type="button" class="file-upload-btn" id="avatarUploadBtn">
-                        📁 Choose Image
-                    </button>
-                    <button type="button" class="file-clear-btn" id="avatarClearBtn" title="Remove image">
-                        ✕
-                    </button>
+
+                <!-- Expression Settings -->
+                <div class="settings-section">
+                    <h3>Expressions</h3>
+                    <p class="help-text">Configure avatar expressions. The assistant can change expressions based on mood.</p>
+
+                    <div class="expression-list" id="expressionList">
+                        <!-- Expressions will be populated by JavaScript -->
+                    </div>
+
+                    <button class="add-expression-btn" id="addExpressionBtn">+ Add Expression</button>
                 </div>
-                <p class="help-text">Upload an image from your device. Stored locally in your browser.</p>
-                
-                <label>Avatar Size</label>
-                <div class="size-preset-buttons">
-                    <button type="button" class="size-preset-btn" data-size="small">S</button>
-                    <button type="button" class="size-preset-btn active" data-size="medium">M</button>
-                    <button type="button" class="size-preset-btn" data-size="large">L</button>
-                    <button type="button" class="size-preset-btn" data-size="xlarge">XL</button>
-                </div>
-                
-                <label>Avatar Position</label>
-                <div class="position-preset-buttons">
-                    <button type="button" class="position-preset-btn" data-position="top-left">↖</button>
-                    <button type="button" class="position-preset-btn active" data-position="top-right">↗</button>
-                    <button type="button" class="position-preset-btn" data-position="bottom-left">↙</button>
-                    <button type="button" class="position-preset-btn" data-position="bottom-right">↘</button>
-                </div>
-                
-                <div class="checkbox-wrapper">
-                    <input type="checkbox" id="showAvatar" checked>
-                    <label for="showAvatar">Show floating avatar</label>
+
+                <!-- Actions -->
+                <div class="settings-section">
+                    <button class="save-settings" id="saveSettings">Save Settings</button>
                 </div>
             </div>
-            
-            <!-- Expression Settings -->
-            <div class="settings-section">
-                <h3>Expressions</h3>
-                <p class="help-text">Configure avatar expressions. The assistant can change expressions based on mood.</p>
-                
-                <div class="expression-list" id="expressionList">
-                    <!-- Expressions will be populated by JavaScript -->
+
+            <!-- Personas Tab Content -->
+            <div class="tab-content" id="personasTab" data-tab="personas">
+                <button class="new-persona-btn" id="newPersonaBtn">+ New Persona</button>
+                <div class="persona-list" id="personaList">
+                    <!-- Populated dynamically -->
                 </div>
-                
-                <button class="add-expression-btn" id="addExpressionBtn">+ Add Expression</button>
-            </div>
-            
-            <!-- Actions -->
-            <div class="settings-section">
-                <button class="save-settings" id="saveSettings">Save Settings</button>
-                <button class="clear-chat" id="clearChat">Clear Conversation</button>
             </div>
         </aside>
         

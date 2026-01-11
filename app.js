@@ -703,6 +703,11 @@ const state = {
     activeConversationId: null,
     // User-defined models (id, name pairs)
     customModels: [],
+    // UI state
+    ui: {
+        activeTab: 'chats',
+        conversationFilter: 'active' // 'active' means filter by activePersonaId, or 'all'
+    },
     currentExpression: 'neutral',
     isLoading: false,
     sessionStartTime: Date.now(),
@@ -857,7 +862,22 @@ const elements = {
     sidebar: document.getElementById('sidebar'),
     openSidebar: document.getElementById('openSidebar'),
     closeSidebar: document.getElementById('closeSidebar'),
-    
+
+    // Sidebar tabs
+    chatsTab: document.getElementById('chatsTab'),
+    settingsTab: document.getElementById('settingsTab'),
+    personasTab: document.getElementById('personasTab'),
+
+    // Chats tab elements
+    personaFilter: document.getElementById('personaFilter'),
+    newChatBtn: document.getElementById('newChatBtn'),
+    conversationList: document.getElementById('conversationList'),
+    noConversationsMessage: document.getElementById('noConversationsMessage'),
+
+    // Personas tab elements
+    newPersonaBtn: document.getElementById('newPersonaBtn'),
+    personaList: document.getElementById('personaList'),
+
     // Settings inputs
     providerSelect: document.getElementById('providerSelect'),
     modelSelect: document.getElementById('modelSelect'),
@@ -866,8 +886,7 @@ const elements = {
     assistantName: document.getElementById('assistantName'),
     systemPrompt: document.getElementById('systemPrompt'),
     saveSettings: document.getElementById('saveSettings'),
-    clearChat: document.getElementById('clearChat'),
-    
+
     // Avatar settings
     avatarFileInput: document.getElementById('avatarFileInput'),
     avatarUploadBtn: document.getElementById('avatarUploadBtn'),
@@ -1129,6 +1148,10 @@ async function updateUI() {
 
     // Render conversation
     renderConversation();
+
+    // Update sidebar lists
+    populatePersonaFilter();
+    renderConversationList();
 }
 
 async function updateAvatarPreview() {
@@ -1743,6 +1766,514 @@ function handleAddModelManually() {
     }
 }
 
+// ===== Sidebar Tab Management =====
+
+/**
+ * Switch to a specific sidebar tab
+ * @param {string} tabName - 'chats', 'settings', or 'personas'
+ */
+async function switchTab(tabName) {
+    state.ui.activeTab = tabName;
+
+    // Update tab buttons
+    document.querySelectorAll('.sidebar-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
+
+    // Update tab content visibility
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.toggle('active', content.dataset.tab === tabName);
+    });
+
+    // Refresh content when switching to certain tabs
+    if (tabName === 'chats') {
+        renderConversationList();
+    } else if (tabName === 'personas') {
+        await renderPersonaList();
+    }
+}
+
+/**
+ * Populate the persona filter dropdown in chats tab
+ */
+function populatePersonaFilter() {
+    const select = elements.personaFilter;
+    select.innerHTML = '';
+
+    // Add "All Personas" option
+    const allOption = document.createElement('option');
+    allOption.value = 'all';
+    allOption.textContent = 'All Personas';
+    select.appendChild(allOption);
+
+    // Add each persona
+    Object.values(state.personas).forEach(persona => {
+        const option = document.createElement('option');
+        option.value = persona.id;
+        option.textContent = persona.name;
+        if (state.ui.conversationFilter === 'active' && persona.id === state.activePersonaId) {
+            option.selected = true;
+        } else if (state.ui.conversationFilter === persona.id) {
+            option.selected = true;
+        }
+        select.appendChild(option);
+    });
+
+    // Select "All" if that's the filter
+    if (state.ui.conversationFilter === 'all') {
+        select.value = 'all';
+    }
+}
+
+/**
+ * Render the conversation list in the chats tab
+ */
+function renderConversationList() {
+    const container = elements.conversationList;
+    container.innerHTML = '';
+
+    // Determine which conversations to show
+    let conversations = Object.values(state.conversations);
+
+    // Filter by persona if not "all"
+    const filterPersonaId = state.ui.conversationFilter === 'active'
+        ? state.activePersonaId
+        : state.ui.conversationFilter;
+
+    if (filterPersonaId && filterPersonaId !== 'all') {
+        conversations = conversations.filter(c => c.personaId === filterPersonaId);
+    }
+
+    // Sort by updatedAt descending (most recent first)
+    conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    // Show empty state if no conversations
+    if (conversations.length === 0) {
+        elements.noConversationsMessage.style.display = 'block';
+        return;
+    }
+    elements.noConversationsMessage.style.display = 'none';
+
+    // Render each conversation
+    conversations.forEach(convo => {
+        const item = document.createElement('div');
+        item.className = `conversation-item ${convo.id === state.activeConversationId ? 'active' : ''}`;
+        item.dataset.conversationId = convo.id;
+
+        const timeAgo = formatTimeAgo(convo.updatedAt || convo.createdAt);
+
+        item.innerHTML = `
+            <div class="conversation-info" data-conversation-id="${convo.id}">
+                <span class="conversation-title">${escapeHtml(convo.title || 'New Chat')}</span>
+                <span class="conversation-time">${timeAgo}</span>
+            </div>
+            <button class="conversation-menu-btn" data-conversation-id="${convo.id}" title="Options">⋯</button>
+        `;
+
+        container.appendChild(item);
+    });
+
+    // Add click listeners for conversation items
+    container.querySelectorAll('.conversation-info').forEach(info => {
+        info.addEventListener('click', () => {
+            const convoId = info.dataset.conversationId;
+            switchConversation(convoId);
+        });
+    });
+
+    // Add click listeners for menu buttons
+    container.querySelectorAll('.conversation-menu-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showConversationMenu(btn, btn.dataset.conversationId);
+        });
+    });
+}
+
+/**
+ * Switch to a different conversation
+ * @param {string} conversationId
+ */
+function switchConversation(conversationId) {
+    if (!state.conversations[conversationId]) return;
+
+    state.activeConversationId = conversationId;
+
+    // Also switch to the persona that owns this conversation
+    const convo = state.conversations[conversationId];
+    if (convo.personaId && convo.personaId !== state.activePersonaId) {
+        state.activePersonaId = convo.personaId;
+        savePersonas(); // Updates unified storage
+    }
+
+    saveConversations();
+    renderConversation();
+    renderConversationList();
+    updateUI();
+    closeSidebar();
+}
+
+/**
+ * Show context menu for a conversation
+ * @param {HTMLElement} anchorEl - The button that was clicked
+ * @param {string} conversationId
+ */
+function showConversationMenu(anchorEl, conversationId) {
+    // Remove any existing menu
+    const existingMenu = document.querySelector('.context-menu');
+    if (existingMenu) existingMenu.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = `
+        <button class="context-menu-item" data-action="rename">Rename</button>
+        <button class="context-menu-item danger" data-action="delete">Delete</button>
+    `;
+
+    // Position the menu
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.left = `${rect.left - 80}px`;
+
+    document.body.appendChild(menu);
+
+    // Handle menu item clicks
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const action = item.dataset.action;
+            menu.remove();
+
+            if (action === 'rename') {
+                renameConversationPrompt(conversationId);
+            } else if (action === 'delete') {
+                deleteConversationPrompt(conversationId);
+            }
+        });
+    });
+
+    // Close menu on outside click
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }, 0);
+}
+
+/**
+ * Prompt to rename a conversation
+ * @param {string} conversationId
+ */
+function renameConversationPrompt(conversationId) {
+    const convo = state.conversations[conversationId];
+    if (!convo) return;
+
+    const newTitle = prompt('Enter new name:', convo.title || 'New Chat');
+    if (newTitle && newTitle.trim()) {
+        convo.title = newTitle.trim();
+        convo.updatedAt = Date.now();
+        saveConversations();
+        renderConversationList();
+    }
+}
+
+/**
+ * Prompt to delete a conversation
+ * @param {string} conversationId
+ */
+function deleteConversationPrompt(conversationId) {
+    const convo = state.conversations[conversationId];
+    if (!convo) return;
+
+    if (confirm(`Delete "${convo.title || 'New Chat'}"? This cannot be undone.`)) {
+        delete state.conversations[conversationId];
+
+        // If we deleted the active conversation, switch to another or clear
+        if (state.activeConversationId === conversationId) {
+            const remaining = Object.values(state.conversations);
+            if (remaining.length > 0) {
+                // Switch to most recent
+                const mostRecent = remaining.reduce((a, b) =>
+                    (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+                );
+                state.activeConversationId = mostRecent.id;
+            } else {
+                state.activeConversationId = null;
+            }
+        }
+
+        saveConversations();
+        renderConversationList();
+        renderConversation();
+    }
+}
+
+/**
+ * Create a new conversation and switch to it
+ */
+function startNewConversation() {
+    const id = createConversation('New Chat');
+    renderConversationList();
+    renderConversation();
+    closeSidebar();
+}
+
+/**
+ * Render the persona list in the personas tab
+ */
+async function renderPersonaList() {
+    const container = elements.personaList;
+    container.innerHTML = '';
+
+    const personas = Object.values(state.personas);
+
+    // Sort by updatedAt descending
+    personas.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    for (const persona of personas) {
+        // Count conversations for this persona
+        const convoCount = Object.values(state.conversations).filter(c => c.personaId === persona.id).length;
+
+        const item = document.createElement('div');
+        item.className = `persona-item ${persona.id === state.activePersonaId ? 'active' : ''}`;
+        item.dataset.personaId = persona.id;
+
+        // Try to load avatar image from IndexedDB
+        let avatarContent = '';
+        if (persona.avatarImageKey) {
+            const imageUrl = await ImageStore.get(persona.avatarImageKey);
+            if (imageUrl) {
+                avatarContent = `<img src="${imageUrl}" alt="${escapeHtml(persona.name)}">`;
+            }
+        }
+        // Fallback to emoji if no image
+        if (!avatarContent) {
+            const firstExpr = Object.values(persona.expressions || {})[0];
+            const avatarEmoji = firstExpr?.emoji || '🤖';
+            avatarContent = `<span class="avatar-emoji">${avatarEmoji}</span>`;
+        }
+
+        item.innerHTML = `
+            <div class="persona-avatar">${avatarContent}</div>
+            <div class="persona-details" data-persona-id="${persona.id}">
+                <span class="persona-name">${escapeHtml(persona.name)}</span>
+                <span class="persona-convo-count">${convoCount} conversation${convoCount !== 1 ? 's' : ''}</span>
+            </div>
+            <button class="persona-menu-btn" data-persona-id="${persona.id}" title="Options">⋯</button>
+        `;
+
+        container.appendChild(item);
+    }
+
+    // Add click listeners for persona items (to switch)
+    container.querySelectorAll('.persona-details').forEach(info => {
+        info.addEventListener('click', () => {
+            const personaId = info.dataset.personaId;
+            switchPersona(personaId);
+        });
+    });
+
+    // Also make avatar clickable
+    container.querySelectorAll('.persona-avatar').forEach(avatar => {
+        avatar.addEventListener('click', () => {
+            const personaId = avatar.closest('.persona-item').dataset.personaId;
+            switchPersona(personaId);
+        });
+    });
+
+    // Add click listeners for menu buttons
+    container.querySelectorAll('.persona-menu-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showPersonaMenu(btn, btn.dataset.personaId);
+        });
+    });
+}
+
+/**
+ * Switch to a different persona
+ * @param {string} personaId
+ */
+async function switchPersona(personaId) {
+    if (!state.personas[personaId]) return;
+
+    state.activePersonaId = personaId;
+
+    // Update the conversation filter to show this persona's conversations
+    state.ui.conversationFilter = 'active';
+
+    savePersonas();
+    populatePersonaFilter();
+    renderConversationList();
+    await renderPersonaList();
+    await updateUI();
+
+    // Switch to chats tab to show the persona's conversations
+    await switchTab('chats');
+}
+
+/**
+ * Show context menu for a persona
+ * @param {HTMLElement} anchorEl
+ * @param {string} personaId
+ */
+function showPersonaMenu(anchorEl, personaId) {
+    // Remove any existing menu
+    const existingMenu = document.querySelector('.context-menu');
+    if (existingMenu) existingMenu.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = `
+        <button class="context-menu-item" data-action="edit">Edit</button>
+        <button class="context-menu-item danger" data-action="delete">Delete</button>
+    `;
+
+    // Position the menu
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.left = `${rect.left - 80}px`;
+
+    document.body.appendChild(menu);
+
+    // Handle menu item clicks
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const action = item.dataset.action;
+            menu.remove();
+
+            if (action === 'edit') {
+                editPersona(personaId);
+            } else if (action === 'delete') {
+                deletePersonaPrompt(personaId);
+            }
+        });
+    });
+
+    // Close menu on outside click
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }, 0);
+}
+
+/**
+ * Edit a persona - switch to it and open settings tab
+ * @param {string} personaId
+ */
+function editPersona(personaId) {
+    if (!state.personas[personaId]) return;
+
+    state.activePersonaId = personaId;
+    savePersonas();
+    updateUI();
+    switchTab('settings');
+}
+
+/**
+ * Prompt to delete a persona
+ * @param {string} personaId
+ */
+async function deletePersonaPrompt(personaId) {
+    const persona = state.personas[personaId];
+    if (!persona) return;
+
+    // Count linked conversations
+    const linkedConvos = Object.values(state.conversations).filter(c => c.personaId === personaId);
+
+    let message = `Delete persona "${persona.name}"?`;
+    if (linkedConvos.length > 0) {
+        message += `\n\nThis will also delete ${linkedConvos.length} linked conversation${linkedConvos.length !== 1 ? 's' : ''}.`;
+    }
+    message += '\n\nThis cannot be undone.';
+
+    if (confirm(message)) {
+        // Delete linked conversations
+        linkedConvos.forEach(convo => {
+            delete state.conversations[convo.id];
+        });
+
+        // Delete persona
+        delete state.personas[personaId];
+
+        // If we deleted the active persona, switch to another
+        if (state.activePersonaId === personaId) {
+            const remaining = Object.values(state.personas);
+            if (remaining.length > 0) {
+                state.activePersonaId = remaining[0].id;
+            } else {
+                // Create a default persona if none left
+                createPersona('Assistant');
+            }
+        }
+
+        // Clear active conversation if it was deleted
+        if (!state.conversations[state.activeConversationId]) {
+            state.activeConversationId = null;
+        }
+
+        savePersonas();
+        saveConversations();
+        await renderPersonaList();
+        renderConversationList();
+        renderConversation();
+        await updateUI();
+    }
+}
+
+/**
+ * Create a new persona and switch to editing it
+ */
+async function startNewPersona() {
+    const id = createPersona('New Persona');
+    await renderPersonaList();
+    editPersona(id);
+}
+
+/**
+ * Format a timestamp as relative time (e.g., "2 hours ago")
+ * @param {number} timestamp
+ * @returns {string}
+ */
+function formatTimeAgo(timestamp) {
+    if (!timestamp) return '';
+
+    const now = Date.now();
+    const diff = now - timestamp;
+
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+
+    // Format as date for older items
+    const date = new Date(timestamp);
+    return date.toLocaleDateString();
+}
+
+/**
+ * Escape HTML entities to prevent XSS
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 // ===== Expression Detection =====
 function detectExpression(text) {
     const persona = getActivePersona();
@@ -2008,11 +2539,35 @@ function setupEventListeners() {
     // Sidebar toggle
     elements.openSidebar.addEventListener('click', openSidebar);
     elements.closeSidebar.addEventListener('click', closeSidebar);
-    
+
+    // Sidebar tabs
+    document.querySelectorAll('.sidebar-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            switchTab(tab.dataset.tab);
+        });
+    });
+
+    // Chats tab controls
+    elements.newChatBtn.addEventListener('click', startNewConversation);
+    elements.personaFilter.addEventListener('change', (e) => {
+        state.ui.conversationFilter = e.target.value === 'all' ? 'all' : e.target.value;
+        renderConversationList();
+    });
+
+    // Personas tab controls
+    elements.newPersonaBtn.addEventListener('click', startNewPersona);
+
+    // Close any open context menus when clicking elsewhere
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.context-menu') && !e.target.closest('.conversation-menu-btn') && !e.target.closest('.persona-menu-btn')) {
+            const existingMenu = document.querySelector('.context-menu');
+            if (existingMenu) existingMenu.remove();
+        }
+    });
+
     // Settings
     elements.saveSettings.addEventListener('click', saveSettings);
-    elements.clearChat.addEventListener('click', clearConversation);
-    
+
     // API key visibility toggle
     elements.toggleApiKey.addEventListener('click', () => {
         const input = elements.apiKeyInput;

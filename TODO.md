@@ -12,18 +12,12 @@
 - [x] Multi-persona support (persona IDs, separate from settings)
 - [x] Schema versioning and migration system
 - [x] Custom model management with API suggestions
-
-## In Progress
-
-- [ ] Testing migration system with real data updates
+- [x] **Markdown rendering** - Render all messages as markdown with syntax highlighting (marked.js + highlight.js)
+- [x] **Tabbed sidebar** - Three tabs: Chats, Settings, Personas
+- [x] **Conversation management** - Create, switch, rename, delete conversations with context menus
+- [x] **Persona management** - Create, switch, edit, delete personas with avatar previews
 
 ## Planned Features
-
-### High Priority
-
-- [x] **Markdown rendering** - Render all messages as markdown with syntax highlighting (marked.js + highlight.js)
-- [ ] **Conversation sidebar** - UI to switch between conversations, create new ones, delete old ones
-- [ ] **Persona switcher** - UI to switch between personas, create/edit/delete personas
 
 ### Medium Priority
 
