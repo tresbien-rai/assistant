@@ -23,7 +23,6 @@ Personal AI Assistant - a browser-based chat interface where users provide their
 | `styles.css` | Styling | CSS variables for theming, responsive design, animations |
 | `app.js` | Logic | State management, API calls, UI updates, migrations |
 | `package.json` | Config | Just has `npm run dev` script using `serve` |
-| `TODO.md` | Roadmap | Feature checklist and planned work |
 
 ## Architecture
 
@@ -139,7 +138,6 @@ git add . && git commit -m "message"  # Save checkpoint
 
 - CORS: Anthropic API requires `anthropic-dangerous-direct-browser-access` header
 - Mobile: Avatar auto-shrinks, status bar hides some items
-- No markdown rendering yet (messages show raw text)
 - Toast notifications stubbed but not implemented
 
 ## Code Style

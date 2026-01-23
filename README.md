@@ -4,11 +4,18 @@ A personal AI assistant with customizable personas. Use your own API keys to cha
 
 ## Features
 
-- 🔑 Use your own API key (pay-as-you-go, no subscription)
-- 🎭 Customizable system prompts (create your own assistant persona)
-- 💬 Conversation history (persisted locally)
-- 🌙 Dark theme
-- 📱 Responsive design (works on mobile)
+- Use your own API key (pay-as-you-go, no subscription)
+- Customizable personas with system prompts
+- Avatar system with expressions (emoji + custom images)
+- Expression detection (tags + keyword matching)
+- Multi-conversation support with titles
+- Multi-persona support
+- Markdown rendering with syntax highlighting
+- Tabbed sidebar (Chats, Settings, Personas)
+- Schema versioning and migration system
+- Custom model management with API suggestions
+- Dark theme
+- Responsive design (works on mobile)
 
 ## Getting Started
 
@@ -28,9 +35,9 @@ A personal AI assistant with customizable personas. Use your own API keys to cha
 
 ### First-Time Setup
 
-1. Click the menu button (☰) to open settings
-2. Enter your Anthropic API key
-3. (Optional) Customize your assistant's name and personality
+1. Click the menu button to open the sidebar
+2. Go to the Settings tab and enter your Anthropic API key
+3. Go to the Personas tab to customize your assistant's name and personality
 4. Click "Save Settings"
 5. Start chatting!
 
@@ -42,17 +49,55 @@ A personal AI assistant with customizable personas. Use your own API keys to cha
 ├── styles.css      # All styling
 ├── app.js          # Application logic
 ├── package.json    # Project configuration
-└── README.md       # This file
+├── README.md       # This file
+└── CLAUDE.md       # Development instructions for Claude Code
 ```
 
-## Development Phases
+## Roadmap
 
-- [x] Phase 1: Basic chat with Claude, custom system prompts
-- [ ] Phase 2: Conversation persistence, multiple personas
-- [ ] Phase 3: Multi-provider support (OpenAI, Gemini)
-- [ ] Phase 4: File/image attachments
-- [ ] Phase 5: Avatar system with expressions
-- [ ] Phase 6: Cloud sync (Google Drive)
+### Completed
+
+- [x] Basic chat interface with Claude API
+- [x] Customizable personas with system prompts
+- [x] Avatar system with expressions (emoji + custom images)
+- [x] Expression detection (tags + keyword matching)
+- [x] Settings persistence (localStorage)
+- [x] Image storage migration to IndexedDB
+- [x] Multi-conversation support (conversation IDs, titles)
+- [x] Multi-persona support (persona IDs, separate from settings)
+- [x] Schema versioning and migration system
+- [x] Custom model management with API suggestions
+- [x] Markdown rendering with syntax highlighting (marked.js + highlight.js)
+- [x] Tabbed sidebar (Chats, Settings, Personas)
+- [x] Conversation management (create, switch, rename, delete with context menus)
+- [x] Persona management (create, switch, edit, delete with avatar previews)
+
+### Planned - Medium Priority
+
+- [ ] OpenAI API support - Add provider option for GPT models
+- [ ] Gemini API support - Add provider option for Google's Gemini models
+- [ ] Export/Import - Export conversations and personas to JSON, import from file
+- [ ] Search conversations - Search through message history
+- [ ] Auto-generate conversation titles
+
+### Planned - Nice to Have
+
+- [ ] Themes - Light mode, custom accent colors
+- [ ] Keyboard shortcuts - Quick actions (new chat, toggle sidebar, etc.)
+- [ ] Message editing - Edit sent messages and regenerate responses
+- [ ] Message actions - Copy, delete, regenerate individual messages
+- [ ] Token counter - More accurate token counting (use tiktoken or API)
+- [ ] Cost tracking - Track API usage costs per conversation/session
+- [ ] Streaming responses - Show responses as they stream in
+- [ ] File attachments - Support for uploading images/files to vision models
+- [ ] Voice input - Speech-to-text for message input
+
+## Known Issues
+
+- CORS requires `anthropic-dangerous-direct-browser-access` header
+- Mobile responsiveness could be improved
+- No error recovery UI (just console errors)
+- Toast notification system stubbed but not implemented
 
 ## Security Notes
 
