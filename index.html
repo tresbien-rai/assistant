@@ -44,7 +44,7 @@
                     <select id="providerSelect">
                         <option value="anthropic">Anthropic (Claude)</option>
                         <option value="openai" disabled>OpenAI (Coming Soon)</option>
-                        <option value="google" disabled>Google (Coming Soon)</option>
+                        <option value="google">Google (Gemini)</option>
                     </select>
 
                     <label for="modelSelect">Model</label>
@@ -53,7 +53,7 @@
                     </select>
                     <button type="button" class="manage-models-btn" id="manageModelsBtn">Manage Models</button>
 
-                    <label for="apiKeyInput">API Key</label>
+                    <label for="apiKeyInput" id="apiKeyLabel">API Key</label>
                     <div class="api-key-wrapper">
                         <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
                         <button class="toggle-visibility" id="toggleApiKey">👁</button>

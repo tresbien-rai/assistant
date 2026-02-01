@@ -12,7 +12,12 @@
 // ===== Configuration =====
 const CONFIG = {
     endpoints: {
-        anthropic: 'https://api.anthropic.com/v1/messages'
+        anthropic: 'https://api.anthropic.com/v1/messages',
+        google: 'https://generativelanguage.googleapis.com/v1beta/models'
+    },
+    modelEndpoints: {
+        anthropic: 'https://api.anthropic.com/v1/models',
+        google: 'https://generativelanguage.googleapis.com/v1beta/models'
     },
     defaults: {
         provider: 'anthropic',
@@ -103,7 +108,7 @@ function renderMarkdown(content) {
 }
 
 // ===== Schema Version & Migrations =====
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 /**
  * Migration functions indexed by target version.
@@ -256,6 +261,39 @@ const migrations = {
         data.schemaVersion = 2;
 
         console.log('[Migration 2] Complete.');
+        return data;
+    },
+
+    /**
+     * Migration 3: Per-provider API keys and models
+     * - Converts single apiKey to apiKeys object keyed by provider
+     * - Converts customModels array to object keyed by provider
+     */
+    3: async (data) => {
+        console.log('[Migration 3] Starting: Converting to per-provider API keys and models...');
+
+        // Convert single apiKey to apiKeys object
+        const existingKey = data.settings.apiKey || '';
+        data.settings.apiKeys = {
+            anthropic: existingKey,
+            google: '',
+            openai: ''
+        };
+
+        // Remove old apiKey field
+        delete data.settings.apiKey;
+
+        // Convert customModels array to per-provider object
+        // Existing models are assumed to be Anthropic models
+        const existingModels = Array.isArray(data.customModels) ? data.customModels : [];
+        data.customModels = {
+            anthropic: existingModels,
+            google: [],
+            openai: []
+        };
+
+        data.schemaVersion = 3;
+        console.log('[Migration 3] Complete.');
         return data;
     }
 };
@@ -690,7 +728,11 @@ const state = {
     settings: {
         provider: CONFIG.defaults.provider,
         model: CONFIG.defaults.model,
-        apiKey: '',
+        apiKeys: {
+            anthropic: '',
+            google: '',
+            openai: ''
+        },
         avatarSize: CONFIG.defaults.avatarSize,
         avatarPosition: CONFIG.defaults.avatarPosition,
         showAvatar: CONFIG.defaults.showAvatar
@@ -701,8 +743,12 @@ const state = {
     // Conversations stored by ID for multi-conversation support
     conversations: {},
     activeConversationId: null,
-    // User-defined models (id, name pairs)
-    customModels: [],
+    // User-defined models keyed by provider
+    customModels: {
+        anthropic: [],
+        google: [],
+        openai: []
+    },
     // UI state
     ui: {
         activeTab: 'chats',
@@ -989,7 +1035,7 @@ function loadStateFromData(data) {
         state.settings = {
             provider: data.settings.provider || CONFIG.defaults.provider,
             model: data.settings.model || CONFIG.defaults.model,
-            apiKey: data.settings.apiKey || '',
+            apiKeys: data.settings.apiKeys || { anthropic: '', google: '', openai: '' },
             avatarSize: data.settings.avatarSize || CONFIG.defaults.avatarSize,
             avatarPosition: data.settings.avatarPosition || CONFIG.defaults.avatarPosition,
             showAvatar: data.settings.showAvatar !== undefined ? data.settings.showAvatar : CONFIG.defaults.showAvatar
@@ -1020,9 +1066,19 @@ function loadStateFromData(data) {
         state.conversations = data.conversations;
     }
 
-    // Load custom models
+    // Load custom models (should be object keyed by provider after migration 3)
     if (data.customModels) {
-        state.customModels = data.customModels;
+        // Handle both old array format (pre-migration) and new object format
+        if (Array.isArray(data.customModels)) {
+            // Old format - assign to anthropic (shouldn't happen after migration)
+            state.customModels = {
+                anthropic: data.customModels,
+                google: [],
+                openai: []
+            };
+        } else {
+            state.customModels = data.customModels;
+        }
     }
 
     // Set active conversation
@@ -1063,7 +1119,9 @@ async function saveSettings() {
     // Save app-level settings
     state.settings.provider = elements.providerSelect.value;
     state.settings.model = elements.modelSelect.value;
-    state.settings.apiKey = elements.apiKeyInput.value;
+    // Save API key for the current provider
+    const currentProvider = state.settings.provider;
+    state.settings.apiKeys[currentProvider] = elements.apiKeyInput.value;
     state.settings.showAvatar = elements.showAvatar.checked;
 
     // Get size from active button
@@ -1109,7 +1167,11 @@ async function updateUI() {
     // Update form inputs
     elements.providerSelect.value = state.settings.provider;
     populateModelDropdown(); // Populate from customModels
-    elements.apiKeyInput.value = state.settings.apiKey;
+    // Load API key for the current provider
+    const currentProvider = state.settings.provider;
+    elements.apiKeyInput.value = state.settings.apiKeys[currentProvider] || '';
+    // Update API key field placeholder and label for current provider
+    updateApiKeyFieldForProvider(currentProvider);
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
     elements.showAvatar.checked = state.settings.showAvatar;
@@ -1152,6 +1214,61 @@ async function updateUI() {
     // Update sidebar lists
     populatePersonaFilter();
     renderConversationList();
+}
+
+/**
+ * Update API key field placeholder and label based on provider
+ * @param {string} provider - The provider name
+ */
+function updateApiKeyFieldForProvider(provider) {
+    const placeholders = {
+        anthropic: 'sk-ant-...',
+        google: 'AIza...',
+        openai: 'sk-...'
+    };
+
+    const labels = {
+        anthropic: 'Anthropic API Key',
+        google: 'Google AI API Key',
+        openai: 'OpenAI API Key'
+    };
+
+    elements.apiKeyInput.placeholder = placeholders[provider] || 'API Key';
+
+    const labelElement = document.getElementById('apiKeyLabel');
+    if (labelElement) {
+        labelElement.textContent = labels[provider] || 'API Key';
+    }
+}
+
+/**
+ * Handle provider change - update UI and load provider-specific settings
+ * @param {string} provider - The new provider
+ */
+function handleProviderChange(provider) {
+    // Save the current API key for the previous provider before switching
+    const previousProvider = state.settings.provider;
+    if (previousProvider && previousProvider !== provider) {
+        state.settings.apiKeys[previousProvider] = elements.apiKeyInput.value;
+    }
+
+    // Update provider in state
+    state.settings.provider = provider;
+
+    // Load API key for the new provider
+    elements.apiKeyInput.value = state.settings.apiKeys[provider] || '';
+
+    // Update placeholder and label
+    updateApiKeyFieldForProvider(provider);
+
+    // Repopulate model dropdown with provider-specific models
+    populateModelDropdown();
+
+    // Update send button state
+    updateSendButtonState();
+
+    // Sync to storage
+    syncUnifiedStorage();
 }
 
 async function updateAvatarPreview() {
@@ -1267,8 +1384,10 @@ function formatNumber(num) {
 function getModelDisplayName(modelId) {
     if (!modelId) return 'No model selected';
 
-    // Look up in custom models
-    const customModel = state.customModels.find(m => m.id === modelId);
+    // Look up in custom models for current provider
+    const provider = state.settings.provider;
+    const providerModels = state.customModels[provider] || [];
+    const customModel = providerModels.find(m => m.id === modelId);
     if (customModel) {
         return customModel.name;
     }
@@ -1278,10 +1397,12 @@ function getModelDisplayName(modelId) {
 }
 
 function updateSendButtonState() {
-    const hasApiKey = state.settings.apiKey.length > 0;
+    const provider = state.settings.provider;
+    const apiKey = state.settings.apiKeys[provider] || '';
+    const hasApiKey = apiKey.length > 0;
     const hasMessage = elements.messageInput.value.trim().length > 0;
     const notLoading = !state.isLoading;
-    
+
     elements.sendButton.disabled = !(hasApiKey && hasMessage && notLoading);
 }
 
@@ -1493,17 +1614,36 @@ function updateSystemPromptExpressions() {
 // ===== Model Management =====
 
 /**
- * Fetch available models from Anthropic API
+ * Fetch available models from the current provider's API
  * @returns {Promise<Array>} Array of { id, display_name } objects
  */
 async function fetchAvailableModels() {
-    if (!state.settings.apiKey) {
+    const provider = state.settings.provider;
+    const apiKey = state.settings.apiKeys[provider];
+
+    if (!apiKey) {
         throw new Error('API key required to fetch models');
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/models', {
+    switch (provider) {
+        case 'anthropic':
+            return await fetchAnthropicModels(apiKey);
+        case 'google':
+            return await fetchGoogleModels(apiKey);
+        default:
+            throw new Error(`Model fetching not supported for ${provider}`);
+    }
+}
+
+/**
+ * Fetch available models from Anthropic API
+ * @param {string} apiKey - The Anthropic API key
+ * @returns {Promise<Array>} Array of { id, display_name } objects
+ */
+async function fetchAnthropicModels(apiKey) {
+    const response = await fetch(CONFIG.modelEndpoints.anthropic, {
         headers: {
-            'x-api-key': state.settings.apiKey,
+            'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
             'anthropic-dangerous-direct-browser-access': 'true'
         }
@@ -1519,7 +1659,34 @@ async function fetchAvailableModels() {
 }
 
 /**
- * Add a custom model to the list
+ * Fetch available models from Google Gemini API
+ * @param {string} apiKey - The Google AI API key
+ * @returns {Promise<Array>} Array of { id, display_name } objects
+ */
+async function fetchGoogleModels(apiKey) {
+    const response = await fetch(`${CONFIG.modelEndpoints.google}?key=${apiKey}`);
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        const errorMessage = parseGoogleError(error);
+        throw new Error(errorMessage || `Failed to fetch models: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // Filter for generative models only and format for our UI
+    const models = (data.models || [])
+        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+        .map(m => ({
+            id: m.name.replace('models/', ''),  // e.g., "gemini-1.5-pro"
+            display_name: m.displayName || m.name.replace('models/', '')
+        }));
+
+    return models;
+}
+
+/**
+ * Add a custom model to the list for the current provider
  * @param {string} id - The model ID
  * @param {string} name - The display name
  * @returns {boolean} True if added, false if already exists
@@ -1527,29 +1694,34 @@ async function fetchAvailableModels() {
 function addCustomModel(id, name) {
     if (!id || !name) return false;
 
+    const provider = state.settings.provider;
+    const providerModels = state.customModels[provider];
+
     // Check if already exists
-    const exists = state.customModels.some(m => m.id === id);
+    const exists = providerModels.some(m => m.id === id);
     if (exists) return false;
 
-    state.customModels.push({ id, name });
+    providerModels.push({ id, name });
     saveCustomModels();
     return true;
 }
 
 /**
- * Remove a custom model from the list
+ * Remove a custom model from the list for the current provider
  * @param {string} id - The model ID to remove
  */
 function removeCustomModel(id) {
-    const index = state.customModels.findIndex(m => m.id === id);
+    const provider = state.settings.provider;
+    const providerModels = state.customModels[provider];
+    const index = providerModels.findIndex(m => m.id === id);
     if (index === -1) return;
 
-    state.customModels.splice(index, 1);
+    providerModels.splice(index, 1);
     saveCustomModels();
 
     // If the removed model was selected, clear selection
     if (state.settings.model === id) {
-        state.settings.model = state.customModels.length > 0 ? state.customModels[0].id : '';
+        state.settings.model = providerModels.length > 0 ? providerModels[0].id : '';
         localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
     }
 }
@@ -1562,13 +1734,15 @@ function saveCustomModels() {
 }
 
 /**
- * Populate the model dropdown from customModels
+ * Populate the model dropdown from customModels for the current provider
  */
 function populateModelDropdown() {
     const select = elements.modelSelect;
+    const provider = state.settings.provider;
+    const providerModels = state.customModels[provider] || [];
     select.innerHTML = '';
 
-    if (state.customModels.length === 0) {
+    if (providerModels.length === 0) {
         const option = document.createElement('option');
         option.value = '';
         option.textContent = 'No models - click Manage Models';
@@ -1578,7 +1752,7 @@ function populateModelDropdown() {
         select.disabled = true;
     } else {
         select.disabled = false;
-        state.customModels.forEach(model => {
+        providerModels.forEach(model => {
             const option = document.createElement('option');
             option.value = model.id;
             option.textContent = model.name;
@@ -1589,8 +1763,8 @@ function populateModelDropdown() {
         });
 
         // If selected model not in list, select first one
-        if (!state.customModels.some(m => m.id === state.settings.model)) {
-            state.settings.model = state.customModels[0].id;
+        if (!providerModels.some(m => m.id === state.settings.model)) {
+            state.settings.model = providerModels[0].id;
             select.value = state.settings.model;
         }
     }
@@ -1600,20 +1774,22 @@ function populateModelDropdown() {
 }
 
 /**
- * Render the saved models list in the modal
+ * Render the saved models list in the modal for the current provider
  */
 function renderSavedModelsList() {
     const container = elements.savedModelsList;
+    const provider = state.settings.provider;
+    const providerModels = state.customModels[provider] || [];
     container.innerHTML = '';
 
-    if (state.customModels.length === 0) {
+    if (providerModels.length === 0) {
         elements.noModelsMessage.style.display = 'block';
         return;
     }
 
     elements.noModelsMessage.style.display = 'none';
 
-    state.customModels.forEach(model => {
+    providerModels.forEach(model => {
         const item = document.createElement('div');
         item.className = 'saved-model-item';
         item.innerHTML = `
@@ -1645,6 +1821,8 @@ function renderSavedModelsList() {
  */
 function renderAvailableModelsGrid(models) {
     const grid = elements.availableModelsGrid;
+    const provider = state.settings.provider;
+    const providerModels = state.customModels[provider] || [];
     grid.innerHTML = '';
     grid.style.display = 'grid';
 
@@ -1654,7 +1832,7 @@ function renderAvailableModelsGrid(models) {
     }
 
     models.forEach(model => {
-        const alreadyAdded = state.customModels.some(m => m.id === model.id);
+        const alreadyAdded = providerModels.some(m => m.id === model.id);
         const card = document.createElement('div');
         card.className = `available-model-card ${alreadyAdded ? 'already-added' : ''}`;
         card.innerHTML = `
@@ -1694,8 +1872,10 @@ function openModelModal() {
     elements.newModelId.value = '';
     elements.newModelName.value = '';
 
-    // Disable fetch button if no API key
-    elements.fetchModelsBtn.disabled = !state.settings.apiKey;
+    // Disable fetch button if no API key for current provider
+    const provider = state.settings.provider;
+    const apiKey = state.settings.apiKeys[provider] || '';
+    elements.fetchModelsBtn.disabled = !apiKey;
 
     elements.modelModal.classList.add('visible');
 }
@@ -1724,7 +1904,9 @@ async function handleFetchModels() {
         console.error('Failed to fetch models:', error);
         alert(`Failed to fetch models: ${error.message}`);
     } finally {
-        btn.disabled = !state.settings.apiKey;
+        const provider = state.settings.provider;
+        const apiKey = state.settings.apiKeys[provider] || '';
+        btn.disabled = !apiKey;
         btn.textContent = originalText;
     }
 }
@@ -2330,10 +2512,12 @@ function renderConversation() {
     const assistantName = persona ? persona.name : CONFIG.defaults.assistantName;
 
     if (messages.length === 0) {
+        const provider = state.settings.provider;
+        const hasApiKey = (state.settings.apiKeys[provider] || '').length > 0;
         elements.messagesContainer.innerHTML = `
             <div class="welcome-message">
                 <h1>Welcome!</h1>
-                <p>${state.settings.apiKey ? 'Start chatting with ' + assistantName + '!' : 'Configure your API key in the settings (☰) to get started.'}</p>
+                <p>${hasApiKey ? 'Start chatting with ' + assistantName + '!' : 'Configure your API key in the settings (☰) to get started.'}</p>
             </div>
         `;
         return;
@@ -2445,8 +2629,10 @@ function showNotification(message, type = 'info') {
 // ===== API Communication =====
 async function sendMessage() {
     const userMessage = elements.messageInput.value.trim();
-    
-    if (!userMessage || !state.settings.apiKey || state.isLoading) {
+    const provider = state.settings.provider;
+    const apiKey = state.settings.apiKeys[provider] || '';
+
+    if (!userMessage || !apiKey || state.isLoading) {
         return;
     }
     
@@ -2481,15 +2667,23 @@ async function sendMessage() {
 }
 
 async function callAPI(userMessage) {
-    const { provider, model, apiKey } = state.settings;
+    const { provider, model } = state.settings;
+    const apiKey = state.settings.apiKeys[provider];
     const persona = getActivePersona();
     const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
 
-    if (provider === 'anthropic') {
-        return await callAnthropicAPI(userMessage, model, apiKey, systemPrompt);
+    if (!apiKey) {
+        throw new Error(`No API key configured for ${provider}`);
     }
 
-    throw new Error(`Provider ${provider} not yet implemented`);
+    switch (provider) {
+        case 'anthropic':
+            return await callAnthropicAPI(userMessage, model, apiKey, systemPrompt);
+        case 'google':
+            return await callGoogleAPI(userMessage, model, apiKey, systemPrompt);
+        default:
+            throw new Error(`Provider ${provider} not yet implemented`);
+    }
 }
 
 async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt) {
@@ -2526,12 +2720,103 @@ async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt) {
     
     const data = await response.json();
     const textContent = data.content.find(block => block.type === 'text');
-    
+
     if (!textContent) {
         throw new Error('No text response received from API');
     }
-    
+
     return textContent.text;
+}
+
+/**
+ * Call Google Gemini API
+ * @param {string} userMessage - The user's message
+ * @param {string} model - The model ID (e.g., "gemini-1.5-pro")
+ * @param {string} apiKey - The Google AI API key
+ * @param {string} systemPrompt - The system prompt
+ * @returns {Promise<string>} The assistant's response
+ */
+async function callGoogleAPI(userMessage, model, apiKey, systemPrompt) {
+    const activeConvo = getActiveConversation();
+    const conversationMessages = activeConvo ? activeConvo.messages : [];
+
+    // Convert messages to Google format
+    // Google uses 'user' and 'model' roles, and content is in parts array
+    const contents = conversationMessages.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+    }));
+
+    const requestBody = {
+        contents: contents,
+        systemInstruction: {
+            parts: [{ text: systemPrompt }]
+        },
+        generationConfig: {
+            maxOutputTokens: 4096
+        }
+    };
+
+    // Google uses URL parameter for API key
+    const endpoint = `${CONFIG.endpoints.google}/${model}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        // Parse Google-specific error format
+        const errorMessage = parseGoogleError(errorData);
+        throw new Error(errorMessage || `API request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // Extract text from Google response format
+    const candidate = data.candidates?.[0];
+    if (!candidate) {
+        throw new Error('No response candidates received from API');
+    }
+
+    const textPart = candidate.content?.parts?.find(part => part.text);
+    if (!textPart) {
+        throw new Error('No text response received from API');
+    }
+
+    return textPart.text;
+}
+
+/**
+ * Parse Google API error response into user-friendly message
+ * @param {Object} errorData - The error response from Google API
+ * @returns {string} User-friendly error message
+ */
+function parseGoogleError(errorData) {
+    if (errorData.error) {
+        const message = errorData.error.message;
+        const status = errorData.error.status;
+
+        // Map common errors to user-friendly messages
+        if (status === 'INVALID_ARGUMENT') {
+            if (message && message.includes('API key')) {
+                return 'Invalid Google API key. Please check your key in settings.';
+            }
+        }
+        if (status === 'PERMISSION_DENIED') {
+            return 'API key does not have permission. Enable the Generative Language API in Google Cloud Console.';
+        }
+        if (status === 'RESOURCE_EXHAUSTED') {
+            return 'Rate limit exceeded. Please wait and try again.';
+        }
+
+        return message || `Google API error: ${status}`;
+    }
+    return 'Unknown error from Google API';
 }
 
 // ===== Event Listeners =====
@@ -2567,6 +2852,11 @@ function setupEventListeners() {
 
     // Settings
     elements.saveSettings.addEventListener('click', saveSettings);
+
+    // Provider change handler
+    elements.providerSelect.addEventListener('change', (e) => {
+        handleProviderChange(e.target.value);
+    });
 
     // API key visibility toggle
     elements.toggleApiKey.addEventListener('click', () => {
