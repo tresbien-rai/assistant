@@ -108,7 +108,7 @@ function renderMarkdown(content) {
 }
 
 // ===== Schema Version & Migrations =====
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 /**
  * Migration functions indexed by target version.
@@ -294,6 +294,46 @@ const migrations = {
 
         data.schemaVersion = 3;
         console.log('[Migration 3] Complete.');
+        return data;
+    },
+
+    /**
+     * Migration 4: Add model parameters
+     * - Adds modelParams object for temperature, top_p, top_k, etc.
+     * - Includes provider-specific settings (thinking, safety)
+     */
+    4: async (data) => {
+        console.log('[Migration 4] Starting: Adding model parameters...');
+
+        // Add modelParams with defaults
+        data.settings.modelParams = {
+            // Common parameters
+            temperature: 1.0,
+            topP: 0.95,
+            topK: 40,
+            maxTokens: 4096,
+            stopSequences: [],
+            streaming: false,
+
+            // Anthropic-specific
+            anthropic: {
+                thinkingEnabled: false,
+                thinkingBudget: 4000
+            },
+
+            // Google Gemini-specific
+            google: {
+                thinkingLevel: 'medium',
+                safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
+                mediaResolution: 'medium'
+            }
+        };
+
+        data.schemaVersion = 4;
+        console.log('[Migration 4] Complete.');
         return data;
     }
 };
@@ -735,7 +775,28 @@ const state = {
         },
         avatarSize: CONFIG.defaults.avatarSize,
         avatarPosition: CONFIG.defaults.avatarPosition,
-        showAvatar: CONFIG.defaults.showAvatar
+        showAvatar: CONFIG.defaults.showAvatar,
+        // Model parameters for API calls
+        modelParams: {
+            temperature: 1.0,
+            topP: 0.95,
+            topK: 40,
+            maxTokens: 4096,
+            stopSequences: [],
+            streaming: false,
+            anthropic: {
+                thinkingEnabled: false,
+                thinkingBudget: 4000
+            },
+            google: {
+                thinkingLevel: 'medium',
+                safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
+                mediaResolution: 'medium'
+            }
+        }
     },
     // Personas stored by ID for multi-persona support
     personas: {},
@@ -933,6 +994,32 @@ const elements = {
     systemPrompt: document.getElementById('systemPrompt'),
     saveSettings: document.getElementById('saveSettings'),
 
+    // Model parameters (Advanced Settings)
+    temperatureSlider: document.getElementById('temperatureSlider'),
+    tempValue: document.getElementById('tempValue'),
+    topPSlider: document.getElementById('topPSlider'),
+    topPValue: document.getElementById('topPValue'),
+    topKInput: document.getElementById('topKInput'),
+    maxTokensInput: document.getElementById('maxTokensInput'),
+    stopSequencesTags: document.getElementById('stopSequencesTags'),
+    stopSequenceInput: document.getElementById('stopSequenceInput'),
+    streamingToggle: document.getElementById('streamingToggle'),
+
+    // Anthropic-specific params
+    anthropicParams: document.getElementById('anthropicParams'),
+    thinkingEnabledToggle: document.getElementById('thinkingEnabledToggle'),
+    thinkingBudgetGroup: document.getElementById('thinkingBudgetGroup'),
+    thinkingBudgetInput: document.getElementById('thinkingBudgetInput'),
+
+    // Gemini-specific params
+    geminiParams: document.getElementById('geminiParams'),
+    thinkingLevelSelect: document.getElementById('thinkingLevelSelect'),
+    mediaResolutionSelect: document.getElementById('mediaResolutionSelect'),
+    safetyHarassmentSelect: document.getElementById('safetyHarassmentSelect'),
+    safetyHateSelect: document.getElementById('safetyHateSelect'),
+    safetySexualSelect: document.getElementById('safetySexualSelect'),
+    safetyDangerousSelect: document.getElementById('safetyDangerousSelect'),
+
     // Avatar settings
     avatarFileInput: document.getElementById('avatarFileInput'),
     avatarUploadBtn: document.getElementById('avatarUploadBtn'),
@@ -1032,13 +1119,33 @@ async function init() {
 function loadStateFromData(data) {
     // Load settings
     if (data.settings) {
+        // Default modelParams structure
+        const defaultModelParams = {
+            temperature: 1.0,
+            topP: 0.95,
+            topK: 40,
+            maxTokens: 4096,
+            stopSequences: [],
+            streaming: false,
+            anthropic: { thinkingEnabled: false, thinkingBudget: 4000 },
+            google: {
+                thinkingLevel: 'medium',
+                safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
+                mediaResolution: 'medium'
+            }
+        };
+
         state.settings = {
             provider: data.settings.provider || CONFIG.defaults.provider,
             model: data.settings.model || CONFIG.defaults.model,
             apiKeys: data.settings.apiKeys || { anthropic: '', google: '', openai: '' },
             avatarSize: data.settings.avatarSize || CONFIG.defaults.avatarSize,
             avatarPosition: data.settings.avatarPosition || CONFIG.defaults.avatarPosition,
-            showAvatar: data.settings.showAvatar !== undefined ? data.settings.showAvatar : CONFIG.defaults.showAvatar
+            showAvatar: data.settings.showAvatar !== undefined ? data.settings.showAvatar : CONFIG.defaults.showAvatar,
+            modelParams: data.settings.modelParams || defaultModelParams
         };
     }
 
@@ -1124,6 +1231,9 @@ async function saveSettings() {
     state.settings.apiKeys[currentProvider] = elements.apiKeyInput.value;
     state.settings.showAvatar = elements.showAvatar.checked;
 
+    // Save model parameters from UI
+    saveModelParamsFromUI();
+
     // Get size from active button
     const activeSize = document.querySelector('.size-preset-btn.active');
     if (activeSize) {
@@ -1175,6 +1285,9 @@ async function updateUI() {
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
     elements.showAvatar.checked = state.settings.showAvatar;
+
+    // Load model parameters to UI
+    loadModelParamsToUI();
 
     // Update size preset buttons
     document.querySelectorAll('.size-preset-btn').forEach(btn => {
@@ -1264,11 +1377,123 @@ function handleProviderChange(provider) {
     // Repopulate model dropdown with provider-specific models
     populateModelDropdown();
 
+    // Update provider-specific parameter sections visibility
+    updateProviderParamsVisibility();
+
     // Update send button state
     updateSendButtonState();
 
     // Sync to storage
     syncUnifiedStorage();
+}
+
+// ===== Model Parameter Helpers =====
+
+/**
+ * Show/hide provider-specific parameter sections based on current provider
+ */
+function updateProviderParamsVisibility() {
+    const provider = state.settings.provider;
+    elements.anthropicParams.style.display = provider === 'anthropic' ? 'block' : 'none';
+    elements.geminiParams.style.display = provider === 'google' ? 'block' : 'none';
+}
+
+/**
+ * Load model parameters from state to UI controls
+ */
+function loadModelParamsToUI() {
+    const params = state.settings.modelParams;
+
+    // Common parameters
+    elements.temperatureSlider.value = params.temperature * 100;
+    elements.tempValue.textContent = params.temperature.toFixed(2);
+    elements.topPSlider.value = params.topP * 100;
+    elements.topPValue.textContent = params.topP.toFixed(2);
+    elements.topKInput.value = params.topK;
+    elements.maxTokensInput.value = params.maxTokens;
+    elements.streamingToggle.checked = params.streaming;
+
+    // Render stop sequences tags
+    renderStopSequencesTags();
+
+    // Anthropic-specific
+    elements.thinkingEnabledToggle.checked = params.anthropic.thinkingEnabled;
+    elements.thinkingBudgetInput.value = params.anthropic.thinkingBudget;
+    elements.thinkingBudgetGroup.style.display = params.anthropic.thinkingEnabled ? 'block' : 'none';
+
+    // Gemini-specific
+    elements.thinkingLevelSelect.value = params.google.thinkingLevel;
+    elements.mediaResolutionSelect.value = params.google.mediaResolution;
+    elements.safetyHarassmentSelect.value = params.google.safetyHarassment;
+    elements.safetyHateSelect.value = params.google.safetyHate;
+    elements.safetySexualSelect.value = params.google.safetySexual;
+    elements.safetyDangerousSelect.value = params.google.safetyDangerous;
+
+    // Update provider-specific visibility
+    updateProviderParamsVisibility();
+}
+
+/**
+ * Save model parameters from UI controls to state
+ */
+function saveModelParamsFromUI() {
+    const params = state.settings.modelParams;
+
+    // Common parameters
+    params.temperature = elements.temperatureSlider.value / 100;
+    params.topP = elements.topPSlider.value / 100;
+    params.topK = parseInt(elements.topKInput.value, 10) || 40;
+    params.maxTokens = parseInt(elements.maxTokensInput.value, 10) || 4096;
+    params.streaming = elements.streamingToggle.checked;
+    // stopSequences is already updated via tag input handlers
+
+    // Anthropic-specific
+    params.anthropic.thinkingEnabled = elements.thinkingEnabledToggle.checked;
+    params.anthropic.thinkingBudget = parseInt(elements.thinkingBudgetInput.value, 10) || 4000;
+
+    // Gemini-specific
+    params.google.thinkingLevel = elements.thinkingLevelSelect.value;
+    params.google.mediaResolution = elements.mediaResolutionSelect.value;
+    params.google.safetyHarassment = elements.safetyHarassmentSelect.value;
+    params.google.safetyHate = elements.safetyHateSelect.value;
+    params.google.safetySexual = elements.safetySexualSelect.value;
+    params.google.safetyDangerous = elements.safetyDangerousSelect.value;
+}
+
+/**
+ * Render stop sequences as clickable tags
+ */
+function renderStopSequencesTags() {
+    const container = elements.stopSequencesTags;
+    const sequences = state.settings.modelParams.stopSequences;
+    container.innerHTML = '';
+
+    sequences.forEach((seq, index) => {
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = seq;
+        tag.title = 'Click to remove';
+        tag.addEventListener('click', () => {
+            state.settings.modelParams.stopSequences.splice(index, 1);
+            renderStopSequencesTags();
+        });
+        container.appendChild(tag);
+    });
+}
+
+/**
+ * Add a stop sequence from the input field
+ */
+function addStopSequence() {
+    const input = elements.stopSequenceInput;
+    const value = input.value.trim();
+
+    if (value && !state.settings.modelParams.stopSequences.includes(value)) {
+        state.settings.modelParams.stopSequences.push(value);
+        renderStopSequencesTags();
+    }
+
+    input.value = '';
 }
 
 async function updateAvatarPreview() {
@@ -2689,19 +2914,36 @@ async function callAPI(userMessage) {
 async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
+    const params = state.settings.modelParams;
 
     const messages = conversationMessages.map(msg => ({
         role: msg.role,
         content: msg.content
     }));
-    
+
     const requestBody = {
         model: model,
-        max_tokens: 4096,
+        max_tokens: params.maxTokens,
+        temperature: params.temperature,
+        top_p: params.topP,
+        top_k: params.topK,
         system: systemPrompt,
         messages: messages
     };
-    
+
+    // Add stop sequences if any
+    if (params.stopSequences.length > 0) {
+        requestBody.stop_sequences = params.stopSequences;
+    }
+
+    // Add extended thinking if enabled
+    if (params.anthropic.thinkingEnabled) {
+        requestBody.thinking = {
+            type: 'enabled',
+            budget_tokens: params.anthropic.thinkingBudget
+        };
+    }
+
     const response = await fetch(CONFIG.endpoints.anthropic, {
         method: 'POST',
         headers: {
@@ -2739,6 +2981,7 @@ async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt) {
 async function callGoogleAPI(userMessage, model, apiKey, systemPrompt) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
+    const params = state.settings.modelParams;
 
     // Convert messages to Google format
     // Google uses 'user' and 'model' roles, and content is in parts array
@@ -2753,9 +2996,28 @@ async function callGoogleAPI(userMessage, model, apiKey, systemPrompt) {
             parts: [{ text: systemPrompt }]
         },
         generationConfig: {
-            maxOutputTokens: 4096
-        }
+            temperature: params.temperature,
+            topP: params.topP,
+            topK: params.topK,
+            maxOutputTokens: params.maxTokens
+        },
+        // Thinking configuration
+        thinkingConfig: {
+            thinkingLevel: params.google.thinkingLevel
+        },
+        // Safety settings
+        safetySettings: [
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: params.google.safetyHarassment },
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: params.google.safetyHate },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: params.google.safetySexual },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: params.google.safetyDangerous }
+        ]
     };
+
+    // Add stop sequences if any
+    if (params.stopSequences.length > 0) {
+        requestBody.generationConfig.stopSequences = params.stopSequences;
+    }
 
     // Google uses URL parameter for API key
     const endpoint = `${CONFIG.endpoints.google}/${model}:generateContent?key=${apiKey}`;
@@ -2856,6 +3118,30 @@ function setupEventListeners() {
     // Provider change handler
     elements.providerSelect.addEventListener('change', (e) => {
         handleProviderChange(e.target.value);
+    });
+
+    // Model parameter sliders - update display value on input
+    elements.temperatureSlider.addEventListener('input', (e) => {
+        const value = (e.target.value / 100).toFixed(2);
+        elements.tempValue.textContent = value;
+    });
+
+    elements.topPSlider.addEventListener('input', (e) => {
+        const value = (e.target.value / 100).toFixed(2);
+        elements.topPValue.textContent = value;
+    });
+
+    // Stop sequences - add on Enter
+    elements.stopSequenceInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addStopSequence();
+        }
+    });
+
+    // Anthropic thinking toggle - show/hide budget input
+    elements.thinkingEnabledToggle.addEventListener('change', (e) => {
+        elements.thinkingBudgetGroup.style.display = e.target.checked ? 'block' : 'none';
     });
 
     // API key visibility toggle

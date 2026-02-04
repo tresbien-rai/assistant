@@ -1698,3 +1698,187 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-secondary);
 }
+
+/* ===== Advanced Settings / Model Parameters ===== */
+.param-group {
+    margin-bottom: 1rem;
+}
+
+.param-group label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.param-value {
+    color: var(--accent);
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+/* Sliders */
+.param-group input[type="range"] {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    outline: none;
+    margin-top: 0.5rem;
+    -webkit-appearance: none;
+}
+
+.param-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.param-group input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.param-group input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+}
+
+/* Number inputs */
+.param-group input[type="number"] {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.param-group input[type="number"]:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+/* Toggle labels */
+.toggle-label {
+    display: flex !important;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+
+/* Tag input for stop sequences */
+.tag-input-container {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.5rem;
+    min-height: 40px;
+}
+
+.tags-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.tags-wrapper:empty {
+    display: none;
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    background: var(--accent);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.tag:hover {
+    opacity: 0.8;
+}
+
+.tag::after {
+    content: '×';
+    margin-left: 0.5rem;
+    font-weight: bold;
+}
+
+.tag-input-container input {
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    width: 100%;
+    padding: 0.25rem 0;
+    font-size: 0.9rem;
+}
+
+.tag-input-container input:focus {
+    outline: none;
+}
+
+.tag-input-container input::placeholder {
+    color: var(--text-secondary);
+}
+
+/* Provider-specific sections */
+.provider-params {
+    border-top: 1px solid var(--border-color);
+    margin-top: 1rem;
+    padding-top: 1rem;
+}
+
+.provider-params h4 {
+    margin: 0 0 1rem 0;
+    color: var(--accent);
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+/* Safety settings collapsible */
+.safety-settings {
+    margin-top: 1rem;
+}
+
+.safety-settings summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0.5rem 0;
+    user-select: none;
+}
+
+.safety-settings summary:hover {
+    color: var(--text-primary);
+}
+
+.safety-settings[open] summary {
+    margin-bottom: 1rem;
+}
+
+.safety-settings .param-group {
+    margin-bottom: 0.75rem;
+}
+
+.safety-settings select {
+    width: 100%;
+    padding: 0.4rem;
+    font-size: 0.85rem;
+}
