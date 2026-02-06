@@ -38,6 +38,18 @@ When responding, you may optionally include an expression tag like [expression: 
         excited: { emoji: '🎉', imageKey: '', keywords: ['amazing', 'incredible', 'wow', 'excellent', 'brilliant', 'outstanding'] },
         confused: { emoji: '😕', imageKey: '', keywords: ['confused', 'unclear', 'not sure', 'don\'t understand', 'puzzled'] }
     },
+    attachments: {
+        maxImageSize: 20 * 1024 * 1024,  // 20MB for images
+        maxFileSize: 10 * 1024 * 1024,   // 10MB for other files
+        maxAttachments: 10,               // Max files per message
+        supportedTypes: [
+            'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+            'application/pdf', 'text/plain', 'text/csv', 'text/markdown',
+            'text/javascript', 'text/html', 'text/css', 'application/json',
+            'text/xml', 'application/xml', 'text/yaml',
+            'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm'
+        ]
+    },
     storageKeys: {
         settings: 'ai_assistant_settings',
         conversations: 'ai_assistant_conversations',
@@ -108,7 +120,7 @@ function renderMarkdown(content) {
 }
 
 // ===== Schema Version & Migrations =====
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 /**
  * Migration functions indexed by target version.
@@ -334,6 +346,26 @@ const migrations = {
 
         data.schemaVersion = 4;
         console.log('[Migration 4] Complete.');
+        return data;
+    },
+
+    /**
+     * Migration 5: Add attachments array to messages
+     * - Prepares message format for file attachment support
+     */
+    5: async (data) => {
+        console.log('[Migration 5] Starting: Adding attachment support to messages...');
+
+        for (const convo of Object.values(data.conversations || {})) {
+            for (const msg of (convo.messages || [])) {
+                if (!msg.attachments) {
+                    msg.attachments = [];
+                }
+            }
+        }
+
+        data.schemaVersion = 5;
+        console.log('[Migration 5] Complete.');
         return data;
     }
 };
@@ -689,6 +721,34 @@ const ImageStore = {
     },
 
     /**
+     * Get the raw Blob from storage (for API uploads)
+     * @param {string} key - The key to retrieve
+     * @returns {Promise<Blob|null>} - The blob or null if not found
+     */
+    async getBlob(key) {
+        if (!key) return null;
+        await this.init();
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.get(key);
+
+            request.onsuccess = () => {
+                if (request.result && request.result.blob) {
+                    resolve(request.result.blob);
+                } else {
+                    resolve(null);
+                }
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+        });
+    },
+
+    /**
      * Check if a key exists in storage
      * @param {string} key - The key to check
      * @returns {Promise<boolean>}
@@ -821,7 +881,13 @@ const state = {
     estimatedTokens: 0,
     tempExpressionBlob: null, // Blob waiting to be saved when expression is saved
     tempExpressionPreviewUrl: '', // Object URL for preview in modal
-    tempExpressionCleared: false // Flag indicating user explicitly cleared the image
+    tempExpressionCleared: false, // Flag indicating user explicitly cleared the image
+    // Streaming state
+    abortController: null,
+    streamingMessageDiv: null,
+    streamingAccumulator: '',
+    // Attachment state
+    pendingAttachments: [] // Array of { id, file, previewUrl, type, mimeType, fileName, fileSize }
 };
 
 // ===== Conversation Helpers =====
@@ -1060,9 +1126,15 @@ const elements = {
     addModelBtn: document.getElementById('addModelBtn'),
 
     // Chat area
+    chatArea: document.getElementById('chatArea'),
+    dragOverlay: document.getElementById('dragOverlay'),
     messagesContainer: document.getElementById('messagesContainer'),
     messageInput: document.getElementById('messageInput'),
     sendButton: document.getElementById('sendButton'),
+    stopButton: document.getElementById('stopButton'),
+    attachButton: document.getElementById('attachButton'),
+    fileAttachInput: document.getElementById('fileAttachInput'),
+    attachmentPreviewArea: document.getElementById('attachmentPreviewArea'),
     
     // Status bar
     headerAssistantName: document.getElementById('headerAssistantName'),
@@ -1626,9 +1698,10 @@ function updateSendButtonState() {
     const apiKey = state.settings.apiKeys[provider] || '';
     const hasApiKey = apiKey.length > 0;
     const hasMessage = elements.messageInput.value.trim().length > 0;
+    const hasAttachments = state.pendingAttachments.length > 0;
     const notLoading = !state.isLoading;
 
-    elements.sendButton.disabled = !(hasApiKey && hasMessage && notLoading);
+    elements.sendButton.disabled = !(hasApiKey && (hasMessage || hasAttachments) && notLoading);
 }
 
 // ===== Expression Management =====
@@ -2748,14 +2821,14 @@ function renderConversation() {
         return;
     }
 
-    messages.forEach(msg => {
-        appendMessage(msg.role, msg.content, false);
+    messages.forEach((msg, index) => {
+        appendMessage(msg.role, msg.content, false, index, msg.attachments);
     });
 
     scrollToBottom();
 }
 
-function appendMessage(role, content, save = true) {
+function appendMessage(role, content, save = true, explicitIndex = null, attachments = null) {
     const welcome = elements.messagesContainer.querySelector('.welcome-message');
     if (welcome) {
         welcome.remove();
@@ -2763,6 +2836,25 @@ function appendMessage(role, content, save = true) {
 
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
+
+    // Add speaker label
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'message-label';
+    if (role === 'user') {
+        labelDiv.textContent = 'You';
+    } else if (role === 'assistant') {
+        const persona = getActivePersona();
+        labelDiv.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
+    }
+    messageDiv.appendChild(labelDiv);
+
+    // Render attachments above text content if present
+    if (attachments && attachments.length > 0) {
+        const attachDiv = document.createElement('div');
+        attachDiv.className = 'message-attachments';
+        renderMessageAttachments(attachments, attachDiv);
+        messageDiv.appendChild(attachDiv);
+    }
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
@@ -2773,6 +2865,21 @@ function appendMessage(role, content, save = true) {
     contentDiv.innerHTML = renderMarkdown(displayContent);
 
     messageDiv.appendChild(contentDiv);
+
+    // Add message action buttons (not on error messages)
+    if (role === 'user' || role === 'assistant') {
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'message-actions';
+        const rerunTitle = role === 'user' ? 'Resend' : 'Regenerate';
+        actionsDiv.innerHTML = `
+            <button class="message-action-btn" data-action="copy" title="Copy">&#128203;</button>
+            <button class="message-action-btn" data-action="edit" title="Edit">&#9998;</button>
+            <button class="message-action-btn" data-action="rerun" title="${rerunTitle}">&#128260;</button>
+            <button class="message-action-btn danger" data-action="delete" title="Delete">&#128465;</button>
+        `;
+        messageDiv.appendChild(actionsDiv);
+    }
+
     elements.messagesContainer.appendChild(messageDiv);
 
     if (save) {
@@ -2787,7 +2894,10 @@ function appendMessage(role, content, save = true) {
 
         const activeConvo = getActiveConversation();
         if (activeConvo) {
-            activeConvo.messages.push({ role, content: displayContent });
+            activeConvo.messages.push({ role, content: displayContent, attachments: attachments || [] });
+
+            // Set data-msg-index after push
+            messageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
 
             // Update title from first user message if still default
             if (activeConvo.messages.length === 1 && role === 'user' && activeConvo.title === 'New Chat') {
@@ -2801,9 +2911,15 @@ function appendMessage(role, content, save = true) {
         // Update token estimate (rough: 1 token ≈ 4 chars)
         state.estimatedTokens += Math.ceil(content.length / 4);
         updateStatusBar();
+    } else {
+        // When re-rendering (save=false), use explicit index
+        if (explicitIndex !== null) {
+            messageDiv.dataset.msgIndex = explicitIndex;
+        }
     }
 
     scrollToBottom();
+    return messageDiv;
 }
 
 function appendErrorMessage(errorText) {
@@ -2851,36 +2967,201 @@ function showNotification(message, type = 'info') {
     // TODO: Implement toast notifications
 }
 
-// ===== API Communication =====
-async function sendMessage() {
-    const userMessage = elements.messageInput.value.trim();
+// ===== Message Actions =====
+function handleMessageAction(messageDiv, action, msgIndex) {
+    switch (action) {
+        case 'copy':
+            copyMessageText(msgIndex);
+            break;
+        case 'edit':
+            editMessageInPlace(messageDiv, msgIndex);
+            break;
+        case 'delete':
+            deleteMessage(msgIndex);
+            break;
+        case 'rerun':
+            rerunFromMessage(msgIndex);
+            break;
+    }
+}
+
+function copyMessageText(msgIndex) {
+    const activeConvo = getActiveConversation();
+    if (!activeConvo || !activeConvo.messages[msgIndex]) return;
+
+    const text = activeConvo.messages[msgIndex].content;
+    navigator.clipboard.writeText(text).then(() => {
+        showNotification('Copied to clipboard');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+    });
+}
+
+function deleteMessage(msgIndex) {
+    const activeConvo = getActiveConversation();
+    if (!activeConvo || !activeConvo.messages[msgIndex]) return;
+
+    if (!confirm('Delete this message?')) return;
+
+    const msg = activeConvo.messages[msgIndex];
+
+    // Clean up any attachments from IndexedDB
+    if (msg.attachments && msg.attachments.length > 0) {
+        msg.attachments.forEach(att => {
+            if (att.imageStoreKey) {
+                ImageStore.delete(att.imageStoreKey);
+            }
+        });
+    }
+
+    activeConvo.messages.splice(msgIndex, 1);
+    activeConvo.updatedAt = Date.now();
+    saveConversations();
+    renderConversation();
+}
+
+function editMessageInPlace(messageDiv, msgIndex) {
+    const activeConvo = getActiveConversation();
+    if (!activeConvo || !activeConvo.messages[msgIndex]) return;
+
+    const msg = activeConvo.messages[msgIndex];
+    const contentDiv = messageDiv.querySelector('.message-content');
+    const actionsDiv = messageDiv.querySelector('.message-actions');
+
+    // Hide actions while editing
+    if (actionsDiv) actionsDiv.style.display = 'none';
+
+    // Store original content for cancel
+    const originalContent = msg.content;
+    const originalHTML = contentDiv.innerHTML;
+
+    // Replace content with textarea
+    const editContainer = document.createElement('div');
+    editContainer.className = 'message-edit-container';
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'message-edit-textarea';
+    textarea.value = originalContent;
+
+    const buttonsDiv = document.createElement('div');
+    buttonsDiv.className = 'message-edit-actions';
+    buttonsDiv.innerHTML = `
+        <button class="message-edit-cancel">Cancel</button>
+        <button class="message-edit-save">Save</button>
+    `;
+
+    editContainer.appendChild(textarea);
+    editContainer.appendChild(buttonsDiv);
+
+    contentDiv.replaceWith(editContainer);
+
+    // Auto-resize textarea
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+    textarea.focus();
+
+    // Save handler
+    buttonsDiv.querySelector('.message-edit-save').addEventListener('click', () => {
+        const newContent = textarea.value.trim();
+        if (!newContent) return;
+
+        // Update conversation data
+        msg.content = newContent;
+        activeConvo.updatedAt = Date.now();
+        saveConversations();
+
+        // Restore content div with new content
+        const newContentDiv = document.createElement('div');
+        newContentDiv.className = 'message-content';
+        newContentDiv.innerHTML = renderMarkdown(newContent);
+        editContainer.replaceWith(newContentDiv);
+
+        if (actionsDiv) actionsDiv.style.display = '';
+    });
+
+    // Cancel handler
+    buttonsDiv.querySelector('.message-edit-cancel').addEventListener('click', () => {
+        const restoredDiv = document.createElement('div');
+        restoredDiv.className = 'message-content';
+        restoredDiv.innerHTML = originalHTML;
+        editContainer.replaceWith(restoredDiv);
+
+        if (actionsDiv) actionsDiv.style.display = '';
+    });
+}
+
+function rerunFromMessage(msgIndex) {
+    const activeConvo = getActiveConversation();
+    if (!activeConvo || !activeConvo.messages[msgIndex]) return;
+    if (state.isLoading) return;
+
+    const msg = activeConvo.messages[msgIndex];
+
+    if (msg.role === 'user') {
+        // Truncate everything from this index onward, resend this user message
+        const textToResend = msg.content;
+        const attachmentsToResend = msg.attachments || [];
+        activeConvo.messages.splice(msgIndex);
+        activeConvo.updatedAt = Date.now();
+        saveConversations();
+        renderConversation();
+        sendMessageFromText(textToResend, attachmentsToResend);
+    } else if (msg.role === 'assistant') {
+        // Find the preceding user message, remove from this assistant onward, resend
+        const precedingUserMsg = activeConvo.messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
+        if (!precedingUserMsg) return;
+
+        activeConvo.messages.splice(msgIndex);
+        activeConvo.updatedAt = Date.now();
+        saveConversations();
+        renderConversation();
+        sendMessageFromText(precedingUserMsg.content, precedingUserMsg.attachments || []);
+    }
+}
+
+async function sendMessageFromText(text, attachments = []) {
     const provider = state.settings.provider;
     const apiKey = state.settings.apiKeys[provider] || '';
+    if (!apiKey || state.isLoading) return;
 
-    if (!userMessage || !apiKey || state.isLoading) {
-        return;
-    }
-    
-    elements.messageInput.value = '';
-    elements.messageInput.style.height = 'auto';
     state.isLoading = true;
     updateSendButtonState();
-    
-    appendMessage('user', userMessage);
-    showTypingIndicator();
-    
-    try {
-        const response = await callAPI(userMessage);
-        
-        hideTypingIndicator();
-        
-        // Detect expression from response
-        const detectedExpr = detectExpression(response);
-        await setExpression(detectedExpr);
 
-        // Strip expression tag and display
-        appendMessage('assistant', response);
-        
+    appendMessage('user', text, true, null, attachments.length > 0 ? attachments : null);
+    showTypingIndicator();
+
+    try {
+        let response;
+        if (state.settings.modelParams.streaming) {
+            hideTypingIndicator();
+            elements.sendButton.style.display = 'none';
+            elements.stopButton.style.display = '';
+            startStreamingMessage();
+            try {
+                response = await callAPIStreaming(text, attachments);
+                finalizeStreamingMessage(response);
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    finalizeStreamingMessage(state.streamingAccumulator || '');
+                } else {
+                    if (state.streamingMessageDiv) {
+                        state.streamingMessageDiv.remove();
+                        state.streamingMessageDiv = null;
+                    }
+                    throw error;
+                }
+            } finally {
+                state.abortController = null;
+                if (elements.stopButton) elements.stopButton.style.display = 'none';
+                if (elements.sendButton) elements.sendButton.style.display = '';
+            }
+        } else {
+            response = await callAPI(text, attachments);
+            hideTypingIndicator();
+            const detectedExpr = detectExpression(response);
+            await setExpression(detectedExpr);
+            appendMessage('assistant', response);
+        }
     } catch (error) {
         hideTypingIndicator();
         appendErrorMessage(error.message);
@@ -2891,7 +3172,139 @@ async function sendMessage() {
     }
 }
 
-async function callAPI(userMessage) {
+// Helper: render attachments in a message
+function renderMessageAttachments(attachments, containerDiv) {
+    if (!attachments || attachments.length === 0) return;
+
+    attachments.forEach(att => {
+        const attEl = document.createElement('div');
+        attEl.className = 'message-attachment';
+
+        if (att.type === 'image' && att.imageStoreKey) {
+            // Load image from IndexedDB
+            const img = document.createElement('img');
+            img.alt = att.fileName || 'Attached image';
+            img.loading = 'lazy';
+            ImageStore.get(att.imageStoreKey).then(url => {
+                if (url) img.src = url;
+            });
+            attEl.appendChild(img);
+        } else {
+            const badge = document.createElement('div');
+            badge.className = 'file-badge';
+            badge.textContent = `${getFileIcon(att.mimeType)} ${att.fileName || 'File'}`;
+            attEl.appendChild(badge);
+        }
+
+        containerDiv.appendChild(attEl);
+    });
+}
+
+function getFileCategory(mimeType) {
+    if (!mimeType) return 'document';
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('audio/')) return 'audio';
+    if (mimeType === 'application/pdf' || mimeType === 'text/plain' || mimeType === 'text/csv' || mimeType === 'text/markdown') return 'document';
+    if (mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/xml') return 'code';
+    return 'document';
+}
+
+function getFileIcon(mimeType) {
+    const category = getFileCategory(mimeType);
+    switch (category) {
+        case 'image': return '\u{1F5BC}';
+        case 'audio': return '\u{1F3B5}';
+        case 'code': return '\u{1F4BB}';
+        case 'document': return '\u{1F4C4}';
+        default: return '\u{1F4CE}';
+    }
+}
+
+// ===== API Communication =====
+async function sendMessage() {
+    const userMessage = elements.messageInput.value.trim();
+    const provider = state.settings.provider;
+    const apiKey = state.settings.apiKeys[provider] || '';
+
+    const hasAttachments = state.pendingAttachments.length > 0;
+    if ((!userMessage && !hasAttachments) || !apiKey || state.isLoading) {
+        return;
+    }
+
+    elements.messageInput.value = '';
+    elements.messageInput.style.height = 'auto';
+    state.isLoading = true;
+    updateSendButtonState();
+
+    // Store attachments to IndexedDB and get metadata
+    let attachmentMeta = [];
+    if (hasAttachments) {
+        attachmentMeta = await storeAttachmentsToIndexedDB(state.pendingAttachments);
+        state.pendingAttachments = [];
+        renderAttachmentPreviews();
+    }
+
+    appendMessage('user', userMessage || '(attached files)', true, null, attachmentMeta.length > 0 ? attachmentMeta : null);
+
+    if (state.settings.modelParams.streaming) {
+        // Streaming path
+        showTypingIndicator();
+        elements.sendButton.style.display = 'none';
+        elements.stopButton.style.display = '';
+
+        try {
+            hideTypingIndicator();
+            startStreamingMessage();
+
+            const fullText = await callAPIStreaming(userMessage, attachmentMeta);
+            finalizeStreamingMessage(fullText);
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                finalizeStreamingMessage(state.streamingAccumulator || '');
+            } else {
+                if (state.streamingMessageDiv) {
+                    state.streamingMessageDiv.remove();
+                    state.streamingMessageDiv = null;
+                }
+                hideTypingIndicator();
+                appendErrorMessage(error.message);
+                console.error('API Error:', error);
+            }
+        } finally {
+            state.isLoading = false;
+            state.abortController = null;
+            elements.sendButton.style.display = '';
+            elements.stopButton.style.display = 'none';
+            updateSendButtonState();
+        }
+    } else {
+        // Non-streaming path
+        showTypingIndicator();
+
+        try {
+            const response = await callAPI(userMessage, attachmentMeta);
+
+            hideTypingIndicator();
+
+            // Detect expression from response
+            const detectedExpr = detectExpression(response);
+            await setExpression(detectedExpr);
+
+            // Strip expression tag and display
+            appendMessage('assistant', response);
+
+        } catch (error) {
+            hideTypingIndicator();
+            appendErrorMessage(error.message);
+            console.error('API Error:', error);
+        } finally {
+            state.isLoading = false;
+            updateSendButtonState();
+        }
+    }
+}
+
+async function callAPI(userMessage, attachments = []) {
     const { provider, model } = state.settings;
     const apiKey = state.settings.apiKeys[provider];
     const persona = getActivePersona();
@@ -2903,15 +3316,36 @@ async function callAPI(userMessage) {
 
     switch (provider) {
         case 'anthropic':
-            return await callAnthropicAPI(userMessage, model, apiKey, systemPrompt);
+            return await callAnthropicAPI(userMessage, model, apiKey, systemPrompt, attachments);
         case 'google':
-            return await callGoogleAPI(userMessage, model, apiKey, systemPrompt);
+            return await callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachments);
         default:
             throw new Error(`Provider ${provider} not yet implemented`);
     }
 }
 
-async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt) {
+// ===== Streaming Support =====
+async function callAPIStreaming(userMessage, attachments = []) {
+    const { provider, model } = state.settings;
+    const apiKey = state.settings.apiKeys[provider];
+    const persona = getActivePersona();
+    const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
+
+    if (!apiKey) {
+        throw new Error(`No API key configured for ${provider}`);
+    }
+
+    switch (provider) {
+        case 'anthropic':
+            return await callAnthropicAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments);
+        case 'google':
+            return await callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments);
+        default:
+            throw new Error(`Streaming not supported for ${provider}`);
+    }
+}
+
+async function callAnthropicAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments = []) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
     const params = state.settings.modelParams;
@@ -2920,6 +3354,279 @@ async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt) {
         role: msg.role,
         content: msg.content
     }));
+
+    const requestBody = {
+        model: model,
+        max_tokens: params.maxTokens,
+        temperature: params.temperature,
+        top_p: params.topP,
+        top_k: params.topK,
+        system: systemPrompt,
+        messages: messages,
+        stream: true
+    };
+
+    if (params.stopSequences.length > 0) {
+        requestBody.stop_sequences = params.stopSequences;
+    }
+
+    if (params.anthropic.thinkingEnabled) {
+        requestBody.thinking = {
+            type: 'enabled',
+            budget_tokens: params.anthropic.thinkingBudget
+        };
+    }
+
+    // Handle attachments for the last user message
+    if (attachments.length > 0 && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg.role === 'user') {
+            lastMsg.content = await buildAnthropicMessageContent(lastMsg.content, attachments);
+        }
+    }
+
+    state.abortController = new AbortController();
+
+    const response = await fetch(CONFIG.endpoints.anthropic, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify(requestBody),
+        signal: state.abortController.signal
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    await parseSSEStream(reader, decoder, (event) => {
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+            appendStreamChunk(event.delta.text);
+        }
+    });
+
+    return state.streamingAccumulator;
+}
+
+async function callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments = []) {
+    const activeConvo = getActiveConversation();
+    const conversationMessages = activeConvo ? activeConvo.messages : [];
+    const params = state.settings.modelParams;
+
+    const contents = conversationMessages.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+    }));
+
+    const requestBody = {
+        contents: contents,
+        systemInstruction: {
+            parts: [{ text: systemPrompt }]
+        },
+        generationConfig: {
+            temperature: params.temperature,
+            topP: params.topP,
+            topK: params.topK,
+            maxOutputTokens: params.maxTokens
+        },
+        thinkingConfig: {
+            thinkingLevel: params.google.thinkingLevel
+        },
+        safetySettings: [
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: params.google.safetyHarassment },
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: params.google.safetyHate },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: params.google.safetySexual },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: params.google.safetyDangerous }
+        ]
+    };
+
+    if (params.stopSequences.length > 0) {
+        requestBody.generationConfig.stopSequences = params.stopSequences;
+    }
+
+    // Handle attachments for the last user message
+    if (attachments.length > 0 && contents.length > 0) {
+        const lastContent = contents[contents.length - 1];
+        if (lastContent.role === 'user') {
+            const extraParts = await buildGeminiAttachmentParts(attachments);
+            lastContent.parts = [...extraParts, ...lastContent.parts];
+        }
+    }
+
+    state.abortController = new AbortController();
+
+    // Use streamGenerateContent endpoint with SSE
+    const endpoint = `${CONFIG.endpoints.google}/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody),
+        signal: state.abortController.signal
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = parseGoogleError(errorData);
+        throw new Error(errorMessage || `API request failed with status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    await parseSSEStream(reader, decoder, (event) => {
+        const text = event.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
+        if (text) {
+            appendStreamChunk(text);
+        }
+    });
+
+    return state.streamingAccumulator;
+}
+
+async function parseSSEStream(reader, decoder, onEvent) {
+    let buffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep incomplete line in buffer
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
+                const data = trimmed.slice(6);
+                if (data === '[DONE]') return;
+                try {
+                    const parsed = JSON.parse(data);
+                    onEvent(parsed);
+                } catch (e) {
+                    // Skip malformed events
+                }
+            }
+        }
+    }
+}
+
+function startStreamingMessage() {
+    const welcome = elements.messagesContainer.querySelector('.welcome-message');
+    if (welcome) welcome.remove();
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant streaming';
+
+    // Add speaker label
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'message-label';
+    const persona = getActivePersona();
+    labelDiv.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
+    messageDiv.appendChild(labelDiv);
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+
+    messageDiv.appendChild(contentDiv);
+    elements.messagesContainer.appendChild(messageDiv);
+
+    state.streamingMessageDiv = messageDiv;
+    state.streamingAccumulator = '';
+
+    scrollToBottom();
+}
+
+function appendStreamChunk(text) {
+    state.streamingAccumulator += text;
+
+    if (state.streamingMessageDiv) {
+        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
+        if (contentDiv) {
+            contentDiv.innerHTML = renderMarkdown(state.streamingAccumulator);
+        }
+        scrollToBottom();
+    }
+}
+
+function finalizeStreamingMessage(fullText) {
+    if (!state.streamingMessageDiv) return;
+
+    state.streamingMessageDiv.classList.remove('streaming');
+
+    // Detect and apply expression
+    const detectedExpr = detectExpression(fullText);
+    setExpression(detectedExpr);
+
+    // Strip expression tag for display and storage
+    const cleanText = stripExpressionTag(fullText);
+
+    const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
+    if (contentDiv) {
+        contentDiv.innerHTML = renderMarkdown(cleanText);
+    }
+
+    // Add action buttons
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'message-actions';
+    actionsDiv.innerHTML = `
+        <button class="message-action-btn" data-action="copy" title="Copy">&#128203;</button>
+        <button class="message-action-btn" data-action="edit" title="Edit">&#9998;</button>
+        <button class="message-action-btn" data-action="rerun" title="Regenerate">&#128260;</button>
+        <button class="message-action-btn danger" data-action="delete" title="Delete">&#128465;</button>
+    `;
+    state.streamingMessageDiv.appendChild(actionsDiv);
+
+    // Save to conversation
+    const activeConvo = getActiveConversation();
+    if (activeConvo) {
+        activeConvo.messages.push({ role: 'assistant', content: cleanText, attachments: [] });
+        state.streamingMessageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
+        activeConvo.updatedAt = Date.now();
+        saveConversations();
+    }
+
+    // Update token estimate
+    state.estimatedTokens += Math.ceil(fullText.length / 4);
+    updateStatusBar();
+
+    state.streamingMessageDiv = null;
+    state.streamingAccumulator = '';
+}
+
+function stopGeneration() {
+    if (state.abortController) {
+        state.abortController.abort();
+    }
+}
+
+async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt, attachments = []) {
+    const activeConvo = getActiveConversation();
+    const conversationMessages = activeConvo ? activeConvo.messages : [];
+    const params = state.settings.modelParams;
+
+    const messages = conversationMessages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+    }));
+
+    // Handle attachments for the last user message
+    if (attachments.length > 0 && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg.role === 'user') {
+            lastMsg.content = await buildAnthropicMessageContent(lastMsg.content, attachments);
+        }
+    }
 
     const requestBody = {
         model: model,
@@ -2978,7 +3685,7 @@ async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt) {
  * @param {string} systemPrompt - The system prompt
  * @returns {Promise<string>} The assistant's response
  */
-async function callGoogleAPI(userMessage, model, apiKey, systemPrompt) {
+async function callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachments = []) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
     const params = state.settings.modelParams;
@@ -2989,6 +3696,15 @@ async function callGoogleAPI(userMessage, model, apiKey, systemPrompt) {
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }]
     }));
+
+    // Handle attachments for the last user message
+    if (attachments.length > 0 && contents.length > 0) {
+        const lastContent = contents[contents.length - 1];
+        if (lastContent.role === 'user') {
+            const extraParts = await buildGeminiAttachmentParts(attachments);
+            lastContent.parts = [...extraParts, ...lastContent.parts];
+        }
+    }
 
     const requestBody = {
         contents: contents,
@@ -3079,6 +3795,203 @@ function parseGoogleError(errorData) {
         return message || `Google API error: ${status}`;
     }
     return 'Unknown error from Google API';
+}
+
+// ===== File Attachment Handling =====
+function handleFileAttachment(files) {
+    const maxFiles = CONFIG.attachments.maxAttachments;
+    const currentCount = state.pendingAttachments.length;
+
+    for (let i = 0; i < files.length; i++) {
+        if (currentCount + i >= maxFiles) {
+            showNotification(`Maximum ${maxFiles} files per message`);
+            break;
+        }
+
+        const file = files[i];
+        const category = getFileCategory(file.type);
+        const maxSize = category === 'image' ? CONFIG.attachments.maxImageSize : CONFIG.attachments.maxFileSize;
+
+        if (file.size > maxSize) {
+            showNotification(`File "${file.name}" exceeds ${Math.round(maxSize / 1024 / 1024)}MB limit`);
+            continue;
+        }
+
+        const id = crypto.randomUUID();
+        const previewUrl = category === 'image' ? URL.createObjectURL(file) : null;
+
+        state.pendingAttachments.push({
+            id,
+            file,
+            previewUrl,
+            type: category,
+            mimeType: file.type || 'application/octet-stream',
+            fileName: file.name,
+            fileSize: file.size
+        });
+    }
+
+    renderAttachmentPreviews();
+    updateSendButtonState();
+}
+
+function renderAttachmentPreviews() {
+    const area = elements.attachmentPreviewArea;
+    if (!area) return;
+
+    area.innerHTML = '';
+
+    if (state.pendingAttachments.length === 0) {
+        area.style.display = 'none';
+        return;
+    }
+
+    area.style.display = 'flex';
+
+    state.pendingAttachments.forEach(att => {
+        const item = document.createElement('div');
+        item.className = 'attachment-preview-item';
+
+        if (att.type === 'image' && att.previewUrl) {
+            const img = document.createElement('img');
+            img.src = att.previewUrl;
+            img.alt = att.fileName;
+            item.appendChild(img);
+        } else {
+            const iconDiv = document.createElement('div');
+            iconDiv.className = 'file-icon';
+            iconDiv.textContent = getFileIcon(att.mimeType);
+            item.appendChild(iconDiv);
+        }
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'file-name';
+        nameDiv.textContent = att.fileName;
+        nameDiv.title = att.fileName;
+        item.appendChild(nameDiv);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-attachment';
+        removeBtn.textContent = '\u00D7';
+        removeBtn.title = 'Remove';
+        removeBtn.addEventListener('click', () => removeAttachment(att.id));
+        item.appendChild(removeBtn);
+
+        area.appendChild(item);
+    });
+}
+
+function removeAttachment(id) {
+    const idx = state.pendingAttachments.findIndex(a => a.id === id);
+    if (idx === -1) return;
+
+    const att = state.pendingAttachments[idx];
+    if (att.previewUrl) {
+        URL.revokeObjectURL(att.previewUrl);
+    }
+
+    state.pendingAttachments.splice(idx, 1);
+    renderAttachmentPreviews();
+    updateSendButtonState();
+}
+
+async function storeAttachmentsToIndexedDB(pendingAttachments) {
+    const metadata = [];
+
+    for (const att of pendingAttachments) {
+        const storeKey = `attach_${crypto.randomUUID()}`;
+        await ImageStore.store(storeKey, att.file);
+
+        // Revoke preview URL
+        if (att.previewUrl) {
+            URL.revokeObjectURL(att.previewUrl);
+        }
+
+        metadata.push({
+            id: att.id,
+            type: att.type,
+            mimeType: att.mimeType,
+            fileName: att.fileName,
+            fileSize: att.fileSize,
+            imageStoreKey: storeKey
+        });
+    }
+
+    return metadata;
+}
+
+function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            // Remove data URL prefix (e.g., "data:image/png;base64,")
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function buildAnthropicMessageContent(textContent, attachments) {
+    const contentParts = [];
+
+    for (const att of attachments) {
+        const blob = await ImageStore.getBlob(att.imageStoreKey);
+        if (!blob) continue;
+
+        if (att.type === 'image') {
+            const base64 = await blobToBase64(blob);
+            contentParts.push({
+                type: 'image',
+                source: { type: 'base64', media_type: att.mimeType, data: base64 }
+            });
+        } else if (att.mimeType === 'application/pdf') {
+            const base64 = await blobToBase64(blob);
+            contentParts.push({
+                type: 'document',
+                source: { type: 'base64', media_type: att.mimeType, data: base64 }
+            });
+        } else if (att.type === 'code' || att.type === 'document') {
+            // Read text files as text and include inline
+            const text = await blob.text();
+            contentParts.push({
+                type: 'text',
+                text: `[File: ${att.fileName}]\n${text}`
+            });
+        }
+        // Audio is not natively supported by Anthropic - skip
+    }
+
+    // Add the user's text message
+    if (textContent) {
+        contentParts.push({ type: 'text', text: textContent });
+    }
+
+    return contentParts;
+}
+
+async function buildGeminiAttachmentParts(attachments) {
+    const parts = [];
+
+    for (const att of attachments) {
+        const blob = await ImageStore.getBlob(att.imageStoreKey);
+        if (!blob) continue;
+
+        if (att.type === 'image' || att.mimeType === 'application/pdf' || att.type === 'audio') {
+            const base64 = await blobToBase64(blob);
+            parts.push({
+                inline_data: { mime_type: att.mimeType, data: base64 }
+            });
+        } else if (att.type === 'code' || att.type === 'document') {
+            const text = await blob.text();
+            parts.push({
+                text: `[File: ${att.fileName}]\n${text}`
+            });
+        }
+    }
+
+    return parts;
 }
 
 // ===== Event Listeners =====
@@ -3233,21 +4146,78 @@ function setupEventListeners() {
         }
     });
 
+    // Message action buttons (event delegation)
+    elements.messagesContainer.addEventListener('click', (e) => {
+        const btn = e.target.closest('.message-action-btn');
+        if (!btn) return;
+        const messageDiv = btn.closest('.message');
+        if (!messageDiv) return;
+        const action = btn.dataset.action;
+        const msgIndex = parseInt(messageDiv.dataset.msgIndex, 10);
+        if (isNaN(msgIndex)) return;
+        handleMessageAction(messageDiv, action, msgIndex);
+    });
+
     // Message input
     elements.messageInput.addEventListener('input', () => {
         updateSendButtonState();
         autoResizeTextarea(elements.messageInput);
     });
-    
+
     elements.messageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
         }
     });
-    
+
     // Send button
     elements.sendButton.addEventListener('click', sendMessage);
+
+    // Stop generation button
+    elements.stopButton.addEventListener('click', stopGeneration);
+
+    // File attachments
+    elements.attachButton.addEventListener('click', () => {
+        elements.fileAttachInput.click();
+    });
+
+    elements.fileAttachInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileAttachment(e.target.files);
+        }
+        e.target.value = ''; // Reset so same file can be re-selected
+    });
+
+    // Drag and drop on chat area
+    let dragCounter = 0;
+    elements.chatArea.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        elements.dragOverlay.classList.add('visible');
+    });
+
+    elements.chatArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            elements.dragOverlay.classList.remove('visible');
+        }
+    });
+
+    elements.chatArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+
+    elements.chatArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        elements.dragOverlay.classList.remove('visible');
+        if (e.dataTransfer.files.length > 0) {
+            handleFileAttachment(e.dataTransfer.files);
+        }
+    });
     
     // Model select change
     elements.modelSelect.addEventListener('change', () => {

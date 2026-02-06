@@ -99,7 +99,7 @@
                     <div class="param-group">
                         <label class="toggle-label">
                             <input type="checkbox" id="streamingToggle">
-                            <span>Enable Streaming (Coming Soon)</span>
+                            <span>Enable Streaming</span>
                         </label>
                     </div>
 
@@ -311,7 +311,8 @@ When responding, you may optionally include an expression tag like [expression: 
             </header>
             
             <!-- Chat Messages Area -->
-            <div class="chat-area">
+            <div class="chat-area" id="chatArea">
+                <div class="drag-overlay" id="dragOverlay">Drop files to attach</div>
                 <div class="messages-container" id="messagesContainer">
                     <div class="welcome-message">
                         <h1>Welcome!</h1>
@@ -336,14 +337,22 @@ When responding, you may optionally include an expression tag like [expression: 
             
             <!-- Input Area -->
             <div class="input-container">
+                <div class="attachment-preview-area" id="attachmentPreviewArea" style="display: none;"></div>
                 <div class="input-wrapper">
-                    <textarea 
-                        id="messageInput" 
+                    <button class="attach-button" id="attachButton" title="Attach files">
+                        <span>&#128206;</span>
+                    </button>
+                    <input type="file" id="fileAttachInput" multiple accept="image/*,.pdf,.txt,.csv,.md,.json,.js,.py,.html,.css,.ts,.xml,.yaml,.yml,.mp3,.wav,.ogg,.webm" class="file-input-hidden">
+                    <textarea
+                        id="messageInput"
                         placeholder="Type your message..."
                         rows="1"
                     ></textarea>
                     <button class="send-button" id="sendButton" disabled>
-                        <span class="send-icon">➤</span>
+                        <span class="send-icon">&#10148;</span>
+                    </button>
+                    <button class="stop-button" id="stopButton" style="display: none;" title="Stop generation">
+                        <span class="stop-icon">&#9632;</span>
                     </button>
                 </div>
                 <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
