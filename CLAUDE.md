@@ -31,22 +31,42 @@ Personal AI Assistant - a browser-based chat interface where users provide their
 Data is stored in unified localStorage key `ai_assistant_data`:
 ```javascript
 {
-  schemaVersion: 1,
-  settings: { provider, model, apiKey, avatarSize, avatarPosition, showAvatar },
-  personas: { [id]: { id, name, systemPrompt, avatarImageKey, expressions, createdAt, updatedAt } },
+  schemaVersion: 7,
+  settings: {
+    apiKeys: { anthropic, google, openai },  // API keys are global
+    avatarSize, avatarPosition, showAvatar,  // Avatar UI is global
+    defaultModelConfig: { provider, model, modelParams }  // Defaults for new personas
+  },
+  personas: {
+    [id]: {
+      id, name, systemPrompt, avatarImageKey, expressions,
+      modelConfig: {  // Per-persona model settings
+        provider: "anthropic",
+        model: "claude-sonnet-4-...",
+        modelParams: { temperature, topP, topK, maxTokens, streaming, ... }
+      },
+      createdAt, updatedAt
+    }
+  },
   conversations: { [id]: { id, title, personaId, messages, createdAt, updatedAt } },
   activePersonaId: "uuid",
   activeConversationId: "uuid"
 }
 ```
 
+**Key Design:** Model settings (provider, model, parameters) are stored **per-persona**. Switching personas switches the active model configuration.
+
 Images are stored in IndexedDB (`ai_assistant_images` database) as Blobs, referenced by key.
 
 ### State Object (`state` in app.js)
 ```javascript
 state = {
-  settings: { provider, model, apiKey, avatarSize, avatarPosition, showAvatar },
-  personas: { [id]: { ... } },
+  settings: {
+    apiKeys: { anthropic, google, openai },
+    avatarSize, avatarPosition, showAvatar,
+    defaultModelConfig: { ... }
+  },
+  personas: { [id]: { ..., modelConfig: { provider, model, modelParams } } },
   activePersonaId: "uuid",
   conversations: { [id]: { ... } },
   activeConversationId: "uuid",
@@ -55,6 +75,10 @@ state = {
   // ... session tracking, temp state
 }
 ```
+
+### Model Config Helpers
+- `getActiveModelConfig()` - Get model config from active persona (with fallback)
+- `saveModelConfigToPersona(config)` - Save model config changes to active persona
 
 ### Key Modules
 

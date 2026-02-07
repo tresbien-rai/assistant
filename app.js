@@ -120,7 +120,7 @@ function renderMarkdown(content) {
 }
 
 // ===== Schema Version & Migrations =====
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 
 /**
  * Migration functions indexed by target version.
@@ -397,6 +397,63 @@ const migrations = {
 
         data.schemaVersion = 6;
         console.log('[Migration 6] Complete.');
+        return data;
+    },
+
+    /**
+     * Migration 7: Move model settings from global to per-persona
+     * - Each persona gets its own modelConfig (provider, model, modelParams)
+     * - Global settings keeps only apiKeys and avatar UI preferences
+     * - Creates defaultModelConfig for new persona creation
+     */
+    7: async (data) => {
+        console.log('[Migration 7] Starting: Moving model settings to personas...');
+
+        // Extract current global model config
+        const globalModelConfig = {
+            provider: data.settings.provider || CONFIG.defaults.provider,
+            model: data.settings.model || CONFIG.defaults.model,
+            modelParams: data.settings.modelParams || {
+                temperature: 1.0,
+                topP: 0.95,
+                topK: 40,
+                maxTokens: 4096,
+                stopSequences: [],
+                streaming: false,
+                temperatureEnabled: true,
+                topPEnabled: true,
+                topKEnabled: true,
+                anthropic: { thinkingEnabled: false, thinkingBudget: 4000 },
+                google: {
+                    thinkingLevel: 'off',
+                    safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
+                    safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
+                    safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
+                    safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
+                    mediaResolution: 'medium'
+                }
+            }
+        };
+
+        // Add modelConfig to each existing persona
+        for (const persona of Object.values(data.personas || {})) {
+            if (!persona.modelConfig) {
+                // Deep copy the global config to each persona
+                persona.modelConfig = JSON.parse(JSON.stringify(globalModelConfig));
+                console.log(`[Migration 7] Added modelConfig to persona: ${persona.name}`);
+            }
+        }
+
+        // Store as defaultModelConfig for creating new personas
+        data.settings.defaultModelConfig = JSON.parse(JSON.stringify(globalModelConfig));
+
+        // Remove model settings from global settings (keep apiKeys and avatar UI)
+        delete data.settings.provider;
+        delete data.settings.model;
+        delete data.settings.modelParams;
+
+        data.schemaVersion = 7;
+        console.log('[Migration 7] Complete.');
         return data;
     }
 };
@@ -855,10 +912,8 @@ const ImageStore = {
 
 // ===== State Management =====
 const state = {
-    // App-level preferences only (no persona data)
+    // App-level preferences only (model settings now in personas)
     settings: {
-        provider: CONFIG.defaults.provider,
-        model: CONFIG.defaults.model,
         apiKeys: {
             anthropic: '',
             google: '',
@@ -867,28 +922,32 @@ const state = {
         avatarSize: CONFIG.defaults.avatarSize,
         avatarPosition: CONFIG.defaults.avatarPosition,
         showAvatar: CONFIG.defaults.showAvatar,
-        // Model parameters for API calls
-        modelParams: {
-            temperature: 1.0,
-            topP: 0.95,
-            topK: 40,
-            maxTokens: 4096,
-            stopSequences: [],
-            streaming: false,
-            temperatureEnabled: true,
-            topPEnabled: true,
-            topKEnabled: true,
-            anthropic: {
-                thinkingEnabled: false,
-                thinkingBudget: 4000
-            },
-            google: {
-                thinkingLevel: 'off',
-                safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
-                mediaResolution: 'medium'
+        // Default model config for creating new personas
+        defaultModelConfig: {
+            provider: CONFIG.defaults.provider,
+            model: CONFIG.defaults.model,
+            modelParams: {
+                temperature: 1.0,
+                topP: 0.95,
+                topK: 40,
+                maxTokens: 4096,
+                stopSequences: [],
+                streaming: false,
+                temperatureEnabled: true,
+                topPEnabled: true,
+                topKEnabled: true,
+                anthropic: {
+                    thinkingEnabled: false,
+                    thinkingBudget: 4000
+                },
+                google: {
+                    thinkingLevel: 'off',
+                    safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
+                    safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
+                    safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
+                    safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
+                    mediaResolution: 'medium'
+                }
             }
         }
     },
@@ -1008,12 +1067,17 @@ function createPersona(name = CONFIG.defaults.assistantName) {
     const id = crypto.randomUUID();
     const now = Date.now();
 
+    // Get default model config (deep copy to ensure independence)
+    const defaultConfig = state.settings.defaultModelConfig || getDefaultModelConfig();
+    const modelConfig = JSON.parse(JSON.stringify(defaultConfig));
+
     state.personas[id] = {
         id,
         name,
         systemPrompt: CONFIG.defaults.systemPrompt,
         avatarImageKey: '',
         expressions: { ...CONFIG.defaultExpressions },
+        modelConfig: modelConfig,
         createdAt: now,
         updatedAt: now
     };
@@ -1033,6 +1097,67 @@ function getActivePersona() {
         return null;
     }
     return state.personas[state.activePersonaId] || null;
+}
+
+/**
+ * Get the model configuration for the active persona
+ * Falls back to defaultModelConfig if persona has no modelConfig
+ * @returns {Object} The model configuration (provider, model, modelParams)
+ */
+function getActiveModelConfig() {
+    const persona = getActivePersona();
+    if (persona?.modelConfig) {
+        return persona.modelConfig;
+    }
+    // Fallback to default model config
+    return state.settings.defaultModelConfig || getDefaultModelConfig();
+}
+
+/**
+ * Get the default model configuration structure
+ * @returns {Object} Default model config
+ */
+function getDefaultModelConfig() {
+    return {
+        provider: CONFIG.defaults.provider,
+        model: CONFIG.defaults.model,
+        modelParams: {
+            temperature: 1.0,
+            topP: 0.95,
+            topK: 40,
+            maxTokens: 4096,
+            stopSequences: [],
+            streaming: false,
+            temperatureEnabled: true,
+            topPEnabled: true,
+            topKEnabled: true,
+            anthropic: {
+                thinkingEnabled: false,
+                thinkingBudget: 4000
+            },
+            google: {
+                thinkingLevel: 'off',
+                safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
+                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
+                mediaResolution: 'medium'
+            }
+        }
+    };
+}
+
+/**
+ * Save model configuration to the active persona
+ * @param {Object} modelConfig - The model config to save
+ */
+function saveModelConfigToPersona(modelConfig) {
+    const persona = getActivePersona();
+    if (persona) {
+        persona.modelConfig = modelConfig;
+        persona.updatedAt = Date.now();
+        savePersonas();
+    }
 }
 
 /**
@@ -1228,38 +1353,17 @@ async function init() {
  * Called after runMigrations() with the fully migrated data
  */
 function loadStateFromData(data) {
-    // Load settings
+    // Load settings (model settings now in personas, not global)
     if (data.settings) {
-        // Default modelParams structure
-        const defaultModelParams = {
-            temperature: 1.0,
-            topP: 0.95,
-            topK: 40,
-            maxTokens: 4096,
-            stopSequences: [],
-            streaming: false,
-            temperatureEnabled: true,
-            topPEnabled: true,
-            topKEnabled: true,
-            anthropic: { thinkingEnabled: false, thinkingBudget: 4000 },
-            google: {
-                thinkingLevel: 'off',
-                safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
-                mediaResolution: 'medium'
-            }
-        };
+        // Default model config structure for new personas
+        const defaultModelConfig = getDefaultModelConfig();
 
         state.settings = {
-            provider: data.settings.provider || CONFIG.defaults.provider,
-            model: data.settings.model || CONFIG.defaults.model,
             apiKeys: data.settings.apiKeys || { anthropic: '', google: '', openai: '' },
             avatarSize: data.settings.avatarSize || CONFIG.defaults.avatarSize,
             avatarPosition: data.settings.avatarPosition || CONFIG.defaults.avatarPosition,
             showAvatar: data.settings.showAvatar !== undefined ? data.settings.showAvatar : CONFIG.defaults.showAvatar,
-            modelParams: data.settings.modelParams || defaultModelParams
+            defaultModelConfig: data.settings.defaultModelConfig || defaultModelConfig
         };
     }
 
@@ -1360,30 +1464,33 @@ function autoSaveSettings() {
  * Collect all current UI values into state
  */
 function saveAllSettingsFromUI() {
-    // Provider & model
-    state.settings.provider = elements.providerSelect.value;
-    state.settings.model = elements.modelSelect.value;
+    const persona = getActivePersona();
 
-    // API key for current provider
-    const currentProvider = state.settings.provider;
+    // Provider & model - save to active persona's modelConfig
+    if (persona && persona.modelConfig) {
+        persona.modelConfig.provider = elements.providerSelect.value;
+        persona.modelConfig.model = elements.modelSelect.value;
+    }
+
+    // API key for current provider (stays global)
+    const currentProvider = persona?.modelConfig?.provider || CONFIG.defaults.provider;
     state.settings.apiKeys[currentProvider] = elements.apiKeyInput.value;
 
-    // Avatar settings
+    // Avatar settings (stay global)
     state.settings.showAvatar = elements.showAvatar.checked;
     const activeSize = document.querySelector('.size-preset-btn.active');
     if (activeSize) state.settings.avatarSize = activeSize.dataset.size;
     const activePos = document.querySelector('.position-preset-btn.active');
     if (activePos) state.settings.avatarPosition = activePos.dataset.position;
 
-    // Model parameters
+    // Model parameters (save to active persona)
     saveModelParamsFromUI();
 
     // Persona settings (name & system prompt)
-    const persona = getActivePersona();
     if (persona) {
         persona.name = elements.assistantName.value || CONFIG.defaults.assistantName;
         persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
-        persona.updatedAt = new Date().toISOString();
+        persona.updatedAt = Date.now();
     }
 }
 
@@ -1417,7 +1524,8 @@ function updateSettingsUI() {
     // Update model display
     const modelDisplay = document.querySelector('.model-display');
     if (modelDisplay) {
-        modelDisplay.textContent = state.settings.model;
+        const modelConfig = getActiveModelConfig();
+        modelDisplay.textContent = modelConfig.model;
     }
 
     // Update status bar
@@ -1432,12 +1540,13 @@ function saveConversations() {
 // ===== UI Updates =====
 async function updateUI() {
     const persona = getActivePersona();
+    const modelConfig = getActiveModelConfig();
 
-    // Update form inputs
-    elements.providerSelect.value = state.settings.provider;
-    populateModelDropdown(); // Populate from customModels
-    // Load API key for the current provider
-    const currentProvider = state.settings.provider;
+    // Update form inputs - provider/model now from active persona's modelConfig
+    elements.providerSelect.value = modelConfig.provider;
+    populateModelDropdown(); // Populate from customModels based on persona's provider
+    // Load API key for the persona's provider
+    const currentProvider = modelConfig.provider;
     elements.apiKeyInput.value = state.settings.apiKeys[currentProvider] || '';
     // Update API key field placeholder and label for current provider
     updateApiKeyFieldForProvider(currentProvider);
@@ -1445,7 +1554,7 @@ async function updateUI() {
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
     elements.showAvatar.checked = state.settings.showAvatar;
 
-    // Load model parameters to UI
+    // Load model parameters to UI (from active persona's modelConfig)
     loadModelParamsToUI();
 
     // Update size preset buttons
@@ -1460,7 +1569,7 @@ async function updateUI() {
 
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
-    elements.modelIndicator.textContent = getModelDisplayName(state.settings.model);
+    elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
 
     // Update avatar preview in settings (async - loads from IndexedDB)
     await updateAvatarPreview();
@@ -1518,14 +1627,20 @@ function updateApiKeyFieldForProvider(provider) {
  * @param {string} provider - The new provider
  */
 function handleProviderChange(provider) {
+    const modelConfig = getActiveModelConfig();
+
     // Save the current API key for the previous provider before switching
-    const previousProvider = state.settings.provider;
+    const previousProvider = modelConfig.provider;
     if (previousProvider && previousProvider !== provider) {
         state.settings.apiKeys[previousProvider] = elements.apiKeyInput.value;
     }
 
-    // Update provider in state
-    state.settings.provider = provider;
+    // Update provider in active persona's modelConfig
+    const persona = getActivePersona();
+    if (persona && persona.modelConfig) {
+        persona.modelConfig.provider = provider;
+        persona.updatedAt = Date.now();
+    }
 
     // Load API key for the new provider
     elements.apiKeyInput.value = state.settings.apiKeys[provider] || '';
@@ -1543,7 +1658,7 @@ function handleProviderChange(provider) {
     updateSendButtonState();
 
     // Sync to storage
-    syncUnifiedStorage();
+    savePersonas();
 }
 
 // ===== Model Parameter Helpers =====
@@ -1552,7 +1667,8 @@ function handleProviderChange(provider) {
  * Show/hide provider-specific parameter sections based on current provider
  */
 function updateProviderParamsVisibility() {
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     elements.anthropicParams.style.display = provider === 'anthropic' ? 'block' : 'none';
     elements.geminiParams.style.display = provider === 'google' ? 'block' : 'none';
 }
@@ -1561,7 +1677,8 @@ function updateProviderParamsVisibility() {
  * Load model parameters from state to UI controls
  */
 function loadModelParamsToUI() {
-    const params = state.settings.modelParams;
+    const modelConfig = getActiveModelConfig();
+    const params = modelConfig.modelParams;
 
     // Common parameters
     elements.temperatureSlider.value = params.temperature * 100;
@@ -1613,7 +1730,10 @@ function updateParamGroupDisabledState() {
  * Save model parameters from UI controls to state
  */
 function saveModelParamsFromUI() {
-    const params = state.settings.modelParams;
+    const persona = getActivePersona();
+    if (!persona || !persona.modelConfig) return;
+
+    const params = persona.modelConfig.modelParams;
 
     // Common parameters
     params.temperature = elements.temperatureSlider.value / 100;
@@ -1646,7 +1766,8 @@ function saveModelParamsFromUI() {
  */
 function renderStopSequencesTags() {
     const container = elements.stopSequencesTags;
-    const sequences = state.settings.modelParams.stopSequences;
+    const persona = getActivePersona();
+    const sequences = persona?.modelConfig?.modelParams?.stopSequences || [];
     container.innerHTML = '';
 
     sequences.forEach((seq, index) => {
@@ -1655,9 +1776,11 @@ function renderStopSequencesTags() {
         tag.textContent = seq;
         tag.title = 'Click to remove';
         tag.addEventListener('click', () => {
-            state.settings.modelParams.stopSequences.splice(index, 1);
-            renderStopSequencesTags();
-            autoSaveSettings();
+            if (persona?.modelConfig?.modelParams?.stopSequences) {
+                persona.modelConfig.modelParams.stopSequences.splice(index, 1);
+                renderStopSequencesTags();
+                autoSaveSettings();
+            }
         });
         container.appendChild(tag);
     });
@@ -1669,11 +1792,15 @@ function renderStopSequencesTags() {
 function addStopSequence() {
     const input = elements.stopSequenceInput;
     const value = input.value.trim();
+    const persona = getActivePersona();
 
-    if (value && !state.settings.modelParams.stopSequences.includes(value)) {
-        state.settings.modelParams.stopSequences.push(value);
-        renderStopSequencesTags();
-        autoSaveSettings();
+    if (value && persona?.modelConfig?.modelParams) {
+        const sequences = persona.modelConfig.modelParams.stopSequences;
+        if (!sequences.includes(value)) {
+            sequences.push(value);
+            renderStopSequencesTags();
+            autoSaveSettings();
+        }
     }
 
     input.value = '';
@@ -1792,8 +1919,9 @@ function formatNumber(num) {
 function getModelDisplayName(modelId) {
     if (!modelId) return 'No model selected';
 
-    // Look up in custom models for current provider
-    const provider = state.settings.provider;
+    // Look up in custom models for current persona's provider
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const providerModels = state.customModels[provider] || [];
     const customModel = providerModels.find(m => m.id === modelId);
     if (customModel) {
@@ -1805,7 +1933,8 @@ function getModelDisplayName(modelId) {
 }
 
 function updateSendButtonState() {
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const apiKey = state.settings.apiKeys[provider] || '';
     const hasApiKey = apiKey.length > 0;
     const hasMessage = elements.messageInput.value.trim().length > 0;
@@ -2027,7 +2156,8 @@ function updateSystemPromptExpressions() {
  * @returns {Promise<Array>} Array of { id, display_name } objects
  */
 async function fetchAvailableModels() {
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const apiKey = state.settings.apiKeys[provider];
 
     if (!apiKey) {
@@ -2103,7 +2233,8 @@ async function fetchGoogleModels(apiKey) {
 function addCustomModel(id, name) {
     if (!id || !name) return false;
 
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const providerModels = state.customModels[provider];
 
     // Check if already exists
@@ -2120,7 +2251,8 @@ function addCustomModel(id, name) {
  * @param {string} id - The model ID to remove
  */
 function removeCustomModel(id) {
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const providerModels = state.customModels[provider];
     const index = providerModels.findIndex(m => m.id === id);
     if (index === -1) return;
@@ -2128,10 +2260,11 @@ function removeCustomModel(id) {
     providerModels.splice(index, 1);
     saveCustomModels();
 
-    // If the removed model was selected, clear selection
-    if (state.settings.model === id) {
-        state.settings.model = providerModels.length > 0 ? providerModels[0].id : '';
-        localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
+    // If the removed model was selected, update persona's model
+    const persona = getActivePersona();
+    if (persona?.modelConfig?.model === id) {
+        persona.modelConfig.model = providerModels.length > 0 ? providerModels[0].id : '';
+        savePersonas();
     }
 }
 
@@ -2147,7 +2280,8 @@ function saveCustomModels() {
  */
 function populateModelDropdown() {
     const select = elements.modelSelect;
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const providerModels = state.customModels[provider] || [];
     select.innerHTML = '';
 
@@ -2165,21 +2299,24 @@ function populateModelDropdown() {
             const option = document.createElement('option');
             option.value = model.id;
             option.textContent = model.name;
-            if (model.id === state.settings.model) {
+            if (model.id === modelConfig.model) {
                 option.selected = true;
             }
             select.appendChild(option);
         });
 
-        // If selected model not in list, select first one
-        if (!providerModels.some(m => m.id === state.settings.model)) {
-            state.settings.model = providerModels[0].id;
-            select.value = state.settings.model;
+        // If selected model not in list, select first one and update persona
+        if (!providerModels.some(m => m.id === modelConfig.model)) {
+            const persona = getActivePersona();
+            if (persona && persona.modelConfig) {
+                persona.modelConfig.model = providerModels[0].id;
+            }
+            select.value = providerModels[0].id;
         }
     }
 
     // Update status bar
-    elements.modelIndicator.textContent = getModelDisplayName(state.settings.model);
+    elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
 }
 
 /**
@@ -2187,7 +2324,8 @@ function populateModelDropdown() {
  */
 function renderSavedModelsList() {
     const container = elements.savedModelsList;
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const providerModels = state.customModels[provider] || [];
     container.innerHTML = '';
 
@@ -2230,7 +2368,8 @@ function renderSavedModelsList() {
  */
 function renderAvailableModelsGrid(models) {
     const grid = elements.availableModelsGrid;
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const providerModels = state.customModels[provider] || [];
     grid.innerHTML = '';
     grid.style.display = 'grid';
@@ -2282,7 +2421,8 @@ function openModelModal() {
     elements.newModelName.value = '';
 
     // Disable fetch button if no API key for current provider
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const apiKey = state.settings.apiKeys[provider] || '';
     elements.fetchModelsBtn.disabled = !apiKey;
 
@@ -2313,7 +2453,8 @@ async function handleFetchModels() {
         console.error('Failed to fetch models:', error);
         alert(`Failed to fetch models: ${error.message}`);
     } finally {
-        const provider = state.settings.provider;
+        const modelConfig = getActiveModelConfig();
+        const provider = modelConfig.provider;
         const apiKey = state.settings.apiKeys[provider] || '';
         btn.disabled = !apiKey;
         btn.textContent = originalText;
@@ -2921,7 +3062,8 @@ function renderConversation() {
     const assistantName = persona ? persona.name : CONFIG.defaults.assistantName;
 
     if (messages.length === 0) {
-        const provider = state.settings.provider;
+        const modelConfig = getActiveModelConfig();
+        const provider = modelConfig.provider;
         const hasApiKey = (state.settings.apiKeys[provider] || '').length > 0;
         elements.messagesContainer.innerHTML = `
             <div class="welcome-message">
@@ -3231,7 +3373,8 @@ function rerunFromMessage(msgIndex) {
 }
 
 async function sendMessageFromText(text, attachments = []) {
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const apiKey = state.settings.apiKeys[provider] || '';
     if (!apiKey || state.isLoading) return;
 
@@ -3243,7 +3386,7 @@ async function sendMessageFromText(text, attachments = []) {
 
     try {
         let response;
-        if (state.settings.modelParams.streaming) {
+        if (modelConfig.modelParams.streaming) {
             hideTypingIndicator();
             elements.sendButton.style.display = 'none';
             elements.stopButton.style.display = '';
@@ -3334,7 +3477,8 @@ function getFileIcon(mimeType) {
 // ===== API Communication =====
 async function sendMessage() {
     const userMessage = elements.messageInput.value.trim();
-    const provider = state.settings.provider;
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
     const apiKey = state.settings.apiKeys[provider] || '';
 
     const hasAttachments = state.pendingAttachments.length > 0;
@@ -3357,7 +3501,7 @@ async function sendMessage() {
 
     appendMessage('user', userMessage || '(attached files)', true, null, attachmentMeta.length > 0 ? attachmentMeta : null);
 
-    if (state.settings.modelParams.streaming) {
+    if (modelConfig.modelParams.streaming) {
         // Streaming path
         showTypingIndicator();
         elements.sendButton.style.display = 'none';
@@ -3416,7 +3560,8 @@ async function sendMessage() {
 }
 
 async function callAPI(userMessage, attachments = []) {
-    const { provider, model } = state.settings;
+    const modelConfig = getActiveModelConfig();
+    const { provider, model } = modelConfig;
     const apiKey = state.settings.apiKeys[provider];
     const persona = getActivePersona();
     const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
@@ -3437,7 +3582,8 @@ async function callAPI(userMessage, attachments = []) {
 
 // ===== Streaming Support =====
 async function callAPIStreaming(userMessage, attachments = []) {
-    const { provider, model } = state.settings;
+    const modelConfig = getActiveModelConfig();
+    const { provider, model } = modelConfig;
     const apiKey = state.settings.apiKeys[provider];
     const persona = getActivePersona();
     const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
@@ -3459,7 +3605,8 @@ async function callAPIStreaming(userMessage, attachments = []) {
 async function callAnthropicAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments = []) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const params = state.settings.modelParams;
+    const modelConfig = getActiveModelConfig();
+    const params = modelConfig.modelParams;
 
     const messages = conversationMessages.map(msg => ({
         role: msg.role,
@@ -3538,7 +3685,8 @@ async function callAnthropicAPIStreaming(userMessage, model, apiKey, systemPromp
 async function callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments = []) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const params = state.settings.modelParams;
+    const modelConfig = getActiveModelConfig();
+    const params = modelConfig.modelParams;
 
     const contents = conversationMessages.map(msg => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
@@ -3744,7 +3892,8 @@ function stopGeneration() {
 async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt, attachments = []) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const params = state.settings.modelParams;
+    const modelConfig = getActiveModelConfig();
+    const params = modelConfig.modelParams;
 
     const messages = conversationMessages.map(msg => ({
         role: msg.role,
@@ -3827,7 +3976,8 @@ async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt, attach
 async function callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachments = []) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const params = state.settings.modelParams;
+    const modelConfig = getActiveModelConfig();
+    const params = modelConfig.modelParams;
 
     // Convert messages to Google format
     // Google uses 'user' and 'model' roles, and content is in parts array

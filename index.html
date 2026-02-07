@@ -36,9 +36,10 @@
 
             <!-- Settings Tab Content -->
             <div class="tab-content" id="settingsTab" data-tab="settings">
-                <!-- API Configuration -->
+                <!-- Model Settings (per-persona) -->
                 <div class="settings-section">
-                    <h3>API Configuration</h3>
+                    <h3>Model Settings</h3>
+                    <p class="section-note">These settings apply to the current persona.</p>
 
                     <label for="providerSelect">Provider</label>
                     <select id="providerSelect">
@@ -58,12 +59,13 @@
                         <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
                         <button class="toggle-visibility" id="toggleApiKey">👁</button>
                     </div>
-                    <p class="help-text">Your key is stored locally and never sent to any server except the AI provider.</p>
+                    <p class="help-text">API keys are shared across all personas. Stored locally, never sent to any server except the AI provider.</p>
                 </div>
 
-                <!-- Advanced Settings -->
+                <!-- Advanced Settings (per-persona) -->
                 <div class="settings-section">
                     <h3>Advanced Settings</h3>
+                    <p class="section-note">Model parameters for the current persona.</p>
 
                     <!-- Common Parameters -->
                     <div class="param-group" id="temperatureGroup">
