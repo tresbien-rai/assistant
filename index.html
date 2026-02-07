@@ -66,19 +66,28 @@
                     <h3>Advanced Settings</h3>
 
                     <!-- Common Parameters -->
-                    <div class="param-group">
-                        <label>Temperature <span class="param-value" id="tempValue">1.00</span></label>
-                        <input type="range" id="temperatureSlider" min="0" max="100" value="100">
-                        <p class="help-text">Higher = more creative, Lower = more focused</p>
+                    <div class="param-group" id="temperatureGroup">
+                        <label>
+                            <input type="checkbox" id="temperatureEnabled" checked>
+                            Temperature <span class="param-value" id="tempValue">1.00</span>
+                        </label>
+                        <input type="range" id="temperatureSlider" min="0" max="200" value="100">
+                        <p class="help-text">Higher = more creative, Lower = more focused (max 2.0)</p>
                     </div>
 
-                    <div class="param-group">
-                        <label>Top P <span class="param-value" id="topPValue">0.95</span></label>
+                    <div class="param-group" id="topPGroup">
+                        <label>
+                            <input type="checkbox" id="topPEnabled" checked>
+                            Top P <span class="param-value" id="topPValue">0.95</span>
+                        </label>
                         <input type="range" id="topPSlider" min="0" max="100" value="95">
                     </div>
 
-                    <div class="param-group">
-                        <label for="topKInput">Top K</label>
+                    <div class="param-group" id="topKGroup">
+                        <label>
+                            <input type="checkbox" id="topKEnabled" checked>
+                            Top K
+                        </label>
                         <input type="number" id="topKInput" min="1" max="100" value="40">
                     </div>
 
@@ -125,6 +134,7 @@
                         <div class="param-group">
                             <label for="thinkingLevelSelect">Thinking Level</label>
                             <select id="thinkingLevelSelect">
+                                <option value="off">Off</option>
                                 <option value="minimal">Minimal</option>
                                 <option value="low">Low</option>
                                 <option value="medium" selected>Medium</option>
@@ -259,10 +269,6 @@ When responding, you may optionally include an expression tag like [expression: 
                     <button class="add-expression-btn" id="addExpressionBtn">+ Add Expression</button>
                 </div>
 
-                <!-- Actions -->
-                <div class="settings-section">
-                    <button class="save-settings" id="saveSettings">Save Settings</button>
-                </div>
             </div>
 
             <!-- Personas Tab Content -->

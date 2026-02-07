@@ -120,7 +120,7 @@ function renderMarkdown(content) {
 }
 
 // ===== Schema Version & Migrations =====
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 /**
  * Migration functions indexed by target version.
@@ -366,6 +366,37 @@ const migrations = {
 
         data.schemaVersion = 5;
         console.log('[Migration 5] Complete.');
+        return data;
+    },
+
+    /**
+     * Migration 6: Add parameter enabled flags and update thinkingLevel default
+     * - Adds temperatureEnabled, topPEnabled, topKEnabled flags
+     * - Changes thinkingLevel default to 'off' to avoid API errors
+     */
+    6: async (data) => {
+        console.log('[Migration 6] Starting: Adding parameter enabled flags...');
+
+        if (data.settings && data.settings.modelParams) {
+            const params = data.settings.modelParams;
+            // Add enabled flags (default to true for backwards compatibility)
+            if (params.temperatureEnabled === undefined) {
+                params.temperatureEnabled = true;
+            }
+            if (params.topPEnabled === undefined) {
+                params.topPEnabled = true;
+            }
+            if (params.topKEnabled === undefined) {
+                params.topKEnabled = true;
+            }
+            // Change thinkingLevel default to 'off' if it's 'medium' (the old default)
+            if (params.google && params.google.thinkingLevel === 'medium') {
+                params.google.thinkingLevel = 'off';
+            }
+        }
+
+        data.schemaVersion = 6;
+        console.log('[Migration 6] Complete.');
         return data;
     }
 };
@@ -844,12 +875,15 @@ const state = {
             maxTokens: 4096,
             stopSequences: [],
             streaming: false,
+            temperatureEnabled: true,
+            topPEnabled: true,
+            topKEnabled: true,
             anthropic: {
                 thinkingEnabled: false,
                 thinkingBudget: 4000
             },
             google: {
-                thinkingLevel: 'medium',
+                thinkingLevel: 'off',
                 safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
                 safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
                 safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
@@ -1058,14 +1092,19 @@ const elements = {
     toggleApiKey: document.getElementById('toggleApiKey'),
     assistantName: document.getElementById('assistantName'),
     systemPrompt: document.getElementById('systemPrompt'),
-    saveSettings: document.getElementById('saveSettings'),
 
     // Model parameters (Advanced Settings)
     temperatureSlider: document.getElementById('temperatureSlider'),
     tempValue: document.getElementById('tempValue'),
+    temperatureEnabled: document.getElementById('temperatureEnabled'),
+    temperatureGroup: document.getElementById('temperatureGroup'),
     topPSlider: document.getElementById('topPSlider'),
     topPValue: document.getElementById('topPValue'),
+    topPEnabled: document.getElementById('topPEnabled'),
+    topPGroup: document.getElementById('topPGroup'),
     topKInput: document.getElementById('topKInput'),
+    topKEnabled: document.getElementById('topKEnabled'),
+    topKGroup: document.getElementById('topKGroup'),
     maxTokensInput: document.getElementById('maxTokensInput'),
     stopSequencesTags: document.getElementById('stopSequencesTags'),
     stopSequenceInput: document.getElementById('stopSequenceInput'),
@@ -1199,9 +1238,12 @@ function loadStateFromData(data) {
             maxTokens: 4096,
             stopSequences: [],
             streaming: false,
+            temperatureEnabled: true,
+            topPEnabled: true,
+            topKEnabled: true,
             anthropic: { thinkingEnabled: false, thinkingBudget: 4000 },
             google: {
-                thinkingLevel: 'medium',
+                thinkingLevel: 'off',
                 safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
                 safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
                 safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
@@ -1294,47 +1336,92 @@ function syncUnifiedStorage() {
     localStorage.setItem(CONFIG.storageKeys.appData, JSON.stringify(data));
 }
 
-async function saveSettings() {
-    // Save app-level settings
+// ===== Real-Time Auto-Save =====
+let autoSaveTimeout = null;
+
+/**
+ * Debounced auto-save function
+ * Saves settings after 300ms of no changes to avoid excessive writes
+ */
+function autoSaveSettings() {
+    // Clear any pending save
+    if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout);
+    }
+
+    // Debounce: save after 300ms of no changes
+    autoSaveTimeout = setTimeout(() => {
+        saveAllSettingsFromUI();
+        persistSettings();
+    }, 300);
+}
+
+/**
+ * Collect all current UI values into state
+ */
+function saveAllSettingsFromUI() {
+    // Provider & model
     state.settings.provider = elements.providerSelect.value;
     state.settings.model = elements.modelSelect.value;
-    // Save API key for the current provider
+
+    // API key for current provider
     const currentProvider = state.settings.provider;
     state.settings.apiKeys[currentProvider] = elements.apiKeyInput.value;
-    state.settings.showAvatar = elements.showAvatar.checked;
 
-    // Save model parameters from UI
+    // Avatar settings
+    state.settings.showAvatar = elements.showAvatar.checked;
+    const activeSize = document.querySelector('.size-preset-btn.active');
+    if (activeSize) state.settings.avatarSize = activeSize.dataset.size;
+    const activePos = document.querySelector('.position-preset-btn.active');
+    if (activePos) state.settings.avatarPosition = activePos.dataset.position;
+
+    // Model parameters
     saveModelParamsFromUI();
 
-    // Get size from active button
-    const activeSize = document.querySelector('.size-preset-btn.active');
-    if (activeSize) {
-        state.settings.avatarSize = activeSize.dataset.size;
-    }
-
-    // Get position from active button
-    const activePosition = document.querySelector('.position-preset-btn.active');
-    if (activePosition) {
-        state.settings.avatarPosition = activePosition.dataset.position;
-    }
-
-    localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
-
-    // Save persona-specific settings to the active persona
+    // Persona settings (name & system prompt)
     const persona = getActivePersona();
     if (persona) {
         persona.name = elements.assistantName.value || CONFIG.defaults.assistantName;
         persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
-        persona.updatedAt = Date.now();
-        savePersonas(); // This also syncs to unified storage
+        persona.updatedAt = new Date().toISOString();
+    }
+}
+
+/**
+ * Persist current state to localStorage
+ */
+function persistSettings() {
+    localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
+    const persona = getActivePersona();
+    if (persona) {
+        savePersonas();
     } else {
-        // Sync to unified storage if no persona update
         syncUnifiedStorage();
     }
+    updateSettingsUI();
+}
 
-    await updateUI();
-    showNotification('Settings saved!', 'success');
-    closeSidebar();
+/**
+ * Update only settings-related UI elements (not conversation)
+ * Used by auto-save to avoid re-rendering messages and causing flicker
+ */
+function updateSettingsUI() {
+    const persona = getActivePersona();
+
+    // Update header with assistant name
+    const headerName = document.querySelector('.assistant-name');
+    if (headerName) {
+        headerName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
+    }
+
+    // Update model display
+    const modelDisplay = document.querySelector('.model-display');
+    if (modelDisplay) {
+        modelDisplay.textContent = state.settings.model;
+    }
+
+    // Update status bar
+    updateStatusBar();
 }
 
 function saveConversations() {
@@ -1485,6 +1572,14 @@ function loadModelParamsToUI() {
     elements.maxTokensInput.value = params.maxTokens;
     elements.streamingToggle.checked = params.streaming;
 
+    // Parameter enabled checkboxes
+    elements.temperatureEnabled.checked = params.temperatureEnabled !== false;
+    elements.topPEnabled.checked = params.topPEnabled !== false;
+    elements.topKEnabled.checked = params.topKEnabled !== false;
+
+    // Update disabled visual state
+    updateParamGroupDisabledState();
+
     // Render stop sequences tags
     renderStopSequencesTags();
 
@@ -1494,7 +1589,7 @@ function loadModelParamsToUI() {
     elements.thinkingBudgetGroup.style.display = params.anthropic.thinkingEnabled ? 'block' : 'none';
 
     // Gemini-specific
-    elements.thinkingLevelSelect.value = params.google.thinkingLevel;
+    elements.thinkingLevelSelect.value = params.google.thinkingLevel || 'off';
     elements.mediaResolutionSelect.value = params.google.mediaResolution;
     elements.safetyHarassmentSelect.value = params.google.safetyHarassment;
     elements.safetyHateSelect.value = params.google.safetyHate;
@@ -1503,6 +1598,15 @@ function loadModelParamsToUI() {
 
     // Update provider-specific visibility
     updateProviderParamsVisibility();
+}
+
+/**
+ * Update the disabled class on param groups based on checkbox state
+ */
+function updateParamGroupDisabledState() {
+    elements.temperatureGroup.classList.toggle('disabled', !elements.temperatureEnabled.checked);
+    elements.topPGroup.classList.toggle('disabled', !elements.topPEnabled.checked);
+    elements.topKGroup.classList.toggle('disabled', !elements.topKEnabled.checked);
 }
 
 /**
@@ -1518,6 +1622,11 @@ function saveModelParamsFromUI() {
     params.maxTokens = parseInt(elements.maxTokensInput.value, 10) || 4096;
     params.streaming = elements.streamingToggle.checked;
     // stopSequences is already updated via tag input handlers
+
+    // Parameter enabled flags
+    params.temperatureEnabled = elements.temperatureEnabled.checked;
+    params.topPEnabled = elements.topPEnabled.checked;
+    params.topKEnabled = elements.topKEnabled.checked;
 
     // Anthropic-specific
     params.anthropic.thinkingEnabled = elements.thinkingEnabledToggle.checked;
@@ -1548,6 +1657,7 @@ function renderStopSequencesTags() {
         tag.addEventListener('click', () => {
             state.settings.modelParams.stopSequences.splice(index, 1);
             renderStopSequencesTags();
+            autoSaveSettings();
         });
         container.appendChild(tag);
     });
@@ -1563,6 +1673,7 @@ function addStopSequence() {
     if (value && !state.settings.modelParams.stopSequences.includes(value)) {
         state.settings.modelParams.stopSequences.push(value);
         renderStopSequencesTags();
+        autoSaveSettings();
     }
 
     input.value = '';
@@ -3358,13 +3469,21 @@ async function callAnthropicAPIStreaming(userMessage, model, apiKey, systemPromp
     const requestBody = {
         model: model,
         max_tokens: params.maxTokens,
-        temperature: params.temperature,
-        top_p: params.topP,
-        top_k: params.topK,
         system: systemPrompt,
         messages: messages,
         stream: true
     };
+
+    // Conditionally add parameters based on enabled flags
+    if (params.temperatureEnabled !== false) {
+        requestBody.temperature = params.temperature;
+    }
+    if (params.topPEnabled !== false) {
+        requestBody.top_p = params.topP;
+    }
+    if (params.topKEnabled !== false) {
+        requestBody.top_k = params.topK;
+    }
 
     if (params.stopSequences.length > 0) {
         requestBody.stop_sequences = params.stopSequences;
@@ -3426,20 +3545,36 @@ async function callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, 
         parts: [{ text: msg.content }]
     }));
 
+    // Build generationConfig with only enabled parameters
+    const generationConfig = {
+        maxOutputTokens: params.maxTokens
+    };
+    if (params.temperatureEnabled !== false) {
+        generationConfig.temperature = params.temperature;
+    }
+    if (params.topPEnabled !== false) {
+        generationConfig.topP = params.topP;
+    }
+    if (params.topKEnabled !== false) {
+        generationConfig.topK = params.topK;
+    }
+    if (params.stopSequences.length > 0) {
+        generationConfig.stopSequences = params.stopSequences;
+    }
+
+    // Add thinkingConfig inside generationConfig if not set to 'off'
+    if (params.google.thinkingLevel && params.google.thinkingLevel !== 'off') {
+        generationConfig.thinkingConfig = {
+            thinkingLevel: params.google.thinkingLevel
+        };
+    }
+
     const requestBody = {
         contents: contents,
         systemInstruction: {
             parts: [{ text: systemPrompt }]
         },
-        generationConfig: {
-            temperature: params.temperature,
-            topP: params.topP,
-            topK: params.topK,
-            maxOutputTokens: params.maxTokens
-        },
-        thinkingConfig: {
-            thinkingLevel: params.google.thinkingLevel
-        },
+        generationConfig: generationConfig,
         safetySettings: [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: params.google.safetyHarassment },
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: params.google.safetyHate },
@@ -3447,10 +3582,6 @@ async function callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, 
             { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: params.google.safetyDangerous }
         ]
     };
-
-    if (params.stopSequences.length > 0) {
-        requestBody.generationConfig.stopSequences = params.stopSequences;
-    }
 
     // Handle attachments for the last user message
     if (attachments.length > 0 && contents.length > 0) {
@@ -3631,12 +3762,20 @@ async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt, attach
     const requestBody = {
         model: model,
         max_tokens: params.maxTokens,
-        temperature: params.temperature,
-        top_p: params.topP,
-        top_k: params.topK,
         system: systemPrompt,
         messages: messages
     };
+
+    // Conditionally add parameters based on enabled flags
+    if (params.temperatureEnabled !== false) {
+        requestBody.temperature = params.temperature;
+    }
+    if (params.topPEnabled !== false) {
+        requestBody.top_p = params.topP;
+    }
+    if (params.topKEnabled !== false) {
+        requestBody.top_k = params.topK;
+    }
 
     // Add stop sequences if any
     if (params.stopSequences.length > 0) {
@@ -3706,21 +3845,36 @@ async function callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachmen
         }
     }
 
+    // Build generationConfig with only enabled parameters
+    const generationConfig = {
+        maxOutputTokens: params.maxTokens
+    };
+    if (params.temperatureEnabled !== false) {
+        generationConfig.temperature = params.temperature;
+    }
+    if (params.topPEnabled !== false) {
+        generationConfig.topP = params.topP;
+    }
+    if (params.topKEnabled !== false) {
+        generationConfig.topK = params.topK;
+    }
+    if (params.stopSequences.length > 0) {
+        generationConfig.stopSequences = params.stopSequences;
+    }
+
+    // Add thinkingConfig inside generationConfig if not set to 'off'
+    if (params.google.thinkingLevel && params.google.thinkingLevel !== 'off') {
+        generationConfig.thinkingConfig = {
+            thinkingLevel: params.google.thinkingLevel
+        };
+    }
+
     const requestBody = {
         contents: contents,
         systemInstruction: {
             parts: [{ text: systemPrompt }]
         },
-        generationConfig: {
-            temperature: params.temperature,
-            topP: params.topP,
-            topK: params.topK,
-            maxOutputTokens: params.maxTokens
-        },
-        // Thinking configuration
-        thinkingConfig: {
-            thinkingLevel: params.google.thinkingLevel
-        },
+        generationConfig: generationConfig,
         // Safety settings
         safetySettings: [
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: params.google.safetyHarassment },
@@ -3729,11 +3883,6 @@ async function callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachmen
             { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: params.google.safetyDangerous }
         ]
     };
-
-    // Add stop sequences if any
-    if (params.stopSequences.length > 0) {
-        requestBody.generationConfig.stopSequences = params.stopSequences;
-    }
 
     // Google uses URL parameter for API key
     const endpoint = `${CONFIG.endpoints.google}/${model}:generateContent?key=${apiKey}`;
@@ -4025,23 +4174,46 @@ function setupEventListeners() {
         }
     });
 
-    // Settings
-    elements.saveSettings.addEventListener('click', saveSettings);
-
-    // Provider change handler
+    // Provider & Model - auto-save on change
     elements.providerSelect.addEventListener('change', (e) => {
         handleProviderChange(e.target.value);
+        autoSaveSettings();
     });
+    elements.modelSelect.addEventListener('change', autoSaveSettings);
 
-    // Model parameter sliders - update display value on input
+    // API Key - auto-save on input
+    elements.apiKeyInput.addEventListener('input', autoSaveSettings);
+
+    // Model parameter sliders - update display value and auto-save
     elements.temperatureSlider.addEventListener('input', (e) => {
         const value = (e.target.value / 100).toFixed(2);
         elements.tempValue.textContent = value;
+        autoSaveSettings();
     });
 
     elements.topPSlider.addEventListener('input', (e) => {
         const value = (e.target.value / 100).toFixed(2);
         elements.topPValue.textContent = value;
+        autoSaveSettings();
+    });
+
+    // Other model params - auto-save on change
+    elements.topKInput.addEventListener('input', autoSaveSettings);
+    elements.maxTokensInput.addEventListener('input', autoSaveSettings);
+    elements.streamingToggle.addEventListener('change', autoSaveSettings);
+
+    // Parameter enable checkboxes - toggle disabled state and auto-save
+    elements.temperatureEnabled.addEventListener('change', () => {
+        updateParamGroupDisabledState();
+        autoSaveSettings();
+    });
+    elements.topPEnabled.addEventListener('change', () => {
+        updateParamGroupDisabledState();
+        autoSaveSettings();
+    });
+    elements.topKEnabled.addEventListener('change', () => {
+        updateParamGroupDisabledState();
+        autoSaveSettings();
     });
 
     // Stop sequences - add on Enter
@@ -4052,10 +4224,24 @@ function setupEventListeners() {
         }
     });
 
-    // Anthropic thinking toggle - show/hide budget input
+    // Anthropic settings - auto-save
     elements.thinkingEnabledToggle.addEventListener('change', (e) => {
         elements.thinkingBudgetGroup.style.display = e.target.checked ? 'block' : 'none';
+        autoSaveSettings();
     });
+    elements.thinkingBudgetInput.addEventListener('input', autoSaveSettings);
+
+    // Gemini settings - auto-save
+    elements.thinkingLevelSelect.addEventListener('change', autoSaveSettings);
+    elements.mediaResolutionSelect.addEventListener('change', autoSaveSettings);
+    elements.safetyHarassmentSelect.addEventListener('change', autoSaveSettings);
+    elements.safetyHateSelect.addEventListener('change', autoSaveSettings);
+    elements.safetySexualSelect.addEventListener('change', autoSaveSettings);
+    elements.safetyDangerousSelect.addEventListener('change', autoSaveSettings);
+
+    // Persona settings - auto-save
+    elements.assistantName.addEventListener('input', autoSaveSettings);
+    elements.systemPrompt.addEventListener('input', autoSaveSettings);
 
     // API key visibility toggle
     elements.toggleApiKey.addEventListener('click', () => {
@@ -4063,29 +4249,44 @@ function setupEventListeners() {
         input.type = input.type === 'password' ? 'text' : 'password';
     });
     
-    // Size preset buttons
+    // Size preset buttons - apply immediately and auto-save
     document.querySelectorAll('.size-preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.size-preset-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            // Apply size immediately
+            elements.avatarImage.className = `avatar-image size-${btn.dataset.size}`;
+            autoSaveSettings();
         });
     });
-    
-    // Position preset buttons
+
+    // Position preset buttons - apply immediately and auto-save
     document.querySelectorAll('.position-preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.position-preset-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            // Apply position immediately
+            elements.floatingAvatar.className = `floating-avatar ${btn.dataset.position}`;
+            if (!state.settings.showAvatar) elements.floatingAvatar.classList.add('hidden');
+            autoSaveSettings();
         });
     });
-    
+
+    // Show avatar checkbox - auto-save
+    elements.showAvatar.addEventListener('change', async () => {
+        state.settings.showAvatar = elements.showAvatar.checked;
+        await updateFloatingAvatar();
+        elements.avatarToggleBtn.classList.toggle('active', state.settings.showAvatar);
+        autoSaveSettings();
+    });
+
     // Avatar toggle button in status bar
     elements.avatarToggleBtn.addEventListener('click', async () => {
         state.settings.showAvatar = !state.settings.showAvatar;
         elements.showAvatar.checked = state.settings.showAvatar;
-        localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
         await updateFloatingAvatar();
         elements.avatarToggleBtn.classList.toggle('active', state.settings.showAvatar);
+        autoSaveSettings();
     });
     
     // Avatar file upload

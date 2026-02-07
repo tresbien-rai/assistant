@@ -496,8 +496,6 @@ body {
     font-size: 0.75rem;
     color: var(--text-muted);
 }
-    transition: all 0.2s;
-}
 
 .toggle-visibility:hover {
     background-color: var(--border-color);
@@ -675,31 +673,17 @@ body {
 }
 
 /* Action Buttons */
-.save-settings,
 .clear-chat {
     width: 100%;
     padding: 12px;
-    border: none;
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
     margin-bottom: 8px;
-}
-
-.save-settings {
-    background-color: var(--accent);
-    color: white;
-}
-
-.save-settings:hover {
-    background-color: var(--accent-hover);
-}
-
-.clear-chat {
     background-color: transparent;
-    border: 1px solid var(--border-color);
     color: var(--text-secondary);
 }
 
@@ -2165,4 +2149,28 @@ body {
     width: 100%;
     padding: 0.4rem;
     font-size: 0.85rem;
+}
+
+/* Disabled parameter groups */
+.param-group.disabled input[type="range"],
+.param-group.disabled input[type="number"] {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.param-group.disabled .param-value {
+    opacity: 0.4;
+}
+
+.param-group.disabled .help-text {
+    opacity: 0.4;
+}
+
+/* Enable checkbox in param labels */
+.param-group label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    accent-color: var(--accent);
+    vertical-align: middle;
 }
