@@ -3393,10 +3393,15 @@ async function sendMessageFromText(text, attachments = []) {
             startStreamingMessage();
             try {
                 response = await callAPIStreaming(text, attachments);
-                finalizeStreamingMessage(response);
+
+                // Handle both string (Anthropic) and object (Google with images) responses
+                const fullText = typeof response === 'object' ? (response.text || '') : response;
+                const generatedImages = typeof response === 'object' ? (response.generatedImages || []) : [];
+
+                await finalizeStreamingMessage(fullText, generatedImages);
             } catch (error) {
                 if (error.name === 'AbortError') {
-                    finalizeStreamingMessage(state.streamingAccumulator || '');
+                    await finalizeStreamingMessage(state.streamingAccumulator || '', state.streamingGeneratedImages || []);
                 } else {
                     if (state.streamingMessageDiv) {
                         state.streamingMessageDiv.remove();
@@ -3412,9 +3417,20 @@ async function sendMessageFromText(text, attachments = []) {
         } else {
             response = await callAPI(text, attachments);
             hideTypingIndicator();
-            const detectedExpr = detectExpression(response);
+
+            // Handle both string (Anthropic) and object (Google with images) responses
+            let responseText, responseAttachments;
+            if (typeof response === 'object' && response !== null) {
+                responseText = response.text || '';
+                responseAttachments = response.attachments || [];
+            } else {
+                responseText = response;
+                responseAttachments = [];
+            }
+
+            const detectedExpr = detectExpression(responseText);
             await setExpression(detectedExpr);
-            appendMessage('assistant', response);
+            appendMessage('assistant', responseText, true, null, responseAttachments.length > 0 ? responseAttachments : null);
         }
     } catch (error) {
         hideTypingIndicator();
@@ -3434,15 +3450,39 @@ function renderMessageAttachments(attachments, containerDiv) {
         const attEl = document.createElement('div');
         attEl.className = 'message-attachment';
 
-        if (att.type === 'image' && att.imageStoreKey) {
+        // Add special class for AI-generated images
+        if (att.type === 'generated') {
+            attEl.classList.add('generated-image');
+        }
+
+        if ((att.type === 'image' || att.type === 'generated') && att.imageStoreKey) {
+            // Create wrapper for image + download button
+            const imgWrapper = document.createElement('div');
+            imgWrapper.className = 'attachment-image-wrapper';
+
             // Load image from IndexedDB
             const img = document.createElement('img');
-            img.alt = att.fileName || 'Attached image';
+            img.alt = att.fileName || (att.type === 'generated' ? 'Generated image' : 'Attached image');
             img.loading = 'lazy';
             ImageStore.get(att.imageStoreKey).then(url => {
                 if (url) img.src = url;
             });
-            attEl.appendChild(img);
+            imgWrapper.appendChild(img);
+
+            // Add download button for generated images
+            if (att.type === 'generated') {
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'download-btn';
+                downloadBtn.innerHTML = '&#8681;'; // Down arrow
+                downloadBtn.title = 'Download image';
+                downloadBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    downloadGeneratedImage(att);
+                });
+                imgWrapper.appendChild(downloadBtn);
+            }
+
+            attEl.appendChild(imgWrapper);
         } else {
             const badge = document.createElement('div');
             badge.className = 'file-badge';
@@ -3511,11 +3551,16 @@ async function sendMessage() {
             hideTypingIndicator();
             startStreamingMessage();
 
-            const fullText = await callAPIStreaming(userMessage, attachmentMeta);
-            finalizeStreamingMessage(fullText);
+            const result = await callAPIStreaming(userMessage, attachmentMeta);
+
+            // Handle both string (Anthropic) and object (Google with images) responses
+            const fullText = typeof result === 'object' ? (result.text || '') : result;
+            const generatedImages = typeof result === 'object' ? (result.generatedImages || []) : [];
+
+            await finalizeStreamingMessage(fullText, generatedImages);
         } catch (error) {
             if (error.name === 'AbortError') {
-                finalizeStreamingMessage(state.streamingAccumulator || '');
+                await finalizeStreamingMessage(state.streamingAccumulator || '', state.streamingGeneratedImages || []);
             } else {
                 if (state.streamingMessageDiv) {
                     state.streamingMessageDiv.remove();
@@ -3541,12 +3586,22 @@ async function sendMessage() {
 
             hideTypingIndicator();
 
+            // Handle both string (Anthropic) and object (Google with images) responses
+            let responseText, responseAttachments;
+            if (typeof response === 'object' && response !== null) {
+                responseText = response.text || '';
+                responseAttachments = response.attachments || [];
+            } else {
+                responseText = response;
+                responseAttachments = [];
+            }
+
             // Detect expression from response
-            const detectedExpr = detectExpression(response);
+            const detectedExpr = detectExpression(responseText);
             await setExpression(detectedExpr);
 
-            // Strip expression tag and display
-            appendMessage('assistant', response);
+            // Strip expression tag and display (with any generated attachments)
+            appendMessage('assistant', responseText, true, null, responseAttachments.length > 0 ? responseAttachments : null);
 
         } catch (error) {
             hideTypingIndicator();
@@ -3763,14 +3818,29 @@ async function callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
+    // Initialize array to collect generated images during streaming
+    state.streamingGeneratedImages = [];
+
     await parseSSEStream(reader, decoder, (event) => {
-        const text = event.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
-        if (text) {
-            appendStreamChunk(text);
+        const parts = event.candidates?.[0]?.content?.parts || [];
+
+        for (const part of parts) {
+            if (part.text) {
+                appendStreamChunk(part.text);
+            } else if (part.inlineData) {
+                // Collect generated images (typically arrive at end of stream)
+                state.streamingGeneratedImages.push({
+                    mimeType: part.inlineData.mimeType,
+                    base64Data: part.inlineData.data
+                });
+            }
         }
     });
 
-    return state.streamingAccumulator;
+    return {
+        text: state.streamingAccumulator,
+        generatedImages: state.streamingGeneratedImages
+    };
 }
 
 async function parseSSEStream(reader, decoder, onEvent) {
@@ -3822,6 +3892,7 @@ function startStreamingMessage() {
 
     state.streamingMessageDiv = messageDiv;
     state.streamingAccumulator = '';
+    state.streamingGeneratedImages = [];
 
     scrollToBottom();
 }
@@ -3838,7 +3909,7 @@ function appendStreamChunk(text) {
     }
 }
 
-function finalizeStreamingMessage(fullText) {
+async function finalizeStreamingMessage(fullText, generatedImages = []) {
     if (!state.streamingMessageDiv) return;
 
     state.streamingMessageDiv.classList.remove('streaming');
@@ -3850,9 +3921,30 @@ function finalizeStreamingMessage(fullText) {
     // Strip expression tag for display and storage
     const cleanText = stripExpressionTag(fullText);
 
+    // Store any generated images to IndexedDB
+    const attachments = await storeGeneratedImages(generatedImages);
+
+    // If we have generated images, render them before the content
+    if (attachments.length > 0) {
+        const attachDiv = document.createElement('div');
+        attachDiv.className = 'message-attachments';
+        renderMessageAttachments(attachments, attachDiv);
+
+        // Insert before message-content
+        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
+        if (contentDiv) {
+            state.streamingMessageDiv.insertBefore(attachDiv, contentDiv);
+        }
+    }
+
     const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
     if (contentDiv) {
-        contentDiv.innerHTML = renderMarkdown(cleanText);
+        // Handle image-only responses
+        if (!cleanText && attachments.length > 0) {
+            contentDiv.innerHTML = '<em>Generated image(s)</em>';
+        } else {
+            contentDiv.innerHTML = renderMarkdown(cleanText);
+        }
     }
 
     // Add action buttons
@@ -3869,7 +3961,7 @@ function finalizeStreamingMessage(fullText) {
     // Save to conversation
     const activeConvo = getActiveConversation();
     if (activeConvo) {
-        activeConvo.messages.push({ role: 'assistant', content: cleanText, attachments: [] });
+        activeConvo.messages.push({ role: 'assistant', content: cleanText, attachments: attachments });
         state.streamingMessageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
         activeConvo.updatedAt = Date.now();
         saveConversations();
@@ -3881,6 +3973,7 @@ function finalizeStreamingMessage(fullText) {
 
     state.streamingMessageDiv = null;
     state.streamingAccumulator = '';
+    state.streamingGeneratedImages = [];
 }
 
 function stopGeneration() {
@@ -4054,18 +4147,27 @@ async function callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachmen
 
     const data = await response.json();
 
-    // Extract text from Google response format
+    // Extract content from Google response format (supports text + images)
     const candidate = data.candidates?.[0];
     if (!candidate) {
         throw new Error('No response candidates received from API');
     }
 
-    const textPart = candidate.content?.parts?.find(part => part.text);
-    if (!textPart) {
-        throw new Error('No text response received from API');
+    // Parse multimodal response (text + generated images)
+    const parsed = parseGoogleMultimodalResponse(candidate);
+
+    // Handle responses with no content at all
+    if (!parsed.text && parsed.generatedImages.length === 0) {
+        throw new Error('No content received from API');
     }
 
-    return textPart.text;
+    // Store any generated images to IndexedDB
+    const generatedAttachments = await storeGeneratedImages(parsed.generatedImages);
+
+    return {
+        text: parsed.text || '',
+        attachments: generatedAttachments
+    };
 }
 
 /**
@@ -4094,6 +4196,98 @@ function parseGoogleError(errorData) {
         return message || `Google API error: ${status}`;
     }
     return 'Unknown error from Google API';
+}
+
+/**
+ * Parse Google API response that may contain both text and images
+ * @param {Object} candidate - The response candidate from Google API
+ * @returns {Object} { text: string|null, generatedImages: Array }
+ */
+function parseGoogleMultimodalResponse(candidate) {
+    const result = {
+        text: null,
+        generatedImages: []
+    };
+
+    if (!candidate?.content?.parts) {
+        return result;
+    }
+
+    const textParts = [];
+
+    for (const part of candidate.content.parts) {
+        if (part.text) {
+            textParts.push(part.text);
+        } else if (part.inlineData) {
+            result.generatedImages.push({
+                mimeType: part.inlineData.mimeType,
+                base64Data: part.inlineData.data
+            });
+        }
+    }
+
+    if (textParts.length > 0) {
+        result.text = textParts.join('');
+    }
+
+    return result;
+}
+
+/**
+ * Store generated images from API response to IndexedDB
+ * @param {Array} generatedImages - Array of { mimeType, base64Data }
+ * @returns {Promise<Array>} - Array of attachment metadata
+ */
+async function storeGeneratedImages(generatedImages) {
+    const attachments = [];
+
+    for (const img of generatedImages) {
+        const key = `gen_${crypto.randomUUID()}`;
+        const extension = img.mimeType.split('/')[1] || 'png';
+        const fileName = `generated_${Date.now()}.${extension}`;
+
+        // Convert base64 to blob
+        const byteCharacters = atob(img.base64Data);
+        const byteArray = new Uint8Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteArray[i] = byteCharacters.charCodeAt(i);
+        }
+        const blob = new Blob([byteArray], { type: img.mimeType });
+
+        await ImageStore.store(key, blob);
+
+        attachments.push({
+            id: crypto.randomUUID(),
+            type: 'generated',
+            mimeType: img.mimeType,
+            fileName: fileName,
+            fileSize: blob.size,
+            imageStoreKey: key
+        });
+    }
+
+    return attachments;
+}
+
+/**
+ * Download a generated image from IndexedDB
+ * @param {Object} attachment - The attachment metadata
+ */
+async function downloadGeneratedImage(attachment) {
+    const blob = await ImageStore.getBlob(attachment.imageStoreKey);
+    if (!blob) {
+        console.error('Image not found for download');
+        return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = attachment.fileName || 'generated-image.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 // ===== File Attachment Handling =====
