@@ -1965,17 +1965,22 @@ body {
     .sidebar {
         position: relative;
         left: 0;
+        z-index: auto;
+        flex-shrink: 0;
     }
-    
-    .sidebar:not(.open) {
-        margin-left: calc(-1 * var(--sidebar-width));
-    }
-    
+
+    /* Sidebar always visible on desktop - no hiding rule */
+
     .close-sidebar {
         display: none;
     }
-    
+
     .sidebar-overlay {
+        display: none;
+    }
+
+    /* Hide hamburger button on desktop - sidebar is always visible */
+    .menu-button {
         display: none;
     }
 }
