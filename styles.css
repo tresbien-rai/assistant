@@ -426,6 +426,10 @@ body {
     background-color: var(--border-color);
 }
 
+.toggle-visibility svg {
+    display: block;
+}
+
 /* File Upload Styles */
 .file-upload-wrapper {
     display: flex;
@@ -454,6 +458,12 @@ body {
     border-color: var(--accent);
     color: var(--accent);
     border-style: solid;
+}
+
+.file-upload-btn svg {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 6px;
 }
 
 .file-clear-btn {
@@ -592,6 +602,11 @@ body {
     color: var(--accent);
 }
 
+.position-preset-btn svg {
+    display: block;
+    margin: 0 auto;
+}
+
 /* Checkbox wrapper */
 .checkbox-wrapper {
     display: flex;
@@ -705,7 +720,8 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    width: 100%;
+    min-width: 0; /* Prevent flex item from overflowing */
+    overflow-x: hidden;
 }
 
 /* ===== Status Bar ===== */
@@ -739,6 +755,10 @@ body {
 
 .menu-button:hover {
     background-color: var(--bg-tertiary);
+}
+
+.menu-button svg {
+    display: block;
 }
 
 .assistant-name-display {
@@ -805,6 +825,10 @@ body {
     background: var(--accent-subtle);
     border-color: var(--accent);
     color: var(--accent);
+}
+
+.avatar-toggle-btn svg {
+    display: block;
 }
 
 /* ===== Chat Area ===== */
@@ -1280,6 +1304,10 @@ body {
     background-color: var(--bg-tertiary);
 }
 
+.attach-button svg {
+    display: block;
+}
+
 .file-input-hidden {
     display: none;
 }
@@ -1559,8 +1587,9 @@ body {
     cursor: not-allowed;
 }
 
-.send-icon {
-    font-size: 1.25rem;
+.send-button svg,
+.stop-button svg {
+    display: block;
 }
 
 .input-hint {

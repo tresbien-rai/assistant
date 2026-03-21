@@ -120,7 +120,7 @@ function renderMarkdown(content) {
 }
 
 // ===== Schema Version & Migrations =====
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 
 /**
  * Migration functions indexed by target version.
@@ -454,6 +454,20 @@ const migrations = {
 
         data.schemaVersion = 7;
         console.log('[Migration 7] Complete.');
+        return data;
+    },
+
+    8: async (data) => {
+        console.log('[Migration 8] Starting: Adding prefill field to personas...');
+
+        for (const persona of Object.values(data.personas || {})) {
+            if (persona.prefill === undefined) {
+                persona.prefill = '';
+            }
+        }
+
+        data.schemaVersion = 8;
+        console.log('[Migration 8] Complete.');
         return data;
     }
 };
@@ -970,6 +984,7 @@ const state = {
     },
     currentExpression: 'neutral',
     isLoading: false,
+    currentPrefill: '',  // Tracks active prefill for response stripping
     sessionStartTime: Date.now(),
     estimatedTokens: 0,
     tempExpressionBlob: null, // Blob waiting to be saved when expression is saved
@@ -1075,6 +1090,7 @@ function createPersona(name = CONFIG.defaults.assistantName) {
         id,
         name,
         systemPrompt: CONFIG.defaults.systemPrompt,
+        prefill: '',
         avatarImageKey: '',
         expressions: { ...CONFIG.defaultExpressions },
         modelConfig: modelConfig,
@@ -1217,6 +1233,7 @@ const elements = {
     toggleApiKey: document.getElementById('toggleApiKey'),
     assistantName: document.getElementById('assistantName'),
     systemPrompt: document.getElementById('systemPrompt'),
+    prefillInput: document.getElementById('prefillInput'),
 
     // Model parameters (Advanced Settings)
     temperatureSlider: document.getElementById('temperatureSlider'),
@@ -1486,10 +1503,11 @@ function saveAllSettingsFromUI() {
     // Model parameters (save to active persona)
     saveModelParamsFromUI();
 
-    // Persona settings (name & system prompt)
+    // Persona settings (name, system prompt, prefill)
     if (persona) {
         persona.name = elements.assistantName.value || CONFIG.defaults.assistantName;
         persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
+        persona.prefill = elements.prefillInput.value || '';
         persona.updatedAt = Date.now();
     }
 }
@@ -1552,6 +1570,7 @@ async function updateUI() {
     updateApiKeyFieldForProvider(currentProvider);
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
+    elements.prefillInput.value = persona ? (persona.prefill || '') : '';
     elements.showAvatar.checked = state.settings.showAvatar;
 
     // Load model parameters to UI (from active persona's modelConfig)
@@ -3041,6 +3060,22 @@ function stripExpressionTag(text) {
     return text.replace(/\[expression:\s*\w+\]\s*/gi, '').trim();
 }
 
+/**
+ * Strip prefill text from the start of a response
+ * @param {string} text - The full response text
+ * @param {string} prefill - The prefill text to strip
+ * @returns {string} Text with prefill removed
+ */
+function stripPrefillText(text, prefill) {
+    if (!prefill || !text) return text;
+    const trimmedPrefill = prefill.trim();
+    const trimmedText = text.trimStart();
+    if (trimmedText.startsWith(trimmedPrefill)) {
+        return trimmedText.slice(trimmedPrefill.length).trimStart();
+    }
+    return text;
+}
+
 async function setExpression(exprName) {
     const persona = getActivePersona();
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
@@ -3428,6 +3463,12 @@ async function sendMessageFromText(text, attachments = []) {
                 responseAttachments = [];
             }
 
+            // Strip prefill from response
+            if (state.currentPrefill) {
+                responseText = stripPrefillText(responseText, state.currentPrefill);
+                state.currentPrefill = '';
+            }
+
             const detectedExpr = detectExpression(responseText);
             await setExpression(detectedExpr);
             appendMessage('assistant', responseText, true, null, responseAttachments.length > 0 ? responseAttachments : null);
@@ -3596,6 +3637,12 @@ async function sendMessage() {
                 responseAttachments = [];
             }
 
+            // Strip prefill from response
+            if (state.currentPrefill) {
+                responseText = stripPrefillText(responseText, state.currentPrefill);
+                state.currentPrefill = '';
+            }
+
             // Detect expression from response
             const detectedExpr = detectExpression(responseText);
             await setExpression(detectedExpr);
@@ -3667,6 +3714,14 @@ async function callAnthropicAPIStreaming(userMessage, model, apiKey, systemPromp
         role: msg.role,
         content: msg.content
     }));
+
+    // Add prefill as assistant message if configured
+    const persona = getActivePersona();
+    const prefillText = persona?.prefill?.trim() || '';
+    if (prefillText) {
+        messages.push({ role: 'assistant', content: prefillText });
+    }
+    state.currentPrefill = prefillText;
 
     const requestBody = {
         model: model,
@@ -3747,6 +3802,14 @@ async function callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, 
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }]
     }));
+
+    // Add prefill as model message if configured
+    const persona = getActivePersona();
+    const prefillText = persona?.prefill?.trim() || '';
+    if (prefillText) {
+        contents.push({ role: 'model', parts: [{ text: prefillText }] });
+    }
+    state.currentPrefill = prefillText;
 
     // Build generationConfig with only enabled parameters
     const generationConfig = {
@@ -3903,7 +3966,12 @@ function appendStreamChunk(text) {
     if (state.streamingMessageDiv) {
         const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
         if (contentDiv) {
-            contentDiv.innerHTML = renderMarkdown(state.streamingAccumulator);
+            // Strip prefill for display
+            let displayText = state.streamingAccumulator;
+            if (state.currentPrefill) {
+                displayText = stripPrefillText(displayText, state.currentPrefill);
+            }
+            contentDiv.innerHTML = renderMarkdown(displayText);
         }
         scrollToBottom();
     }
@@ -3918,8 +3986,13 @@ async function finalizeStreamingMessage(fullText, generatedImages = []) {
     const detectedExpr = detectExpression(fullText);
     setExpression(detectedExpr);
 
-    // Strip expression tag for display and storage
-    const cleanText = stripExpressionTag(fullText);
+    // Strip prefill and expression tag for display and storage
+    let cleanText = fullText;
+    if (state.currentPrefill) {
+        cleanText = stripPrefillText(cleanText, state.currentPrefill);
+        state.currentPrefill = '';
+    }
+    cleanText = stripExpressionTag(cleanText);
 
     // Store any generated images to IndexedDB
     const attachments = await storeGeneratedImages(generatedImages);
@@ -4000,6 +4073,14 @@ async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt, attach
             lastMsg.content = await buildAnthropicMessageContent(lastMsg.content, attachments);
         }
     }
+
+    // Add prefill as assistant message if configured
+    const persona = getActivePersona();
+    const prefillText = persona?.prefill?.trim() || '';
+    if (prefillText) {
+        messages.push({ role: 'assistant', content: prefillText });
+    }
+    state.currentPrefill = prefillText;
 
     const requestBody = {
         model: model,
@@ -4087,6 +4168,14 @@ async function callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachmen
             lastContent.parts = [...extraParts, ...lastContent.parts];
         }
     }
+
+    // Add prefill as model message if configured
+    const persona = getActivePersona();
+    const prefillText = persona?.prefill?.trim() || '';
+    if (prefillText) {
+        contents.push({ role: 'model', parts: [{ text: prefillText }] });
+    }
+    state.currentPrefill = prefillText;
 
     // Build generationConfig with only enabled parameters
     const generationConfig = {
@@ -4586,6 +4675,7 @@ function setupEventListeners() {
     // Persona settings - auto-save
     elements.assistantName.addEventListener('input', autoSaveSettings);
     elements.systemPrompt.addEventListener('input', autoSaveSettings);
+    elements.prefillInput.addEventListener('input', autoSaveSettings);
 
     // API key visibility toggle
     elements.toggleApiKey.addEventListener('click', () => {

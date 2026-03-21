@@ -57,7 +57,12 @@
                     <label for="apiKeyInput" id="apiKeyLabel">API Key</label>
                     <div class="api-key-wrapper">
                         <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
-                        <button class="toggle-visibility" id="toggleApiKey">👁</button>
+                        <button class="toggle-visibility" id="toggleApiKey" aria-label="Toggle password visibility">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </button>
                     </div>
                     <p class="help-text">API keys are shared across all personas. Stored locally, never sent to any server except the AI provider.</p>
                 </div>
@@ -211,6 +216,10 @@
 
 When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.</textarea>
                     <p class="help-text">This defines your assistant's personality and behavior.</p>
+
+                    <label for="prefillInput">Response Prefill</label>
+                    <textarea id="prefillInput" rows="2" placeholder="Text to start assistant responses with..."></textarea>
+                    <p class="help-text">Model continues from this text. Hidden in responses.</p>
                 </div>
 
                 <!-- Avatar Settings -->
@@ -229,7 +238,10 @@ When responding, you may optionally include an expression tag like [expression: 
                     <div class="file-upload-wrapper">
                         <input type="file" id="avatarFileInput" accept="image/*" class="file-input-hidden">
                         <button type="button" class="file-upload-btn" id="avatarUploadBtn">
-                            📁 Choose Image
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                            Choose Image
                         </button>
                         <button type="button" class="file-clear-btn" id="avatarClearBtn" title="Remove image">
                             ✕
@@ -247,10 +259,30 @@ When responding, you may optionally include an expression tag like [expression: 
 
                     <label>Avatar Position</label>
                     <div class="position-preset-buttons">
-                        <button type="button" class="position-preset-btn" data-position="top-left">↖</button>
-                        <button type="button" class="position-preset-btn active" data-position="top-right">↗</button>
-                        <button type="button" class="position-preset-btn" data-position="bottom-left">↙</button>
-                        <button type="button" class="position-preset-btn" data-position="bottom-right">↘</button>
+                        <button type="button" class="position-preset-btn" data-position="top-left" aria-label="Position top left">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="17" y1="17" x2="7" y2="7"></line>
+                                <polyline points="7 17 7 7 17 7"></polyline>
+                            </svg>
+                        </button>
+                        <button type="button" class="position-preset-btn active" data-position="top-right" aria-label="Position top right">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="7" y1="17" x2="17" y2="7"></line>
+                                <polyline points="7 7 17 7 17 17"></polyline>
+                            </svg>
+                        </button>
+                        <button type="button" class="position-preset-btn" data-position="bottom-left" aria-label="Position bottom left">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="17" y1="7" x2="7" y2="17"></line>
+                                <polyline points="17 17 7 17 7 7"></polyline>
+                            </svg>
+                        </button>
+                        <button type="button" class="position-preset-btn" data-position="bottom-right" aria-label="Position bottom right">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="7" y1="7" x2="17" y2="17"></line>
+                                <polyline points="17 7 17 17 7 17"></polyline>
+                            </svg>
+                        </button>
                     </div>
 
                     <div class="checkbox-wrapper">
@@ -287,7 +319,13 @@ When responding, you may optionally include an expression tag like [expression: 
             <!-- Status Bar -->
             <header class="status-bar">
                 <div class="status-left">
-                    <button class="menu-button" id="openSidebar">☰</button>
+                    <button class="menu-button" id="openSidebar" aria-label="Open menu">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
                     <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
                 </div>
                 
@@ -313,7 +351,10 @@ When responding, you may optionally include an expression tag like [expression: 
                 <div class="status-right">
                     <span class="model-badge" id="modelIndicator">Claude Sonnet 4</span>
                     <button class="avatar-toggle-btn" id="avatarToggleBtn" title="Toggle Avatar">
-                        👤
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
                     </button>
                 </div>
             </header>
@@ -324,7 +365,7 @@ When responding, you may optionally include an expression tag like [expression: 
                 <div class="messages-container" id="messagesContainer">
                     <div class="welcome-message">
                         <h1>Welcome!</h1>
-                        <p>Configure your API key in the settings (☰) to get started.</p>
+                        <p>Configure your API key in the sidebar to get started.</p>
                     </div>
                 </div>
                 
@@ -348,7 +389,9 @@ When responding, you may optionally include an expression tag like [expression: 
                 <div class="attachment-preview-area" id="attachmentPreviewArea" style="display: none;"></div>
                 <div class="input-wrapper">
                     <button class="attach-button" id="attachButton" title="Attach files">
-                        <span>&#128206;</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                        </svg>
                     </button>
                     <input type="file" id="fileAttachInput" multiple accept="image/*,.pdf,.txt,.csv,.md,.json,.js,.py,.html,.css,.ts,.xml,.yaml,.yml,.mp3,.wav,.ogg,.webm" class="file-input-hidden">
                     <textarea
@@ -356,11 +399,16 @@ When responding, you may optionally include an expression tag like [expression: 
                         placeholder="Type your message..."
                         rows="1"
                     ></textarea>
-                    <button class="send-button" id="sendButton" disabled>
-                        <span class="send-icon">&#10148;</span>
+                    <button class="send-button" id="sendButton" disabled aria-label="Send message">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
                     </button>
                     <button class="stop-button" id="stopButton" style="display: none;" title="Stop generation">
-                        <span class="stop-icon">&#9632;</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                        </svg>
                     </button>
                 </div>
                 <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
@@ -389,7 +437,10 @@ When responding, you may optionally include an expression tag like [expression: 
                 <div class="file-upload-wrapper">
                     <input type="file" id="expressionFileInput" accept="image/*" class="file-input-hidden">
                     <button type="button" class="file-upload-btn" id="expressionUploadBtn">
-                        📁 Choose Image
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        Choose Image
                     </button>
                     <button type="button" class="file-clear-btn" id="expressionClearBtn" title="Remove image">
                         ✕

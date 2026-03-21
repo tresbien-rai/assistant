@@ -1,0 +1,20 @@
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editor settings (personal to each developer)
+.vscode/
+*.swp
+*.swo
+
+# Node (in case you add dependencies later)
+node_modules/
+
+# Environment / secrets
+.env
+.env.local
+
+# Misc
+nul
+*.log
