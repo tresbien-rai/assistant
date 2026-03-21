@@ -1,0 +1,1210 @@
+================================================================================
+PHASE 0 - BACKEND FOUNDATION: TASK QUEUE
+================================================================================
+Last updated: 2026-03-21
+Reference: PLANNING.txt, Section 3 (Phase 0)
+
+This document breaks Phase 0 into concrete, individually executable tasks.
+Each task is designed to be completable in one agent session.
+
+
+================================================================================
+TASK DEPENDENCY GRAPH
+================================================================================
+
+  P0-01  Express + SQLite setup
+    |
+    +---> P0-02  Database schema + data access layer
+             |
+             +---> P0-03  Error handling middleware + logging
+             |       |
+             |       +---> P0-04  Auth (Google OAuth + JWT)
+             |       |       |
+             |       |       +---> P0-05  API keys CRUD (encrypted storage)
+             |       |       |
+             |       |       +---> P0-06  Personas CRUD
+             |       |       |
+             |       |       +---> P0-07  Conversations + Messages CRUD
+             |       |       |
+             |       |       +---> P0-08  Settings CRUD
+             |       |       |
+             |       |       +---> P0-09  Chat proxy - Anthropic
+             |       |       |
+             |       |       +---> P0-10  Chat proxy - Gemini
+             |       |       |
+             |       |       +---> P0-11  Rate limiting
+             |       |
+             |       +---> P0-12  Avatar upload + serving
+             |
+             +---> P0-13  Frontend API client module
+                     |
+                     +---> P0-14  Frontend auth (login screen + session)
+                     |       |
+                     |       +---> P0-15  Frontend data migration
+                     |       |       (conversations, personas, settings)
+                     |       |
+                     |       +---> P0-16  Frontend chat proxy integration
+                     |       |
+                     |       +---> P0-17  Frontend error display system
+                     |
+                     +---> P0-18  Deployment (Railway) [MANUAL]
+
+
+================================================================================
+TASKS
+================================================================================
+
+
+--------------------------------------------------------------------------------
+P0-01: Express project initialization
+--------------------------------------------------------------------------------
+Phase:        0.1
+Branch:       agent/P0-01-express-init
+Dependencies: None
+
+Description:
+  Initialize the Express server project in a /server directory at the repo
+  root. Set up the basic project structure, install core dependencies, and
+  create a minimal running server that serves the existing frontend files.
+
+  Directory structure:
+    server/
+      package.json
+      src/
+        index.js          (entry point, Express app setup)
+        config.js         (environment variables, constants)
+      .env.example        (template for required env vars)
+
+  The server should:
+    - Listen on a configurable port (default 3000)
+    - Serve static files from the project root (index.html, app.js,
+      styles.css) so the existing frontend works unchanged
+    - Have CORS configured for development (localhost)
+    - Use express.json() middleware for API routes
+    - Have a health check endpoint: GET /api/health
+
+  Dependencies to install:
+    - express
+    - cors
+    - dotenv
+    - better-sqlite3
+
+  .env.example should list:
+    PORT=3000
+    NODE_ENV=development
+    JWT_SECRET=
+    ENCRYPTION_KEY=
+    GOOGLE_CLIENT_ID=
+    GOOGLE_CLIENT_SECRET=
+    GOOGLE_REDIRECT_URI=
+
+Acceptance criteria:
+  - `npm install` in /server completes without errors
+  - `npm start` launches the server and serves the existing frontend
+  - GET /api/health returns { "status": "ok" }
+  - Existing frontend works identically when accessed through the server
+
+Files created:
+  - server/package.json
+  - server/src/index.js
+  - server/src/config.js
+  - server/.env.example
+  - server/.gitignore (node_modules, .env, *.db)
+
+
+--------------------------------------------------------------------------------
+P0-02: Database schema and data access layer
+--------------------------------------------------------------------------------
+Phase:        0.1
+Branch:       agent/P0-02-database-schema
+Dependencies: P0-01
+
+Description:
+  Set up the SQLite database with better-sqlite3 and create all tables
+  needed for Phase 0. Build a data access layer that abstracts all database
+  operations behind clean functions, so swapping SQLite for PostgreSQL later
+  only requires changing this one module.
+
+  Create:
+    server/src/db/
+      connection.js     (initialize SQLite, run migrations)
+      schema.sql        (all CREATE TABLE statements)
+      dal.js            (data access layer - exported functions)
+
+  Database file location: server/data/assistant.db
+  (The data/ directory should be gitignored)
+
+  Tables (all use TEXT UUIDs for primary keys via crypto.randomUUID):
+
+    users
+      id              TEXT PRIMARY KEY
+      google_id       TEXT UNIQUE NOT NULL
+      email           TEXT
+      display_name    TEXT
+      drive_token      TEXT          (encrypted)
+      drive_refresh    TEXT          (encrypted)
+      created_at      INTEGER NOT NULL  (Unix ms timestamp)
+      updated_at      INTEGER NOT NULL
+
+    personas
+      id              TEXT PRIMARY KEY
+      user_id         TEXT NOT NULL REFERENCES users(id)
+      name            TEXT NOT NULL
+      system_prompt   TEXT DEFAULT ''
+      prefill         TEXT DEFAULT ''
+      avatar_filename TEXT DEFAULT ''
+      expressions     TEXT DEFAULT '{}'  (JSON string)
+      model_config    TEXT DEFAULT '{}'  (JSON string)
+      created_at      INTEGER NOT NULL
+      updated_at      INTEGER NOT NULL
+
+    conversations
+      id              TEXT PRIMARY KEY
+      user_id         TEXT NOT NULL REFERENCES users(id)
+      persona_id      TEXT REFERENCES personas(id)
+      project_id      TEXT            (nullable, for Phase 1)
+      title           TEXT DEFAULT 'New Chat'
+      created_at      INTEGER NOT NULL
+      updated_at      INTEGER NOT NULL
+
+    messages
+      id              TEXT PRIMARY KEY
+      conversation_id TEXT NOT NULL REFERENCES conversations(id)
+      role            TEXT NOT NULL    ('user' or 'assistant')
+      content         TEXT DEFAULT ''
+      attachments     TEXT DEFAULT '[]' (JSON string)
+      created_at      INTEGER NOT NULL
+
+    projects (created now for schema completeness, used in Phase 1)
+      id              TEXT PRIMARY KEY
+      user_id         TEXT NOT NULL REFERENCES users(id)
+      name            TEXT NOT NULL
+      instructions    TEXT DEFAULT ''
+      drive_folder_id TEXT DEFAULT ''
+      created_at      INTEGER NOT NULL
+      updated_at      INTEGER NOT NULL
+
+    project_files (created now, used in Phase 1)
+      id              TEXT PRIMARY KEY
+      project_id      TEXT NOT NULL REFERENCES projects(id)
+      filename        TEXT NOT NULL
+      mime_type       TEXT DEFAULT ''
+      size_bytes      INTEGER DEFAULT 0
+      drive_file_id   TEXT DEFAULT ''
+      created_at      INTEGER NOT NULL
+
+    settings
+      id              TEXT PRIMARY KEY
+      user_id         TEXT UNIQUE NOT NULL REFERENCES users(id)
+      avatar_size     TEXT DEFAULT 'medium'
+      avatar_position TEXT DEFAULT 'top-right'
+      show_avatar     INTEGER DEFAULT 1
+      custom_models   TEXT DEFAULT '{}' (JSON string)
+      created_at      INTEGER NOT NULL
+      updated_at      INTEGER NOT NULL
+
+    api_keys
+      id              TEXT PRIMARY KEY
+      user_id         TEXT NOT NULL REFERENCES users(id)
+      provider        TEXT NOT NULL   ('anthropic', 'google', 'openai')
+      encrypted_key   TEXT NOT NULL
+      created_at      INTEGER NOT NULL
+      updated_at      INTEGER NOT NULL
+      UNIQUE(user_id, provider)
+
+  Data access layer (dal.js) should export functions like:
+    users:
+      findUserByGoogleId(googleId)
+      createUser({ googleId, email, displayName, driveToken, driveRefresh })
+      updateUserDriveTokens(userId, { driveToken, driveRefresh })
+
+    personas:
+      getPersonasByUser(userId)
+      getPersonaById(personaId, userId)
+      createPersona(userId, data)
+      updatePersona(personaId, userId, data)
+      deletePersona(personaId, userId)
+
+    conversations:
+      getConversationsByUser(userId, { personaId?, limit?, offset? })
+      getConversationById(conversationId, userId)
+      createConversation(userId, data)
+      updateConversation(conversationId, userId, data)
+      deleteConversation(conversationId, userId)
+
+    messages:
+      getMessagesByConversation(conversationId, userId)
+      createMessage(conversationId, data)
+      updateMessage(messageId, data)
+      deleteMessage(messageId)
+
+    settings:
+      getSettingsByUser(userId)
+      upsertSettings(userId, data)
+
+    apiKeys:
+      getApiKey(userId, provider)
+      upsertApiKey(userId, provider, encryptedKey)
+      deleteApiKey(userId, provider)
+      getApiKeyProviders(userId)  (list which providers have keys)
+
+  Every function that takes userId should use it in the WHERE clause
+  to enforce data isolation between users.
+
+Acceptance criteria:
+  - Server starts and creates the database file if it doesn't exist
+  - All tables are created on first run
+  - DAL functions can be imported and called (write a small test script
+    that creates a user, creates a persona, creates a conversation with
+    messages, and reads them back)
+  - All DAL functions enforce user_id scoping
+
+Files created:
+  - server/src/db/connection.js
+  - server/src/db/schema.sql
+  - server/src/db/dal.js
+  - server/data/.gitkeep
+
+
+--------------------------------------------------------------------------------
+P0-03: Error handling middleware and structured logging
+--------------------------------------------------------------------------------
+Phase:        0.1
+Branch:       agent/P0-03-error-handling
+Dependencies: P0-02
+
+Description:
+  Add centralized error handling and structured logging to the Express server.
+  This must be in place before building API routes so all routes benefit
+  from consistent error responses.
+
+  Create:
+    server/src/middleware/errorHandler.js
+    server/src/utils/logger.js
+    server/src/utils/AppError.js
+
+  AppError class:
+    - Extends Error
+    - Properties: statusCode, code (string like 'PROVIDER_ERROR'),
+      message (user-facing), details (optional additional info)
+    - Static factory methods for common errors:
+        AppError.auth(message)         -> 401, AUTH_ERROR
+        AppError.provider(message, details) -> 502, PROVIDER_ERROR
+        AppError.drive(message)        -> 502, DRIVE_ERROR
+        AppError.rateLimited(retryAfter) -> 429, RATE_LIMITED
+        AppError.validation(message)   -> 400, VALIDATION_ERROR
+        AppError.notFound(resource)    -> 404, NOT_FOUND
+        AppError.server(message)       -> 500, SERVER_ERROR
+
+  Error handler middleware:
+    - Catches all errors thrown in routes
+    - If error is AppError, return structured JSON response:
+        { error: { code, message, details } }
+    - If error is unexpected, log full stack trace, return generic
+      SERVER_ERROR to client (don't leak internals)
+    - Log all errors with appropriate level (warn for 4xx, error for 5xx)
+
+  Logger (using pino for performance):
+    - Structured JSON logging in production
+    - Pretty-printed in development
+    - Log levels: error, warn, info, debug
+    - Include request ID, user ID (when available), timestamp
+    - NEVER log API keys, tokens, or passwords (create a sanitize utility)
+
+  Also create a request logging middleware:
+    - Log method, path, status code, response time for every request
+    - Use pino-http or similar
+
+  Wire into index.js:
+    - Request logging middleware (first)
+    - Error handler middleware (last, after all routes)
+
+  Dependencies to install:
+    - pino
+    - pino-pretty (dev dependency)
+    - pino-http
+
+Acceptance criteria:
+  - All requests are logged with method, path, status, response time
+  - Throwing AppError.validation('test') in a route returns:
+    { "error": { "code": "VALIDATION_ERROR", "message": "test" } }
+    with status 400
+  - Throwing a raw Error returns a generic SERVER_ERROR with status 500
+    and the full stack trace appears in server logs but NOT in the response
+  - No sensitive data appears in any log output
+
+Files created:
+  - server/src/middleware/errorHandler.js
+  - server/src/utils/logger.js
+  - server/src/utils/AppError.js
+
+Files modified:
+  - server/src/index.js (wire in middleware)
+  - server/package.json (new dependencies)
+
+
+--------------------------------------------------------------------------------
+P0-04: Authentication (Google OAuth + JWT sessions)
+--------------------------------------------------------------------------------
+Phase:        0.4
+Branch:       agent/P0-04-auth
+Dependencies: P0-03
+
+Description:
+  Implement Google OAuth 2.0 login flow that simultaneously authenticates
+  the user and obtains Google Drive access tokens. Issue JWT tokens for
+  session management.
+
+  Create:
+    server/src/routes/auth.js
+    server/src/middleware/authenticate.js
+    server/src/utils/encryption.js
+
+  Encryption utility:
+    - encrypt(text) / decrypt(ciphertext) using AES-256-GCM
+    - Uses ENCRYPTION_KEY from environment
+    - Used for Drive tokens and API keys stored in the database
+
+  OAuth flow:
+    GET /api/auth/google
+      - Generates Google OAuth URL with scopes:
+        openid, email, profile, https://www.googleapis.com/auth/drive.file
+      - Includes state parameter (CSRF protection)
+      - Redirects user to Google consent screen
+
+    GET /api/auth/google/callback
+      - Receives authorization code from Google
+      - Exchanges code for access token + refresh token
+      - Fetches user profile (Google ID, email, display name)
+      - Creates or updates user in database:
+        - If google_id exists: update Drive tokens
+        - If new: create user, create default persona, create default
+          settings
+      - Encrypts Drive tokens before storing
+      - Issues JWT containing: { userId, email, displayName }
+      - Redirects to frontend with JWT (as query param or set as
+        httpOnly cookie, depending on deployment constraints)
+
+    GET /api/auth/me
+      - Returns current user info from JWT
+      - Used by frontend to check if session is valid
+
+    POST /api/auth/logout
+      - Invalidate session (if using cookie, clear it)
+
+  Authenticate middleware:
+    - Extracts JWT from Authorization header (Bearer token) or cookie
+    - Verifies JWT signature and expiration
+    - Attaches user object to req.user (with userId, email, displayName)
+    - Returns 401 AUTH_ERROR if invalid/expired
+
+  JWT configuration:
+    - Secret from JWT_SECRET env var
+    - Expiration: 7 days
+    - Include userId, email, displayName in payload
+
+  Google OAuth setup notes (for manual reference, not automated):
+    - Requires Google Cloud Console project with OAuth consent screen
+    - Credentials: OAuth 2.0 Client ID (Web application type)
+    - Authorized redirect URI: {server_url}/api/auth/google/callback
+
+  Dependencies to install:
+    - jsonwebtoken
+    - googleapis (Google APIs Node.js client)
+
+Acceptance criteria:
+  - GET /api/auth/google redirects to Google's consent screen
+  - After Google consent, callback creates user and redirects with JWT
+  - GET /api/auth/me with valid JWT returns user info
+  - GET /api/auth/me without JWT returns 401
+  - Drive tokens are encrypted in the database (not plaintext)
+  - Second login for same Google account updates tokens, doesn't create
+    duplicate user
+  - Default persona and settings are created for new users
+
+Files created:
+  - server/src/routes/auth.js
+  - server/src/middleware/authenticate.js
+  - server/src/utils/encryption.js
+
+Files modified:
+  - server/src/index.js (mount auth routes)
+  - server/package.json (new dependencies)
+
+
+--------------------------------------------------------------------------------
+P0-05: API keys CRUD (encrypted storage)
+--------------------------------------------------------------------------------
+Phase:        0.3
+Branch:       agent/P0-05-api-keys
+Dependencies: P0-04
+
+Description:
+  Build API endpoints for managing per-provider API keys. Keys are encrypted
+  at rest and never returned to the frontend in plaintext.
+
+  Create:
+    server/src/routes/apiKeys.js
+
+  Endpoints:
+    GET /api/api-keys
+      - Returns list of providers that have keys stored
+      - Response: [{ provider: "anthropic", hasKey: true, updatedAt: ... }]
+      - NEVER returns the actual key values
+
+    PUT /api/api-keys/:provider
+      - Body: { key: "sk-ant-..." }
+      - Validates provider is one of: anthropic, google, openai
+      - Encrypts key using encryption utility from P0-04
+      - Upserts into api_keys table
+      - Returns: { provider, hasKey: true, updatedAt }
+
+    DELETE /api/api-keys/:provider
+      - Removes the stored key for that provider
+      - Returns: { provider, hasKey: false }
+
+  Internal helper (not an API endpoint, used by chat proxy later):
+    getDecryptedApiKey(userId, provider)
+      - Reads encrypted key from DB, decrypts, returns plaintext
+      - Throws AppError.notFound if no key stored for that provider
+
+  All routes require authentication (authenticate middleware).
+
+Acceptance criteria:
+  - PUT stores a key, GET confirms it exists without revealing it
+  - DELETE removes the key, GET confirms it's gone
+  - Stored keys in DB are encrypted (inspect DB to verify)
+  - Invalid provider names return VALIDATION_ERROR
+  - Routes return 401 without valid JWT
+
+Files created:
+  - server/src/routes/apiKeys.js
+
+Files modified:
+  - server/src/index.js (mount routes)
+
+
+--------------------------------------------------------------------------------
+P0-06: Personas CRUD
+--------------------------------------------------------------------------------
+Phase:        0.3
+Branch:       agent/P0-06-personas
+Dependencies: P0-04
+
+Description:
+  Build REST API endpoints for persona management.
+
+  Create:
+    server/src/routes/personas.js
+
+  Endpoints:
+    GET /api/personas
+      - Returns all personas for the authenticated user
+      - Ordered by updatedAt descending
+
+    GET /api/personas/:id
+      - Returns a single persona (only if owned by user)
+
+    POST /api/personas
+      - Body: { name, systemPrompt?, prefill?, expressions?, modelConfig? }
+      - Creates persona linked to authenticated user
+      - Returns the created persona
+
+    PUT /api/personas/:id
+      - Body: partial update fields
+      - Updates persona (only if owned by user)
+      - Updates the updatedAt timestamp
+      - Returns the updated persona
+
+    DELETE /api/personas/:id
+      - Deletes persona and all linked conversations + messages
+        (cascade delete)
+      - Cannot delete if it's the user's only persona (return
+        VALIDATION_ERROR)
+      - Returns: { deleted: true }
+
+  The expressions and modelConfig fields are stored as JSON strings in
+  SQLite but should be parsed to objects in API responses and accepted
+  as objects in request bodies.
+
+  All routes require authentication.
+
+Acceptance criteria:
+  - Full CRUD cycle works (create, read, update, delete)
+  - Cannot access another user's personas (returns 404)
+  - Deleting a persona cascades to its conversations and messages
+  - Cannot delete the last remaining persona
+  - JSON fields (expressions, modelConfig) are properly serialized/
+    deserialized
+
+Files created:
+  - server/src/routes/personas.js
+
+Files modified:
+  - server/src/index.js (mount routes)
+
+
+--------------------------------------------------------------------------------
+P0-07: Conversations and Messages CRUD
+--------------------------------------------------------------------------------
+Phase:        0.3
+Branch:       agent/P0-07-conversations
+Dependencies: P0-04
+
+Description:
+  Build REST API endpoints for conversation and message management.
+
+  Create:
+    server/src/routes/conversations.js
+
+  Endpoints:
+    GET /api/conversations
+      - Returns all conversations for the authenticated user
+      - Query params: ?personaId=xxx (optional filter)
+      - Ordered by updatedAt descending
+      - Includes message count per conversation (not the messages themselves)
+
+    GET /api/conversations/:id
+      - Returns conversation with all its messages
+      - Messages ordered by createdAt ascending
+
+    POST /api/conversations
+      - Body: { personaId, title?, projectId? }
+      - Creates conversation linked to authenticated user
+      - Returns the created conversation (empty, no messages)
+
+    PUT /api/conversations/:id
+      - Body: { title?, personaId? }
+      - Updates conversation metadata
+      - Returns the updated conversation
+
+    DELETE /api/conversations/:id
+      - Deletes conversation and all its messages (cascade)
+      - Returns: { deleted: true }
+
+    POST /api/conversations/:id/messages
+      - Body: { role, content, attachments? }
+      - Appends a message to the conversation
+      - Updates conversation's updatedAt
+      - Returns the created message
+
+    PUT /api/conversations/:id/messages/:messageId
+      - Body: { content }
+      - Updates message content (for edit feature)
+      - Returns the updated message
+
+    DELETE /api/conversations/:id/messages/:messageId
+      - Deletes a single message
+      - Returns: { deleted: true }
+
+  All routes require authentication and verify conversation ownership.
+
+Acceptance criteria:
+  - Full CRUD for conversations and messages
+  - Cannot access another user's conversations
+  - Deleting a conversation cascades to its messages
+  - Message ordering is consistent (createdAt ascending)
+  - Conversation list includes message count
+  - Filtering by personaId works
+
+Files created:
+  - server/src/routes/conversations.js
+
+Files modified:
+  - server/src/index.js (mount routes)
+
+
+--------------------------------------------------------------------------------
+P0-08: Settings CRUD
+--------------------------------------------------------------------------------
+Phase:        0.3
+Branch:       agent/P0-08-settings
+Dependencies: P0-04
+
+Description:
+  Build API endpoint for user settings (avatar display preferences,
+  custom model list).
+
+  Create:
+    server/src/routes/settings.js
+
+  Endpoints:
+    GET /api/settings
+      - Returns settings for the authenticated user
+      - If none exist yet, returns defaults
+
+    PUT /api/settings
+      - Body: partial update of settings fields
+      - Upserts settings for the authenticated user
+      - Returns the updated settings
+
+  The custom_models field is stored as a JSON string but should be
+  parsed/serialized in API responses/requests.
+
+  All routes require authentication.
+
+Acceptance criteria:
+  - GET returns defaults for a new user
+  - PUT creates settings if none exist, updates if they do
+  - JSON fields properly handled
+  - Cannot access another user's settings
+
+Files created:
+  - server/src/routes/settings.js
+
+Files modified:
+  - server/src/index.js (mount routes)
+
+
+--------------------------------------------------------------------------------
+P0-09: Chat proxy - Anthropic
+--------------------------------------------------------------------------------
+Phase:        0.2
+Branch:       agent/P0-09-chat-anthropic
+Dependencies: P0-05
+
+Description:
+  Build the chat proxy that forwards requests to Anthropic's API using
+  the user's stored API key. Supports both non-streaming and streaming.
+
+  Create:
+    server/src/routes/chat.js
+    server/src/providers/anthropic.js
+
+  Chat route:
+    POST /api/chat
+      - Body: { provider, model, messages, systemPrompt, modelParams,
+               prefill?, attachments? }
+      - Retrieves the user's decrypted API key for the specified provider
+      - Delegates to the appropriate provider module
+      - Returns the provider's response
+
+    POST /api/chat/stream
+      - Same body as /api/chat
+      - Sets response headers for SSE (text/event-stream)
+      - Pipes the provider's streaming response to the client
+      - Handles client disconnect (abort upstream request)
+
+    GET /api/models/:provider
+      - Fetches available models from the provider's models endpoint
+      - Uses the user's API key
+      - Returns the model list
+
+  Anthropic provider module:
+    - Builds the request body matching the current app.js format:
+      model, max_tokens, system, messages, temperature, top_p, top_k,
+      stop_sequences, thinking (if enabled)
+    - Handles attachments (multimodal content blocks)
+    - For non-streaming: POST to https://api.anthropic.com/v1/messages
+      Returns the response text
+    - For streaming: POST with stream:true, pipe SSE events back
+    - Proper error handling: map Anthropic error responses to AppError
+      (e.g., 429 -> AppError.provider with rate limit details)
+    - No 'anthropic-dangerous-direct-browser-access' header needed
+      (server-side requests don't need CORS workaround)
+
+  The chat.js route should use a provider dispatch pattern:
+    const providers = { anthropic, google, openai };
+    providers[provider].chat(params) / providers[provider].stream(params)
+  This makes adding new providers simple.
+
+Acceptance criteria:
+  - Non-streaming chat works: send a message, get a response
+  - Streaming chat works: SSE events flow to the client
+  - API key is never sent to or visible from the frontend
+  - Anthropic error responses are mapped to structured AppError responses
+  - Model list endpoint returns available models
+  - Client disconnecting mid-stream aborts the upstream request
+  - Prefill is correctly handled
+
+Files created:
+  - server/src/routes/chat.js
+  - server/src/providers/anthropic.js
+
+Files modified:
+  - server/src/index.js (mount routes)
+
+
+--------------------------------------------------------------------------------
+P0-10: Chat proxy - Gemini
+--------------------------------------------------------------------------------
+Phase:        0.2
+Branch:       agent/P0-10-chat-gemini
+Dependencies: P0-09
+
+Description:
+  Add Google Gemini support to the chat proxy, following the same provider
+  pattern established in P0-09.
+
+  Create:
+    server/src/providers/gemini.js
+
+  Gemini provider module:
+    - Builds the request body matching the current app.js format:
+      contents (with role mapping: assistant -> model), systemInstruction,
+      generationConfig (maxOutputTokens, temperature, topP, topK,
+      stopSequences, thinkingConfig), safetySettings
+    - Handles attachments (inline data for images, etc.)
+    - For non-streaming: POST to generateContent endpoint
+    - For streaming: POST to streamGenerateContent with alt=sse,
+      pipe SSE events back to client
+    - Map Google's error responses to AppError
+    - Handle Gemini-specific response format (candidates array,
+      parts with text, possible generated images)
+
+  Register in chat.js provider dispatch.
+
+Acceptance criteria:
+  - Non-streaming and streaming chat work with Gemini
+  - Safety settings are forwarded correctly
+  - Thinking level configuration works
+  - Generated images in responses are handled
+  - Error responses are properly mapped
+  - Model list endpoint works for Google
+
+Files created:
+  - server/src/providers/gemini.js
+
+Files modified:
+  - server/src/routes/chat.js (register provider)
+
+
+--------------------------------------------------------------------------------
+P0-11: Rate limiting
+--------------------------------------------------------------------------------
+Phase:        0.2
+Branch:       agent/P0-11-rate-limiting
+Dependencies: P0-03
+
+Description:
+  Add per-user rate limiting to the chat proxy endpoints.
+
+  Create:
+    server/src/middleware/rateLimiter.js
+
+  Implementation:
+    - Use express-rate-limit with an in-memory store
+    - Key by user ID (from req.user after auth middleware)
+    - Two limiters:
+        chatMinuteLimit: 30 requests per minute on /api/chat*
+        chatHourLimit: 500 requests per hour on /api/chat*
+    - Return 429 with Retry-After header and structured error:
+      AppError.rateLimited(retryAfterSeconds)
+    - Log rate limit hits at warn level
+
+  Apply to chat routes only (not to data CRUD routes).
+
+  Dependencies to install:
+    - express-rate-limit
+
+Acceptance criteria:
+  - Exceeding 30 requests/minute returns 429 with Retry-After header
+  - Response body matches the AppError.rateLimited format
+  - Rate limits are per-user, not global
+  - Non-chat routes are unaffected
+
+Files created:
+  - server/src/middleware/rateLimiter.js
+
+Files modified:
+  - server/src/index.js (apply to chat routes)
+  - server/package.json (new dependency)
+
+
+--------------------------------------------------------------------------------
+P0-12: Avatar upload and serving
+--------------------------------------------------------------------------------
+Phase:        0.3
+Branch:       agent/P0-12-avatars
+Dependencies: P0-06
+
+Description:
+  Implement avatar and expression image upload, stored on Railway's server
+  disk. These are small, frequently accessed files that don't need Drive.
+
+  Create:
+    server/src/routes/avatars.js
+    server/data/avatars/     (directory, gitignored)
+
+  Endpoints:
+    POST /api/personas/:id/avatar
+      - Multipart file upload (single image)
+      - Validate: image type only, max 5MB
+      - Save to server/data/avatars/{personaId}_avatar.{ext}
+      - Update persona.avatar_filename in database
+      - Returns: { avatarUrl: "/api/avatars/{personaId}/avatar" }
+
+    DELETE /api/personas/:id/avatar
+      - Remove avatar file from disk
+      - Clear persona.avatar_filename
+      - Returns: { deleted: true }
+
+    POST /api/personas/:id/expressions/:name/image
+      - Upload expression image
+      - Save to server/data/avatars/{personaId}_expr_{name}.{ext}
+      - Update the imageKey in persona's expressions JSON
+      - Returns: { imageUrl: "/api/avatars/{personaId}/expressions/{name}" }
+
+    DELETE /api/personas/:id/expressions/:name/image
+      - Remove expression image file
+      - Clear imageKey in expressions JSON
+      - Returns: { deleted: true }
+
+    GET /api/avatars/:personaId/avatar
+      - Serves the avatar image file
+      - Returns 404 if no avatar set
+      - Set appropriate cache headers
+
+    GET /api/avatars/:personaId/expressions/:name
+      - Serves the expression image file
+      - Returns 404 if no image for that expression
+
+  Dependencies to install:
+    - multer (for multipart file handling)
+
+Acceptance criteria:
+  - Avatar upload, retrieval, and deletion work
+  - Expression image upload, retrieval, and deletion work
+  - Non-image files are rejected with VALIDATION_ERROR
+  - Files over 5MB are rejected
+  - Avatar URLs are accessible and serve correct content-type
+  - Cannot upload to another user's persona (returns 404)
+
+Files created:
+  - server/src/routes/avatars.js
+  - server/data/avatars/.gitkeep
+
+Files modified:
+  - server/src/index.js (mount routes)
+  - server/package.json (multer dependency)
+
+
+--------------------------------------------------------------------------------
+P0-13: Frontend API client module
+--------------------------------------------------------------------------------
+Phase:        0.5
+Branch:       agent/P0-13-api-client
+Dependencies: P0-02
+
+Description:
+  Create a frontend JavaScript module that wraps all backend API calls.
+  This is the bridge between the existing frontend and the new backend.
+  Other frontend tasks will use this module to replace localStorage calls.
+
+  Create:
+    api-client.js  (in the project root alongside app.js)
+
+  The module should export an object (e.g., window.API) with methods:
+
+    auth:
+      API.auth.getGoogleLoginUrl()
+      API.auth.me()
+      API.auth.logout()
+
+    personas:
+      API.personas.list()
+      API.personas.get(id)
+      API.personas.create(data)
+      API.personas.update(id, data)
+      API.personas.delete(id)
+
+    conversations:
+      API.conversations.list({ personaId? })
+      API.conversations.get(id)           (includes messages)
+      API.conversations.create(data)
+      API.conversations.update(id, data)
+      API.conversations.delete(id)
+
+    messages:
+      API.messages.create(conversationId, data)
+      API.messages.update(conversationId, messageId, data)
+      API.messages.delete(conversationId, messageId)
+
+    settings:
+      API.settings.get()
+      API.settings.update(data)
+
+    apiKeys:
+      API.apiKeys.list()
+      API.apiKeys.set(provider, key)
+      API.apiKeys.delete(provider)
+
+    chat:
+      API.chat.send(params)               (non-streaming)
+      API.chat.stream(params, onChunk)     (streaming, calls onChunk
+                                            for each SSE event)
+      API.chat.abort()                     (cancel in-progress stream)
+
+    models:
+      API.models.list(provider)
+
+    avatars:
+      API.avatars.upload(personaId, file)
+      API.avatars.delete(personaId)
+      API.avatars.getUrl(personaId)
+      API.avatars.uploadExpression(personaId, name, file)
+      API.avatars.deleteExpression(personaId, name)
+      API.avatars.getExpressionUrl(personaId, name)
+
+  All methods should:
+    - Include the JWT token in the Authorization header
+    - Parse error responses and throw appropriate errors
+    - Handle 401 by redirecting to login
+    - Store the JWT in memory (not localStorage for security),
+      with a refresh mechanism if needed
+
+  This module does NOT modify app.js. It just provides the API layer
+  that subsequent tasks will wire into the existing UI code.
+
+Acceptance criteria:
+  - Module loads without errors in the browser
+  - All API method signatures match the backend endpoints
+  - JWT is included in all authenticated requests
+  - 401 responses trigger redirect to login
+  - Error responses are parsed into readable error objects
+  - Streaming method correctly processes SSE events
+
+Files created:
+  - api-client.js
+
+
+--------------------------------------------------------------------------------
+P0-14: Frontend auth (login screen and session management)
+--------------------------------------------------------------------------------
+Phase:        0.5
+Branch:       agent/P0-14-frontend-auth
+Dependencies: P0-04, P0-13
+
+Description:
+  Add a login screen and session management to the frontend. When the user
+  is not authenticated, show a login page. After authentication, show the
+  main app.
+
+  Modifications to index.html:
+    - Add a login screen section (hidden by default) with:
+      - App name/logo
+      - "Sign in with Google" button
+      - Brief description of what the app does
+    - The main app container is hidden until authenticated
+
+  Modifications to app.js:
+    - On page load, check API.auth.me()
+      - If valid session: show app, load data
+      - If no session / expired: show login screen
+    - Login button triggers redirect to API.auth.getGoogleLoginUrl()
+    - After OAuth redirect back, extract JWT from URL/cookie,
+      store in API client, redirect to clean URL, load app
+    - Add logout button in the sidebar/settings that calls
+      API.auth.logout() and returns to login screen
+
+  Modifications to styles.css:
+    - Login screen styling (centered, clean, matches dark theme)
+
+Acceptance criteria:
+  - Unauthenticated users see the login screen, not the app
+  - Clicking "Sign in with Google" initiates the OAuth flow
+  - After successful login, the app loads with user's data
+  - Refreshing the page maintains the session (within JWT expiry)
+  - Logout clears the session and returns to login screen
+  - The login screen is visually polished and matches the app's theme
+
+Files modified:
+  - index.html
+  - app.js
+  - styles.css
+
+
+--------------------------------------------------------------------------------
+P0-15: Frontend data layer migration
+--------------------------------------------------------------------------------
+Phase:        0.5
+Branch:       agent/P0-15-frontend-data
+Dependencies: P0-14
+
+Description:
+  Replace all localStorage/IndexedDB data operations in app.js with calls
+  to the API client. This is the core migration task.
+
+  Changes to app.js:
+    - Replace loadSettings() to use API.settings.get()
+    - Replace saveSettings/persistSettings to use API.settings.update()
+    - Replace persona load/save to use API.personas methods
+    - Replace conversation load/save to use API.conversations methods
+    - Replace message append/save to use API.messages methods
+    - Replace API key load/save to use API.apiKeys methods
+    - Replace ImageStore (IndexedDB) avatar operations with
+      API.avatars methods
+    - Remove the schema migration system (no longer needed)
+    - Remove localStorage/IndexedDB references
+    - All data operations become async (add await where needed)
+    - State is loaded from server on app init, kept in memory during
+      the session
+
+  The init() function should:
+    1. Check authentication (from P0-14)
+    2. Fetch settings, personas, conversations from API
+    3. Populate the in-memory state object
+    4. Render the UI
+
+  This is the largest frontend task. It touches many functions but the
+  pattern is repetitive: replace local storage call with API call.
+
+Acceptance criteria:
+  - App loads all data from the server (no localStorage reads)
+  - Creating/editing/deleting personas persists to server
+  - Creating/editing/deleting conversations persists to server
+  - Settings changes persist to server
+  - API keys are stored/retrieved via server
+  - Avatar upload/display works via server
+  - No references to localStorage or IndexedDB remain in data paths
+    (IndexedDB may still be used for attachment blobs temporarily)
+  - App works correctly on a fresh browser with no local data
+
+Files modified:
+  - app.js (extensive changes)
+
+
+--------------------------------------------------------------------------------
+P0-16: Frontend chat proxy integration
+--------------------------------------------------------------------------------
+Phase:        0.5
+Branch:       agent/P0-16-frontend-chat
+Dependencies: P0-09, P0-10, P0-15
+
+Description:
+  Replace the direct API calls to Anthropic/Gemini in app.js with calls
+  through the backend proxy via the API client.
+
+  Changes to app.js:
+    - Replace callAPI() to use API.chat.send()
+    - Replace callAPIStreaming() to use API.chat.stream()
+    - Replace callAnthropicAPI/callGoogleAPI with a single code path
+      that sends provider, model, messages, params to the backend
+    - The backend handles provider-specific formatting
+    - Replace the model list fetch to use API.models.list()
+    - Remove the CORS workaround header
+    - Remove direct references to provider API endpoints
+    - The frontend just sends a generic chat request, the backend
+      handles the rest
+
+  The frontend still handles:
+    - Building the message array from conversation history
+    - SSE parsing for streaming display
+    - Expression detection on response text
+    - Attachment handling for the UI (display, preview)
+
+Acceptance criteria:
+  - Chat works with Anthropic through the proxy
+  - Chat works with Gemini through the proxy
+  - Streaming works for both providers
+  - Stop/abort generation works
+  - Model parameter controls still function
+  - Model list fetching works through the proxy
+  - No direct calls to external AI APIs remain in frontend code
+
+Files modified:
+  - app.js
+
+
+--------------------------------------------------------------------------------
+P0-17: Frontend error display system
+--------------------------------------------------------------------------------
+Phase:        0.5
+Branch:       agent/P0-17-frontend-errors
+Dependencies: P0-14
+
+Description:
+  Build the user-facing error display system in the frontend, replacing
+  console.error logging with visible feedback.
+
+  Create three error display mechanisms:
+
+  1. Toast notifications (transient errors):
+     - Small popup in the corner that auto-dismisses after 5 seconds
+     - Used for: rate limits, network blips, minor validation errors
+     - Has dismiss button for manual close
+     - Color-coded: yellow for warnings, red for errors, green for success
+
+  2. Inline chat errors (conversation-related):
+     - Error message displayed in the chat area as a system message
+     - Used for: provider errors, context too long, generation failures
+     - Already partially exists as appendErrorMessage() in app.js
+     - Enhance with structured error information and retry button
+
+  3. Modal/banner (critical, action-required):
+     - Full-width banner at the top or modal overlay
+     - Used for: auth expired, Drive disconnected
+     - Includes action button ("Sign in again", "Reconnect Drive")
+     - Cannot be dismissed without taking action (or explicit close)
+
+  Integrate with the API client:
+    - 401 errors -> modal with "Sign in again"
+    - 429 errors -> toast with countdown timer
+    - PROVIDER_ERROR -> inline chat error with details
+    - DRIVE_ERROR -> modal with "Reconnect" action
+    - VALIDATION_ERROR -> toast
+    - SERVER_ERROR -> toast
+
+  Modifications to styles.css:
+    - Toast notification styles
+    - Enhanced error message styles in chat
+    - Modal/banner styles
+
+Acceptance criteria:
+  - Toast notifications appear, auto-dismiss, and can be manually closed
+  - Chat errors display inline with structured information
+  - Critical errors show modal that requires action
+  - Rate limit toast shows a countdown timer
+  - Auth expiry triggers login redirect after modal
+  - Error display works on both desktop and mobile layouts
+
+Files modified:
+  - app.js (error handling integration)
+  - index.html (toast container, modal markup)
+  - styles.css (error display styles)
+
+
+--------------------------------------------------------------------------------
+P0-18: Deployment to Railway [MANUAL - NOT AN AGENT TASK]
+--------------------------------------------------------------------------------
+Phase:        0.6
+Branch:       N/A (direct to main after all other tasks merged)
+Dependencies: All P0 tasks
+
+Description:
+  This task is performed manually, not by an agent.
+
+  Steps:
+  1. Create Railway account and Hobby tier project
+  2. Connect the GitHub repository
+  3. Configure build settings:
+     - Root directory: /server
+     - Build command: npm install
+     - Start command: npm start
+  4. Add a persistent volume for /server/data (SQLite + avatars)
+  5. Set environment variables:
+     - PORT (Railway usually sets this automatically)
+     - NODE_ENV=production
+     - JWT_SECRET (generate a strong random string)
+     - ENCRYPTION_KEY (generate a strong random key)
+     - GOOGLE_CLIENT_ID (from Google Cloud Console)
+     - GOOGLE_CLIENT_SECRET (from Google Cloud Console)
+     - GOOGLE_REDIRECT_URI (Railway deployment URL + /api/auth/google/callback)
+  6. Set up Google Cloud Console:
+     - Create new project (separate from RisuAI)
+     - Configure OAuth consent screen
+     - Create OAuth 2.0 credentials
+     - Add authorized redirect URI matching Railway URL
+     - Enable Google Drive API
+  7. Deploy and test:
+     - Verify frontend loads
+     - Test Google login flow end-to-end
+     - Test chat with both providers
+     - Test from a different device / mobile
+
+Acceptance criteria:
+  - App is accessible at Railway URL from any device
+  - Google login works
+  - Chat works with Anthropic and Gemini
+  - Data persists across page reloads and device switches
+  - Pushing to main triggers auto-deploy
