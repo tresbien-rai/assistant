@@ -1,0 +1,484 @@
+================================================================================
+AI ASSISTANT - DEVELOPMENT PLAN
+================================================================================
+Last updated: 2026-03-21
+
+This document outlines the architecture, priorities, and phased implementation
+plan for evolving the AI Assistant from a client-side browser app into a
+full-featured, server-backed application.
+
+
+================================================================================
+1. CURRENT STATE
+================================================================================
+
+The app is a vanilla JavaScript frontend (app.js ~5000 lines, index.html,
+styles.css) with no build step or bundler. It runs via a lightweight Node.js
+dev server (package.json).
+
+Existing features:
+  - Multi-provider API support (Anthropic Claude, Google Gemini)
+  - Per-provider API keys stored in localStorage
+  - Customizable personas with system prompts and per-persona model config
+  - Avatar system with expression detection (emoji + custom images via IndexedDB)
+  - Multi-conversation support with titles, create/switch/rename/delete
+  - Multi-persona support with independent model settings per persona
+  - Message actions (edit, delete, rerun/regenerate)
+  - File attachments (images, PDFs, text, audio) sent to model
+  - Markdown rendering with syntax highlighting (marked.js + highlight.js)
+  - Streaming responses (Anthropic and Gemini)
+  - Model parameter controls (temperature, top P/K, max tokens, stop sequences)
+  - Provider-specific settings (Claude extended thinking, Gemini safety/thinking)
+  - Schema versioning with migration system (currently at v8)
+  - Tabbed sidebar (Chats, Settings, Personas)
+  - Dark theme, responsive design
+
+Current limitations:
+  - All data in localStorage/IndexedDB (browser-locked, no cross-device access)
+  - API keys sent directly from browser (CORS workaround for Anthropic)
+  - No persistent file system for tool use outputs
+  - No project/context system for background knowledge
+  - Single-user only, no auth
+
+
+================================================================================
+2. TARGET ARCHITECTURE
+================================================================================
+
+  +------------------+          +------------------+
+  |    Frontend      |  <--->   |    Backend       |
+  |  (Browser)       |   REST   |  (Express/Node)  |
+  |                  |   API    |                  |
+  |  - UI/UX         |          |  - API proxy     |
+  |  - Rendering     |          |  - Auth          |
+  |                  |          |  - SQLite DB     |
+  +------------------+          |  - Tool executor |
+                                +------------------+
+                                       |
+                         +-------------+-------------+
+                         |             |             |
+                  +------+------+  +--+---+  +------+--------+
+                  | AI Providers|  |Google|  | Google Drive   |
+                  | (Claude,    |  |Cloud |  | API            |
+                  |  Gemini,    |  |Console|  | (project file  |
+                  |  OpenAI)    |  |(OAuth)|  |  storage)      |
+                  +-------------+  +------+  +---------------+
+
+Hosting: Railway (Hobby tier)
+  - ~$5/month, sufficient for personal + small group use
+  - Simple GitHub integration (push to main = auto-deploy)
+  - Can migrate to Google Cloud later if needed
+
+Database: SQLite (single file, no server process)
+  - All structured data: users, conversations, personas, projects, settings
+  - Behind an abstraction layer for future migration to PostgreSQL
+  - userId field included from day one for multi-user readiness
+
+File storage: Hybrid approach
+  - Server (Railway): Small/temporary files, avatars, expression images
+  - Google Drive (per user): Project files, tool-created files, exports
+  - Google Drive is a required dependency for project file features
+  - Users connect their Google account via OAuth on first setup
+  - Each user's files live in their own Drive, not on the server
+  - This keeps Railway storage minimal and hosting costs low
+  - Server-side temp storage for processing (e.g., reading file content
+    to inject as context), then cleaned up
+
+Google Cloud Console: Already set up (used for RisuAI)
+  - Create a separate project for the AI Assistant app
+  - OAuth 2.0 client credentials for Google Drive API
+  - Scopes: drive.file (files created/opened by the app)
+
+Auth: Simple token-based auth initially
+  - Can be replaced with proper auth provider (Clerk, Auth0) later
+  - Session tokens, secure API key storage server-side
+  - Google OAuth can double as the login method (simplifies auth +
+    Drive connection into one step)
+
+
+================================================================================
+3. DEVELOPMENT PHASES
+================================================================================
+
+Each phase is designed to produce a working, deployable state. No phase depends
+on incomplete work from a previous phase.
+
+
+--------------------------------------------------------------------------------
+Phase 0: Backend Foundation
+--------------------------------------------------------------------------------
+Priority: CRITICAL (everything else depends on this)
+Estimated complexity: Medium
+
+Goal: Stand up an Express server that replicates the current app's functionality
+but with server-side data storage and API proxying. The frontend is rebuilt
+to work against the new backend (no migration from old localStorage data).
+
+Tasks:
+
+  0.1  Project setup
+       - Initialize Express project in a /server directory
+       - Set up SQLite with an ORM or query builder (better-sqlite3 or Knex)
+       - Define database schema:
+           users (id, email, google_id, display_name, drive_token_encrypted,
+                  drive_refresh_token_encrypted, created_at, updated_at)
+           personas (id, user_id, name, system_prompt, prefill, avatar_key,
+                     expressions, model_config, created_at, updated_at)
+           conversations (id, user_id, persona_id, project_id, title,
+                          created_at, updated_at)
+           messages (id, conversation_id, role, content, attachments,
+                     created_at)
+           projects (id, user_id, name, instructions, drive_folder_id,
+                     created_at, updated_at)
+           project_files (id, project_id, filename, mime_type, size_bytes,
+                          drive_file_id, created_at)
+           settings (id, user_id, avatar_size, avatar_position,
+                     show_avatar, custom_models)
+           api_keys (id, user_id, provider, encrypted_key)
+       - All tables include user_id for multi-user readiness
+
+  0.2  API proxy layer
+       - POST /api/chat - Proxies to Anthropic/Gemini/OpenAI
+         (API keys stored server-side, never sent to frontend)
+       - POST /api/chat/stream - Streaming proxy (SSE)
+       - GET /api/models/:provider - Fetch available models
+       - Benefits: API keys secured, no more CORS workaround
+
+  0.3  Data REST API
+       - CRUD endpoints for conversations, personas, messages, settings
+       - GET/POST/PUT/DELETE /api/conversations
+       - GET/POST/PUT/DELETE /api/personas
+       - GET/PUT /api/settings
+       - POST /api/api-keys (store encrypted)
+
+  0.4  Auth via Google OAuth
+       - GET /api/auth/google - Initiate Google OAuth flow
+       - GET /api/auth/google/callback - Handle OAuth callback
+       - This serves double duty: authenticates the user AND connects
+         their Google Drive in a single flow
+       - On first login, create user record with Google ID and Drive tokens
+       - JWT session tokens for subsequent API requests
+       - Middleware to protect all /api routes
+       - No separate username/password auth needed (Google login only)
+
+  0.5  Frontend rebuild
+       - Create an API client module (api.js) that wraps all fetch calls
+       - Replace localStorage/IndexedDB calls with API client calls
+       - Replace direct AI provider calls with proxy calls through backend
+       - Add login screen with "Sign in with Google" button
+       - No data migration from old localStorage (clean start)
+
+  0.6  Deployment
+       - Set up Railway Hobby tier project
+       - Connect to GitHub repo for auto-deploy on push to main
+       - Configure environment variables (encryption keys, Google OAuth
+         client ID/secret, JWT secret)
+       - Set up custom domain (optional)
+       - Test cross-device access
+
+  Agent suitability: Tasks 0.1-0.3 are excellent agent tasks (well-defined
+  CRUD, clear acceptance criteria). Task 0.4 is mostly agent-friendly with
+  some manual Google Cloud Console setup. Task 0.5 requires more judgment
+  (UI integration). Task 0.6 is manual (platform setup).
+
+
+--------------------------------------------------------------------------------
+Phase 1: Projects
+--------------------------------------------------------------------------------
+Priority: HIGH
+Depends on: Phase 0
+
+Goal: Implement a Projects system that provides persistent background context
+for conversations, independent of personas. Files are stored on the user's
+Google Drive.
+
+Data model:
+
+  projects (id, user_id, name, instructions, drive_folder_id,
+            created_at, updated_at)
+  project_files (id, project_id, filename, mime_type, size_bytes,
+                 drive_file_id, created_at)
+  conversations.project_id (nullable FK - a conversation may belong to a
+                            project)
+
+  A project is independent from personas:
+    - A project has a name, optional instructions, and a collection of files
+    - A conversation can be associated with one project (or none)
+    - Any persona can be used within a project
+    - Project files + instructions are injected into the system prompt /
+      context when starting a conversation within that project
+
+Google Drive file storage:
+
+  On the user's Drive, the app creates a root folder structure:
+    AI Assistant/
+      projects/
+        {project-name}/
+          file1.txt
+          file2.json
+          ...
+
+  - When a project is created, a corresponding Drive folder is created
+  - When files are uploaded, they go to Drive via the backend
+  - The backend downloads file content temporarily when assembling context
+    for an API call (text extraction), then discards the local copy
+  - project_files table stores Drive file IDs for quick access
+  - File metadata (name, type, size) cached in SQLite to avoid repeated
+    Drive API calls for listing
+
+UI additions:
+
+  - Projects tab or section in the sidebar
+  - Project creation/editing modal (name, instructions)
+  - File upload interface within project view
+  - File list with download/delete actions
+  - Project selector when creating a new conversation
+  - Visual indicator showing active project on conversation
+
+File handling:
+
+  - Files uploaded via POST /api/projects/:id/files (multipart)
+  - Backend uploads to Google Drive, stores drive_file_id in database
+  - Text files (.txt, .md, .json, .csv, etc.) have content extracted and
+    sent as context to the model
+  - Binary files (images, PDFs) sent as multimodal content where supported
+  - File size limits: individual file 10MB, total per project 100MB
+    (uses the user's own Drive quota, so this is a soft guideline)
+
+Context injection:
+
+  - When a conversation has a project_id, the backend assembles context:
+    1. Project instructions (if any)
+    2. Project file contents (text files downloaded from Drive on demand)
+       or references (binary files)
+    3. This is prepended to the conversation's system prompt
+  - The persona's system prompt comes after project context
+  - Token budget management: track approximate context size, warn user
+    if project context is very large
+  - Cache frequently accessed file content in server memory/temp storage
+    to reduce Drive API calls during active conversations
+
+  Agent suitability: Backend tasks (data model, API endpoints, Drive
+  integration) are very agent-friendly. Frontend UI requires more design
+  judgment.
+
+
+--------------------------------------------------------------------------------
+Phase 2: Tool Use (File Creation)
+--------------------------------------------------------------------------------
+Priority: HIGH
+Depends on: Phase 1
+
+Goal: Allow the model to create files during conversation, stored on the
+user's Google Drive within the active project (or as standalone downloads).
+
+Architecture:
+
+  The backend defines tools/functions that the model can call:
+
+    create_file:
+      parameters: filename, content, mime_type
+      action: If in a project, uploads to the project's Drive folder and
+              records in project_files. If no project, uploads to a
+              "Downloads" folder on Drive. Returns a download/view URL.
+
+    read_file:
+      parameters: filename (within project)
+      action: Downloads file content from Drive, returns to model
+
+    list_files:
+      parameters: (project context)
+      action: Returns list of files in the current project (from cached
+              metadata in SQLite)
+
+  Implementation:
+
+    - Extend the chat proxy to include tool definitions in the API call
+    - When the model returns a tool_use response:
+      1. Backend executes the tool (file I/O on server)
+      2. Backend sends tool_result back to model
+      3. Model generates final response referencing the created file
+    - Frontend displays created files as downloadable attachments in the
+      conversation, with inline preview for text/code files
+
+  Provider mapping:
+    - Anthropic: tool_use / tool_result blocks
+    - Gemini: function_calling / function_response
+    - OpenAI: function_call / function responses (when added)
+
+  Agent suitability: Backend tool execution is very agent-friendly.
+  Frontend rendering of tool results needs design input.
+
+
+--------------------------------------------------------------------------------
+Phase 3: OpenAI Provider Support
+--------------------------------------------------------------------------------
+Priority: MEDIUM
+Depends on: Phase 0
+
+Goal: Add OpenAI as a third provider option, following the established
+Anthropic/Gemini patterns.
+
+Implementation:
+
+  - Add OpenAI endpoint configuration and API key storage
+  - Implement chat completion proxy (POST /api/chat with provider=openai)
+  - Implement streaming proxy (SSE via OpenAI's streaming format)
+  - Map OpenAI's function_call format to the tool use system (Phase 2)
+  - Add OpenAI-specific model parameters (frequency_penalty, etc.)
+  - Frontend: provider selector, model dropdown, parameter controls
+  - Fetch available models via OpenAI's models endpoint
+
+  The provider abstraction already partially exists in the codebase.
+  This is largely mechanical work following established patterns.
+
+  Agent suitability: Excellent. Clear patterns to follow, well-documented
+  API, isolated changes.
+
+
+--------------------------------------------------------------------------------
+Phase 4: Quality of Life Improvements
+--------------------------------------------------------------------------------
+Priority: MEDIUM-LOW
+Depends on: Phase 0
+
+These can be worked on in parallel with Phases 1-3 once the backend exists.
+Each is independent and well-scoped for agent tasks.
+
+  4.1  Export/Import
+       - Export conversations and personas to JSON
+       - Import from JSON file
+       - Bulk export (all data)
+       - Could also export to Google Drive as a backup
+
+  4.2  Auto-generate conversation titles
+       - On first user message, send a lightweight API call to generate a
+         short title (use the cheapest available model)
+       - Update conversation title in sidebar
+
+  4.3  Conversation search
+       - Full-text search across message content
+       - SQLite FTS5 extension makes this straightforward on the backend
+
+  4.4  Keyboard shortcuts
+       - New chat (Ctrl+N), toggle sidebar (Ctrl+B), etc.
+       - Pure frontend work
+
+  4.5  Light theme / custom accent colors
+       - CSS variable-based theming
+       - Theme selector in settings
+
+  4.6  Streaming improvements
+       - Streaming is partially implemented; ensure consistent behavior
+         across all providers and edge cases
+
+
+================================================================================
+4. TASK QUEUE STRUCTURE
+================================================================================
+
+For the agent workflow, tasks should be defined with this structure:
+
+  Task ID:        A short identifier (e.g., P0-01)
+  Title:          One-line summary
+  Phase:          Which phase this belongs to
+  Description:    What needs to be built, with enough detail that an agent
+                  can work independently
+  Acceptance:     Specific criteria that define "done"
+  Files involved: Which files will be created or modified
+  Dependencies:   Other task IDs that must be complete first
+  Branch name:    agent/P0-01-description
+
+Tasks should be small enough to complete in one agent session (roughly
+1-2 hours of work, touching no more than 3-4 files). Large features should
+be broken into multiple tasks.
+
+
+================================================================================
+5. RESOLVED DECISIONS
+================================================================================
+
+  - Hosting: Railway Hobby tier (~$5/month)
+  - File storage: Google Drive per user (required, not optional)
+  - Google Drive scope: drive.file only (broader scopes can be added later)
+  - Auth: Google OAuth (serves as both login and Drive connection)
+  - Migration: None. Clean start, no localStorage migration.
+  - Offline support: Not planned. Requires connectivity.
+  - OpenAI: Yes, will be added as Phase 3.
+  - Google Cloud Console: Separate project from the RisuAI one.
+  - Avatar/expression images: Stored on Railway server volume (small files,
+    frequently accessed for rendering, no need to round-trip through Drive)
+  - Railway storage: Hobby tier starts with 0.5GB per volume. SQLite DB +
+    avatar images should fit comfortably. Monitor usage over time.
+  - Rate limiting: Yes, required. Per-user limits on the chat proxy.
+
+
+================================================================================
+6. ERROR HANDLING STRATEGY
+================================================================================
+
+The current app logs errors to the browser console, which is invisible to
+users. The server-backed version needs a layered error handling approach.
+
+Server-side logging:
+
+  - Structured logging (e.g., using winston or pino) with log levels
+    (error, warn, info, debug)
+  - Railway provides a log viewer in its dashboard, which captures stdout/
+    stderr from the running service. All server logs are visible there.
+  - Log format should include: timestamp, log level, user ID (if
+    authenticated), request path, error message, and stack trace for errors
+  - Sensitive data (API keys, tokens) must NEVER appear in logs
+
+User-facing error responses:
+
+  The backend API should return structured error responses:
+
+    {
+      "error": {
+        "code": "PROVIDER_ERROR",
+        "message": "The AI provider returned an error. Please try again.",
+        "details": "Rate limit exceeded. Try again in 30 seconds."
+      }
+    }
+
+  Error categories and what the user sees:
+
+    AUTH_ERROR         "Your session has expired. Please sign in again."
+                       (auto-redirect to login)
+
+    PROVIDER_ERROR     "The AI provider returned an error: {details}"
+                       (show provider's error message, e.g., rate limit,
+                       invalid key, context too long)
+
+    DRIVE_ERROR        "Could not access Google Drive. Please reconnect
+                       your account in Settings."
+                       (offer a reconnect action)
+
+    RATE_LIMITED       "You've sent too many messages. Please wait a moment."
+                       (show cooldown timer)
+
+    VALIDATION_ERROR   "Invalid request: {details}"
+                       (e.g., file too large, unsupported format)
+
+    SERVER_ERROR       "Something went wrong on our end. Please try again."
+                       (generic fallback for unexpected errors)
+
+Frontend error display:
+
+  - Toast/notification system for transient errors (network blips, rate
+    limits) that auto-dismiss after a few seconds
+  - Inline error messages in the chat area for conversation-related errors
+    (provider errors, context too long) so the user sees them in context
+  - Modal/banner for critical errors (auth expired, Drive disconnected)
+    that require user action before continuing
+  - The existing app has a notification system stubbed but not fully
+    implemented. Phase 0.5 should complete this.
+
+Rate limiting specifics:
+
+  - Per-user rate limits on POST /api/chat and /api/chat/stream
+  - Suggested starting limits: 30 messages per minute, 500 per hour
+  - Use an in-memory store (e.g., express-rate-limit) initially
+  - Return 429 status with Retry-After header
+  - Frontend displays a friendly countdown when rate limited
