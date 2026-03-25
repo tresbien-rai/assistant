@@ -20,6 +20,7 @@ const { logger } = require('./utils/logger');
 const authRoutes = require('./routes/auth');
 const apiKeysRoutes = require('./routes/apiKeys');
 const conversationsRoutes = require('./routes/conversations');
+const { chatRouter, modelsRouter } = require('./routes/chat');
 
 // Initialize Express app
 const app = express();
@@ -68,6 +69,10 @@ app.use('/api/api-keys', apiKeysRoutes);
 
 // Conversations and messages
 app.use('/api/conversations', conversationsRoutes);
+
+// Chat proxy (AI providers)
+app.use('/api/chat', chatRouter);
+app.use('/api/models', modelsRouter);
 
 // =============================================================================
 // STATIC FILES
