@@ -20,6 +20,7 @@ const { logger } = require('./utils/logger');
 const authRoutes = require('./routes/auth');
 const apiKeysRoutes = require('./routes/apiKeys');
 const conversationsRoutes = require('./routes/conversations');
+const settingsRoutes = require('./routes/settings');
 const { chatRouter, modelsRouter } = require('./routes/chat');
 
 // Initialize Express app
@@ -69,6 +70,9 @@ app.use('/api/api-keys', apiKeysRoutes);
 
 // Conversations and messages
 app.use('/api/conversations', conversationsRoutes);
+
+// User settings
+app.use('/api/settings', settingsRoutes);
 
 // Chat proxy (AI providers)
 app.use('/api/chat', chatRouter);
