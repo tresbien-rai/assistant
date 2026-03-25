@@ -23,6 +23,9 @@ const AppError = require('../utils/AppError');
 
 const router = express.Router();
 
+// Maximum number of conversations that can be returned in a single request
+const MAX_LIMIT = 100;
+
 // All routes require authentication
 router.use(authenticate);
 
@@ -94,7 +97,7 @@ router.get('/', asyncHandler(async (req, res) => {
   if (limit) {
     const parsedLimit = parseInt(limit, 10);
     if (!isNaN(parsedLimit) && parsedLimit > 0) {
-      options.limit = parsedLimit;
+      options.limit = Math.min(parsedLimit, MAX_LIMIT);
     }
   }
   if (offset) {
