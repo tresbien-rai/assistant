@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Environment variables (contains secrets)
+.env
+
+# Database files
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/*.db
+
+# Keep the data directory structure
+!data/.gitkeep
+
+# Avatar uploads (will be in data/avatars/)
+data/avatars/*
+!data/avatars/.gitkeep
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Build output (if we add TypeScript later)
+dist/
+build/
+
+# Coverage reports
+coverage/
+
+# Temporary files
+tmp/
+temp/

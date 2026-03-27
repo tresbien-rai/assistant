@@ -5,21 +5,20 @@
       "Bash(node --check:*)",
       "Bash(taskkill:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd custom model management with API suggestions\n\n- Add Migration 2: customModels array in storage schema\n- Remove hardcoded model options from dropdown\n- Add \"Manage Models\" modal with:\n  - Saved models list with delete buttons\n  - \"Fetch Available Models\" from Anthropic /v1/models API\n  - Available models grid with one-click add\n  - Manual add form for custom model ID + display name\n- Populate dropdown dynamically from customModels\n- Update getModelDisplayName\\(\\) to use customModels lookup\n- Add comprehensive CSS for modal and model management UI\n\nUsers now start with empty model list and can:\n- Fetch available models from API \\(requires API key\\)\n- Manually add any model ID with custom display name\n- Delete models they no longer need\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git -C \"C:\\\\Users\\\\User\\\\Pictures\\\\AI\\\\chat\\\\00_Assistant_Project\" status)",
-      "Bash(git -C \"C:\\\\Users\\\\User\\\\Pictures\\\\AI\\\\chat\\\\00_Assistant_Project\" diff)",
-      "Bash(git -C \"C:\\\\Users\\\\User\\\\Pictures\\\\AI\\\\chat\\\\00_Assistant_Project\" log --oneline -5)",
-      "Bash(git -C \"C:\\\\Users\\\\User\\\\Pictures\\\\AI\\\\chat\\\\00_Assistant_Project\" add README.md CLAUDE.md TODO.md)",
-      "Bash(git -C \"C:\\\\Users\\\\User\\\\Pictures\\\\AI\\\\chat\\\\00_Assistant_Project\" commit -m \"$\\(cat <<''EOF''\nMerge TODO.md into README.md for consolidated documentation\n\nCombines project status tracking into a single file. Updates README with\ncomplete feature list, detailed roadmap with checkboxes, and known issues.\nRemoves outdated markdown rendering limitation from CLAUDE.md.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git -C \"C:\\\\Users\\\\User\\\\Pictures\\\\AI\\\\chat\\\\00_Assistant_Project\" push)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Google Gemini API support with per-provider configuration\n\n- Add schema migration \\(v3\\) for per-provider API keys and models\n- Implement callGoogleAPI\\(\\) with message format conversion\n- Add fetchGoogleModels\\(\\) for Google model discovery\n- Update model management to store models per provider\n- Enable Google \\(Gemini\\) option in provider dropdown\n- Add handleProviderChange\\(\\) for seamless provider switching\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(node:*)",
+      "Bash(npm install)",
+      "Bash(npm start)",
+      "Bash(timeout:*)",
+      "Bash(curl:*)",
+      "Bash(ping:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(npm install:*)",
       "WebFetch(domain:docs.anthropic.com)",
       "WebFetch(domain:ai.google.dev)",
       "WebSearch",
-      "WebFetch(domain:docs.claude.com)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd model parameter controls for advanced API settings\n\n- Add schema migration \\(v4\\) for modelParams storage\n- Add Advanced Settings section in sidebar with:\n  - Temperature, Top P, Top K, Max Tokens controls\n  - Stop sequences tag input\n  - Streaming toggle \\(UI only\\)\n- Add Claude-specific: Extended Thinking toggle with budget\n- Add Gemini-specific: Thinking Level, Media Resolution, Safety Settings\n- Update API calls to use configured parameters\n- Provider-specific sections auto-show/hide on switch\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit:*)",
-      "Bash(node:*)"
+      "WebFetch(domain:docs.claude.com)"
     ]
   }
 }
