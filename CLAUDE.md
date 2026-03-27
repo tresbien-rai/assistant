@@ -4,105 +4,135 @@ This file provides context for Claude Code when working on this project.
 
 ## Project Summary
 
-Personal AI Assistant - a browser-based chat interface where users provide their own API keys to chat with AI models (Claude, with OpenAI and Gemini planned). Features customizable personas with avatar expressions.
+Personal AI Assistant - a server-backed chat interface with Google OAuth authentication. Users sign in with Google (which also connects their Google Drive) and store API keys server-side. Features customizable personas with avatar expressions and conversation history synced across devices.
 
 ## Tech Stack
 
 - **Frontend**: Vanilla HTML, CSS, JavaScript (no frameworks)
+- **Backend**: Express.js (Node.js)
+- **Database**: SQLite via better-sqlite3 (abstracted for future PostgreSQL migration)
+- **Auth**: Google OAuth 2.0 (provides login + Google Drive access)
 - **Storage**:
-  - localStorage for settings, personas, conversations (JSON)
-  - IndexedDB for images (Blobs)
-- **APIs**: Direct browser calls to Anthropic API
-- **Server**: None required - static files served locally via `npm run dev`
+  - SQLite for structured data (users, personas, conversations, messages, settings)
+  - Server filesystem for avatar/expression images
+  - Google Drive (per user) for project files (Phase 1)
+- **APIs**: Server-side proxy to Anthropic, Gemini, OpenAI (keys stored encrypted)
+- **Hosting**: Railway (Hobby tier)
 
 ## File Overview
 
-| File | Purpose | Key Contents |
-|------|---------|--------------|
-| `index.html` | Structure | Sidebar, status bar, chat area, floating avatar, modals |
-| `styles.css` | Styling | CSS variables for theming, responsive design, animations |
-| `app.js` | Logic | State management, API calls, UI updates, migrations |
-| `package.json` | Config | Just has `npm run dev` script using `serve` |
+| File/Directory | Purpose | Key Contents |
+|----------------|---------|--------------|
+| `index.html` | Frontend structure | Sidebar, chat area, floating avatar, modals, login screen |
+| `styles.css` | Frontend styling | CSS variables for theming, responsive design, animations |
+| `app.js` | Frontend logic | State management, UI updates, API client calls |
+| `api-client.js` | API wrapper | All backend API calls (auth, personas, chat, etc.) |
+| `server/` | Backend directory | Express server, database, API routes |
+| `server/src/index.js` | Server entry point | Express app setup, middleware, route mounting |
+| `server/src/config.js` | Configuration | Environment variables, constants |
+| `server/src/db/` | Database layer | SQLite connection, schema, data access layer |
+| `server/src/routes/` | API routes | auth, personas, conversations, chat, settings, etc. |
+| `server/src/middleware/` | Express middleware | authenticate, errorHandler, rateLimiter |
+| `server/src/providers/` | AI provider modules | anthropic.js, gemini.js (provider-specific API calls) |
+| `server/src/utils/` | Utilities | logger, encryption, AppError |
 
 ## Architecture
 
-### Storage Schema
+### Database Schema
 
-Data is stored in unified localStorage key `ai_assistant_data`:
-```javascript
-{
-  schemaVersion: 7,
-  settings: {
-    apiKeys: { anthropic, google, openai },  // API keys are global
-    avatarSize, avatarPosition, showAvatar,  // Avatar UI is global
-    defaultModelConfig: { provider, model, modelParams }  // Defaults for new personas
-  },
-  personas: {
-    [id]: {
-      id, name, systemPrompt, avatarImageKey, expressions,
-      modelConfig: {  // Per-persona model settings
-        provider: "anthropic",
-        model: "claude-sonnet-4-...",
-        modelParams: { temperature, topP, topK, maxTokens, streaming, ... }
-      },
-      createdAt, updatedAt
-    }
-  },
-  conversations: { [id]: { id, title, personaId, messages, createdAt, updatedAt } },
-  activePersonaId: "uuid",
-  activeConversationId: "uuid"
-}
+SQLite database at `server/data/assistant.db` with these tables:
+
+```sql
+users (id, google_id, email, display_name, drive_token, drive_refresh, created_at, updated_at)
+personas (id, user_id, name, system_prompt, prefill, avatar_filename, expressions, model_config, created_at, updated_at)
+conversations (id, user_id, persona_id, project_id, title, created_at, updated_at)
+messages (id, conversation_id, role, content, attachments, created_at)
+projects (id, user_id, name, instructions, drive_folder_id, created_at, updated_at)
+project_files (id, project_id, filename, mime_type, size_bytes, drive_file_id, created_at)
+settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, created_at, updated_at)
+api_keys (id, user_id, provider, encrypted_key, created_at, updated_at)
 ```
 
-**Key Design:** Model settings (provider, model, parameters) are stored **per-persona**. Switching personas switches the active model configuration.
+All tables include `user_id` for multi-user data isolation.
 
-Images are stored in IndexedDB (`ai_assistant_images` database) as Blobs, referenced by key.
+### Frontend State Object (`state` in app.js)
 
-### State Object (`state` in app.js)
 ```javascript
 state = {
-  settings: {
-    apiKeys: { anthropic, google, openai },
-    avatarSize, avatarPosition, showAvatar,
-    defaultModelConfig: { ... }
-  },
-  personas: { [id]: { ..., modelConfig: { provider, model, modelParams } } },
+  user: { id, email, displayName },  // From auth
+  settings: { avatarSize, avatarPosition, showAvatar, customModels },
+  personas: { [id]: { id, name, systemPrompt, prefill, modelConfig, ... } },
   activePersonaId: "uuid",
-  conversations: { [id]: { ... } },
+  conversations: { [id]: { id, title, personaId, messages } },
   activeConversationId: "uuid",
   currentExpression: 'neutral',
   isLoading: false,
-  // ... session tracking, temp state
+  isAuthenticated: false
 }
 ```
 
-### Model Config Helpers
-- `getActiveModelConfig()` - Get model config from active persona (with fallback)
-- `saveModelConfigToPersona(config)` - Save model config changes to active persona
+### API Client (`api-client.js`)
 
-### Key Modules
+All backend calls go through the API client module:
 
-**Migrations (`CURRENT_SCHEMA_VERSION`, `migrations` object)**
-- Schema version tracking for data format changes
-- Sequential migrations run on app load
-- Automatic backup before migrations
+```javascript
+API.auth.me() / .logout()
+API.personas.list() / .get(id) / .create(data) / .update(id, data) / .delete(id)
+API.conversations.list() / .get(id) / .create(data) / .update(id, data) / .delete(id)
+API.messages.create(convId, data) / .update(convId, msgId, data) / .delete(convId, msgId)
+API.settings.get() / .update(data)
+API.apiKeys.list() / .set(provider, key) / .delete(provider)
+API.chat.send(params) / .stream(params, onChunk) / .abort()
+API.models.list(provider)
+API.avatars.upload(personaId, file) / .delete(personaId) / .getUrl(personaId)
+```
 
-**ImageStore (IndexedDB wrapper)**
-- `ImageStore.store(key, blob)` - Store image
-- `ImageStore.get(key)` - Get object URL
-- `ImageStore.delete(key)` - Remove image
-- Handles Base64 ↔ Blob conversion
+### Backend API Routes
 
-**Personas & Conversations**
-- `createPersona()` / `getActivePersona()` / `updatePersona()`
-- `createConversation()` / `getActiveConversation()` / `updateConversation()`
-- Each conversation links to a persona via `personaId`
+```
+Auth:
+  GET  /api/auth/google           -> Redirect to Google OAuth
+  GET  /api/auth/google/callback  -> Handle OAuth callback, issue JWT
+  GET  /api/auth/me               -> Get current user info
+  POST /api/auth/logout           -> Clear session
 
-**Settings & Persistence**
-- `saveSettings()` / `savePersonas()` / `saveConversations()`
-- All save functions call `syncUnifiedStorage()` to keep unified storage in sync
+Data CRUD:
+  GET/POST/PUT/DELETE /api/personas
+  GET/POST/PUT/DELETE /api/conversations
+  POST/PUT/DELETE     /api/conversations/:id/messages
+  GET/PUT             /api/settings
+  GET/PUT/DELETE      /api/api-keys/:provider
+
+Chat Proxy:
+  POST /api/chat         -> Non-streaming chat (proxies to AI provider)
+  POST /api/chat/stream  -> Streaming chat (SSE)
+  GET  /api/models/:provider -> Fetch available models
+
+Avatars:
+  POST/DELETE /api/personas/:id/avatar
+  POST/DELETE /api/personas/:id/expressions/:name/image
+  GET         /api/avatars/:personaId/avatar
+  GET         /api/avatars/:personaId/expressions/:name
+```
+
+### Error Handling
+
+Server uses structured errors via `AppError` class:
+
+```javascript
+// Error codes: AUTH_ERROR, PROVIDER_ERROR, DRIVE_ERROR, RATE_LIMITED, VALIDATION_ERROR, NOT_FOUND, SERVER_ERROR
+AppError.auth(message)         // 401
+AppError.provider(message)     // 502
+AppError.rateLimited(seconds)  // 429
+AppError.validation(message)   // 400
+AppError.notFound(resource)    // 404
+AppError.server(message)       // 500
+```
+
+Frontend displays errors via: toast notifications (transient), inline chat errors (conversation-related), or modal/banner (critical, requires action).
 
 ### Expression System
+
 1. AI can include `[expression: happy]` in response
 2. Tag is detected via `detectExpression()`, stored, and stripped before display
 3. Fallback: keyword matching against expression keywords
@@ -110,73 +140,108 @@ state = {
 
 ## Common Tasks
 
-### Adding a New Migration
+### Adding a New API Endpoint
 
-1. Increment `CURRENT_SCHEMA_VERSION`
-2. Add migration function to `migrations` object:
-```javascript
-const migrations = {
-  1: async (data) => { /* existing */ },
-  2: async (data) => {
-    console.log('[Migration 2] Starting: Description...');
-    // Transform data.settings, data.personas, etc.
-    return data;
-  }
-};
-```
-3. Test with both fresh install AND existing data
+1. Create or modify route file in `server/src/routes/`
+2. Add DAL functions in `server/src/db/dal.js` if needed
+3. Mount route in `server/src/index.js`
+4. Add corresponding method to `api-client.js`
+5. Use in `app.js`
 
 ### Adding a New Setting
 
-1. Add to `state.settings` default in app.js
-2. Add HTML input in sidebar (index.html)
-3. Add to `elements` object
-4. Update `saveSettings()` to read from input
-5. Update `updateUI()` to populate input
-6. If schema change needed, add migration
+1. Add column to `settings` table (add migration if schema exists)
+2. Update DAL functions in `server/src/db/dal.js`
+3. Update `server/src/routes/settings.js` to handle the field
+4. Update `API.settings` methods in `api-client.js`
+5. Add HTML input in sidebar (index.html)
+6. Update `app.js` to read/save the setting
 
 ### Adding a New Persona Field
 
-1. Add to persona creation in `createPersona()`
-2. Add migration to populate field in existing personas
-3. Update UI to edit the field
+1. Add column to `personas` table in `server/src/db/schema.sql`
+2. Update DAL functions for persona CRUD
+3. Update the personas route
+4. Update `api-client.js` if needed
+5. Update UI to edit the field
+
+### Adding a New AI Provider
+
+1. Create `server/src/providers/{provider}.js` following existing pattern
+2. Register in `server/src/routes/chat.js` provider dispatch
+3. Add to allowed providers in `server/src/routes/apiKeys.js`
+4. Update frontend model selector if needed
 
 ### Styling Changes
+
 All styles in styles.css. CSS variables at top:
 - `--accent`: Primary purple (#6c63ff)
 - `--bg-primary/secondary/tertiary`: Background shades
 - `--avatar-small/medium/large/xlarge`: Avatar sizes
 
-### API Changes
-`callAnthropicAPI()` handles request formatting. For new providers, create similar function and update `callAPI()` switch.
-
 ## Development Commands
 
 ```bash
-npm run dev          # Start local server (uses npx serve)
-git status           # Check what's changed
-git add . && git commit -m "message"  # Save checkpoint
+# Start the server (serves frontend + API)
+cd server && npm start
+
+# Development with auto-reload
+cd server && npm run dev
+
+# Check database
+sqlite3 server/data/assistant.db ".tables"
+
+# Git workflow
+git status
+git add . && git commit -m "message"
+```
+
+## Environment Variables
+
+Server requires these environment variables (see `server/.env.example`):
+
+```
+PORT=3000
+NODE_ENV=development
+JWT_SECRET=<random-string>
+ENCRYPTION_KEY=<32-byte-hex-key>
+GOOGLE_CLIENT_ID=<from-google-cloud-console>
+GOOGLE_CLIENT_SECRET=<from-google-cloud-console>
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
 ```
 
 ## Current Limitations / Known Issues
 
-- CORS: Anthropic API requires `anthropic-dangerous-direct-browser-access` header
+- Google OAuth required for login (no username/password option)
+- Offline mode not supported (requires server connectivity)
 - Mobile: Avatar auto-shrinks, status bar hides some items
-- Toast notifications stubbed but not implemented
 
 ## Code Style
 
-- Functions are documented with comments
+### Backend
+- Use async/await for all async operations
+- All routes use authenticate middleware (except auth routes)
+- DAL functions enforce user_id scoping for data isolation
+- Never log API keys, tokens, or passwords
+- Use structured logging via pino
+
+### Frontend
 - DOM elements cached in `elements` object
-- State changes → save to localStorage → sync unified storage → update UI
+- All data operations go through `api-client.js`
+- State loaded from server on init, kept in memory during session
 - Event listeners set up in `setupEventListeners()`
-- Migrations logged with `[Migration N]` prefix
 
 ## When Making Changes
 
 1. Understand the current flow before editing
 2. Keep changes focused (one feature at a time)
-3. Test in browser after changes
+3. Test in browser after changes (check both authenticated and unauthenticated states)
 4. Check mobile view (resize browser or use DevTools)
-5. If changing data structure, add a migration
+5. For database changes, consider if a migration is needed
 6. Commit working states to git
+7. Verify both frontend and backend work together
+
+## Reference Documents
+
+- `PLANNING.txt` - Full architecture plan and development phases
+- `PHASE0_TASKS.txt` - Detailed task breakdown for Phase 0 (backend foundation)
