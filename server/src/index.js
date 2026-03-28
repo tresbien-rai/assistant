@@ -14,6 +14,8 @@ const pinoHttp = require('pino-http');
 const config = require('./config');
 const { getDb } = require('./db/connection');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { authenticate } = require('./middleware/authenticate');
+const { chatMinuteLimit, chatHourLimit } = require('./middleware/rateLimiter');
 const { logger } = require('./utils/logger');
 
 // Route modules
@@ -74,8 +76,8 @@ app.use('/api/conversations', conversationsRoutes);
 // User settings
 app.use('/api/settings', settingsRoutes);
 
-// Chat proxy (AI providers)
-app.use('/api/chat', chatRouter);
+// Chat proxy (AI providers) - with per-user rate limiting
+app.use('/api/chat', authenticate, chatMinuteLimit, chatHourLimit, chatRouter);
 app.use('/api/models', modelsRouter);
 
 // =============================================================================
