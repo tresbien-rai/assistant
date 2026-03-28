@@ -12,11 +12,13 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models
 
 /**
  * Build request headers for Gemini API
+ * @param {string} apiKey - The user's Google API key
  * @returns {Object} Headers object
  */
-function buildHeaders() {
+function buildHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
+    'x-goog-api-key': apiKey,
   };
 }
 
@@ -150,18 +152,19 @@ function mapApiError(response, errorData) {
   switch (errorStatus) {
     case 'INVALID_ARGUMENT':
       if (errorMessage.includes('API key')) {
-        return AppError.provider('Invalid Google API key. Please check your key in Settings.', { provider: 'google' });
+        return AppError.provider('Invalid Google API key. Please check your key in Settings.', { provider: 'google', status: errorStatus });
       }
-      return AppError.validation(errorMessage, { provider: 'google' });
+      return AppError.validation(errorMessage, { provider: 'google', status: errorStatus });
     case 'PERMISSION_DENIED':
-      return AppError.provider('API key does not have permission. Enable the Generative Language API in Google Cloud Console.', { provider: 'google' });
-    case 'RESOURCE_EXHAUSTED':
+      return AppError.provider('API key does not have permission. Enable the Generative Language API in Google Cloud Console.', { provider: 'google', status: errorStatus });
+    case 'RESOURCE_EXHAUSTED': {
       const retryAfter = parseInt(response.headers.get('retry-after'), 10) || 60;
       const rateLimitError = AppError.rateLimited(retryAfter);
       rateLimitError.message = 'Rate limit exceeded. Please wait and try again.';
       return rateLimitError;
+    }
     case 'NOT_FOUND':
-      return AppError.validation(`Model not found. ${errorMessage}`, { provider: 'google' });
+      return AppError.validation(`Model not found. ${errorMessage}`, { provider: 'google', status: errorStatus });
     default:
       break;
   }
@@ -173,11 +176,12 @@ function mapApiError(response, errorData) {
     case 401:
     case 403:
       return AppError.provider('Invalid or unauthorized Google API key.', { provider: 'google' });
-    case 429:
+    case 429: {
       const retryAfter = parseInt(response.headers.get('retry-after'), 10) || 60;
       const rateLimitErr = AppError.rateLimited(retryAfter);
       rateLimitErr.message = errorMessage;
       return rateLimitErr;
+    }
     case 500:
     case 502:
     case 503:
@@ -199,6 +203,7 @@ function parseMultimodalResponse(candidate) {
   };
 
   if (!candidate?.content?.parts) {
+    logger.debug({ finishReason: candidate?.finishReason }, 'Gemini response has no content parts');
     return result;
   }
 
@@ -226,11 +231,11 @@ function parseMultimodalResponse(candidate) {
  * @returns {Promise<Object>} Response object with text content
  */
 async function chat(apiKey, params) {
-  const headers = buildHeaders();
+  const headers = buildHeaders(apiKey);
   const body = buildRequestBody(params);
   const { model } = params;
 
-  const endpoint = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
+  const endpoint = `${GEMINI_API_BASE}/${model}:generateContent`;
 
   logger.debug({ model, messageCount: body.contents.length }, 'Gemini chat request');
 
@@ -283,11 +288,11 @@ async function chat(apiKey, params) {
  * @param {AbortSignal} [signal] - Optional abort signal for cancellation
  */
 async function stream(apiKey, params, res, signal) {
-  const headers = buildHeaders();
+  const headers = buildHeaders(apiKey);
   const body = buildRequestBody(params);
   const { model } = params;
 
-  const endpoint = `${GEMINI_API_BASE}/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+  const endpoint = `${GEMINI_API_BASE}/${model}:streamGenerateContent?alt=sse`;
 
   logger.debug({ model, messageCount: body.contents.length }, 'Gemini stream request');
 
@@ -353,11 +358,11 @@ async function stream(apiKey, params, res, signal) {
  * @returns {Promise<Array>} List of available models
  */
 async function listModels(apiKey) {
-  const endpoint = `${GEMINI_API_BASE}?key=${apiKey}`;
+  const endpoint = GEMINI_API_BASE;
 
   const response = await fetch(endpoint, {
     method: 'GET',
-    headers: buildHeaders(),
+    headers: buildHeaders(apiKey),
   });
 
   if (!response.ok) {
