@@ -19,6 +19,7 @@ const { logger } = require('../utils/logger');
 
 // Provider modules
 const anthropic = require('../providers/anthropic');
+const gemini = require('../providers/gemini');
 
 const router = express.Router();
 const modelsRouter = express.Router();
@@ -26,7 +27,8 @@ const modelsRouter = express.Router();
 // Provider dispatch map - add new providers here
 const providers = {
   anthropic,
-  // google and openai will be added in future tasks
+  google: gemini,
+  // openai will be added in future tasks
 };
 
 // Valid provider names
