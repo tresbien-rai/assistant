@@ -15,6 +15,10 @@ node_modules/
 .env
 .env.local
 
+# Server data (uploaded files)
+server/data/avatars/*
+!server/data/avatars/.gitkeep
+
 # Misc
 nul
 *.log

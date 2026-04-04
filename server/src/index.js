@@ -24,6 +24,7 @@ const apiKeysRoutes = require('./routes/apiKeys');
 const conversationsRoutes = require('./routes/conversations');
 const settingsRoutes = require('./routes/settings');
 const { chatRouter, modelsRouter } = require('./routes/chat');
+const { personaAvatarRouter, avatarServingRouter } = require('./routes/avatars');
 
 // Initialize Express app
 const app = express();
@@ -75,6 +76,10 @@ app.use('/api/conversations', conversationsRoutes);
 
 // User settings
 app.use('/api/settings', settingsRoutes);
+
+// Avatar upload/delete (on persona routes) and serving
+app.use('/api/personas', personaAvatarRouter);
+app.use('/api/avatars', avatarServingRouter);
 
 // Chat proxy (AI providers) - with per-user rate limiting
 app.use('/api/chat', authenticate, chatMinuteLimit, chatHourLimit, chatRouter);
