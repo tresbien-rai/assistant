@@ -37,7 +37,6 @@ const ALLOWED_MIME_TYPES = [
   'image/png',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
 ];
 
 // Map MIME types to file extensions
@@ -46,7 +45,6 @@ const MIME_TO_EXT = {
   'image/png': '.png',
   'image/gif': '.gif',
   'image/webp': '.webp',
-  'image/svg+xml': '.svg',
 };
 
 // =============================================================================
@@ -133,6 +131,19 @@ function safeDelete(filePath) {
     if (err.code !== 'ENOENT') {
       logger.warn({ err, filePath }, 'Failed to delete avatar file');
     }
+  }
+}
+
+/**
+ * Verify a resolved file path is inside AVATARS_DIR (path traversal guard)
+ * @param {string} filePath - Resolved file path to check
+ * @throws {AppError} If path escapes the avatars directory
+ */
+function assertInsideAvatarsDir(filePath) {
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(AVATARS_DIR + path.sep) && resolved !== AVATARS_DIR) {
+    logger.warn({ filePath, resolved, AVATARS_DIR }, 'Path traversal attempt blocked');
+    throw AppError.notFound('Avatar');
   }
 }
 
@@ -352,6 +363,7 @@ servingRouter.get('/:personaId/avatar', asyncHandler(async (req, res) => {
   }
 
   const filePath = path.join(AVATARS_DIR, persona.avatar_filename);
+  assertInsideAvatarsDir(filePath);
 
   if (!fs.existsSync(filePath)) {
     // Database says there's an avatar but file is missing — clear the stale reference
@@ -387,6 +399,7 @@ servingRouter.get('/:personaId/expressions/:name', asyncHandler(async (req, res)
   }
 
   const filePath = path.join(AVATARS_DIR, expr.imageKey);
+  assertInsideAvatarsDir(filePath);
 
   if (!fs.existsSync(filePath)) {
     // Stale reference — clear it
