@@ -19,6 +19,7 @@ const { logger } = require('./utils/logger');
 // Route modules
 const authRoutes = require('./routes/auth');
 const apiKeysRoutes = require('./routes/apiKeys');
+const personasRoutes = require('./routes/personas');
 const conversationsRoutes = require('./routes/conversations');
 const settingsRoutes = require('./routes/settings');
 const { chatRouter, modelsRouter } = require('./routes/chat');
@@ -67,6 +68,9 @@ app.use('/api/auth', authRoutes);
 
 // API key management
 app.use('/api/api-keys', apiKeysRoutes);
+
+// Personas
+app.use('/api/personas', personasRoutes);
 
 // Conversations and messages
 app.use('/api/conversations', conversationsRoutes);
