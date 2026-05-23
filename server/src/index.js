@@ -14,6 +14,8 @@ const pinoHttp = require('pino-http');
 const config = require('./config');
 const { getDb } = require('./db/connection');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { authenticate } = require('./middleware/authenticate');
+const { chatMinuteLimit, chatHourLimit } = require('./middleware/rateLimiter');
 const { logger } = require('./utils/logger');
 
 // Route modules
@@ -23,6 +25,7 @@ const personasRoutes = require('./routes/personas');
 const conversationsRoutes = require('./routes/conversations');
 const settingsRoutes = require('./routes/settings');
 const { chatRouter, modelsRouter } = require('./routes/chat');
+const { personaAvatarRouter, avatarServingRouter } = require('./routes/avatars');
 
 // Initialize Express app
 const app = express();
@@ -78,8 +81,12 @@ app.use('/api/conversations', conversationsRoutes);
 // User settings
 app.use('/api/settings', settingsRoutes);
 
-// Chat proxy (AI providers)
-app.use('/api/chat', chatRouter);
+// Avatar upload/delete (on persona routes) and serving
+app.use('/api/personas', personaAvatarRouter);
+app.use('/api/avatars', avatarServingRouter);
+
+// Chat proxy (AI providers) - with per-user rate limiting
+app.use('/api/chat', authenticate, chatMinuteLimit, chatHourLimit, chatRouter);
 app.use('/api/models', modelsRouter);
 
 // =============================================================================

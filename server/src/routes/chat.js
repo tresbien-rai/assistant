@@ -100,8 +100,8 @@ function getProvider(provider) {
   return providerModule;
 }
 
-// All routes require authentication
-router.use(authenticate);
+// Authentication is applied at the index.js mount level (along with rate limiters)
+// so req.user is already available when requests reach this router.
 
 /**
  * POST /api/chat
