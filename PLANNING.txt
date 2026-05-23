@@ -1,11 +1,16 @@
 ================================================================================
 AI ASSISTANT - DEVELOPMENT PLAN
 ================================================================================
-Last updated: 2026-03-21
+Last updated: 2026-05-22
 
 This document outlines the architecture, priorities, and phased implementation
 plan for evolving the AI Assistant from a client-side browser app into a
 full-featured, server-backed application.
+
+NOTE: This project is a vibe coding experiment. The human collaborator is a
+novice developer providing vision and direction. Claude is the primary architect
+and sole implementer. All technical decisions, code structure, and implementation
+are Claude's responsibility.
 
 
 ================================================================================

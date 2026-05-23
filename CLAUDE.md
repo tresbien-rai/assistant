@@ -2,6 +2,17 @@
 
 This file provides context for Claude Code when working on this project.
 
+## Collaboration Model
+
+This is a **vibe coding experiment**. The human collaborator is a novice developer
+who provides vision, direction, and feedback. Claude (you) is the primary architect
+and implementer — responsible for all technical decisions, code structure, and
+implementation. Explain technical trade-offs in plain language when relevant, and
+don't assume the human has deep familiarity with the codebase internals.
+
+The human occasionally runs parallel experiments in Claude Code Web, so the local
+repo may lag behind origin. Run `git fetch` before reviewing project state.
+
 ## Project Summary
 
 Personal AI Assistant - a server-backed chat interface with Google OAuth authentication. Users sign in with Google (which also connects their Google Drive) and store API keys server-side. Features customizable personas with avatar expressions and conversation history synced across devices.
