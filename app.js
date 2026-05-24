@@ -926,6 +926,9 @@ const ImageStore = {
 
 // ===== State Management =====
 const state = {
+    // Authenticated user (set after API.auth.status() / API.auth.me())
+    // null when unauthenticated. Shape: { userId, email, displayName }.
+    user: null,
     // App-level preferences only (model settings now in personas)
     settings: {
         apiKeys: {
@@ -5026,5 +5029,146 @@ async function clearConversation() {
     }
 }
 
+// ===== Auth Gate (P0-14) =====
+// Decides whether to show the login screen or the main app on page load.
+// The actual data layer is still localStorage-backed at this stage — that
+// gets replaced in P0-15.
+
+const OAUTH_ERROR_MESSAGES = {
+    oauth_denied: 'Sign-in was cancelled. Please try again to continue.',
+    invalid_state: 'Sign-in security check failed. Please try again.',
+    no_code: 'Sign-in did not complete. Please try again.',
+    oauth_failed: 'Sign-in failed. Please try again in a moment.',
+};
+
+function showLoginScreen(errorMessage) {
+    const loginScreen = document.getElementById('loginScreen');
+    const appContainer = document.getElementById('appContainer');
+    const errorEl = document.getElementById('loginError');
+
+    if (errorEl) {
+        if (errorMessage) {
+            errorEl.textContent = errorMessage;
+            errorEl.hidden = false;
+        } else {
+            errorEl.textContent = '';
+            errorEl.hidden = true;
+        }
+    }
+
+    if (appContainer) appContainer.hidden = true;
+    if (loginScreen) loginScreen.hidden = false;
+}
+
+function showApp() {
+    const loginScreen = document.getElementById('loginScreen');
+    const appContainer = document.getElementById('appContainer');
+    if (loginScreen) loginScreen.hidden = true;
+    if (appContainer) appContainer.hidden = false;
+    updateAccountInfo();
+}
+
+function updateAccountInfo() {
+    const el = document.getElementById('accountInfo');
+    if (!el) return;
+    if (state.user) {
+        const label = state.user.displayName || state.user.email || 'Signed in';
+        el.textContent = state.user.email
+            ? `${label} (${state.user.email})`
+            : label;
+    } else {
+        el.textContent = 'Signed in';
+    }
+}
+
+function handleLoginClick() {
+    const btn = document.getElementById('googleSignInBtn');
+    if (btn) btn.disabled = true;
+    window.location.href = API.auth.getGoogleLoginUrl();
+}
+
+async function handleLogoutClick() {
+    const btn = document.getElementById('logoutBtn');
+    if (btn) btn.disabled = true;
+    try {
+        await API.auth.logout();
+    } catch (err) {
+        // Even if the server call fails, treat the client as signed out.
+        console.warn('Logout request failed:', err);
+    }
+    state.user = null;
+    if (btn) btn.disabled = false;
+    showLoginScreen();
+}
+
+/**
+ * Parse and clear OAuth-related query params from the URL.
+ * Returns an error message to display, if any.
+ */
+function consumeAuthCallbackParams() {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get('error');
+    const authStatus = params.get('auth');
+
+    if (!error && !authStatus) return null;
+
+    // Strip auth-related params from the URL so refreshes don't re-process them.
+    params.delete('auth');
+    params.delete('error');
+    const remaining = params.toString();
+    const cleanUrl = window.location.pathname
+        + (remaining ? `?${remaining}` : '')
+        + window.location.hash;
+    window.history.replaceState({}, document.title, cleanUrl);
+
+    if (error) {
+        return OAUTH_ERROR_MESSAGES[error] || 'Sign-in failed. Please try again.';
+    }
+    return null;
+}
+
+/**
+ * Bootstrap entry point. Runs before init().
+ * Decides between login screen and main app based on session state.
+ */
+async function bootstrap() {
+    // Wire static event listeners that exist regardless of auth state.
+    const loginBtn = document.getElementById('googleSignInBtn');
+    if (loginBtn) loginBtn.addEventListener('click', handleLoginClick);
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.addEventListener('click', handleLogoutClick);
+
+    // If any future API call returns 401 (e.g., JWT expired), kick back to login.
+    API.setOn401Handler(() => {
+        state.user = null;
+        showLoginScreen('Your session expired. Please sign in again.');
+    });
+
+    // Handle redirect from the OAuth callback. If there was an error, show it.
+    const callbackError = consumeAuthCallbackParams();
+
+    // Check session via the non-throwing status endpoint.
+    let authenticated = false;
+    try {
+        const status = await API.auth.status();
+        if (status && status.authenticated) {
+            state.user = status.user;
+            authenticated = true;
+        }
+    } catch (err) {
+        // status() should not normally throw, but if it does (network blip),
+        // fall through to the login screen.
+        console.warn('Auth status check failed:', err);
+    }
+
+    if (authenticated) {
+        showApp();
+        await init();
+    } else {
+        showLoginScreen(callbackError);
+    }
+}
+
 // ===== Start the App =====
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', bootstrap);
