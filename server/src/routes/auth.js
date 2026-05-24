@@ -234,7 +234,10 @@ router.get('/status', (req, res) => {
     res.json({
       authenticated: true,
       user: {
-        userId: decoded.userId,
+        // Use `id` to match /api/auth/me and the CLAUDE.md schema.
+        // The JWT payload uses `userId` internally — that's an unrelated
+        // naming inside the token itself.
+        id: decoded.userId,
         email: decoded.email,
         displayName: decoded.displayName,
       },
