@@ -927,7 +927,7 @@ const ImageStore = {
 // ===== State Management =====
 const state = {
     // Authenticated user (set after API.auth.status() / API.auth.me())
-    // null when unauthenticated. Shape: { userId, email, displayName }.
+    // null when unauthenticated. Shape: { id, email, displayName }.
     user: null,
     // App-level preferences only (model settings now in personas)
     settings: {
@@ -5040,7 +5040,7 @@ const OAUTH_ERROR_MESSAGES = {
     no_code: 'Sign-in did not complete. Please try again.',
     oauth_failed: 'Sign-in failed. Please try again in a moment.',
     session_expired: 'Your session expired. Please sign in again.',
-    init_failed: 'Could not load the app. Please refresh and try again.',
+    init_failed: 'Could not load the app. Your browser data may be unavailable — try a different browser or clear this site\'s data.',
 };
 
 function showLoginScreen(errorMessage) {
@@ -5183,9 +5183,19 @@ async function bootstrap() {
         } catch (err) {
             // Common causes: IndexedDB blocked in private browsing, corrupt
             // localStorage that runMigrations can't parse. Hide the now-broken
-            // app shell and surface a refresh prompt on the login screen.
+            // app shell and surface a diagnostic prompt on the login screen.
+            // Clear the auth cookie so the user isn't stuck in a loop: with the
+            // cookie intact, refreshing or signing in again auto-resumes the
+            // same broken session because Google OAuth re-grants the existing
+            // consent silently. Clearing forces an explicit re-auth and makes
+            // a persistent browser-data issue visible rather than cyclic.
             console.error('App initialization failed:', err);
             state.user = null;
+            try {
+                await API.auth.logout();
+            } catch (logoutErr) {
+                console.warn('Failed to clear session after init failure:', logoutErr);
+            }
             showLoginScreen(OAUTH_ERROR_MESSAGES.init_failed);
         }
     } else {
