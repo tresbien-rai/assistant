@@ -53,6 +53,11 @@ body {
     overflow: hidden;
 }
 
+/* Ensure the HTML5 `hidden` attribute always wins over component display rules */
+[hidden] {
+    display: none !important;
+}
+
 /* ===== App Layout ===== */
 .app-container {
     display: flex;
@@ -2266,4 +2271,129 @@ body {
     margin-right: 6px;
     accent-color: var(--accent);
     vertical-align: middle;
+}
+
+/* ===== Login Screen ===== */
+.login-screen {
+    position: fixed;
+    inset: 0;
+    background-color: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1000;
+    overflow-y: auto;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 420px;
+    padding: 48px 32px;
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+}
+
+.login-title {
+    font-size: 32px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 12px;
+}
+
+.login-subtitle {
+    color: var(--text-primary);
+    font-size: 16px;
+    margin-bottom: 20px;
+}
+
+.login-description {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+}
+
+.google-signin-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 24px;
+    background-color: #fff;
+    color: #444;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.google-signin-btn:hover {
+    background-color: #f5f5f5;
+}
+
+.google-signin-btn:active {
+    transform: scale(0.99);
+}
+
+.google-signin-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.google-icon {
+    flex-shrink: 0;
+}
+
+.login-error {
+    margin-top: 24px;
+    padding: 12px 16px;
+    background-color: rgba(255, 107, 107, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    color: var(--error);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    text-align: left;
+}
+
+/* ===== Account Section (sidebar) ===== */
+.account-section {
+    margin-top: 8px;
+}
+
+.account-info {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 12px;
+    word-break: break-all;
+}
+
+.logout-btn {
+    width: 100%;
+    padding: 10px;
+    background-color: transparent;
+    color: var(--error);
+    border: 1px solid var(--error);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.logout-btn:hover {
+    background-color: rgba(255, 107, 107, 0.1);
+}
+
+@media (max-width: 480px) {
+    .login-card {
+        padding: 32px 20px;
+    }
+    .login-title {
+        font-size: 26px;
+    }
 }
