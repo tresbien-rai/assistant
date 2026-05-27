@@ -6,7 +6,7 @@
  * - Customizable personas with system prompts
  * - Floating avatar with expression system
  * - Status bar with session info
- * - Settings persistence via localStorage
+ * - Settings persistence via the server API (api-client.js → /api/*)
  */
 
 // ===== Configuration =====
@@ -49,14 +49,6 @@ When responding, you may optionally include an expression tag like [expression: 
             'text/xml', 'application/xml', 'text/yaml',
             'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm'
         ]
-    },
-    storageKeys: {
-        settings: 'ai_assistant_settings',
-        conversations: 'ai_assistant_conversations',
-        expressions: 'ai_assistant_expressions', // Legacy, kept for migration
-        personas: 'ai_assistant_personas',
-        appData: 'ai_assistant_data', // Unified storage with schema version
-        backup: 'ai_assistant_backup' // Backup before migrations
     }
 };
 
@@ -119,566 +111,11 @@ function renderMarkdown(content) {
     return marked.parse(content);
 }
 
-// ===== Schema Version & Migrations =====
-const CURRENT_SCHEMA_VERSION = 8;
-
-/**
- * Migration functions indexed by target version.
- * Each migration transforms data from (version - 1) to version.
- * Migrations receive the full stored data object and return the migrated version.
- */
-const migrations = {
-    /**
-     * Migration 1: Initial restructure
-     * - Converts flat conversation array to multi-conversation format
-     * - Converts settings + expressions to personas format
-     * - Migrates Base64 images to IndexedDB keys
-     */
-    1: async (data) => {
-        console.log('[Migration 1] Starting: Initial restructure...');
-        const result = {
-            schemaVersion: 1,
-            settings: {},
-            personas: {},
-            conversations: {},
-            activePersonaId: null,
-            activeConversationId: null
-        };
-
-        // Migrate settings (extract app-level settings only)
-        const oldSettings = data.settings || {};
-        result.settings = {
-            provider: oldSettings.provider || CONFIG.defaults.provider,
-            model: oldSettings.model || CONFIG.defaults.model,
-            apiKey: oldSettings.apiKey || '',
-            avatarSize: oldSettings.avatarSize || CONFIG.defaults.avatarSize,
-            avatarPosition: oldSettings.avatarPosition || CONFIG.defaults.avatarPosition,
-            showAvatar: oldSettings.showAvatar !== undefined ? oldSettings.showAvatar : CONFIG.defaults.showAvatar
-        };
-
-        // Migrate personas
-        if (data.personas && Object.keys(data.personas).length > 0) {
-            // Already has personas - copy them
-            result.personas = data.personas;
-            // Set active to most recently updated
-            const personaList = Object.values(result.personas);
-            if (personaList.length > 0) {
-                const mostRecent = personaList.reduce((a, b) =>
-                    (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-                );
-                result.activePersonaId = mostRecent.id;
-            }
-        } else if (oldSettings.assistantName) {
-            // Migrate from old settings + expressions format
-            console.log('[Migration 1] Converting old settings to persona...');
-            const id = crypto.randomUUID();
-            const now = Date.now();
-
-            let expressions = { ...CONFIG.defaultExpressions };
-            if (data.expressions) {
-                expressions = data.expressions;
-            }
-
-            result.personas[id] = {
-                id,
-                name: oldSettings.assistantName || CONFIG.defaults.assistantName,
-                systemPrompt: oldSettings.systemPrompt || CONFIG.defaults.systemPrompt,
-                avatarImageKey: oldSettings.avatarKey || '',
-                expressions,
-                createdAt: now,
-                updatedAt: now
-            };
-            result.activePersonaId = id;
-        }
-
-        // Create default persona if still none
-        if (Object.keys(result.personas).length === 0) {
-            console.log('[Migration 1] Creating default persona...');
-            const id = crypto.randomUUID();
-            const now = Date.now();
-            result.personas[id] = {
-                id,
-                name: CONFIG.defaults.assistantName,
-                systemPrompt: CONFIG.defaults.systemPrompt,
-                avatarImageKey: '',
-                expressions: { ...CONFIG.defaultExpressions },
-                createdAt: now,
-                updatedAt: now
-            };
-            result.activePersonaId = id;
-        }
-
-        // Migrate conversations
-        if (data.conversations) {
-            if (Array.isArray(data.conversations)) {
-                // Old format: flat array of messages
-                if (data.conversations.length > 0) {
-                    console.log('[Migration 1] Converting flat conversation array...');
-                    const id = crypto.randomUUID();
-                    const now = Date.now();
-
-                    const firstUserMsg = data.conversations.find(m => m.role === 'user');
-                    const title = firstUserMsg
-                        ? generateConversationTitle(firstUserMsg.content)
-                        : 'Migrated Chat';
-
-                    result.conversations[id] = {
-                        id,
-                        title,
-                        personaId: result.activePersonaId,
-                        createdAt: now,
-                        updatedAt: now,
-                        messages: data.conversations
-                    };
-                    result.activeConversationId = id;
-                }
-            } else if (typeof data.conversations === 'object') {
-                // Already multi-conversation format
-                result.conversations = data.conversations;
-
-                // Ensure all conversations have personaId
-                for (const convo of Object.values(result.conversations)) {
-                    if (!convo.personaId && result.activePersonaId) {
-                        convo.personaId = result.activePersonaId;
-                    }
-                }
-
-                // Set active to most recently updated
-                const convos = Object.values(result.conversations);
-                if (convos.length > 0) {
-                    const mostRecent = convos.reduce((a, b) =>
-                        (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-                    );
-                    result.activeConversationId = mostRecent.id;
-                }
-            }
-        }
-
-        // Migrate Base64 images to IndexedDB
-        await migrateBase64ImagesToIndexedDB(result, oldSettings, data.expressions);
-
-        console.log('[Migration 1] Complete.');
-        return result;
-    },
-
-    /**
-     * Migration 2: Add custom models support
-     * - Adds customModels array for user-defined models
-     */
-    2: async (data) => {
-        console.log('[Migration 2] Starting: Adding customModels support...');
-
-        // Add customModels array if not present
-        data.customModels = data.customModels || [];
-        data.schemaVersion = 2;
-
-        console.log('[Migration 2] Complete.');
-        return data;
-    },
-
-    /**
-     * Migration 3: Per-provider API keys and models
-     * - Converts single apiKey to apiKeys object keyed by provider
-     * - Converts customModels array to object keyed by provider
-     */
-    3: async (data) => {
-        console.log('[Migration 3] Starting: Converting to per-provider API keys and models...');
-
-        // Convert single apiKey to apiKeys object
-        const existingKey = data.settings.apiKey || '';
-        data.settings.apiKeys = {
-            anthropic: existingKey,
-            google: '',
-            openai: ''
-        };
-
-        // Remove old apiKey field
-        delete data.settings.apiKey;
-
-        // Convert customModels array to per-provider object
-        // Existing models are assumed to be Anthropic models
-        const existingModels = Array.isArray(data.customModels) ? data.customModels : [];
-        data.customModels = {
-            anthropic: existingModels,
-            google: [],
-            openai: []
-        };
-
-        data.schemaVersion = 3;
-        console.log('[Migration 3] Complete.');
-        return data;
-    },
-
-    /**
-     * Migration 4: Add model parameters
-     * - Adds modelParams object for temperature, top_p, top_k, etc.
-     * - Includes provider-specific settings (thinking, safety)
-     */
-    4: async (data) => {
-        console.log('[Migration 4] Starting: Adding model parameters...');
-
-        // Add modelParams with defaults
-        data.settings.modelParams = {
-            // Common parameters
-            temperature: 1.0,
-            topP: 0.95,
-            topK: 40,
-            maxTokens: 4096,
-            stopSequences: [],
-            streaming: false,
-
-            // Anthropic-specific
-            anthropic: {
-                thinkingEnabled: false,
-                thinkingBudget: 4000
-            },
-
-            // Google Gemini-specific
-            google: {
-                thinkingLevel: 'medium',
-                safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
-                mediaResolution: 'medium'
-            }
-        };
-
-        data.schemaVersion = 4;
-        console.log('[Migration 4] Complete.');
-        return data;
-    },
-
-    /**
-     * Migration 5: Add attachments array to messages
-     * - Prepares message format for file attachment support
-     */
-    5: async (data) => {
-        console.log('[Migration 5] Starting: Adding attachment support to messages...');
-
-        for (const convo of Object.values(data.conversations || {})) {
-            for (const msg of (convo.messages || [])) {
-                if (!msg.attachments) {
-                    msg.attachments = [];
-                }
-            }
-        }
-
-        data.schemaVersion = 5;
-        console.log('[Migration 5] Complete.');
-        return data;
-    },
-
-    /**
-     * Migration 6: Add parameter enabled flags and update thinkingLevel default
-     * - Adds temperatureEnabled, topPEnabled, topKEnabled flags
-     * - Changes thinkingLevel default to 'off' to avoid API errors
-     */
-    6: async (data) => {
-        console.log('[Migration 6] Starting: Adding parameter enabled flags...');
-
-        if (data.settings && data.settings.modelParams) {
-            const params = data.settings.modelParams;
-            // Add enabled flags (default to true for backwards compatibility)
-            if (params.temperatureEnabled === undefined) {
-                params.temperatureEnabled = true;
-            }
-            if (params.topPEnabled === undefined) {
-                params.topPEnabled = true;
-            }
-            if (params.topKEnabled === undefined) {
-                params.topKEnabled = true;
-            }
-            // Change thinkingLevel default to 'off' if it's 'medium' (the old default)
-            if (params.google && params.google.thinkingLevel === 'medium') {
-                params.google.thinkingLevel = 'off';
-            }
-        }
-
-        data.schemaVersion = 6;
-        console.log('[Migration 6] Complete.');
-        return data;
-    },
-
-    /**
-     * Migration 7: Move model settings from global to per-persona
-     * - Each persona gets its own modelConfig (provider, model, modelParams)
-     * - Global settings keeps only apiKeys and avatar UI preferences
-     * - Creates defaultModelConfig for new persona creation
-     */
-    7: async (data) => {
-        console.log('[Migration 7] Starting: Moving model settings to personas...');
-
-        // Extract current global model config
-        const globalModelConfig = {
-            provider: data.settings.provider || CONFIG.defaults.provider,
-            model: data.settings.model || CONFIG.defaults.model,
-            modelParams: data.settings.modelParams || {
-                temperature: 1.0,
-                topP: 0.95,
-                topK: 40,
-                maxTokens: 4096,
-                stopSequences: [],
-                streaming: false,
-                temperatureEnabled: true,
-                topPEnabled: true,
-                topKEnabled: true,
-                anthropic: { thinkingEnabled: false, thinkingBudget: 4000 },
-                google: {
-                    thinkingLevel: 'off',
-                    safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
-                    safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
-                    safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
-                    safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
-                    mediaResolution: 'medium'
-                }
-            }
-        };
-
-        // Add modelConfig to each existing persona
-        for (const persona of Object.values(data.personas || {})) {
-            if (!persona.modelConfig) {
-                // Deep copy the global config to each persona
-                persona.modelConfig = JSON.parse(JSON.stringify(globalModelConfig));
-                console.log(`[Migration 7] Added modelConfig to persona: ${persona.name}`);
-            }
-        }
-
-        // Store as defaultModelConfig for creating new personas
-        data.settings.defaultModelConfig = JSON.parse(JSON.stringify(globalModelConfig));
-
-        // Remove model settings from global settings (keep apiKeys and avatar UI)
-        delete data.settings.provider;
-        delete data.settings.model;
-        delete data.settings.modelParams;
-
-        data.schemaVersion = 7;
-        console.log('[Migration 7] Complete.');
-        return data;
-    },
-
-    8: async (data) => {
-        console.log('[Migration 8] Starting: Adding prefill field to personas...');
-
-        for (const persona of Object.values(data.personas || {})) {
-            if (persona.prefill === undefined) {
-                persona.prefill = '';
-            }
-        }
-
-        data.schemaVersion = 8;
-        console.log('[Migration 8] Complete.');
-        return data;
-    }
-};
-
-/**
- * Helper: Migrate Base64 image data to IndexedDB
- * Called during migration 1 to move images from localStorage to IndexedDB
- */
-async function migrateBase64ImagesToIndexedDB(result, oldSettings, oldExpressions) {
-    try {
-        await ImageStore.init();
-
-        // Migrate avatar image from old settings
-        if (oldSettings.avatarData && oldSettings.avatarData.startsWith('data:')) {
-            console.log('[Migration 1] Migrating avatar image to IndexedDB...');
-            const blob = ImageStore.dataUrlToBlob(oldSettings.avatarData);
-            const key = 'avatar_main';
-            await ImageStore.store(key, blob);
-
-            // Update the persona's avatar key
-            const persona = Object.values(result.personas)[0];
-            if (persona) {
-                persona.avatarImageKey = key;
-            }
-        }
-
-        // Migrate expression images
-        if (oldExpressions) {
-            for (const [name, expr] of Object.entries(oldExpressions)) {
-                if (expr.imageData && expr.imageData.startsWith('data:')) {
-                    console.log(`[Migration 1] Migrating expression image "${name}" to IndexedDB...`);
-                    const blob = ImageStore.dataUrlToBlob(expr.imageData);
-                    const key = `expr_${name}`;
-                    await ImageStore.store(key, blob);
-
-                    // Update the expression in personas
-                    for (const persona of Object.values(result.personas)) {
-                        if (persona.expressions && persona.expressions[name]) {
-                            persona.expressions[name].imageKey = key;
-                            delete persona.expressions[name].imageData;
-                        }
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error('[Migration 1] Failed to migrate images:', error);
-        // Continue with migration even if image migration fails
-    }
-}
-
-/**
- * Create a backup of current data before running migrations
- * Keeps only the last 2 backups to save space
- */
-function createMigrationBackup(data, fromVersion) {
-    try {
-        const backupKey = CONFIG.storageKeys.backup;
-        const existingBackups = JSON.parse(localStorage.getItem(backupKey) || '[]');
-
-        // Add new backup
-        existingBackups.push({
-            timestamp: Date.now(),
-            fromVersion,
-            data
-        });
-
-        // Keep only last 2 backups
-        while (existingBackups.length > 2) {
-            existingBackups.shift();
-        }
-
-        localStorage.setItem(backupKey, JSON.stringify(existingBackups));
-        console.log(`[Migrations] Backup created (from version ${fromVersion})`);
-    } catch (error) {
-        console.error('[Migrations] Failed to create backup:', error);
-        // Don't fail migration if backup fails
-    }
-}
-
-/**
- * Load current data from all storage keys (handles both old and new formats)
- */
-function loadStoredData() {
-    // First check for unified storage
-    const unified = localStorage.getItem(CONFIG.storageKeys.appData);
-    if (unified) {
-        try {
-            return JSON.parse(unified);
-        } catch (e) {
-            console.error('[Migrations] Failed to parse unified storage:', e);
-        }
-    }
-
-    // Fall back to loading from separate keys (old format)
-    const data = {
-        schemaVersion: 0 // Missing version means version 0
-    };
-
-    const settings = localStorage.getItem(CONFIG.storageKeys.settings);
-    if (settings) {
-        try {
-            data.settings = JSON.parse(settings);
-        } catch (e) {
-            console.error('[Migrations] Failed to parse settings:', e);
-        }
-    }
-
-    const personas = localStorage.getItem(CONFIG.storageKeys.personas);
-    if (personas) {
-        try {
-            data.personas = JSON.parse(personas);
-        } catch (e) {
-            console.error('[Migrations] Failed to parse personas:', e);
-        }
-    }
-
-    const conversations = localStorage.getItem(CONFIG.storageKeys.conversations);
-    if (conversations) {
-        try {
-            data.conversations = JSON.parse(conversations);
-        } catch (e) {
-            console.error('[Migrations] Failed to parse conversations:', e);
-        }
-    }
-
-    const expressions = localStorage.getItem(CONFIG.storageKeys.expressions);
-    if (expressions) {
-        try {
-            data.expressions = JSON.parse(expressions);
-        } catch (e) {
-            console.error('[Migrations] Failed to parse expressions:', e);
-        }
-    }
-
-    return data;
-}
-
-/**
- * Save migrated data to unified storage
- */
-function saveMigratedData(data) {
-    localStorage.setItem(CONFIG.storageKeys.appData, JSON.stringify(data));
-
-    // Also save to individual keys for backward compatibility during transition
-    if (data.settings) {
-        localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(data.settings));
-    }
-    if (data.personas) {
-        localStorage.setItem(CONFIG.storageKeys.personas, JSON.stringify(data.personas));
-    }
-    if (data.conversations) {
-        localStorage.setItem(CONFIG.storageKeys.conversations, JSON.stringify(data.conversations));
-    }
-
-    // Clean up legacy keys that are no longer needed
-    localStorage.removeItem(CONFIG.storageKeys.expressions);
-    localStorage.removeItem('ai_assistant_migration_v1'); // Old migration flag
-}
-
-/**
- * Run all pending migrations from current version to CURRENT_SCHEMA_VERSION
- * @returns {Promise<Object>} The migrated data
- */
-async function runMigrations() {
-    console.log('[Migrations] Checking for pending migrations...');
-
-    let data = loadStoredData();
-    const startVersion = data.schemaVersion || 0;
-
-    console.log(`[Migrations] Current schema version: ${startVersion}, Target: ${CURRENT_SCHEMA_VERSION}`);
-
-    if (startVersion >= CURRENT_SCHEMA_VERSION) {
-        console.log('[Migrations] No migrations needed.');
-        return data;
-    }
-
-    // Create backup before any migrations
-    createMigrationBackup(data, startVersion);
-
-    // Run each migration in sequence
-    for (let version = startVersion + 1; version <= CURRENT_SCHEMA_VERSION; version++) {
-        const migration = migrations[version];
-
-        if (!migration) {
-            console.error(`[Migrations] Missing migration for version ${version}!`);
-            throw new Error(`Missing migration for version ${version}`);
-        }
-
-        console.log(`[Migrations] Running migration ${version}...`);
-
-        try {
-            data = await migration(data);
-            data.schemaVersion = version;
-
-            // Save after each successful migration
-            saveMigratedData(data);
-
-            console.log(`[Migrations] Migration ${version} completed successfully.`);
-        } catch (error) {
-            console.error(`[Migrations] Migration ${version} failed:`, error);
-            throw error;
-        }
-    }
-
-    console.log(`[Migrations] All migrations complete. Now at version ${CURRENT_SCHEMA_VERSION}.`);
-    return data;
-}
-
 // ===== IndexedDB Image Store =====
-// Stores image Blobs in IndexedDB to avoid localStorage size limits.
+// Retained ONLY for transient pre-send attachment blobs (state.pendingAttachments
+// → IndexedDB → reload-resilient until send). Avatars and persona/expression
+// images now live on the server (see API.avatars.*). To be removed in P0-16
+// when the chat path also moves server-side.
 // Usage:
 //   await ImageStore.init()           - Initialize the database
 //   await ImageStore.store(key, blob) - Store a blob with a unique key
@@ -929,58 +366,45 @@ const state = {
     // Authenticated user (set after API.auth.status() / API.auth.me())
     // null when unauthenticated. Shape: { id, email, displayName }.
     user: null,
-    // App-level preferences only (model settings now in personas)
+    // App-level preferences from API.settings.get(). Provider/model settings
+    // live on each persona's modelConfig (not here).
     settings: {
-        apiKeys: {
-            anthropic: '',
-            google: '',
-            openai: ''
-        },
         avatarSize: CONFIG.defaults.avatarSize,
         avatarPosition: CONFIG.defaults.avatarPosition,
         showAvatar: CONFIG.defaults.showAvatar,
-        // Default model config for creating new personas
-        defaultModelConfig: {
-            provider: CONFIG.defaults.provider,
-            model: CONFIG.defaults.model,
-            modelParams: {
-                temperature: 1.0,
-                topP: 0.95,
-                topK: 40,
-                maxTokens: 4096,
-                stopSequences: [],
-                streaming: false,
-                temperatureEnabled: true,
-                topPEnabled: true,
-                topKEnabled: true,
-                anthropic: {
-                    thinkingEnabled: false,
-                    thinkingBudget: 4000
-                },
-                google: {
-                    thinkingLevel: 'off',
-                    safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
-                    safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
-                    safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
-                    safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
-                    mediaResolution: 'medium'
-                }
-            }
+        // User-defined models keyed by provider — persisted server-side as
+        // part of the settings row.
+        customModels: {
+            anthropic: [],
+            google: [],
+            openai: []
         }
     },
-    // Personas stored by ID for multi-persona support
+    // Per-provider key presence metadata from API.apiKeys.list().
+    // Never the keys themselves — the backend never returns plaintext.
+    apiKeyStatus: {
+        anthropic: { hasKey: false, updatedAt: null },
+        google: { hasKey: false, updatedAt: null },
+        openai: { hasKey: false, updatedAt: null }
+    },
+    // TEMPORARY session-only buffer for API keys, used by the still-direct
+    // chat fetch path. Removed in P0-16 when chat moves through the server
+    // proxy and the frontend no longer needs plaintext keys at all. Never
+    // persisted; empty after every reload.
+    sessionApiKeys: {
+        anthropic: '',
+        google: '',
+        openai: ''
+    },
+    // Personas stored by ID for multi-persona support (from API.personas.list).
     personas: {},
     activePersonaId: null,
-    // Conversations stored by ID for multi-conversation support
+    // Conversations stored by ID. Metadata loaded eagerly via
+    // API.conversations.list(); messages are loaded lazily via
+    // API.conversations.get(id) when the conversation becomes active.
     conversations: {},
     activeConversationId: null,
-    // User-defined models keyed by provider
-    customModels: {
-        anthropic: [],
-        google: [],
-        openai: []
-    },
-    // UI state
+    // UI state (session-local, no server source)
     ui: {
         activeTab: 'chats',
         conversationFilter: 'active' // 'active' means filter by activePersonaId, or 'all'
@@ -1004,27 +428,28 @@ const state = {
 // ===== Conversation Helpers =====
 
 /**
- * Create a new conversation and set it as active
+ * Create a new conversation server-side and set it as active.
+ * The server generates the id — callers must await this.
  * @param {string} [title] - Optional title, defaults to "New Chat"
- * @returns {string} The new conversation ID
+ * @returns {Promise<string>} The server-generated conversation ID
  */
-function createConversation(title = 'New Chat') {
-    const id = crypto.randomUUID();
-    const now = Date.now();
-
-    state.conversations[id] = {
-        id,
+async function createConversation(title = 'New Chat') {
+    const created = await API.conversations.create({
+        personaId: state.activePersonaId,
         title,
-        personaId: state.activePersonaId, // Link to current persona
-        createdAt: now,
-        updatedAt: now,
-        messages: []
+    });
+    state.conversations[created.id] = {
+        id: created.id,
+        title: created.title,
+        personaId: created.personaId,
+        projectId: created.projectId,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+        messageCount: 0,
+        messages: [],
     };
-
-    state.activeConversationId = id;
-    saveConversations();
-
-    return id;
+    state.activeConversationId = created.id;
+    return created.id;
 }
 
 /**
@@ -1077,34 +502,40 @@ function generateConversationTitle(content) {
 // ===== Persona Helpers =====
 
 /**
- * Create a new persona and set it as active
+ * Create a new persona server-side and set it as active.
+ * Server generates the id — callers must await this.
  * @param {string} [name] - Optional name, defaults to "Assistant"
- * @returns {string} The new persona ID
+ * @returns {Promise<string>} The server-generated persona ID
  */
-function createPersona(name = CONFIG.defaults.assistantName) {
-    const id = crypto.randomUUID();
-    const now = Date.now();
+async function createPersona(name = CONFIG.defaults.assistantName) {
+    const modelConfig = JSON.parse(JSON.stringify(getDefaultModelConfig()));
+    const expressions = { ...CONFIG.defaultExpressions };
 
-    // Get default model config (deep copy to ensure independence)
-    const defaultConfig = state.settings.defaultModelConfig || getDefaultModelConfig();
-    const modelConfig = JSON.parse(JSON.stringify(defaultConfig));
-
-    state.personas[id] = {
-        id,
+    const created = await API.personas.create({
         name,
         systemPrompt: CONFIG.defaults.systemPrompt,
         prefill: '',
-        avatarImageKey: '',
-        expressions: { ...CONFIG.defaultExpressions },
-        modelConfig: modelConfig,
-        createdAt: now,
-        updatedAt: now
+        expressions,
+        modelConfig,
+    });
+
+    state.personas[created.id] = {
+        id: created.id,
+        name: created.name,
+        systemPrompt: created.systemPrompt || '',
+        prefill: created.prefill || '',
+        avatarFilename: created.avatarFilename || '',
+        expressions: (created.expressions && typeof created.expressions === 'object')
+            ? created.expressions
+            : expressions,
+        modelConfig: (created.modelConfig && typeof created.modelConfig === 'object')
+            ? created.modelConfig
+            : modelConfig,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
     };
-
-    state.activePersonaId = id;
-    savePersonas();
-
-    return id;
+    state.activePersonaId = created.id;
+    return created.id;
 }
 
 /**
@@ -1129,7 +560,7 @@ function getActiveModelConfig() {
         return persona.modelConfig;
     }
     // Fallback to default model config
-    return state.settings.defaultModelConfig || getDefaultModelConfig();
+    return getDefaultModelConfig();
 }
 
 /**
@@ -1200,11 +631,25 @@ function updatePersona(id, updates) {
 }
 
 /**
- * Save personas to localStorage
+ * Persist all personas to the server.
+ * Fire-and-forget by design: most callers are UI handlers that don't need to
+ * block on the round-trip; failures are logged but don't surface in P0-15
+ * (toast UX comes in P0-17). Runs the updates in parallel.
  */
 function savePersonas() {
-    localStorage.setItem(CONFIG.storageKeys.personas, JSON.stringify(state.personas));
-    syncUnifiedStorage();
+    const personas = Object.values(state.personas);
+    Promise.all(personas.map(p =>
+        API.personas.update(p.id, {
+            name: p.name,
+            systemPrompt: p.systemPrompt,
+            prefill: p.prefill,
+            avatarFilename: p.avatarFilename,
+            expressions: p.expressions,
+            modelConfig: p.modelConfig,
+        }).catch(err => {
+            console.error(`Failed to persist persona ${p.id}:`, err);
+        })
+    ));
 }
 
 // ===== DOM Elements =====
@@ -1339,26 +784,41 @@ const elements = {
 };
 
 // ===== Initialization =====
+// init() is called by bootstrap() in the auth-gate block (P0-14) once the
+// user is authenticated. It fetches all server-side state in parallel,
+// hydrates the in-memory `state` object, then wires the UI.
 async function init() {
-    // Initialize IndexedDB first (needed for migrations)
-    await ImageStore.init();
+    // Parallel fetch — these are independent endpoints.
+    const [settings, personas, conversations, apiKeyStatus] = await Promise.all([
+        API.settings.get(),
+        API.personas.list(),
+        API.conversations.list(),
+        API.apiKeys.list(),
+    ]);
 
-    // Run migrations (handles all data format upgrades)
-    const migratedData = await runMigrations();
+    hydrateSettings(settings);
+    hydratePersonas(personas);
+    hydrateConversations(conversations);
+    hydrateApiKeyStatus(apiKeyStatus);
 
-    // Load state from migrated data
-    loadStateFromData(migratedData);
+    // Pick the most recently updated persona/conversation as active.
+    pickActivePersona();
+    pickActiveConversation();
 
-    // Setup event listeners before UI update
+    // Fetch messages for the active conversation eagerly so the first
+    // render isn't empty. Other conversations are lazy-loaded on switch.
+    if (state.activeConversationId) {
+        await loadConversationMessages(state.activeConversationId);
+    }
+
+    // Wire UI after state is populated so listeners read coherent state.
     setupEventListeners();
-
-    // Update UI (async - loads images from IndexedDB)
     await updateUI();
-
     createSidebarOverlay();
     startSessionTimer();
 
-    // Clean up object URLs when page unloads
+    // ImageStore is retained for transient pre-send attachment blobs only.
+    await ImageStore.init();
     window.addEventListener('beforeunload', () => {
         ImageStore.revokeAllURLs();
     });
@@ -1366,114 +826,165 @@ async function init() {
     console.log('AI Assistant initialized!');
 }
 
-// ===== Settings Management =====
+// ===== Server → state hydration =====
 
-/**
- * Load state from migrated data object
- * Called after runMigrations() with the fully migrated data
- */
-function loadStateFromData(data) {
-    // Load settings (model settings now in personas, not global)
-    if (data.settings) {
-        // Default model config structure for new personas
-        const defaultModelConfig = getDefaultModelConfig();
+function hydrateSettings(settings) {
+    if (!settings) return;
+    state.settings.avatarSize = settings.avatarSize || CONFIG.defaults.avatarSize;
+    state.settings.avatarPosition = settings.avatarPosition || CONFIG.defaults.avatarPosition;
+    state.settings.showAvatar = settings.showAvatar !== undefined ? settings.showAvatar : CONFIG.defaults.showAvatar;
+    // customModels arrives as an object keyed by provider (parsed JSON from
+    // the server). Default empty arrays per provider if absent.
+    const cm = settings.customModels || {};
+    state.settings.customModels = {
+        anthropic: Array.isArray(cm.anthropic) ? cm.anthropic : [],
+        google: Array.isArray(cm.google) ? cm.google : [],
+        openai: Array.isArray(cm.openai) ? cm.openai : [],
+    };
+}
 
-        state.settings = {
-            apiKeys: data.settings.apiKeys || { anthropic: '', google: '', openai: '' },
-            avatarSize: data.settings.avatarSize || CONFIG.defaults.avatarSize,
-            avatarPosition: data.settings.avatarPosition || CONFIG.defaults.avatarPosition,
-            showAvatar: data.settings.showAvatar !== undefined ? data.settings.showAvatar : CONFIG.defaults.showAvatar,
-            defaultModelConfig: data.settings.defaultModelConfig || defaultModelConfig
+function hydratePersonas(personas) {
+    state.personas = {};
+    for (const p of (personas || [])) {
+        // Server returns `expressions` as a parsed object. Empty default if
+        // absent or malformed.
+        const expressions = (p.expressions && typeof p.expressions === 'object')
+            ? p.expressions
+            : { ...CONFIG.defaultExpressions };
+        state.personas[p.id] = {
+            id: p.id,
+            name: p.name,
+            systemPrompt: p.systemPrompt || '',
+            prefill: p.prefill || '',
+            avatarFilename: p.avatarFilename || '',
+            expressions,
+            // Backfill missing modelConfig fields against the current default.
+            // Personas created server-side may have a minimal modelConfig
+            // (e.g., the OAuth callback's default-persona row only includes
+            // a few params); the UI assumes the full set, so merge here.
+            modelConfig: mergeModelConfig(p.modelConfig),
+            createdAt: p.createdAt,
+            updatedAt: p.updatedAt,
         };
     }
-
-    // Load personas
-    if (data.personas) {
-        state.personas = data.personas;
-    }
-
-    // Set active persona
-    if (data.activePersonaId && state.personas[data.activePersonaId]) {
-        state.activePersonaId = data.activePersonaId;
-    } else {
-        // Fall back to most recently updated persona
-        const personaList = Object.values(state.personas);
-        if (personaList.length > 0) {
-            const mostRecent = personaList.reduce((a, b) =>
-                (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-            );
-            state.activePersonaId = mostRecent.id;
-        }
-    }
-
-    // Load conversations
-    if (data.conversations) {
-        state.conversations = data.conversations;
-    }
-
-    // Load custom models (should be object keyed by provider after migration 3)
-    if (data.customModels) {
-        // Handle both old array format (pre-migration) and new object format
-        if (Array.isArray(data.customModels)) {
-            // Old format - assign to anthropic (shouldn't happen after migration)
-            state.customModels = {
-                anthropic: data.customModels,
-                google: [],
-                openai: []
-            };
-        } else {
-            state.customModels = data.customModels;
-        }
-    }
-
-    // Set active conversation
-    if (data.activeConversationId && state.conversations[data.activeConversationId]) {
-        state.activeConversationId = data.activeConversationId;
-    } else {
-        // Fall back to most recently updated conversation
-        const convos = Object.values(state.conversations);
-        if (convos.length > 0) {
-            const mostRecent = convos.reduce((a, b) =>
-                (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-            );
-            state.activeConversationId = mostRecent.id;
-        }
-    }
-
-    console.log(`Loaded state: ${Object.keys(state.personas).length} personas, ${Object.keys(state.conversations).length} conversations`);
 }
 
 /**
- * Sync all state to the unified storage
- * Called after any save operation to keep the unified storage in sync
+ * Merge a (possibly incomplete) modelConfig from the server with the
+ * frontend's default structure. Server-provided values win; missing fields
+ * are filled from the default. Returns a brand-new object — never mutates
+ * the default.
  */
-function syncUnifiedStorage() {
-    const data = {
-        schemaVersion: CURRENT_SCHEMA_VERSION,
-        settings: state.settings,
-        personas: state.personas,
-        conversations: state.conversations,
-        customModels: state.customModels,
-        activePersonaId: state.activePersonaId,
-        activeConversationId: state.activeConversationId
+function mergeModelConfig(serverConfig) {
+    const defaults = getDefaultModelConfig();
+    if (!serverConfig || typeof serverConfig !== 'object') return defaults;
+    const incoming = serverConfig.modelParams || {};
+    const incomingAnthropic = incoming.anthropic || {};
+    const incomingGoogle = incoming.google || {};
+    return {
+        provider: serverConfig.provider || defaults.provider,
+        model: serverConfig.model || defaults.model,
+        modelParams: {
+            ...defaults.modelParams,
+            ...incoming,
+            anthropic: { ...defaults.modelParams.anthropic, ...incomingAnthropic },
+            google: { ...defaults.modelParams.google, ...incomingGoogle },
+        },
     };
-    localStorage.setItem(CONFIG.storageKeys.appData, JSON.stringify(data));
 }
 
+function hydrateConversations(conversations) {
+    state.conversations = {};
+    for (const c of (conversations || [])) {
+        // List endpoint returns metadata only — messages are loaded lazily
+        // via API.conversations.get(id). `messages: undefined` is the sentinel
+        // for "not yet loaded"; `messages: []` is "loaded, empty".
+        state.conversations[c.id] = {
+            id: c.id,
+            title: c.title,
+            personaId: c.personaId,
+            projectId: c.projectId,
+            createdAt: c.createdAt,
+            updatedAt: c.updatedAt,
+            messageCount: c.messageCount || 0,
+            messages: undefined,
+        };
+    }
+}
+
+function hydrateApiKeyStatus(apiKeyStatus) {
+    // Server returns [{ provider, hasKey, updatedAt }]. Map to per-provider.
+    for (const entry of (apiKeyStatus || [])) {
+        if (state.apiKeyStatus[entry.provider]) {
+            state.apiKeyStatus[entry.provider] = {
+                hasKey: !!entry.hasKey,
+                updatedAt: entry.updatedAt || null,
+            };
+        }
+    }
+}
+
+function pickActivePersona() {
+    const personas = Object.values(state.personas);
+    if (personas.length === 0) {
+        state.activePersonaId = null;
+        return;
+    }
+    const mostRecent = personas.reduce((a, b) =>
+        (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+    );
+    state.activePersonaId = mostRecent.id;
+}
+
+function pickActiveConversation() {
+    const convos = Object.values(state.conversations);
+    if (convos.length === 0) {
+        state.activeConversationId = null;
+        return;
+    }
+    const mostRecent = convos.reduce((a, b) =>
+        (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+    );
+    state.activeConversationId = mostRecent.id;
+}
+
+/**
+ * Lazy-load a conversation's full message history. Idempotent: if messages
+ * are already loaded (or being loaded), returns without an extra fetch.
+ */
+async function loadConversationMessages(conversationId) {
+    const convo = state.conversations[conversationId];
+    if (!convo) return;
+    if (convo.messages !== undefined) return; // already loaded
+    try {
+        const full = await API.conversations.get(conversationId);
+        convo.messages = (full && full.messages) || [];
+    } catch (err) {
+        console.error(`Failed to load messages for ${conversationId}:`, err);
+        convo.messages = []; // surface as empty rather than retry-storming
+    }
+}
+
+// ===== Settings Management =====
+
 // ===== Real-Time Auto-Save =====
+// Two independent debounce timers so a fast typist filling in an API key
+// doesn't churn /api/settings, and a slider drag on avatar size doesn't churn
+// /api/api-keys/<provider>.
 let autoSaveTimeout = null;
+let apiKeySaveTimeout = null;
+// Track which provider's key (if any) was edited since the last persist so we
+// know what to POST after the debounce fires.
+let pendingApiKeyProvider = null;
 
 /**
  * Debounced auto-save function
  * Saves settings after 300ms of no changes to avoid excessive writes
  */
 function autoSaveSettings() {
-    // Clear any pending save
     if (autoSaveTimeout) {
         clearTimeout(autoSaveTimeout);
     }
-
-    // Debounce: save after 300ms of no changes
     autoSaveTimeout = setTimeout(() => {
         saveAllSettingsFromUI();
         persistSettings();
@@ -1492,9 +1003,18 @@ function saveAllSettingsFromUI() {
         persona.modelConfig.model = elements.modelSelect.value;
     }
 
-    // API key for current provider (stays global)
+    // API key for current provider — buffered in sessionApiKeys (used by the
+    // still-direct chat path) AND scheduled for server persistence on a
+    // separate debounce so /api/settings updates don't ping the API-keys
+    // endpoint and vice versa. TEMPORARY until P0-16; see state.sessionApiKeys.
     const currentProvider = persona?.modelConfig?.provider || CONFIG.defaults.provider;
-    state.settings.apiKeys[currentProvider] = elements.apiKeyInput.value;
+    const inputKey = elements.apiKeyInput.value;
+    if (state.sessionApiKeys[currentProvider] !== inputKey) {
+        state.sessionApiKeys[currentProvider] = inputKey;
+        pendingApiKeyProvider = currentProvider;
+        if (apiKeySaveTimeout) clearTimeout(apiKeySaveTimeout);
+        apiKeySaveTimeout = setTimeout(persistPendingApiKey, 500);
+    }
 
     // Avatar settings (stay global)
     state.settings.showAvatar = elements.showAvatar.checked;
@@ -1516,15 +1036,45 @@ function saveAllSettingsFromUI() {
 }
 
 /**
- * Persist current state to localStorage
+ * Push the pending API-key change to the server. Either PUT (set) if the
+ * field is non-empty, or DELETE if the user cleared it. Updates apiKeyStatus
+ * accordingly so the UI reflects current presence without a refetch.
+ */
+function persistPendingApiKey() {
+    const provider = pendingApiKeyProvider;
+    pendingApiKeyProvider = null;
+    if (!provider) return;
+    const value = state.sessionApiKeys[provider] || '';
+    const op = value
+        ? API.apiKeys.set(provider, value)
+        : API.apiKeys.delete(provider);
+    op.then(result => {
+        state.apiKeyStatus[provider] = {
+            hasKey: !!(result && (result.hasKey || (value && result.hasKey !== false))),
+            updatedAt: (result && result.updatedAt) || Date.now(),
+        };
+    }).catch(err => {
+        console.error(`Failed to persist API key for ${provider}:`, err);
+    });
+}
+
+/**
+ * Persist non-API-key settings (avatar prefs, customModels) AND the active
+ * persona. Fire-and-forget; the auto-save debounce coalesces frequent edits.
  */
 function persistSettings() {
-    localStorage.setItem(CONFIG.storageKeys.settings, JSON.stringify(state.settings));
-    const persona = getActivePersona();
-    if (persona) {
+    const settingsPayload = {
+        avatarSize: state.settings.avatarSize,
+        avatarPosition: state.settings.avatarPosition,
+        showAvatar: state.settings.showAvatar,
+        customModels: state.settings.customModels,
+    };
+    API.settings.update(settingsPayload).catch(err => {
+        console.error('Failed to persist settings:', err);
+    });
+    // Persona edits ride along on the same auto-save tick.
+    if (getActivePersona()) {
         savePersonas();
-    } else {
-        syncUnifiedStorage();
     }
     updateSettingsUI();
 }
@@ -1553,9 +1103,36 @@ function updateSettingsUI() {
     updateStatusBar();
 }
 
+/**
+ * Persist conversation metadata for the active conversation (title, personaId).
+ * Fire-and-forget. Per-message persistence is NOT handled here — see
+ * persistMessage() for that path. Most call sites just want "I tweaked the
+ * conversation; flush it" and that's what this does.
+ */
 function saveConversations() {
-    localStorage.setItem(CONFIG.storageKeys.conversations, JSON.stringify(state.conversations));
-    syncUnifiedStorage();
+    const id = state.activeConversationId;
+    if (!id) return;
+    const convo = state.conversations[id];
+    if (!convo) return;
+    API.conversations.update(id, {
+        title: convo.title,
+        personaId: convo.personaId,
+    }).catch(err => {
+        console.error(`Failed to persist conversation ${id}:`, err);
+    });
+}
+
+/**
+ * Persist a single new message to the server. Returns the server-augmented
+ * message (with the server-generated id) so callers can update state.
+ * Throws on failure — the caller can decide whether to surface the error.
+ */
+async function persistMessage(conversationId, message) {
+    return await API.messages.create(conversationId, {
+        role: message.role,
+        content: message.content,
+        attachments: message.attachments || [],
+    });
 }
 
 // ===== UI Updates =====
@@ -1568,7 +1145,7 @@ async function updateUI() {
     populateModelDropdown(); // Populate from customModels based on persona's provider
     // Load API key for the persona's provider
     const currentProvider = modelConfig.provider;
-    elements.apiKeyInput.value = state.settings.apiKeys[currentProvider] || '';
+    elements.apiKeyInput.value = state.sessionApiKeys[currentProvider] || '';
     // Update API key field placeholder and label for current provider
     updateApiKeyFieldForProvider(currentProvider);
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
@@ -1654,7 +1231,7 @@ function handleProviderChange(provider) {
     // Save the current API key for the previous provider before switching
     const previousProvider = modelConfig.provider;
     if (previousProvider && previousProvider !== provider) {
-        state.settings.apiKeys[previousProvider] = elements.apiKeyInput.value;
+        state.sessionApiKeys[previousProvider] = elements.apiKeyInput.value;
     }
 
     // Update provider in active persona's modelConfig
@@ -1665,7 +1242,7 @@ function handleProviderChange(provider) {
     }
 
     // Load API key for the new provider
-    elements.apiKeyInput.value = state.settings.apiKeys[provider] || '';
+    elements.apiKeyInput.value = state.sessionApiKeys[provider] || '';
 
     // Update placeholder and label
     updateApiKeyFieldForProvider(provider);
@@ -1828,7 +1405,7 @@ function addStopSequence() {
     input.value = '';
 }
 
-async function updateAvatarPreview() {
+function updateAvatarPreview() {
     const preview = elements.avatarPreview;
     const name = elements.avatarPreviewName;
     const status = elements.avatarPreviewStatus;
@@ -1836,16 +1413,11 @@ async function updateAvatarPreview() {
 
     name.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
 
-    const avatarKey = persona ? persona.avatarImageKey : '';
-    if (avatarKey) {
-        const imageUrl = await ImageStore.get(avatarKey);
-        if (imageUrl) {
-            preview.innerHTML = `<img src="${imageUrl}" alt="Avatar">`;
-            status.textContent = 'Custom Avatar';
-        } else {
-            preview.textContent = '🤖';
-            status.textContent = 'Default Avatar';
-        }
+    if (persona && persona.avatarFilename) {
+        // Cache-bust on updatedAt so re-uploads are immediately visible.
+        const url = `${API.avatars.getUrl(persona.id)}?v=${persona.updatedAt || 0}`;
+        preview.innerHTML = `<img src="${url}" alt="Avatar">`;
+        status.textContent = 'Custom Avatar';
     } else {
         preview.textContent = '🤖';
         status.textContent = 'Default Avatar';
@@ -1870,21 +1442,21 @@ async function updateFloatingAvatar() {
     // Update size
     image.className = `avatar-image size-${state.settings.avatarSize}`;
 
-    // Update image or emoji
-    // Priority: expression image > default avatar > emoji
+    // Update image or emoji.
+    // Priority: expression image > default avatar > emoji.
     const currentExpr = expressions[state.currentExpression] || expressions.neutral;
+    const cacheBust = persona && persona.updatedAt ? `?v=${persona.updatedAt}` : '';
 
-    // Try to load expression image from IndexedDB
+    // Expression image URL — derive from persona id + expression name.
     let expressionImageUrl = null;
-    if (currentExpr && currentExpr.imageKey) {
-        expressionImageUrl = await ImageStore.get(currentExpr.imageKey);
+    if (persona && currentExpr && currentExpr.imageKey) {
+        expressionImageUrl = `${API.avatars.getExpressionUrl(persona.id, state.currentExpression)}${cacheBust}`;
     }
 
-    // Try to load default avatar from IndexedDB
+    // Default avatar URL.
     let avatarImageUrl = null;
-    const avatarKey = persona ? persona.avatarImageKey : '';
-    if (avatarKey) {
-        avatarImageUrl = await ImageStore.get(avatarKey);
+    if (persona && persona.avatarFilename) {
+        avatarImageUrl = `${API.avatars.getUrl(persona.id)}${cacheBust}`;
     }
 
     if (expressionImageUrl) {
@@ -1944,7 +1516,7 @@ function getModelDisplayName(modelId) {
     // Look up in custom models for current persona's provider
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const providerModels = state.customModels[provider] || [];
+    const providerModels = state.settings.customModels[provider] || [];
     const customModel = providerModels.find(m => m.id === modelId);
     if (customModel) {
         return customModel.name;
@@ -1957,7 +1529,7 @@ function getModelDisplayName(modelId) {
 function updateSendButtonState() {
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.settings.apiKeys[provider] || '';
+    const apiKey = state.sessionApiKeys[provider] || '';
     const hasApiKey = apiKey.length > 0;
     const hasMessage = elements.messageInput.value.trim().length > 0;
     const hasAttachments = state.pendingAttachments.length > 0;
@@ -1974,18 +1546,17 @@ async function renderExpressionList() {
     const persona = getActivePersona();
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
+    const cacheBust = persona && persona.updatedAt ? `?v=${persona.updatedAt}` : '';
     for (const [name, expr] of Object.entries(expressions)) {
         const item = document.createElement('div');
         item.className = 'expression-item';
         item.onclick = () => openExpressionModal(name);
 
-        // Load image from IndexedDB if key exists
+        // Show image when expression has one server-side; fall back to emoji.
         let imageContent = expr.emoji;
-        if (expr.imageKey) {
-            const imageUrl = await ImageStore.get(expr.imageKey);
-            if (imageUrl) {
-                imageContent = `<img src="${imageUrl}" alt="${name}">`;
-            }
+        if (persona && expr.imageKey) {
+            const imageUrl = `${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}`;
+            imageContent = `<img src="${imageUrl}" alt="${name}">`;
         }
 
         item.innerHTML = `
@@ -2024,14 +1595,11 @@ async function openExpressionModal(name = null) {
         elements.expressionKeywords.value = expr.keywords.join(', ');
         elements.deleteExpressionBtn.style.display = 'block';
 
-        // Load image preview from IndexedDB
-        if (expr.imageKey) {
-            const imageUrl = await ImageStore.get(expr.imageKey);
-            if (imageUrl) {
-                elements.expressionImagePreview.innerHTML = `<img src="${imageUrl}" alt="${name}">`;
-            } else {
-                elements.expressionImagePreview.innerHTML = '<span class="preview-placeholder">No image</span>';
-            }
+        // Server URL for the expression image (cache-busted).
+        if (persona && expr.imageKey) {
+            const cacheBust = persona.updatedAt ? `?v=${persona.updatedAt}` : '';
+            const imageUrl = `${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}`;
+            elements.expressionImagePreview.innerHTML = `<img src="${imageUrl}" alt="${name}">`;
         } else {
             elements.expressionImagePreview.innerHTML = '<span class="preview-placeholder">No image</span>';
         }
@@ -2079,64 +1647,60 @@ async function saveExpression() {
         return;
     }
 
-    // Determine the image key
-    let imageKey = '';
     const oldExpr = editingExpression ? persona.expressions[editingExpression] : null;
     const oldImageKey = oldExpr?.imageKey || '';
+    const isRename = editingExpression && editingExpression !== name;
+
+    // Build the new expressions object. imageKey is preserved from the old
+    // entry unless the user uploaded a new image, cleared it, or renamed
+    // (rename-with-image is not preserved in this iteration — user re-uploads).
+    const newExpressions = { ...persona.expressions };
+    if (isRename) delete newExpressions[editingExpression];
+    const initialImageKey = state.tempExpressionCleared
+        ? ''
+        : (state.tempExpressionBlob || isRename ? '' : oldImageKey);
+    newExpressions[name] = { emoji, keywords, imageKey: initialImageKey };
 
     try {
-        if (state.tempExpressionBlob) {
-            // User uploaded a new image - store it with the expression name as key
-            imageKey = `expr_${persona.id}_${name}`;
-            await ImageStore.store(imageKey, state.tempExpressionBlob);
+        // 1. Push the metadata change.
+        await API.personas.update(persona.id, { expressions: newExpressions });
 
-            // If renaming and old key was different, delete old image
-            if (oldImageKey && oldImageKey !== imageKey) {
-                await ImageStore.delete(oldImageKey);
-            }
-        } else if (state.tempExpressionCleared) {
-            // User explicitly cleared the image
-            if (oldImageKey) {
-                await ImageStore.delete(oldImageKey);
-            }
-            imageKey = '';
-        } else if (editingExpression && editingExpression !== name && oldImageKey) {
-            // Renaming expression - need to copy image to new key
-            const oldUrl = await ImageStore.get(oldImageKey);
-            if (oldUrl) {
-                // Fetch the blob from the old location and store with new key
-                const response = await fetch(oldUrl);
-                const blob = await response.blob();
-                imageKey = `expr_${persona.id}_${name}`;
-                await ImageStore.store(imageKey, blob);
-                await ImageStore.delete(oldImageKey);
-            }
-        } else {
-            // Keep existing image key (or empty if none)
-            imageKey = oldImageKey;
+        // 2. Image-side operations.
+        if (state.tempExpressionBlob) {
+            const file = new File([state.tempExpressionBlob], `${name}.png`, {
+                type: state.tempExpressionBlob.type || 'image/png',
+            });
+            await API.avatars.uploadExpression(persona.id, name, file);
         }
-    } catch (error) {
-        console.error('Failed to save expression image:', error);
-        alert('Failed to save image. Please try again.');
+        if (isRename && oldImageKey) {
+            // Old expression renamed; clean up its image file. (We don't
+            // preserve it across rename — would require download + re-upload.)
+            try {
+                await API.avatars.deleteExpression(persona.id, editingExpression);
+            } catch (e) { /* file may already be gone — non-fatal */ }
+        } else if (state.tempExpressionCleared && oldImageKey) {
+            await API.avatars.deleteExpression(persona.id, name);
+        }
+
+        // 3. Refetch persona so local state matches server's authoritative
+        // imageKey values for each expression.
+        const fresh = await API.personas.get(persona.id);
+        state.personas[fresh.id] = {
+            ...state.personas[fresh.id],
+            ...fresh,
+            expressions: (fresh.expressions && typeof fresh.expressions === 'object')
+                ? fresh.expressions
+                : newExpressions,
+        };
+    } catch (err) {
+        console.error('Failed to save expression:', err);
+        alert('Failed to save expression. Please try again.');
         return;
     }
 
-    // If renaming, delete old expression entry
-    if (editingExpression && editingExpression !== name) {
-        delete persona.expressions[editingExpression];
-    }
-
-    persona.expressions[name] = { emoji, imageKey, keywords };
-    persona.updatedAt = Date.now();
-
-    savePersonas();
     await renderExpressionList();
     closeExpressionModal();
-
-    // Update floating avatar in case current expression changed
     await updateFloatingAvatar();
-
-    // Update system prompt hint about available expressions
     updateSystemPromptExpressions();
 }
 
@@ -2152,15 +1716,30 @@ async function deleteExpression() {
     }
 
     if (confirm(`Delete expression "${editingExpression}"?`)) {
-        // Delete image from IndexedDB if exists
         const expr = persona.expressions[editingExpression];
-        if (expr?.imageKey) {
-            await ImageStore.delete(expr.imageKey);
+
+        // Local optimistic delete.
+        const newExpressions = { ...persona.expressions };
+        delete newExpressions[editingExpression];
+
+        try {
+            // 1. Persist expression-set change.
+            await API.personas.update(persona.id, { expressions: newExpressions });
+            // 2. Drop the server-side image file too (best-effort).
+            if (expr?.imageKey) {
+                try {
+                    await API.avatars.deleteExpression(persona.id, editingExpression);
+                } catch (e) { /* file may already be gone — non-fatal */ }
+            }
+            // 3. Sync local state with the result.
+            persona.expressions = newExpressions;
+            persona.updatedAt = Date.now();
+        } catch (err) {
+            console.error('Failed to delete expression:', err);
+            alert('Failed to delete expression. Please try again.');
+            return;
         }
 
-        delete persona.expressions[editingExpression];
-        persona.updatedAt = Date.now();
-        savePersonas();
         await renderExpressionList();
         closeExpressionModal();
     }
@@ -2180,7 +1759,7 @@ function updateSystemPromptExpressions() {
 async function fetchAvailableModels() {
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.settings.apiKeys[provider];
+    const apiKey = state.sessionApiKeys[provider];
 
     if (!apiKey) {
         throw new Error('API key required to fetch models');
@@ -2257,7 +1836,7 @@ function addCustomModel(id, name) {
 
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const providerModels = state.customModels[provider];
+    const providerModels = state.settings.customModels[provider];
 
     // Check if already exists
     const exists = providerModels.some(m => m.id === id);
@@ -2275,7 +1854,7 @@ function addCustomModel(id, name) {
 function removeCustomModel(id) {
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const providerModels = state.customModels[provider];
+    const providerModels = state.settings.customModels[provider];
     const index = providerModels.findIndex(m => m.id === id);
     if (index === -1) return;
 
@@ -2293,8 +1872,14 @@ function removeCustomModel(id) {
 /**
  * Save custom models to storage
  */
+/**
+ * Persist customModels via /api/settings (it lives under settings server-side).
+ * Fire-and-forget.
+ */
 function saveCustomModels() {
-    syncUnifiedStorage();
+    API.settings.update({ customModels: state.settings.customModels }).catch(err => {
+        console.error('Failed to persist custom models:', err);
+    });
 }
 
 /**
@@ -2304,7 +1889,7 @@ function populateModelDropdown() {
     const select = elements.modelSelect;
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const providerModels = state.customModels[provider] || [];
+    const providerModels = state.settings.customModels[provider] || [];
     select.innerHTML = '';
 
     if (providerModels.length === 0) {
@@ -2348,7 +1933,7 @@ function renderSavedModelsList() {
     const container = elements.savedModelsList;
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const providerModels = state.customModels[provider] || [];
+    const providerModels = state.settings.customModels[provider] || [];
     container.innerHTML = '';
 
     if (providerModels.length === 0) {
@@ -2392,7 +1977,7 @@ function renderAvailableModelsGrid(models) {
     const grid = elements.availableModelsGrid;
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const providerModels = state.customModels[provider] || [];
+    const providerModels = state.settings.customModels[provider] || [];
     grid.innerHTML = '';
     grid.style.display = 'grid';
 
@@ -2445,7 +2030,7 @@ function openModelModal() {
     // Disable fetch button if no API key for current provider
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.settings.apiKeys[provider] || '';
+    const apiKey = state.sessionApiKeys[provider] || '';
     elements.fetchModelsBtn.disabled = !apiKey;
 
     elements.modelModal.classList.add('visible');
@@ -2477,7 +2062,7 @@ async function handleFetchModels() {
     } finally {
         const modelConfig = getActiveModelConfig();
         const provider = modelConfig.provider;
-        const apiKey = state.settings.apiKeys[provider] || '';
+        const apiKey = state.sessionApiKeys[provider] || '';
         btn.disabled = !apiKey;
         btn.textContent = originalText;
     }
@@ -2768,8 +2353,13 @@ function deleteConversationPrompt(conversationId) {
 /**
  * Create a new conversation and switch to it
  */
-function startNewConversation() {
-    const id = createConversation('New Chat');
+async function startNewConversation() {
+    try {
+        await createConversation('New Chat');
+    } catch (err) {
+        console.error('Failed to create conversation:', err);
+        return;
+    }
     renderConversationList();
     renderConversation();
     closeSidebar();
@@ -2795,16 +2385,15 @@ async function renderPersonaList() {
         item.className = `persona-item ${persona.id === state.activePersonaId ? 'active' : ''}`;
         item.dataset.personaId = persona.id;
 
-        // Try to load avatar image from IndexedDB
+        // Avatar comes from /api/avatars/:id/avatar — cache-busted by
+        // persona.updatedAt so a re-upload is visible immediately.
         let avatarContent = '';
-        if (persona.avatarImageKey) {
-            const imageUrl = await ImageStore.get(persona.avatarImageKey);
-            if (imageUrl) {
-                avatarContent = `<img src="${imageUrl}" alt="${escapeHtml(persona.name)}">`;
-            }
-        }
-        // Fallback to emoji if no image
-        if (!avatarContent) {
+        if (persona.avatarFilename) {
+            const cacheBust = persona.updatedAt ? `?v=${persona.updatedAt}` : '';
+            const imageUrl = `${API.avatars.getUrl(persona.id)}${cacheBust}`;
+            avatarContent = `<img src="${imageUrl}" alt="${escapeHtml(persona.name)}">`;
+        } else {
+            // Fallback to emoji if no avatar
             const firstExpr = Object.values(persona.expressions || {})[0];
             const avatarEmoji = firstExpr?.emoji || '🤖';
             avatarContent = `<span class="avatar-emoji">${avatarEmoji}</span>`;
@@ -2950,32 +2539,36 @@ async function deletePersonaPrompt(personaId) {
     message += '\n\nThis cannot be undone.';
 
     if (confirm(message)) {
-        // Delete linked conversations
+        // Server-side delete cascades to linked conversations (and messages).
+        // Backend refuses to delete the user's last persona — that surfaces as
+        // a VALIDATION_ERROR, which we catch and show to the user.
+        try {
+            await API.personas.delete(personaId);
+        } catch (err) {
+            console.error('Failed to delete persona:', err);
+            alert(err && err.message
+                ? `Could not delete persona: ${err.message}`
+                : 'Could not delete persona. Please try again.');
+            return;
+        }
+
+        // Local cleanup mirrors the server cascade.
         linkedConvos.forEach(convo => {
             delete state.conversations[convo.id];
         });
-
-        // Delete persona
         delete state.personas[personaId];
 
-        // If we deleted the active persona, switch to another
+        // If we deleted the active persona, switch to another.
         if (state.activePersonaId === personaId) {
             const remaining = Object.values(state.personas);
-            if (remaining.length > 0) {
-                state.activePersonaId = remaining[0].id;
-            } else {
-                // Create a default persona if none left
-                createPersona('Assistant');
-            }
+            state.activePersonaId = remaining.length > 0 ? remaining[0].id : null;
         }
 
-        // Clear active conversation if it was deleted
-        if (!state.conversations[state.activeConversationId]) {
+        // Clear active conversation if it was deleted by the cascade.
+        if (state.activeConversationId && !state.conversations[state.activeConversationId]) {
             state.activeConversationId = null;
         }
 
-        savePersonas();
-        saveConversations();
         await renderPersonaList();
         renderConversationList();
         renderConversation();
@@ -2987,7 +2580,13 @@ async function deletePersonaPrompt(personaId) {
  * Create a new persona and switch to editing it
  */
 async function startNewPersona() {
-    const id = createPersona('New Persona');
+    let id;
+    try {
+        id = await createPersona('New Persona');
+    } catch (err) {
+        console.error('Failed to create persona:', err);
+        return;
+    }
     await renderPersonaList();
     editPersona(id);
 }
@@ -3102,7 +2701,7 @@ function renderConversation() {
     if (messages.length === 0) {
         const modelConfig = getActiveModelConfig();
         const provider = modelConfig.provider;
-        const hasApiKey = (state.settings.apiKeys[provider] || '').length > 0;
+        const hasApiKey = (state.sessionApiKeys[provider] || '').length > 0;
         elements.messagesContainer.innerHTML = `
             <div class="welcome-message">
                 <h1>Welcome!</h1>
@@ -3119,7 +2718,7 @@ function renderConversation() {
     scrollToBottom();
 }
 
-function appendMessage(role, content, save = true, explicitIndex = null, attachments = null) {
+async function appendMessage(role, content, save = true, explicitIndex = null, attachments = null) {
     const welcome = elements.messagesContainer.querySelector('.welcome-message');
     if (welcome) {
         welcome.remove();
@@ -3174,29 +2773,44 @@ function appendMessage(role, content, save = true, explicitIndex = null, attachm
     elements.messagesContainer.appendChild(messageDiv);
 
     if (save) {
-        // Auto-create conversation if none exists
+        // Auto-create conversation if none exists. createConversation is now
+        // async (server-generated id), so this whole branch awaits — callers
+        // must therefore await appendMessage.
         if (!state.activeConversationId) {
-            // Generate title from first user message
             const title = role === 'user'
                 ? generateConversationTitle(displayContent)
                 : 'New Chat';
-            createConversation(title);
+            try {
+                await createConversation(title);
+            } catch (err) {
+                console.error('Auto-create conversation failed:', err);
+                return; // can't persist a message without a conversation
+            }
         }
 
         const activeConvo = getActiveConversation();
         if (activeConvo) {
-            activeConvo.messages.push({ role, content: displayContent, attachments: attachments || [] });
-
-            // Set data-msg-index after push
+            const msg = { role, content: displayContent, attachments: attachments || [] };
+            activeConvo.messages.push(msg);
             messageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
 
-            // Update title from first user message if still default
+            // Update title from first user message if still default.
             if (activeConvo.messages.length === 1 && role === 'user' && activeConvo.title === 'New Chat') {
                 activeConvo.title = generateConversationTitle(displayContent);
+                // Title changed; flush metadata to server.
+                saveConversations();
             }
-
             activeConvo.updatedAt = Date.now();
-            saveConversations();
+
+            // Persist the message itself. Fire-and-forget: errors logged but
+            // the UI has already rendered, and a retry mechanism is P0-17 work.
+            persistMessage(activeConvo.id, msg).then(saved => {
+                // Backend assigns the message id; record it so future edits/
+                // deletes target the right row.
+                if (saved && saved.id) msg.id = saved.id;
+            }).catch(err => {
+                console.error('Failed to persist message:', err);
+            });
         }
 
         // Update token estimate (rough: 1 token ≈ 4 chars)
@@ -3413,13 +3027,13 @@ function rerunFromMessage(msgIndex) {
 async function sendMessageFromText(text, attachments = []) {
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.settings.apiKeys[provider] || '';
+    const apiKey = state.sessionApiKeys[provider] || '';
     if (!apiKey || state.isLoading) return;
 
     state.isLoading = true;
     updateSendButtonState();
 
-    appendMessage('user', text, true, null, attachments.length > 0 ? attachments : null);
+    await appendMessage('user', text, true, null, attachments.length > 0 ? attachments : null);
     showTypingIndicator();
 
     try {
@@ -3474,7 +3088,7 @@ async function sendMessageFromText(text, attachments = []) {
 
             const detectedExpr = detectExpression(responseText);
             await setExpression(detectedExpr);
-            appendMessage('assistant', responseText, true, null, responseAttachments.length > 0 ? responseAttachments : null);
+            await appendMessage('assistant', responseText, true, null, responseAttachments.length > 0 ? responseAttachments : null);
         }
     } catch (error) {
         hideTypingIndicator();
@@ -3563,7 +3177,7 @@ async function sendMessage() {
     const userMessage = elements.messageInput.value.trim();
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.settings.apiKeys[provider] || '';
+    const apiKey = state.sessionApiKeys[provider] || '';
 
     const hasAttachments = state.pendingAttachments.length > 0;
     if ((!userMessage && !hasAttachments) || !apiKey || state.isLoading) {
@@ -3583,7 +3197,7 @@ async function sendMessage() {
         renderAttachmentPreviews();
     }
 
-    appendMessage('user', userMessage || '(attached files)', true, null, attachmentMeta.length > 0 ? attachmentMeta : null);
+    await appendMessage('user', userMessage || '(attached files)', true, null, attachmentMeta.length > 0 ? attachmentMeta : null);
 
     if (modelConfig.modelParams.streaming) {
         // Streaming path
@@ -3651,7 +3265,7 @@ async function sendMessage() {
             await setExpression(detectedExpr);
 
             // Strip expression tag and display (with any generated attachments)
-            appendMessage('assistant', responseText, true, null, responseAttachments.length > 0 ? responseAttachments : null);
+            await appendMessage('assistant', responseText, true, null, responseAttachments.length > 0 ? responseAttachments : null);
 
         } catch (error) {
             hideTypingIndicator();
@@ -3667,7 +3281,7 @@ async function sendMessage() {
 async function callAPI(userMessage, attachments = []) {
     const modelConfig = getActiveModelConfig();
     const { provider, model } = modelConfig;
-    const apiKey = state.settings.apiKeys[provider];
+    const apiKey = state.sessionApiKeys[provider];
     const persona = getActivePersona();
     const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
 
@@ -3689,7 +3303,7 @@ async function callAPI(userMessage, attachments = []) {
 async function callAPIStreaming(userMessage, attachments = []) {
     const modelConfig = getActiveModelConfig();
     const { provider, model } = modelConfig;
-    const apiKey = state.settings.apiKeys[provider];
+    const apiKey = state.sessionApiKeys[provider];
     const persona = getActivePersona();
     const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
 
@@ -4871,16 +4485,15 @@ function setupEventListeners() {
 // ===== File Upload Handlers =====
 
 /**
- * Handle avatar image upload - stores blob in IndexedDB
+ * Upload an avatar image to the server. Server stores under
+ * data/avatars/{personaId}_avatar.{ext} and updates persona.avatarFilename.
  */
 async function handleAvatarUpload(file) {
-    // Validate file type
     if (!file.type.startsWith('image/')) {
         alert('Please select an image file');
         return;
     }
-
-    // Validate file size (max 5MB - can be larger now with IndexedDB)
+    // Backend enforces 5MB — match client-side for fast feedback.
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
         alert('Image is too large. Please select an image under 5MB.');
@@ -4894,20 +4507,14 @@ async function handleAvatarUpload(file) {
     }
 
     try {
-        const blob = await ImageStore.fileToBlob(file);
-        const key = `avatar_${persona.id}`;
-
-        await ImageStore.store(key, blob);
-        persona.avatarImageKey = key;
+        await API.avatars.upload(persona.id, file);
+        // Server returns { avatarUrl } but not the filename — use a truthy
+        // sentinel and bump updatedAt so the cache-busted <img src> reloads.
+        persona.avatarFilename = '1';
         persona.updatedAt = Date.now();
 
-        // Save persona
-        savePersonas();
-
-        // Update previews
-        await updateAvatarPreview();
+        updateAvatarPreview();
         await updateFloatingAvatar();
-
         showNotification('Avatar uploaded!', 'success');
     } catch (error) {
         console.error('Failed to upload avatar:', error);
@@ -4916,19 +4523,25 @@ async function handleAvatarUpload(file) {
 }
 
 /**
- * Clear the avatar image - removes from IndexedDB
+ * Remove the avatar image from the server.
  */
 async function clearAvatarImage() {
     const persona = getActivePersona();
     if (!persona) return;
 
-    if (persona.avatarImageKey) {
-        await ImageStore.delete(persona.avatarImageKey);
+    try {
+        if (persona.avatarFilename) {
+            await API.avatars.delete(persona.id);
+        }
+        persona.avatarFilename = '';
+        persona.updatedAt = Date.now();
+    } catch (err) {
+        console.error('Failed to delete avatar:', err);
+        alert('Failed to remove avatar. Please try again.');
+        return;
     }
-    persona.avatarImageKey = '';
-    persona.updatedAt = Date.now();
-    savePersonas();
-    await updateAvatarPreview();
+
+    updateAvatarPreview();
     await updateFloatingAvatar();
 }
 
@@ -5031,8 +4644,7 @@ async function clearConversation() {
 
 // ===== Auth Gate (P0-14) =====
 // Decides whether to show the login screen or the main app on page load.
-// The actual data layer is still localStorage-backed at this stage — that
-// gets replaced in P0-15.
+// init() (P0-15) loads all data from the server before rendering — see init.
 
 const OAUTH_ERROR_MESSAGES = {
     oauth_denied: 'Sign-in was cancelled. Please try again to continue.',
@@ -5181,9 +4793,10 @@ async function bootstrap() {
         try {
             await init();
         } catch (err) {
-            // Common causes: IndexedDB blocked in private browsing, corrupt
-            // localStorage that runMigrations can't parse. Hide the now-broken
-            // app shell and surface a diagnostic prompt on the login screen.
+            // Common causes: IndexedDB blocked in private browsing, a failing
+            // server fetch in one of the parallel /api/* calls during init.
+            // Hide the now-broken app shell and surface a diagnostic prompt on
+            // the login screen.
             // Clear the auth cookie so the user isn't stuck in a loop: with the
             // cookie intact, refreshing or signing in again auto-resumes the
             // same broken session because Google OAuth re-grants the existing
