@@ -643,7 +643,11 @@ function savePersonas() {
             name: p.name,
             systemPrompt: p.systemPrompt,
             prefill: p.prefill,
-            avatarFilename: p.avatarFilename,
+            // avatarFilename is INTENTIONALLY omitted. It's owned by the avatar
+            // endpoints (POST/DELETE /api/personas/:id/avatar) — including it
+            // here would let the client's in-memory '1' sentinel from
+            // handleAvatarUpload clobber the server's real filename, breaking
+            // the avatar permanently on the next GET.
             expressions: p.expressions,
             modelConfig: p.modelConfig,
         }).catch(err => {
@@ -2230,22 +2234,30 @@ function renderConversationList() {
 }
 
 /**
- * Switch to a different conversation
+ * Switch to a different conversation. Lazy-loads its messages on first
+ * access — without this, renderConversation crashes on `messages.length`
+ * because hydrateConversations seeds messages=undefined as a "not loaded"
+ * sentinel for non-active conversations.
  * @param {string} conversationId
  */
-function switchConversation(conversationId) {
+async function switchConversation(conversationId) {
     if (!state.conversations[conversationId]) return;
 
     state.activeConversationId = conversationId;
 
-    // Also switch to the persona that owns this conversation
+    // Also switch to the persona that owns this conversation. activePersonaId
+    // is session state — not persisted server-side — so no savePersonas() call
+    // is needed (and including one would also re-PUT every persona, wasting
+    // bandwidth and risking cross-write clobbers).
     const convo = state.conversations[conversationId];
     if (convo.personaId && convo.personaId !== state.activePersonaId) {
         state.activePersonaId = convo.personaId;
-        savePersonas(); // Updates unified storage
     }
 
-    saveConversations();
+    // Lazy-load messages if this is the first time we're activating this
+    // conversation in the session.
+    await loadConversationMessages(conversationId);
+
     renderConversation();
     renderConversationList();
     updateUI();
@@ -2320,34 +2332,43 @@ function renameConversationPrompt(conversationId) {
 }
 
 /**
- * Prompt to delete a conversation
+ * Prompt to delete a conversation. Server delete first (so the local state
+ * never goes out of sync with the server on failure), then local cleanup.
  * @param {string} conversationId
  */
-function deleteConversationPrompt(conversationId) {
+async function deleteConversationPrompt(conversationId) {
     const convo = state.conversations[conversationId];
     if (!convo) return;
 
-    if (confirm(`Delete "${convo.title || 'New Chat'}"? This cannot be undone.`)) {
-        delete state.conversations[conversationId];
+    if (!confirm(`Delete "${convo.title || 'New Chat'}"? This cannot be undone.`)) return;
 
-        // If we deleted the active conversation, switch to another or clear
-        if (state.activeConversationId === conversationId) {
-            const remaining = Object.values(state.conversations);
-            if (remaining.length > 0) {
-                // Switch to most recent
-                const mostRecent = remaining.reduce((a, b) =>
-                    (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-                );
-                state.activeConversationId = mostRecent.id;
-            } else {
-                state.activeConversationId = null;
-            }
-        }
-
-        saveConversations();
-        renderConversationList();
-        renderConversation();
+    try {
+        await API.conversations.delete(conversationId);
+    } catch (err) {
+        console.error('Failed to delete conversation:', err);
+        alert('Failed to delete conversation. Please try again.');
+        return;
     }
+
+    delete state.conversations[conversationId];
+
+    // If we deleted the active conversation, switch to another or clear.
+    if (state.activeConversationId === conversationId) {
+        const remaining = Object.values(state.conversations);
+        if (remaining.length > 0) {
+            const mostRecent = remaining.reduce((a, b) =>
+                (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+            );
+            state.activeConversationId = mostRecent.id;
+            // Lazy-load the newly-active conversation's messages.
+            await loadConversationMessages(state.activeConversationId);
+        } else {
+            state.activeConversationId = null;
+        }
+    }
+
+    renderConversationList();
+    renderConversation();
 }
 
 /**
@@ -2802,15 +2823,18 @@ async function appendMessage(role, content, save = true, explicitIndex = null, a
             }
             activeConvo.updatedAt = Date.now();
 
-            // Persist the message itself. Fire-and-forget: errors logged but
-            // the UI has already rendered, and a retry mechanism is P0-17 work.
-            persistMessage(activeConvo.id, msg).then(saved => {
-                // Backend assigns the message id; record it so future edits/
-                // deletes target the right row.
+            // Persist the message and AWAIT the result so msg.id is
+            // populated before control returns. Edit/delete handlers depend
+            // on msg.id to target the correct server row — a fire-and-forget
+            // here let fast follow-up actions (click delete immediately
+            // after send) see an undefined id and silently fail to delete
+            // server-side, leaving zombie messages on reload.
+            try {
+                const saved = await persistMessage(activeConvo.id, msg);
                 if (saved && saved.id) msg.id = saved.id;
-            }).catch(err => {
+            } catch (err) {
                 console.error('Failed to persist message:', err);
-            });
+            }
         }
 
         // Update token estimate (rough: 1 token ≈ 4 chars)
@@ -2902,13 +2926,27 @@ function copyMessageText(msgIndex) {
     });
 }
 
-function deleteMessage(msgIndex) {
+async function deleteMessage(msgIndex) {
     const activeConvo = getActiveConversation();
     if (!activeConvo || !activeConvo.messages[msgIndex]) return;
 
     if (!confirm('Delete this message?')) return;
 
     const msg = activeConvo.messages[msgIndex];
+
+    // Server-side delete first so failure can short-circuit before the local
+    // mutation. If the message has no id yet, its persistMessage POST never
+    // completed (e.g., still in flight / failed). In that case it doesn't
+    // exist server-side and a local-only delete is correct.
+    if (msg.id) {
+        try {
+            await API.messages.delete(activeConvo.id, msg.id);
+        } catch (err) {
+            console.error('Failed to delete message:', err);
+            alert('Failed to delete message. Please try again.');
+            return;
+        }
+    }
 
     // Clean up any attachments from IndexedDB
     if (msg.attachments && msg.attachments.length > 0) {
@@ -2966,9 +3004,22 @@ function editMessageInPlace(messageDiv, msgIndex) {
     textarea.focus();
 
     // Save handler
-    buttonsDiv.querySelector('.message-edit-save').addEventListener('click', () => {
+    buttonsDiv.querySelector('.message-edit-save').addEventListener('click', async () => {
         const newContent = textarea.value.trim();
         if (!newContent) return;
+
+        // Persist to server first. If the message hasn't been POSTed yet
+        // (no id), there's nothing to update — the in-memory edit is enough
+        // and the eventual persistMessage in appendMessage hasn't completed.
+        if (msg.id) {
+            try {
+                await API.messages.update(activeConvo.id, msg.id, { content: newContent });
+            } catch (err) {
+                console.error('Failed to update message:', err);
+                alert('Failed to save edit. Please try again.');
+                return;
+            }
+        }
 
         // Update conversation data
         msg.content = newContent;
@@ -2995,7 +3046,7 @@ function editMessageInPlace(messageDiv, msgIndex) {
     });
 }
 
-function rerunFromMessage(msgIndex) {
+async function rerunFromMessage(msgIndex) {
     const activeConvo = getActiveConversation();
     if (!activeConvo || !activeConvo.messages[msgIndex]) return;
     if (state.isLoading) return;
@@ -3003,24 +3054,40 @@ function rerunFromMessage(msgIndex) {
     const msg = activeConvo.messages[msgIndex];
 
     if (msg.role === 'user') {
-        // Truncate everything from this index onward, resend this user message
+        // Truncate everything from this index onward, resend this user message.
         const textToResend = msg.content;
         const attachmentsToResend = msg.attachments || [];
-        activeConvo.messages.splice(msgIndex);
-        activeConvo.updatedAt = Date.now();
-        saveConversations();
+        await truncateMessagesFrom(activeConvo, msgIndex);
         renderConversation();
         sendMessageFromText(textToResend, attachmentsToResend);
     } else if (msg.role === 'assistant') {
-        // Find the preceding user message, remove from this assistant onward, resend
+        // Find the preceding user message, remove from this assistant onward, resend.
         const precedingUserMsg = activeConvo.messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
         if (!precedingUserMsg) return;
 
-        activeConvo.messages.splice(msgIndex);
-        activeConvo.updatedAt = Date.now();
-        saveConversations();
+        await truncateMessagesFrom(activeConvo, msgIndex);
         renderConversation();
         sendMessageFromText(precedingUserMsg.content, precedingUserMsg.attachments || []);
+    }
+}
+
+/**
+ * Delete every message from `fromIndex` onward — both locally and on the
+ * server. Server deletes are issued in parallel; individual failures are
+ * logged but don't block local truncation, since the user's mental model is
+ * "this rerun replaces what came after."
+ */
+async function truncateMessagesFrom(convo, fromIndex) {
+    const toDelete = convo.messages.slice(fromIndex).filter(m => m.id);
+    convo.messages.splice(fromIndex);
+    convo.updatedAt = Date.now();
+    saveConversations();
+    if (toDelete.length > 0) {
+        await Promise.all(toDelete.map(m =>
+            API.messages.delete(convo.id, m.id).catch(err => {
+                console.error(`Failed to delete message ${m.id}:`, err);
+            })
+        ));
     }
 }
 
