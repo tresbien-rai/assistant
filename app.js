@@ -10,15 +10,10 @@
  */
 
 // ===== Configuration =====
+// Provider endpoints are gone from the frontend after P0-16 — all chat and
+// model-list traffic goes through window.API → /api/chat[/stream] and
+// /api/models/:provider, and the backend holds the keys.
 const CONFIG = {
-    endpoints: {
-        anthropic: 'https://api.anthropic.com/v1/messages',
-        google: 'https://generativelanguage.googleapis.com/v1beta/models'
-    },
-    modelEndpoints: {
-        anthropic: 'https://api.anthropic.com/v1/models',
-        google: 'https://generativelanguage.googleapis.com/v1beta/models'
-    },
     defaults: {
         provider: 'anthropic',
         model: 'claude-sonnet-4-20250514',
@@ -387,15 +382,6 @@ const state = {
         google: { hasKey: false, updatedAt: null },
         openai: { hasKey: false, updatedAt: null }
     },
-    // TEMPORARY session-only buffer for API keys, used by the still-direct
-    // chat fetch path. Removed in P0-16 when chat moves through the server
-    // proxy and the frontend no longer needs plaintext keys at all. Never
-    // persisted; empty after every reload.
-    sessionApiKeys: {
-        anthropic: '',
-        google: '',
-        openai: ''
-    },
     // Personas stored by ID for multi-persona support (from API.personas.list).
     personas: {},
     activePersonaId: null,
@@ -417,10 +403,12 @@ const state = {
     tempExpressionBlob: null, // Blob waiting to be saved when expression is saved
     tempExpressionPreviewUrl: '', // Object URL for preview in modal
     tempExpressionCleared: false, // Flag indicating user explicitly cleared the image
-    // Streaming state
-    abortController: null,
+    // Streaming state. abortController is no longer needed in the frontend —
+    // api-client.js manages its own AbortController for the chat stream, and
+    // stopGeneration() just calls API.chat.abort().
     streamingMessageDiv: null,
     streamingAccumulator: '',
+    streamingGeneratedImages: [],
     // Attachment state
     pendingAttachments: [] // Array of { id, file, previewUrl, type, mimeType, fileName, fileSize }
 };
@@ -980,6 +968,11 @@ let apiKeySaveTimeout = null;
 // Track which provider's key (if any) was edited since the last persist so we
 // know what to POST after the debounce fires.
 let pendingApiKeyProvider = null;
+// Last typed-in key per provider, for change detection only. NOT used by any
+// other code path — the chat path now uses the server-side stored key. This
+// map persists for the session so we don't re-PUT an unchanged key on every
+// autosave tick.
+const lastTypedApiKey = { anthropic: '', google: '', openai: '' };
 
 /**
  * Debounced auto-save function
@@ -1007,14 +1000,20 @@ function saveAllSettingsFromUI() {
         persona.modelConfig.model = elements.modelSelect.value;
     }
 
-    // API key for current provider — buffered in sessionApiKeys (used by the
-    // still-direct chat path) AND scheduled for server persistence on a
-    // separate debounce so /api/settings updates don't ping the API-keys
-    // endpoint and vice versa. TEMPORARY until P0-16; see state.sessionApiKeys.
+    // API key for current provider: store-only path. Scheduled for server
+    // persistence on a separate debounce so /api/settings updates don't ping
+    // the API-keys endpoint and vice versa. The key value itself never lives
+    // in `state` — it's read from elements.apiKeyInput.value at debounce
+    // fire-time. Optimistically update apiKeyStatus.hasKey so the send
+    // button / fetch-models button unlock without waiting for the PUT.
     const currentProvider = persona?.modelConfig?.provider || CONFIG.defaults.provider;
     const inputKey = elements.apiKeyInput.value;
-    if (state.sessionApiKeys[currentProvider] !== inputKey) {
-        state.sessionApiKeys[currentProvider] = inputKey;
+    if (lastTypedApiKey[currentProvider] !== inputKey) {
+        lastTypedApiKey[currentProvider] = inputKey;
+        state.apiKeyStatus[currentProvider] = {
+            ...state.apiKeyStatus[currentProvider],
+            hasKey: inputKey.length > 0,
+        };
         pendingApiKeyProvider = currentProvider;
         if (apiKeySaveTimeout) clearTimeout(apiKeySaveTimeout);
         apiKeySaveTimeout = setTimeout(persistPendingApiKey, 500);
@@ -1048,7 +1047,11 @@ function persistPendingApiKey() {
     const provider = pendingApiKeyProvider;
     pendingApiKeyProvider = null;
     if (!provider) return;
-    const value = state.sessionApiKeys[provider] || '';
+    // Read the key from the DOM at fire-time rather than at type-time so the
+    // debounce coalesces correctly. lastTypedApiKey holds the last value we
+    // tried to persist; on failure we revert apiKeyStatus to that previous
+    // state so the UI stays honest.
+    const value = lastTypedApiKey[provider] || '';
     const op = value
         ? API.apiKeys.set(provider, value)
         : API.apiKeys.delete(provider);
@@ -1057,8 +1060,16 @@ function persistPendingApiKey() {
             hasKey: !!(result && (result.hasKey || (value && result.hasKey !== false))),
             updatedAt: (result && result.updatedAt) || Date.now(),
         };
-    }).catch(err => {
+    }).catch(async err => {
         console.error(`Failed to persist API key for ${provider}:`, err);
+        // Resync from the server so the optimistic hasKey update doesn't
+        // mislead the user about what's actually saved.
+        try {
+            const list = await API.apiKeys.list();
+            hydrateApiKeyStatus(list);
+        } catch (refetchErr) {
+            console.error('Failed to refetch apiKeyStatus:', refetchErr);
+        }
     });
 }
 
@@ -1147,10 +1158,12 @@ async function updateUI() {
     // Update form inputs - provider/model now from active persona's modelConfig
     elements.providerSelect.value = modelConfig.provider;
     populateModelDropdown(); // Populate from customModels based on persona's provider
-    // Load API key for the persona's provider
     const currentProvider = modelConfig.provider;
-    elements.apiKeyInput.value = state.sessionApiKeys[currentProvider] || '';
-    // Update API key field placeholder and label for current provider
+    // The key value never lives in JS — the input starts empty. If a key is
+    // already stored server-side, the placeholder reflects that (via
+    // updateApiKeyFieldForProvider) so the user knows whether they need to
+    // re-paste. Pasting (and blur/debounce) PUTs the new value.
+    elements.apiKeyInput.value = '';
     updateApiKeyFieldForProvider(currentProvider);
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
@@ -1217,7 +1230,13 @@ function updateApiKeyFieldForProvider(provider) {
         openai: 'OpenAI API Key'
     };
 
-    elements.apiKeyInput.placeholder = placeholders[provider] || 'API Key';
+    // If a key is already stored server-side, surface that in the placeholder
+    // so the user knows the input is empty by design (not because no key is
+    // configured). Pasting overwrites.
+    const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
+    elements.apiKeyInput.placeholder = hasKey
+        ? 'Key saved — paste a new value to replace'
+        : (placeholders[provider] || 'API Key');
 
     const labelElement = document.getElementById('apiKeyLabel');
     if (labelElement) {
@@ -1230,25 +1249,19 @@ function updateApiKeyFieldForProvider(provider) {
  * @param {string} provider - The new provider
  */
 function handleProviderChange(provider) {
-    const modelConfig = getActiveModelConfig();
-
-    // Save the current API key for the previous provider before switching
-    const previousProvider = modelConfig.provider;
-    if (previousProvider && previousProvider !== provider) {
-        state.sessionApiKeys[previousProvider] = elements.apiKeyInput.value;
-    }
-
-    // Update provider in active persona's modelConfig
+    // Update provider in active persona's modelConfig.
     const persona = getActivePersona();
     if (persona && persona.modelConfig) {
         persona.modelConfig.provider = provider;
         persona.updatedAt = Date.now();
     }
 
-    // Load API key for the new provider
-    elements.apiKeyInput.value = state.sessionApiKeys[provider] || '';
+    // Clear the key input on provider switch. We never want a previously-typed
+    // plaintext key from one provider to leak into the form for another, and
+    // the value never persists in JS state anyway.
+    elements.apiKeyInput.value = '';
 
-    // Update placeholder and label
+    // Update placeholder and label for the new provider.
     updateApiKeyFieldForProvider(provider);
 
     // Repopulate model dropdown with provider-specific models
@@ -1533,8 +1546,7 @@ function getModelDisplayName(modelId) {
 function updateSendButtonState() {
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.sessionApiKeys[provider] || '';
-    const hasApiKey = apiKey.length > 0;
+    const hasApiKey = !!state.apiKeyStatus[provider]?.hasKey;
     const hasMessage = elements.messageInput.value.trim().length > 0;
     const hasAttachments = state.pendingAttachments.length > 0;
     const notLoading = !state.isLoading;
@@ -1763,70 +1775,20 @@ function updateSystemPromptExpressions() {
 async function fetchAvailableModels() {
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.sessionApiKeys[provider];
 
-    if (!apiKey) {
+    if (!state.apiKeyStatus[provider]?.hasKey) {
         throw new Error('API key required to fetch models');
     }
 
-    switch (provider) {
-        case 'anthropic':
-            return await fetchAnthropicModels(apiKey);
-        case 'google':
-            return await fetchGoogleModels(apiKey);
-        default:
-            throw new Error(`Model fetching not supported for ${provider}`);
-    }
-}
-
-/**
- * Fetch available models from Anthropic API
- * @param {string} apiKey - The Anthropic API key
- * @returns {Promise<Array>} Array of { id, display_name } objects
- */
-async function fetchAnthropicModels(apiKey) {
-    const response = await fetch(CONFIG.modelEndpoints.anthropic, {
-        headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
-        }
-    });
-
-    if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || `Failed to fetch models: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.data || [];
-}
-
-/**
- * Fetch available models from Google Gemini API
- * @param {string} apiKey - The Google AI API key
- * @returns {Promise<Array>} Array of { id, display_name } objects
- */
-async function fetchGoogleModels(apiKey) {
-    const response = await fetch(`${CONFIG.modelEndpoints.google}?key=${apiKey}`);
-
-    if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        const errorMessage = parseGoogleError(error);
-        throw new Error(errorMessage || `Failed to fetch models: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // Filter for generative models only and format for our UI
-    const models = (data.models || [])
-        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-        .map(m => ({
-            id: m.name.replace('models/', ''),  // e.g., "gemini-1.5-pro"
-            display_name: m.displayName || m.name.replace('models/', '')
-        }));
-
-    return models;
+    // Server proxies the request using the user's stored key and returns the
+    // provider's raw model list. Different providers have slightly different
+    // shapes (Anthropic: { id, display_name }; Gemini: { id, name, ... }) —
+    // normalize for the existing renderer.
+    const list = await API.models.list(provider);
+    return list.map(m => ({
+        id: m.id,
+        display_name: m.display_name || m.displayName || m.name || m.id,
+    }));
 }
 
 /**
@@ -2034,8 +1996,7 @@ function openModelModal() {
     // Disable fetch button if no API key for current provider
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.sessionApiKeys[provider] || '';
-    elements.fetchModelsBtn.disabled = !apiKey;
+    elements.fetchModelsBtn.disabled = !state.apiKeyStatus[provider]?.hasKey;
 
     elements.modelModal.classList.add('visible');
 }
@@ -2066,8 +2027,7 @@ async function handleFetchModels() {
     } finally {
         const modelConfig = getActiveModelConfig();
         const provider = modelConfig.provider;
-        const apiKey = state.sessionApiKeys[provider] || '';
-        btn.disabled = !apiKey;
+        btn.disabled = !state.apiKeyStatus[provider]?.hasKey;
         btn.textContent = originalText;
     }
 }
@@ -2722,7 +2682,7 @@ function renderConversation() {
     if (messages.length === 0) {
         const modelConfig = getActiveModelConfig();
         const provider = modelConfig.provider;
-        const hasApiKey = (state.sessionApiKeys[provider] || '').length > 0;
+        const hasApiKey = !!state.apiKeyStatus[provider]?.hasKey;
         elements.messagesContainer.innerHTML = `
             <div class="welcome-message">
                 <h1>Welcome!</h1>
@@ -3094,8 +3054,7 @@ async function truncateMessagesFrom(convo, fromIndex) {
 async function sendMessageFromText(text, attachments = []) {
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.sessionApiKeys[provider] || '';
-    if (!apiKey || state.isLoading) return;
+    if (!state.apiKeyStatus[provider]?.hasKey || state.isLoading) return;
 
     state.isLoading = true;
     updateSendButtonState();
@@ -3111,25 +3070,21 @@ async function sendMessageFromText(text, attachments = []) {
             elements.stopButton.style.display = '';
             startStreamingMessage();
             try {
+                // callAPIStreaming returns { text, generatedImages } always —
+                // including on abort, since API.chat.stream swallows
+                // AbortError and lets us finalize with the accumulator-so-far.
                 response = await callAPIStreaming(text, attachments);
-
-                // Handle both string (Anthropic) and object (Google with images) responses
-                const fullText = typeof response === 'object' ? (response.text || '') : response;
-                const generatedImages = typeof response === 'object' ? (response.generatedImages || []) : [];
-
-                await finalizeStreamingMessage(fullText, generatedImages);
+                await finalizeStreamingMessage(response.text || '', response.generatedImages || []);
             } catch (error) {
-                if (error.name === 'AbortError') {
-                    await finalizeStreamingMessage(state.streamingAccumulator || '', state.streamingGeneratedImages || []);
-                } else {
-                    if (state.streamingMessageDiv) {
-                        state.streamingMessageDiv.remove();
-                        state.streamingMessageDiv = null;
-                    }
-                    throw error;
+                // Real error (network / 4xx / 5xx) — abort is no longer
+                // surfaced here because API.chat.stream returns normally on
+                // user-initiated abort.
+                if (state.streamingMessageDiv) {
+                    state.streamingMessageDiv.remove();
+                    state.streamingMessageDiv = null;
                 }
+                throw error;
             } finally {
-                state.abortController = null;
                 if (elements.stopButton) elements.stopButton.style.display = 'none';
                 if (elements.sendButton) elements.sendButton.style.display = '';
             }
@@ -3137,15 +3092,8 @@ async function sendMessageFromText(text, attachments = []) {
             response = await callAPI(text, attachments);
             hideTypingIndicator();
 
-            // Handle both string (Anthropic) and object (Google with images) responses
-            let responseText, responseAttachments;
-            if (typeof response === 'object' && response !== null) {
-                responseText = response.text || '';
-                responseAttachments = response.attachments || [];
-            } else {
-                responseText = response;
-                responseAttachments = [];
-            }
+            let responseText = response.text || '';
+            const responseAttachments = response.attachments || [];
 
             // Strip prefill from response
             if (state.currentPrefill) {
@@ -3244,10 +3192,10 @@ async function sendMessage() {
     const userMessage = elements.messageInput.value.trim();
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
-    const apiKey = state.sessionApiKeys[provider] || '';
+    const hasApiKey = !!state.apiKeyStatus[provider]?.hasKey;
 
     const hasAttachments = state.pendingAttachments.length > 0;
-    if ((!userMessage && !hasAttachments) || !apiKey || state.isLoading) {
+    if ((!userMessage && !hasAttachments) || !hasApiKey || state.isLoading) {
         return;
     }
 
@@ -3276,28 +3224,22 @@ async function sendMessage() {
             hideTypingIndicator();
             startStreamingMessage();
 
+            // callAPIStreaming always returns { text, generatedImages }
+            // — including on abort (api-client swallows AbortError and we
+            // finalize with the accumulator-so-far).
             const result = await callAPIStreaming(userMessage, attachmentMeta);
-
-            // Handle both string (Anthropic) and object (Google with images) responses
-            const fullText = typeof result === 'object' ? (result.text || '') : result;
-            const generatedImages = typeof result === 'object' ? (result.generatedImages || []) : [];
-
-            await finalizeStreamingMessage(fullText, generatedImages);
+            await finalizeStreamingMessage(result.text || '', result.generatedImages || []);
         } catch (error) {
-            if (error.name === 'AbortError') {
-                await finalizeStreamingMessage(state.streamingAccumulator || '', state.streamingGeneratedImages || []);
-            } else {
-                if (state.streamingMessageDiv) {
-                    state.streamingMessageDiv.remove();
-                    state.streamingMessageDiv = null;
-                }
-                hideTypingIndicator();
-                appendErrorMessage(error.message);
-                console.error('API Error:', error);
+            // Real error path; abort flows through normally now.
+            if (state.streamingMessageDiv) {
+                state.streamingMessageDiv.remove();
+                state.streamingMessageDiv = null;
             }
+            hideTypingIndicator();
+            appendErrorMessage(error.message);
+            console.error('API Error:', error);
         } finally {
             state.isLoading = false;
-            state.abortController = null;
             elements.sendButton.style.display = '';
             elements.stopButton.style.display = 'none';
             updateSendButtonState();
@@ -3311,15 +3253,10 @@ async function sendMessage() {
 
             hideTypingIndicator();
 
-            // Handle both string (Anthropic) and object (Google with images) responses
-            let responseText, responseAttachments;
-            if (typeof response === 'object' && response !== null) {
-                responseText = response.text || '';
-                responseAttachments = response.attachments || [];
-            } else {
-                responseText = response;
-                responseAttachments = [];
-            }
+            // callAPI now always returns { text, attachments? } — the
+            // dual-shape handling from the old direct-fetch path is gone.
+            let responseText = response.text || '';
+            const responseAttachments = response.attachments || [];
 
             // Strip prefill from response
             if (state.currentPrefill) {
@@ -3345,666 +3282,119 @@ async function sendMessage() {
     }
 }
 
-async function callAPI(userMessage, attachments = []) {
+/**
+ * Build the body sent to /api/chat[/stream]. Shared by streaming and
+ * non-streaming paths. The server uses the user's stored API key — the
+ * frontend doesn't include one in the payload. The server-side providers
+ * also append the prefill to messages when assembling the upstream request,
+ * so the frontend must NOT push prefill into messages itself.
+ */
+function buildChatRequest() {
     const modelConfig = getActiveModelConfig();
-    const { provider, model } = modelConfig;
-    const apiKey = state.sessionApiKeys[provider];
     const persona = getActivePersona();
-    const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
-
-    if (!apiKey) {
-        throw new Error(`No API key configured for ${provider}`);
-    }
-
-    switch (provider) {
-        case 'anthropic':
-            return await callAnthropicAPI(userMessage, model, apiKey, systemPrompt, attachments);
-        case 'google':
-            return await callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachments);
-        default:
-            throw new Error(`Provider ${provider} not yet implemented`);
-    }
-}
-
-// ===== Streaming Support =====
-async function callAPIStreaming(userMessage, attachments = []) {
-    const modelConfig = getActiveModelConfig();
-    const { provider, model } = modelConfig;
-    const apiKey = state.sessionApiKeys[provider];
-    const persona = getActivePersona();
-    const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
-
-    if (!apiKey) {
-        throw new Error(`No API key configured for ${provider}`);
-    }
-
-    switch (provider) {
-        case 'anthropic':
-            return await callAnthropicAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments);
-        case 'google':
-            return await callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments);
-        default:
-            throw new Error(`Streaming not supported for ${provider}`);
-    }
-}
-
-async function callAnthropicAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments = []) {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const modelConfig = getActiveModelConfig();
-    const params = modelConfig.modelParams;
+    const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
+    const prefillText = persona?.prefill?.trim() || '';
+
+    // The model echoes back the prefill — track it so appendStreamChunk and
+    // the non-streaming branch can strip it from displayed/persisted output.
+    state.currentPrefill = prefillText;
 
     const messages = conversationMessages.map(msg => ({
         role: msg.role,
-        content: msg.content
+        content: msg.content,
     }));
 
-    // Add prefill as assistant message if configured
-    const persona = getActivePersona();
-    const prefillText = persona?.prefill?.trim() || '';
-    if (prefillText) {
-        messages.push({ role: 'assistant', content: prefillText });
-    }
-    state.currentPrefill = prefillText;
-
-    const requestBody = {
-        model: model,
-        max_tokens: params.maxTokens,
-        system: systemPrompt,
-        messages: messages,
-        stream: true
+    return {
+        provider: modelConfig.provider,
+        model: modelConfig.model,
+        messages,
+        systemPrompt,
+        modelParams: modelConfig.modelParams,
+        ...(prefillText ? { prefill: prefillText } : {}),
     };
-
-    // Conditionally add parameters based on enabled flags
-    if (params.temperatureEnabled !== false) {
-        requestBody.temperature = params.temperature;
-    }
-    if (params.topPEnabled !== false) {
-        requestBody.top_p = params.topP;
-    }
-    if (params.topKEnabled !== false) {
-        requestBody.top_k = params.topK;
-    }
-
-    if (params.stopSequences.length > 0) {
-        requestBody.stop_sequences = params.stopSequences;
-    }
-
-    if (params.anthropic.thinkingEnabled) {
-        requestBody.thinking = {
-            type: 'enabled',
-            budget_tokens: params.anthropic.thinkingBudget
-        };
-    }
-
-    // Handle attachments for the last user message
-    if (attachments.length > 0 && messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg.role === 'user') {
-            lastMsg.content = await buildAnthropicMessageContent(lastMsg.content, attachments);
-        }
-    }
-
-    state.abortController = new AbortController();
-
-    const response = await fetch(CONFIG.endpoints.anthropic, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify(requestBody),
-        signal: state.abortController.signal
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    await parseSSEStream(reader, decoder, (event) => {
-        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-            appendStreamChunk(event.delta.text);
-        }
-    });
-
-    return state.streamingAccumulator;
 }
 
-async function callGoogleAPIStreaming(userMessage, model, apiKey, systemPrompt, attachments = []) {
-    const activeConvo = getActiveConversation();
-    const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const modelConfig = getActiveModelConfig();
-    const params = modelConfig.modelParams;
-
-    const contents = conversationMessages.map(msg => ({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-    }));
-
-    // Add prefill as model message if configured
-    const persona = getActivePersona();
-    const prefillText = persona?.prefill?.trim() || '';
-    if (prefillText) {
-        contents.push({ role: 'model', parts: [{ text: prefillText }] });
-    }
-    state.currentPrefill = prefillText;
-
-    // Build generationConfig with only enabled parameters
-    const generationConfig = {
-        maxOutputTokens: params.maxTokens
-    };
-    if (params.temperatureEnabled !== false) {
-        generationConfig.temperature = params.temperature;
-    }
-    if (params.topPEnabled !== false) {
-        generationConfig.topP = params.topP;
-    }
-    if (params.topKEnabled !== false) {
-        generationConfig.topK = params.topK;
-    }
-    if (params.stopSequences.length > 0) {
-        generationConfig.stopSequences = params.stopSequences;
-    }
-
-    // Add thinkingConfig inside generationConfig if not set to 'off'
-    if (params.google.thinkingLevel && params.google.thinkingLevel !== 'off') {
-        generationConfig.thinkingConfig = {
-            thinkingLevel: params.google.thinkingLevel
-        };
-    }
-
-    const requestBody = {
-        contents: contents,
-        systemInstruction: {
-            parts: [{ text: systemPrompt }]
-        },
-        generationConfig: generationConfig,
-        safetySettings: [
-            { category: 'HARM_CATEGORY_HARASSMENT', threshold: params.google.safetyHarassment },
-            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: params.google.safetyHate },
-            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: params.google.safetySexual },
-            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: params.google.safetyDangerous }
-        ]
-    };
-
-    // Handle attachments for the last user message
-    if (attachments.length > 0 && contents.length > 0) {
-        const lastContent = contents[contents.length - 1];
-        if (lastContent.role === 'user') {
-            const extraParts = await buildGeminiAttachmentParts(attachments);
-            lastContent.parts = [...extraParts, ...lastContent.parts];
+/**
+ * Non-streaming chat via the backend proxy. Server returns
+ * { text, model, usage?, stopReason?, generatedImages? }.
+ * Returns { text, attachments? } where attachments are stored generated
+ * images (Gemini multimodal output).
+ */
+async function callAPI(userMessage, attachments = []) {
+    const params = buildChatRequest();
+    if (attachments.length > 0 && params.messages.length > 0) {
+        const lastMsg = params.messages[params.messages.length - 1];
+        if (lastMsg.role === 'user') {
+            lastMsg.content = await buildAttachmentContentBlocks(lastMsg.content, attachments);
         }
     }
 
-    state.abortController = new AbortController();
+    const res = await API.chat.send(params);
+    const generatedAttachments = res.generatedImages
+        ? await storeGeneratedImages(res.generatedImages)
+        : [];
+    return { text: res.text || '', attachments: generatedAttachments };
+}
 
-    // Use streamGenerateContent endpoint with SSE
-    const endpoint = `${CONFIG.endpoints.google}/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
-
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody),
-        signal: state.abortController.signal
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = parseGoogleError(errorData);
-        throw new Error(errorMessage || `API request failed with status ${response.status}`);
+// ===== Streaming Support =====
+/**
+ * Streaming chat via /api/chat/stream. Server forwards the provider's native
+ * SSE events; we parse the data JSON and dispatch on shape.
+ * On abort (user clicked stop), API.chat.stream resolves normally — the
+ * accumulator holds the partial text, which is what callers want.
+ */
+async function callAPIStreaming(userMessage, attachments = []) {
+    const params = buildChatRequest();
+    if (attachments.length > 0 && params.messages.length > 0) {
+        const lastMsg = params.messages[params.messages.length - 1];
+        if (lastMsg.role === 'user') {
+            lastMsg.content = await buildAttachmentContentBlocks(lastMsg.content, attachments);
+        }
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    // Initialize array to collect generated images during streaming
+    state.streamingAccumulator = '';
     state.streamingGeneratedImages = [];
 
-    await parseSSEStream(reader, decoder, (event) => {
-        const parts = event.candidates?.[0]?.content?.parts || [];
+    await API.chat.stream(params, (ev) => {
+        if (!ev.data) return;
+        let payload;
+        try { payload = JSON.parse(ev.data); } catch { return; }
 
-        for (const part of parts) {
-            if (part.text) {
-                appendStreamChunk(part.text);
-            } else if (part.inlineData) {
-                // Collect generated images (typically arrive at end of stream)
-                state.streamingGeneratedImages.push({
-                    mimeType: part.inlineData.mimeType,
-                    base64Data: part.inlineData.data
-                });
+        if (params.provider === 'anthropic') {
+            // Anthropic uses named SSE events; we dispatch on payload.type
+            // (which mirrors event name) so we don't depend on the api-client
+            // parsing the event line.
+            if (payload.type === 'content_block_delta' && payload.delta?.type === 'text_delta') {
+                appendStreamChunk(payload.delta.text);
+            }
+        } else if (params.provider === 'google') {
+            // Gemini sends unnamed events; text + inline image data live
+            // under candidates[0].content.parts.
+            const parts = payload.candidates?.[0]?.content?.parts || [];
+            for (const part of parts) {
+                if (part.text) {
+                    appendStreamChunk(part.text);
+                } else {
+                    const inline = part.inlineData || part.inline_data;
+                    if (inline) {
+                        state.streamingGeneratedImages.push({
+                            mimeType: inline.mimeType || inline.mime_type,
+                            base64Data: inline.data,
+                        });
+                    }
+                }
             }
         }
     });
 
     return {
         text: state.streamingAccumulator,
-        generatedImages: state.streamingGeneratedImages
+        generatedImages: state.streamingGeneratedImages,
     };
 }
 
-async function parseSSEStream(reader, decoder, onEvent) {
-    let buffer = '';
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // Keep incomplete line in buffer
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('data: ')) {
-                const data = trimmed.slice(6);
-                if (data === '[DONE]') return;
-                try {
-                    const parsed = JSON.parse(data);
-                    onEvent(parsed);
-                } catch (e) {
-                    // Skip malformed events
-                }
-            }
-        }
-    }
-}
-
-function startStreamingMessage() {
-    const welcome = elements.messagesContainer.querySelector('.welcome-message');
-    if (welcome) welcome.remove();
-
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message assistant streaming';
-
-    // Add speaker label
-    const labelDiv = document.createElement('div');
-    labelDiv.className = 'message-label';
-    const persona = getActivePersona();
-    labelDiv.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
-    messageDiv.appendChild(labelDiv);
-
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-content';
-
-    messageDiv.appendChild(contentDiv);
-    elements.messagesContainer.appendChild(messageDiv);
-
-    state.streamingMessageDiv = messageDiv;
-    state.streamingAccumulator = '';
-    state.streamingGeneratedImages = [];
-
-    scrollToBottom();
-}
-
-function appendStreamChunk(text) {
-    state.streamingAccumulator += text;
-
-    if (state.streamingMessageDiv) {
-        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
-        if (contentDiv) {
-            // Strip prefill for display
-            let displayText = state.streamingAccumulator;
-            if (state.currentPrefill) {
-                displayText = stripPrefillText(displayText, state.currentPrefill);
-            }
-            contentDiv.innerHTML = renderMarkdown(displayText);
-        }
-        scrollToBottom();
-    }
-}
-
-async function finalizeStreamingMessage(fullText, generatedImages = []) {
-    if (!state.streamingMessageDiv) return;
-
-    state.streamingMessageDiv.classList.remove('streaming');
-
-    // Detect and apply expression
-    const detectedExpr = detectExpression(fullText);
-    setExpression(detectedExpr);
-
-    // Strip prefill and expression tag for display and storage
-    let cleanText = fullText;
-    if (state.currentPrefill) {
-        cleanText = stripPrefillText(cleanText, state.currentPrefill);
-        state.currentPrefill = '';
-    }
-    cleanText = stripExpressionTag(cleanText);
-
-    // Store any generated images to IndexedDB
-    const attachments = await storeGeneratedImages(generatedImages);
-
-    // If we have generated images, render them before the content
-    if (attachments.length > 0) {
-        const attachDiv = document.createElement('div');
-        attachDiv.className = 'message-attachments';
-        renderMessageAttachments(attachments, attachDiv);
-
-        // Insert before message-content
-        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
-        if (contentDiv) {
-            state.streamingMessageDiv.insertBefore(attachDiv, contentDiv);
-        }
-    }
-
-    const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
-    if (contentDiv) {
-        // Handle image-only responses
-        if (!cleanText && attachments.length > 0) {
-            contentDiv.innerHTML = '<em>Generated image(s)</em>';
-        } else {
-            contentDiv.innerHTML = renderMarkdown(cleanText);
-        }
-    }
-
-    // Add action buttons
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'message-actions';
-    actionsDiv.innerHTML = `
-        <button class="message-action-btn" data-action="copy" title="Copy">&#128203;</button>
-        <button class="message-action-btn" data-action="edit" title="Edit">&#9998;</button>
-        <button class="message-action-btn" data-action="rerun" title="Regenerate">&#128260;</button>
-        <button class="message-action-btn danger" data-action="delete" title="Delete">&#128465;</button>
-    `;
-    state.streamingMessageDiv.appendChild(actionsDiv);
-
-    // Save to conversation
-    const activeConvo = getActiveConversation();
-    if (activeConvo) {
-        activeConvo.messages.push({ role: 'assistant', content: cleanText, attachments: attachments });
-        state.streamingMessageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
-        activeConvo.updatedAt = Date.now();
-        saveConversations();
-    }
-
-    // Update token estimate
-    state.estimatedTokens += Math.ceil(fullText.length / 4);
-    updateStatusBar();
-
-    state.streamingMessageDiv = null;
-    state.streamingAccumulator = '';
-    state.streamingGeneratedImages = [];
-}
-
-function stopGeneration() {
-    if (state.abortController) {
-        state.abortController.abort();
-    }
-}
-
-async function callAnthropicAPI(userMessage, model, apiKey, systemPrompt, attachments = []) {
-    const activeConvo = getActiveConversation();
-    const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const modelConfig = getActiveModelConfig();
-    const params = modelConfig.modelParams;
-
-    const messages = conversationMessages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-    }));
-
-    // Handle attachments for the last user message
-    if (attachments.length > 0 && messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg.role === 'user') {
-            lastMsg.content = await buildAnthropicMessageContent(lastMsg.content, attachments);
-        }
-    }
-
-    // Add prefill as assistant message if configured
-    const persona = getActivePersona();
-    const prefillText = persona?.prefill?.trim() || '';
-    if (prefillText) {
-        messages.push({ role: 'assistant', content: prefillText });
-    }
-    state.currentPrefill = prefillText;
-
-    const requestBody = {
-        model: model,
-        max_tokens: params.maxTokens,
-        system: systemPrompt,
-        messages: messages
-    };
-
-    // Conditionally add parameters based on enabled flags
-    if (params.temperatureEnabled !== false) {
-        requestBody.temperature = params.temperature;
-    }
-    if (params.topPEnabled !== false) {
-        requestBody.top_p = params.topP;
-    }
-    if (params.topKEnabled !== false) {
-        requestBody.top_k = params.topK;
-    }
-
-    // Add stop sequences if any
-    if (params.stopSequences.length > 0) {
-        requestBody.stop_sequences = params.stopSequences;
-    }
-
-    // Add extended thinking if enabled
-    if (params.anthropic.thinkingEnabled) {
-        requestBody.thinking = {
-            type: 'enabled',
-            budget_tokens: params.anthropic.thinkingBudget
-        };
-    }
-
-    const response = await fetch(CONFIG.endpoints.anthropic, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify(requestBody)
-    });
-    
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `API request failed with status ${response.status}`);
-    }
-    
-    const data = await response.json();
-    const textContent = data.content.find(block => block.type === 'text');
-
-    if (!textContent) {
-        throw new Error('No text response received from API');
-    }
-
-    return textContent.text;
-}
-
-/**
- * Call Google Gemini API
- * @param {string} userMessage - The user's message
- * @param {string} model - The model ID (e.g., "gemini-1.5-pro")
- * @param {string} apiKey - The Google AI API key
- * @param {string} systemPrompt - The system prompt
- * @returns {Promise<string>} The assistant's response
- */
-async function callGoogleAPI(userMessage, model, apiKey, systemPrompt, attachments = []) {
-    const activeConvo = getActiveConversation();
-    const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const modelConfig = getActiveModelConfig();
-    const params = modelConfig.modelParams;
-
-    // Convert messages to Google format
-    // Google uses 'user' and 'model' roles, and content is in parts array
-    const contents = conversationMessages.map(msg => ({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-    }));
-
-    // Handle attachments for the last user message
-    if (attachments.length > 0 && contents.length > 0) {
-        const lastContent = contents[contents.length - 1];
-        if (lastContent.role === 'user') {
-            const extraParts = await buildGeminiAttachmentParts(attachments);
-            lastContent.parts = [...extraParts, ...lastContent.parts];
-        }
-    }
-
-    // Add prefill as model message if configured
-    const persona = getActivePersona();
-    const prefillText = persona?.prefill?.trim() || '';
-    if (prefillText) {
-        contents.push({ role: 'model', parts: [{ text: prefillText }] });
-    }
-    state.currentPrefill = prefillText;
-
-    // Build generationConfig with only enabled parameters
-    const generationConfig = {
-        maxOutputTokens: params.maxTokens
-    };
-    if (params.temperatureEnabled !== false) {
-        generationConfig.temperature = params.temperature;
-    }
-    if (params.topPEnabled !== false) {
-        generationConfig.topP = params.topP;
-    }
-    if (params.topKEnabled !== false) {
-        generationConfig.topK = params.topK;
-    }
-    if (params.stopSequences.length > 0) {
-        generationConfig.stopSequences = params.stopSequences;
-    }
-
-    // Add thinkingConfig inside generationConfig if not set to 'off'
-    if (params.google.thinkingLevel && params.google.thinkingLevel !== 'off') {
-        generationConfig.thinkingConfig = {
-            thinkingLevel: params.google.thinkingLevel
-        };
-    }
-
-    const requestBody = {
-        contents: contents,
-        systemInstruction: {
-            parts: [{ text: systemPrompt }]
-        },
-        generationConfig: generationConfig,
-        // Safety settings
-        safetySettings: [
-            { category: 'HARM_CATEGORY_HARASSMENT', threshold: params.google.safetyHarassment },
-            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: params.google.safetyHate },
-            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: params.google.safetySexual },
-            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: params.google.safetyDangerous }
-        ]
-    };
-
-    // Google uses URL parameter for API key
-    const endpoint = `${CONFIG.endpoints.google}/${model}:generateContent?key=${apiKey}`;
-
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        // Parse Google-specific error format
-        const errorMessage = parseGoogleError(errorData);
-        throw new Error(errorMessage || `API request failed with status ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // Extract content from Google response format (supports text + images)
-    const candidate = data.candidates?.[0];
-    if (!candidate) {
-        throw new Error('No response candidates received from API');
-    }
-
-    // Parse multimodal response (text + generated images)
-    const parsed = parseGoogleMultimodalResponse(candidate);
-
-    // Handle responses with no content at all
-    if (!parsed.text && parsed.generatedImages.length === 0) {
-        throw new Error('No content received from API');
-    }
-
-    // Store any generated images to IndexedDB
-    const generatedAttachments = await storeGeneratedImages(parsed.generatedImages);
-
-    return {
-        text: parsed.text || '',
-        attachments: generatedAttachments
-    };
-}
-
-/**
- * Parse Google API error response into user-friendly message
- * @param {Object} errorData - The error response from Google API
- * @returns {string} User-friendly error message
- */
-function parseGoogleError(errorData) {
-    if (errorData.error) {
-        const message = errorData.error.message;
-        const status = errorData.error.status;
-
-        // Map common errors to user-friendly messages
-        if (status === 'INVALID_ARGUMENT') {
-            if (message && message.includes('API key')) {
-                return 'Invalid Google API key. Please check your key in settings.';
-            }
-        }
-        if (status === 'PERMISSION_DENIED') {
-            return 'API key does not have permission. Enable the Generative Language API in Google Cloud Console.';
-        }
-        if (status === 'RESOURCE_EXHAUSTED') {
-            return 'Rate limit exceeded. Please wait and try again.';
-        }
-
-        return message || `Google API error: ${status}`;
-    }
-    return 'Unknown error from Google API';
-}
-
-/**
- * Parse Google API response that may contain both text and images
- * @param {Object} candidate - The response candidate from Google API
- * @returns {Object} { text: string|null, generatedImages: Array }
- */
-function parseGoogleMultimodalResponse(candidate) {
-    const result = {
-        text: null,
-        generatedImages: []
-    };
-
-    if (!candidate?.content?.parts) {
-        return result;
-    }
-
-    const textParts = [];
-
-    for (const part of candidate.content.parts) {
-        if (part.text) {
-            textParts.push(part.text);
-        } else if (part.inlineData) {
-            result.generatedImages.push({
-                mimeType: part.inlineData.mimeType,
-                base64Data: part.inlineData.data
-            });
-        }
-    }
-
-    if (textParts.length > 0) {
-        result.text = textParts.join('');
-    }
-
-    return result;
-}
 
 /**
  * Store generated images from API response to IndexedDB
@@ -4040,6 +3430,130 @@ async function storeGeneratedImages(generatedImages) {
     }
 
     return attachments;
+}
+
+// ===== Streaming UI helpers =====
+// These render and finalize the in-progress assistant message bubble while
+// API.chat.stream forwards SSE events to callAPIStreaming.
+
+function startStreamingMessage() {
+    const welcome = elements.messagesContainer.querySelector('.welcome-message');
+    if (welcome) welcome.remove();
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant streaming';
+
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'message-label';
+    const persona = getActivePersona();
+    labelDiv.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
+    messageDiv.appendChild(labelDiv);
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    messageDiv.appendChild(contentDiv);
+    elements.messagesContainer.appendChild(messageDiv);
+
+    state.streamingMessageDiv = messageDiv;
+    state.streamingAccumulator = '';
+    state.streamingGeneratedImages = [];
+
+    scrollToBottom();
+}
+
+function appendStreamChunk(text) {
+    state.streamingAccumulator += text;
+    if (state.streamingMessageDiv) {
+        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
+        if (contentDiv) {
+            let displayText = state.streamingAccumulator;
+            if (state.currentPrefill) {
+                displayText = stripPrefillText(displayText, state.currentPrefill);
+            }
+            contentDiv.innerHTML = renderMarkdown(displayText);
+        }
+        scrollToBottom();
+    }
+}
+
+async function finalizeStreamingMessage(fullText, generatedImages = []) {
+    if (!state.streamingMessageDiv) return;
+
+    state.streamingMessageDiv.classList.remove('streaming');
+
+    const detectedExpr = detectExpression(fullText);
+    setExpression(detectedExpr);
+
+    // Strip prefill + expression tag from the persisted/displayed text.
+    let cleanText = fullText;
+    if (state.currentPrefill) {
+        cleanText = stripPrefillText(cleanText, state.currentPrefill);
+        state.currentPrefill = '';
+    }
+    cleanText = stripExpressionTag(cleanText);
+
+    // Persist generated images to IndexedDB and produce attachment metadata.
+    const attachments = await storeGeneratedImages(generatedImages);
+
+    // Render any generated images above the text content.
+    if (attachments.length > 0) {
+        const attachDiv = document.createElement('div');
+        attachDiv.className = 'message-attachments';
+        renderMessageAttachments(attachments, attachDiv);
+        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
+        if (contentDiv) state.streamingMessageDiv.insertBefore(attachDiv, contentDiv);
+    }
+
+    const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
+    if (contentDiv) {
+        if (!cleanText && attachments.length > 0) {
+            contentDiv.innerHTML = '<em>Generated image(s)</em>';
+        } else {
+            contentDiv.innerHTML = renderMarkdown(cleanText);
+        }
+    }
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'message-actions';
+    actionsDiv.innerHTML = `
+        <button class="message-action-btn" data-action="copy" title="Copy">&#128203;</button>
+        <button class="message-action-btn" data-action="edit" title="Edit">&#9998;</button>
+        <button class="message-action-btn" data-action="rerun" title="Regenerate">&#128260;</button>
+        <button class="message-action-btn danger" data-action="delete" title="Delete">&#128465;</button>
+    `;
+    state.streamingMessageDiv.appendChild(actionsDiv);
+
+    // Persist to server + local state. Awaits persistMessage so the server-
+    // generated id is set on the local msg before any subsequent edit/delete.
+    const activeConvo = getActiveConversation();
+    if (activeConvo) {
+        const msg = { role: 'assistant', content: cleanText, attachments };
+        activeConvo.messages.push(msg);
+        state.streamingMessageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
+        activeConvo.updatedAt = Date.now();
+        try {
+            const saved = await persistMessage(activeConvo.id, msg);
+            if (saved && saved.id) msg.id = saved.id;
+        } catch (err) {
+            console.error('Failed to persist assistant message:', err);
+        }
+    }
+
+    state.estimatedTokens += Math.ceil(fullText.length / 4);
+    updateStatusBar();
+
+    state.streamingMessageDiv = null;
+    state.streamingAccumulator = '';
+    state.streamingGeneratedImages = [];
+}
+
+/**
+ * Abort the in-flight chat stream. api-client.js handles the AbortController
+ * lifecycle; callAPIStreaming returns the accumulator-so-far so partial text
+ * is preserved as a normal completion.
+ */
+function stopGeneration() {
+    API.chat.abort();
 }
 
 /**
@@ -4199,7 +3713,17 @@ function blobToBase64(blob) {
     });
 }
 
-async function buildAnthropicMessageContent(textContent, attachments) {
+/**
+ * Build a content-block array (Anthropic-flavored) for a chat message that
+ * includes attachments. The backend's Anthropic provider passes this through
+ * verbatim; the Gemini provider translates it to Gemini's `parts` shape, so
+ * a single client-side build path covers both providers.
+ *
+ * Note: base64 inflates payload size by ~33%. Express body limit is 10MB
+ * server-side — large image batches may hit it. Multipart-upload support is
+ * a future task.
+ */
+async function buildAttachmentContentBlocks(textContent, attachments) {
     const contentParts = [];
 
     for (const att of attachments) {
@@ -4235,29 +3759,6 @@ async function buildAnthropicMessageContent(textContent, attachments) {
     }
 
     return contentParts;
-}
-
-async function buildGeminiAttachmentParts(attachments) {
-    const parts = [];
-
-    for (const att of attachments) {
-        const blob = await ImageStore.getBlob(att.imageStoreKey);
-        if (!blob) continue;
-
-        if (att.type === 'image' || att.mimeType === 'application/pdf' || att.type === 'audio') {
-            const base64 = await blobToBase64(blob);
-            parts.push({
-                inline_data: { mime_type: att.mimeType, data: base64 }
-            });
-        } else if (att.type === 'code' || att.type === 'document') {
-            const text = await blob.text();
-            parts.push({
-                text: `[File: ${att.fileName}]\n${text}`
-            });
-        }
-    }
-
-    return parts;
 }
 
 // ===== Event Listeners =====
