@@ -773,7 +773,14 @@ const elements = {
     avatarEmoji: document.getElementById('avatarEmoji'),
     avatarImg: document.getElementById('avatarImg'),
     floatingAvatarName: document.getElementById('floatingAvatarName'),
-    floatingAvatarExpression: document.getElementById('floatingAvatarExpression')
+    floatingAvatarExpression: document.getElementById('floatingAvatarExpression'),
+
+    // Error display system (P0-17)
+    toastContainer: document.getElementById('toastContainer'),
+    criticalBanner: document.getElementById('criticalBanner'),
+    criticalBannerMessage: document.getElementById('criticalBannerMessage'),
+    criticalBannerAction: document.getElementById('criticalBannerAction'),
+    criticalBannerDismiss: document.getElementById('criticalBannerDismiss')
 };
 
 // ===== Initialization =====
@@ -1081,6 +1088,9 @@ function persistPendingApiKey() {
         // Re-render to surface the failure to the user.
         updateApiKeyFieldForProvider(provider);
         updateSendButtonState();
+        // C12: the save is debounced/async, so without an explicit signal the
+        // user has no idea the key didn't stick. Toast it.
+        displayError(err, { action: `save your ${provider} API key` });
     });
 }
 
@@ -1101,7 +1111,7 @@ async function clearStoredApiKey() {
         await API.apiKeys.delete(provider);
     } catch (err) {
         console.error(`Failed to delete API key for ${provider}:`, err);
-        alert('Failed to clear the saved key. Please try again.');
+        displayError(err, { action: 'clear the saved key' });
         return;
     }
 
@@ -1202,7 +1212,15 @@ async function updateUI() {
     // already stored server-side, the placeholder reflects that (via
     // updateApiKeyFieldForProvider) so the user knows whether they need to
     // re-paste. Pasting (and blur/debounce) PUTs the new value.
-    elements.apiKeyInput.value = '';
+    //
+    // C10: don't clobber what the user is actively typing. If the field is
+    // focused or a save is still pending, leave the value alone — updateUI can
+    // fire from background refreshes (e.g. on401 resync) mid-edit.
+    const apiKeyInputBusy = document.activeElement === elements.apiKeyInput
+        || pendingApiKeyProvider !== null;
+    if (!apiKeyInputBusy) {
+        elements.apiKeyInput.value = '';
+    }
     updateApiKeyFieldForProvider(currentProvider);
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
@@ -1698,13 +1716,13 @@ async function saveExpression() {
         .filter(k => k.length > 0);
 
     if (!name) {
-        alert('Please enter an expression name');
+        showToast('Please enter an expression name', { type: 'warning' });
         return;
     }
 
     const persona = getActivePersona();
     if (!persona) {
-        alert('No active persona');
+        showToast('No active persona', { type: 'warning' });
         return;
     }
 
@@ -1755,7 +1773,7 @@ async function saveExpression() {
         };
     } catch (err) {
         console.error('Failed to save expression:', err);
-        alert('Failed to save expression. Please try again.');
+        displayError(err, { action: 'save expression' });
         return;
     }
 
@@ -1772,7 +1790,7 @@ async function deleteExpression() {
     if (!persona) return;
 
     if (Object.keys(persona.expressions).length <= 1) {
-        alert('You must have at least one expression');
+        showToast('You must have at least one expression', { type: 'warning' });
         return;
     }
 
@@ -1797,7 +1815,7 @@ async function deleteExpression() {
             persona.updatedAt = Date.now();
         } catch (err) {
             console.error('Failed to delete expression:', err);
-            alert('Failed to delete expression. Please try again.');
+            displayError(err, { action: 'delete expression' });
             return;
         }
 
@@ -2068,7 +2086,7 @@ async function handleFetchModels() {
         renderAvailableModelsGrid(models);
     } catch (error) {
         console.error('Failed to fetch models:', error);
-        alert(`Failed to fetch models: ${error.message}`);
+        displayError(error, { action: 'fetch models' });
     } finally {
         const modelConfig = getActiveModelConfig();
         const provider = modelConfig.provider;
@@ -2085,12 +2103,12 @@ function handleAddModelManually() {
     const name = elements.newModelName.value.trim();
 
     if (!id) {
-        alert('Please enter a model ID');
+        showToast('Please enter a model ID', { type: 'warning' });
         return;
     }
 
     if (!name) {
-        alert('Please enter a display name');
+        showToast('Please enter a display name', { type: 'warning' });
         return;
     }
 
@@ -2110,7 +2128,7 @@ function handleAddModelManually() {
             }
         }
     } else {
-        alert('Model already exists');
+        showToast('Model already exists', { type: 'warning' });
     }
 }
 
@@ -2351,7 +2369,7 @@ async function deleteConversationPrompt(conversationId) {
         await API.conversations.delete(conversationId);
     } catch (err) {
         console.error('Failed to delete conversation:', err);
-        alert('Failed to delete conversation. Please try again.');
+        displayError(err, { action: 'delete conversation' });
         return;
     }
 
@@ -2572,9 +2590,7 @@ async function deletePersonaPrompt(personaId) {
             await API.personas.delete(personaId);
         } catch (err) {
             console.error('Failed to delete persona:', err);
-            alert(err && err.message
-                ? `Could not delete persona: ${err.message}`
-                : 'Could not delete persona. Please try again.');
+            displayError(err, { action: 'delete persona' });
             return;
         }
 
@@ -2856,18 +2872,280 @@ async function appendMessage(role, content, save = true, explicitIndex = null, a
     return messageDiv;
 }
 
-function appendErrorMessage(errorText) {
+// ===== Error Display System (P0-17) =====
+//
+// Three presentation surfaces, chosen by severity/context:
+//   - showToast()          : transient notifications (bottom-right, auto-dismiss)
+//   - appendErrorMessage() : inline chat errors (tied to a conversation turn)
+//   - showCriticalBanner() : persistent top banner for errors needing action
+//
+// displayError() is the central dispatcher: hand it any thrown error and a
+// context hint, and it routes to the right surface based on the ApiError code.
+
+// --- Toast manager ---
+const TOAST_MAX = 3;
+const TOAST_DEFAULT_MS = 5000;
+const TOAST_DEDUPE_MS = 2000;
+const _toastIcons = { error: '⛔', warning: '⚠️', success: '✓', info: 'ℹ️' };
+// Tracks recently-shown toast keys to suppress duplicate spam.
+const _recentToasts = new Map(); // key -> timestamp
+
+/**
+ * Show a transient toast notification.
+ * @param {string} message - Text to display.
+ * @param {Object} [opts]
+ * @param {'error'|'warning'|'success'|'info'} [opts.type='info']
+ * @param {number} [opts.duration] - ms before auto-dismiss; 0 = sticky. Defaults by type.
+ * @param {string} [opts.key] - Dedupe key; defaults to type+message.
+ * @returns {HTMLElement|null} The toast element (or null if deduped/suppressed).
+ */
+function showToast(message, opts = {}) {
+    const container = elements.toastContainer;
+    if (!container) return null;
+
+    const type = opts.type || 'info';
+    const key = opts.key || `${type}:${message}`;
+    const now = Date.now();
+
+    // Dedupe: skip if an identical toast fired within the dedupe window.
+    const last = _recentToasts.get(key);
+    if (last && now - last < TOAST_DEDUPE_MS) return null;
+    _recentToasts.set(key, now);
+
+    // Cap stacked toasts: drop the oldest when over the limit.
+    while (container.children.length >= TOAST_MAX) {
+        container.removeChild(container.firstElementChild);
+    }
+
+    const duration = opts.duration !== undefined
+        ? opts.duration
+        : (type === 'error' ? 8000 : TOAST_DEFAULT_MS);
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = _toastIcons[type] || _toastIcons.info;
+
+    const body = document.createElement('div');
+    body.className = 'toast-body';
+    const msg = document.createElement('div');
+    msg.className = 'toast-message';
+    msg.textContent = message;
+    body.appendChild(msg);
+
+    const dismiss = document.createElement('button');
+    dismiss.className = 'toast-dismiss';
+    dismiss.type = 'button';
+    dismiss.setAttribute('aria-label', 'Dismiss notification');
+    dismiss.textContent = '×';
+
+    let timer = null;
+    const remove = () => {
+        if (timer) clearTimeout(timer);
+        if (!toast.parentNode) return;
+        toast.classList.add('toast-hiding');
+        toast.addEventListener('animationend', () => toast.remove(), { once: true });
+        // Fallback in case animationend doesn't fire.
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+    };
+    dismiss.addEventListener('click', remove);
+
+    toast.appendChild(icon);
+    toast.appendChild(body);
+    toast.appendChild(dismiss);
+    container.appendChild(toast);
+
+    if (duration > 0) {
+        timer = setTimeout(remove, duration);
+    }
+
+    return toast;
+}
+
+/**
+ * Show the persistent critical banner at the top of the page.
+ * @param {string} message
+ * @param {Object} [opts]
+ * @param {string} [opts.actionLabel] - If set, shows an action button.
+ * @param {Function} [opts.onAction] - Click handler for the action button.
+ */
+function showCriticalBanner(message, opts = {}) {
+    const banner = elements.criticalBanner;
+    if (!banner) return;
+
+    elements.criticalBannerMessage.textContent = message;
+
+    const actionBtn = elements.criticalBannerAction;
+    if (opts.actionLabel && typeof opts.onAction === 'function') {
+        actionBtn.textContent = opts.actionLabel;
+        actionBtn.hidden = false;
+        // Replace handler by cloning to drop any prior listeners.
+        const fresh = actionBtn.cloneNode(true);
+        fresh.addEventListener('click', opts.onAction);
+        actionBtn.parentNode.replaceChild(fresh, actionBtn);
+        elements.criticalBannerAction = fresh;
+    } else {
+        actionBtn.hidden = true;
+    }
+
+    banner.hidden = false;
+}
+
+function hideCriticalBanner() {
+    if (elements.criticalBanner) elements.criticalBanner.hidden = true;
+}
+
+/**
+ * Render an inline error message inside the chat thread.
+ * @param {Error|string} error - An ApiError, generic Error, or plain string.
+ * @param {Object} [opts]
+ * @param {Function} [opts.retryHandler] - If set, renders a Retry button.
+ */
+function appendErrorMessage(error, opts = {}) {
+    const isApiError = error && error.name === 'ApiError';
+    const code = isApiError ? error.code : null;
+    const message = (typeof error === 'string')
+        ? error
+        : (error && error.message) || 'An unexpected error occurred.';
+
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message error';
-    
+
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
-    contentDiv.textContent = `Error: ${errorText}`;
-    
+
+    // Headline with optional code badge.
+    const headline = document.createElement('div');
+    headline.className = 'error-headline';
+    const headlineText = document.createElement('span');
+    headlineText.textContent = 'Something went wrong';
+    headline.appendChild(headlineText);
+    if (code) {
+        const badge = document.createElement('span');
+        badge.className = 'error-code-badge';
+        badge.textContent = code;
+        headline.appendChild(badge);
+    }
+    contentDiv.appendChild(headline);
+
+    // Human-readable message.
+    const detail = document.createElement('p');
+    detail.className = 'error-detail-text';
+    detail.textContent = message;
+    contentDiv.appendChild(detail);
+
+    // Collapsible technical details (status + any structured details).
+    if (isApiError && (error.status || error.details)) {
+        const details = document.createElement('details');
+        details.className = 'error-details';
+        const summary = document.createElement('summary');
+        summary.textContent = 'Technical details';
+        details.appendChild(summary);
+        const pre = document.createElement('pre');
+        const techLines = [];
+        if (error.status) techLines.push(`HTTP ${error.status}`);
+        if (error.details) {
+            try {
+                techLines.push(typeof error.details === 'string'
+                    ? error.details
+                    : JSON.stringify(error.details, null, 2));
+            } catch (_) { /* ignore serialization issues */ }
+        }
+        pre.textContent = techLines.join('\n');
+        details.appendChild(pre);
+        contentDiv.appendChild(details);
+    }
+
+    // Optional retry button.
+    if (typeof opts.retryHandler === 'function') {
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'error-retry-btn';
+        retryBtn.type = 'button';
+        retryBtn.textContent = 'Retry';
+        retryBtn.addEventListener('click', () => {
+            messageDiv.remove();
+            opts.retryHandler();
+        }, { once: true });
+        contentDiv.appendChild(retryBtn);
+    }
+
     messageDiv.appendChild(contentDiv);
     elements.messagesContainer.appendChild(messageDiv);
-    
     scrollToBottom();
+    return messageDiv;
+}
+
+/**
+ * Central error dispatcher. Routes any caught error to the appropriate
+ * presentation surface based on its ApiError code.
+ * @param {Error} error - The caught error (ideally an ApiError).
+ * @param {Object} [context]
+ * @param {'chat'|'background'} [context.surface='background'] - Where the
+ *        error originated. 'chat' allows inline rendering for provider errors.
+ * @param {Function} [context.retryHandler] - Retry callback for chat errors.
+ * @param {string} [context.action] - Short verb describing the failed action,
+ *        e.g. "save settings", used to make toast text specific.
+ */
+function displayError(error, context = {}) {
+    // Swallow user-initiated aborts entirely — not an error to surface.
+    if (error && (error.name === 'AbortError' || error.code === 'ABORT_ERROR')) {
+        return;
+    }
+
+    const surface = context.surface || 'background';
+    const code = (error && error.name === 'ApiError') ? error.code : 'UNKNOWN_ERROR';
+    const baseMsg = (error && error.message) || 'An unexpected error occurred.';
+    const actionPrefix = context.action ? `Couldn't ${context.action}: ` : '';
+
+    switch (code) {
+        case 'AUTH_ERROR':
+            // 401s are handled by the global on401 handler (reload to login).
+            // If we reach here, surface a gentle toast as a fallback.
+            showToast('Your session has expired. Please sign in again.', {
+                type: 'warning', key: 'auth-expired',
+            });
+            return;
+
+        case 'RATE_LIMITED': {
+            const secs = (error && error.retryAfter) || 60;
+            showToast(`Rate limit reached. Try again in ${secs}s.`, {
+                type: 'warning', key: 'rate-limited', duration: Math.min(secs, 10) * 1000,
+            });
+            return;
+        }
+
+        case 'PROVIDER_ERROR':
+            // Provider failures during a chat turn belong inline (with retry).
+            if (surface === 'chat') {
+                appendErrorMessage(error, { retryHandler: context.retryHandler });
+            } else {
+                showToast(`${actionPrefix}${baseMsg}`, { type: 'error' });
+            }
+            return;
+
+        case 'VALIDATION_ERROR':
+            showToast(`${actionPrefix}${baseMsg}`, { type: 'warning' });
+            return;
+
+        case 'DRIVE_ERROR':
+            // Drive integration is Phase 1; banner path is dormant but wired.
+            showCriticalBanner(`Google Drive error: ${baseMsg}`);
+            return;
+
+        case 'NOT_FOUND':
+        case 'SERVER_ERROR':
+        case 'NETWORK_ERROR':
+        default:
+            if (surface === 'chat') {
+                appendErrorMessage(error, { retryHandler: context.retryHandler });
+            } else {
+                showToast(`${actionPrefix}${baseMsg}`, { type: 'error' });
+            }
+            return;
+    }
 }
 
 function showTypingIndicator() {
@@ -2896,9 +3174,10 @@ function scrollToBottom() {
     elements.messagesContainer.scrollTop = elements.messagesContainer.scrollHeight;
 }
 
+// Thin wrapper kept for existing call sites; delegates to the P0-17 toast
+// system. `type` accepts 'info' | 'success' | 'warning' | 'error'.
 function showNotification(message, type = 'info') {
-    console.log(`[${type}] ${message}`);
-    // TODO: Implement toast notifications
+    showToast(message, { type });
 }
 
 // ===== Message Actions =====
@@ -2948,7 +3227,7 @@ async function deleteMessage(msgIndex) {
             await API.messages.delete(activeConvo.id, msg.id);
         } catch (err) {
             console.error('Failed to delete message:', err);
-            alert('Failed to delete message. Please try again.');
+            displayError(err, { action: 'delete message' });
             return;
         }
     }
@@ -3021,7 +3300,7 @@ function editMessageInPlace(messageDiv, msgIndex) {
                 await API.messages.update(activeConvo.id, msg.id, { content: newContent });
             } catch (err) {
                 console.error('Failed to update message:', err);
-                alert('Failed to save edit. Please try again.');
+                displayError(err, { action: 'save edit' });
                 return;
             }
         }
@@ -3073,6 +3352,22 @@ async function rerunFromMessage(msgIndex) {
         await truncateMessagesFrom(activeConvo, msgIndex);
         renderConversation();
         sendMessageFromText(precedingUserMsg.content, precedingUserMsg.attachments || []);
+    }
+}
+
+/**
+ * Retry the most recent turn after a send failure. Finds the last user
+ * message and re-runs generation from it (which truncates any partial reply
+ * and resends). Used as the retry handler for inline chat errors (P0-17).
+ */
+function retryLastUserMessage() {
+    const convo = getActiveConversation();
+    if (!convo || state.isLoading) return;
+    for (let i = convo.messages.length - 1; i >= 0; i--) {
+        if (convo.messages[i].role === 'user') {
+            rerunFromMessage(i);
+            return;
+        }
     }
 }
 
@@ -3155,7 +3450,7 @@ async function sendMessageFromText(text, attachments = []) {
         }
     } catch (error) {
         hideTypingIndicator();
-        appendErrorMessage(error.message);
+        displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
         console.error('API Error:', error);
     } finally {
         state.isLoading = false;
@@ -3287,7 +3582,7 @@ async function sendMessage() {
                 state.streamingMessageDiv = null;
             }
             hideTypingIndicator();
-            appendErrorMessage(error.message);
+            displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
             console.error('API Error:', error);
         } finally {
             state.isLoading = false;
@@ -3324,7 +3619,7 @@ async function sendMessage() {
 
         } catch (error) {
             hideTypingIndicator();
-            appendErrorMessage(error.message);
+            displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
             console.error('API Error:', error);
         } finally {
             state.isLoading = false;
@@ -3412,6 +3707,23 @@ async function callAPIStreaming(userMessage, attachments = []) {
         if (!ev.data) return;
         let payload;
         try { payload = JSON.parse(ev.data); } catch { return; }
+
+        // C7: providers can emit an error event *mid-stream* (e.g. Anthropic's
+        // `{type:'error', error:{type,message}}` for overloaded_error, or a
+        // bare `{error:{...}}` from Gemini). The HTTP response was 200, so this
+        // is the only place we'd learn the turn failed. Synthesize an
+        // ApiError-shaped object and throw — the throw rejects the stream
+        // promise, which surfaces in the chat catch (partial bubble removed,
+        // inline error + Retry shown).
+        if (payload.type === 'error' || payload.error) {
+            const provErr = payload.error || {};
+            const err = new Error(provErr.message || 'The provider reported an error mid-response.');
+            err.name = 'ApiError';
+            err.code = 'PROVIDER_ERROR';
+            err.status = 502;
+            err.details = provErr.type ? { providerErrorType: provErr.type } : undefined;
+            throw err;
+        }
 
         if (params.provider === 'anthropic') {
             // Anthropic uses named SSE events; we dispatch on payload.type
@@ -3866,6 +4178,11 @@ function setupEventListeners() {
     elements.openSidebar.addEventListener('click', openSidebar);
     elements.closeSidebar.addEventListener('click', closeSidebar);
 
+    // Critical banner dismiss (P0-17)
+    if (elements.criticalBannerDismiss) {
+        elements.criticalBannerDismiss.addEventListener('click', hideCriticalBanner);
+    }
+
     // Sidebar tabs
     document.querySelectorAll('.sidebar-tab').forEach(tab => {
         tab.addEventListener('click', () => {
@@ -4163,19 +4480,19 @@ function setupEventListeners() {
  */
 async function handleAvatarUpload(file) {
     if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
+        showToast('Please select an image file', { type: 'warning' });
         return;
     }
     // Backend enforces 5MB — match client-side for fast feedback.
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
-        alert('Image is too large. Please select an image under 5MB.');
+        showToast('Image is too large. Please select an image under 5MB.', { type: 'warning' });
         return;
     }
 
     const persona = getActivePersona();
     if (!persona) {
-        alert('No active persona');
+        showToast('No active persona', { type: 'warning' });
         return;
     }
 
@@ -4191,7 +4508,7 @@ async function handleAvatarUpload(file) {
         showNotification('Avatar uploaded!', 'success');
     } catch (error) {
         console.error('Failed to upload avatar:', error);
-        alert('Failed to upload image. Please try again.');
+        displayError(error, { action: 'upload image' });
     }
 }
 
@@ -4210,7 +4527,7 @@ async function clearAvatarImage() {
         persona.updatedAt = Date.now();
     } catch (err) {
         console.error('Failed to delete avatar:', err);
-        alert('Failed to remove avatar. Please try again.');
+        displayError(err, { action: 'remove avatar' });
         return;
     }
 
@@ -4224,14 +4541,14 @@ async function clearAvatarImage() {
 async function handleExpressionImageUpload(file) {
     // Validate file type
     if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
+        showToast('Please select an image file', { type: 'warning' });
         return;
     }
 
     // Validate file size (max 2MB for expressions with IndexedDB)
     const maxSize = 2 * 1024 * 1024;
     if (file.size > maxSize) {
-        alert('Image is too large. Please select an image under 2MB.');
+        showToast('Image is too large. Please select an image under 2MB.', { type: 'warning' });
         return;
     }
 
@@ -4250,7 +4567,7 @@ async function handleExpressionImageUpload(file) {
 
     } catch (error) {
         console.error('Failed to upload expression image:', error);
-        alert('Failed to upload image. Please try again.');
+        displayError(error, { action: 'upload image' });
     }
 }
 
