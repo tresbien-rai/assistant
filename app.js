@@ -671,6 +671,7 @@ const elements = {
     modelSelect: document.getElementById('modelSelect'),
     apiKeyInput: document.getElementById('apiKeyInput'),
     toggleApiKey: document.getElementById('toggleApiKey'),
+    clearApiKeyBtn: document.getElementById('clearApiKeyBtn'),
     assistantName: document.getElementById('assistantName'),
     systemPrompt: document.getElementById('systemPrompt'),
     prefillInput: document.getElementById('prefillInput'),
@@ -1008,15 +1009,23 @@ function saveAllSettingsFromUI() {
     // button / fetch-models button unlock without waiting for the PUT.
     const currentProvider = persona?.modelConfig?.provider || CONFIG.defaults.provider;
     const inputKey = elements.apiKeyInput.value;
-    if (lastTypedApiKey[currentProvider] !== inputKey) {
+    // Only schedule a PUT for non-empty input. Empty input deliberately does
+    // NOT auto-DELETE the server-stored key — a stray touch-then-clear would
+    // otherwise silently destroy the saved key with no confirmation. Use
+    // the explicit "Clear saved key" button (clearStoredApiKey) for that.
+    if (inputKey.length > 0 && lastTypedApiKey[currentProvider] !== inputKey) {
         lastTypedApiKey[currentProvider] = inputKey;
         state.apiKeyStatus[currentProvider] = {
             ...state.apiKeyStatus[currentProvider],
-            hasKey: inputKey.length > 0,
+            hasKey: true,
         };
         pendingApiKeyProvider = currentProvider;
         if (apiKeySaveTimeout) clearTimeout(apiKeySaveTimeout);
         apiKeySaveTimeout = setTimeout(persistPendingApiKey, 500);
+    } else if (inputKey.length === 0) {
+        // Keep lastTypedApiKey in sync with the visible state without firing
+        // a destructive action.
+        lastTypedApiKey[currentProvider] = '';
     }
 
     // Avatar settings (stay global)
@@ -1039,38 +1048,68 @@ function saveAllSettingsFromUI() {
 }
 
 /**
- * Push the pending API-key change to the server. Either PUT (set) if the
- * field is non-empty, or DELETE if the user cleared it. Updates apiKeyStatus
- * accordingly so the UI reflects current presence without a refetch.
+ * Push the pending API-key PUT to the server. Only fires for non-empty
+ * input — deletes are handled by clearStoredApiKey via the explicit
+ * "Clear saved key" button, not by emptying the input.
  */
 function persistPendingApiKey() {
     const provider = pendingApiKeyProvider;
     pendingApiKeyProvider = null;
     if (!provider) return;
-    // Read the key from the DOM at fire-time rather than at type-time so the
-    // debounce coalesces correctly. lastTypedApiKey holds the last value we
-    // tried to persist; on failure we revert apiKeyStatus to that previous
-    // state so the UI stays honest.
     const value = lastTypedApiKey[provider] || '';
-    const op = value
-        ? API.apiKeys.set(provider, value)
-        : API.apiKeys.delete(provider);
-    op.then(result => {
+    if (!value) return; // empty input → no destructive action
+
+    API.apiKeys.set(provider, value).then(result => {
         state.apiKeyStatus[provider] = {
-            hasKey: !!(result && (result.hasKey || (value && result.hasKey !== false))),
+            hasKey: true,
             updatedAt: (result && result.updatedAt) || Date.now(),
         };
     }).catch(async err => {
         console.error(`Failed to persist API key for ${provider}:`, err);
         // Resync from the server so the optimistic hasKey update doesn't
-        // mislead the user about what's actually saved.
+        // mislead the user about what's actually saved, AND clear
+        // lastTypedApiKey so the user can re-attempt with the same value
+        // (otherwise the equality guard in saveAllSettingsFromUI would
+        // short-circuit a paste-and-retry).
+        lastTypedApiKey[provider] = '';
         try {
             const list = await API.apiKeys.list();
             hydrateApiKeyStatus(list);
         } catch (refetchErr) {
             console.error('Failed to refetch apiKeyStatus:', refetchErr);
         }
+        // Re-render to surface the failure to the user.
+        updateApiKeyFieldForProvider(provider);
+        updateSendButtonState();
     });
+}
+
+/**
+ * Explicit user-initiated delete of the stored API key. Confirms first
+ * because this is destructive.
+ */
+async function clearStoredApiKey() {
+    const persona = getActivePersona();
+    const provider = persona?.modelConfig?.provider || CONFIG.defaults.provider;
+    if (!state.apiKeyStatus[provider]?.hasKey) return;
+
+    if (!confirm(`Clear your saved ${provider} API key from the server? You'll need to re-enter it to chat.`)) {
+        return;
+    }
+
+    try {
+        await API.apiKeys.delete(provider);
+    } catch (err) {
+        console.error(`Failed to delete API key for ${provider}:`, err);
+        alert('Failed to clear the saved key. Please try again.');
+        return;
+    }
+
+    state.apiKeyStatus[provider] = { hasKey: false, updatedAt: Date.now() };
+    lastTypedApiKey[provider] = '';
+    elements.apiKeyInput.value = '';
+    updateApiKeyFieldForProvider(provider);
+    updateSendButtonState();
 }
 
 /**
@@ -1237,6 +1276,12 @@ function updateApiKeyFieldForProvider(provider) {
     elements.apiKeyInput.placeholder = hasKey
         ? 'Key saved — paste a new value to replace'
         : (placeholders[provider] || 'API Key');
+
+    // The explicit Clear button is the ONLY way to delete a stored key —
+    // emptying the input is a no-op.
+    if (elements.clearApiKeyBtn) {
+        elements.clearApiKeyBtn.hidden = !hasKey;
+    }
 
     const labelElement = document.getElementById('apiKeyLabel');
     if (labelElement) {
@@ -3069,12 +3114,15 @@ async function sendMessageFromText(text, attachments = []) {
             elements.sendButton.style.display = 'none';
             elements.stopButton.style.display = '';
             startStreamingMessage();
+            // Pin the conversation id at send-time so a mid-stream switch
+            // doesn't redirect the assistant reply.
+            const targetConvoId = state.activeConversationId;
             try {
                 // callAPIStreaming returns { text, generatedImages } always —
                 // including on abort, since API.chat.stream swallows
                 // AbortError and lets us finalize with the accumulator-so-far.
                 response = await callAPIStreaming(text, attachments);
-                await finalizeStreamingMessage(response.text || '', response.generatedImages || []);
+                await finalizeStreamingMessage(response.text || '', response.generatedImages || [], targetConvoId);
             } catch (error) {
                 // Real error (network / 4xx / 5xx) — abort is no longer
                 // surfaced here because API.chat.stream returns normally on
@@ -3223,12 +3271,15 @@ async function sendMessage() {
         try {
             hideTypingIndicator();
             startStreamingMessage();
+            // Pin the conversation id at send-time so a mid-stream switch
+            // doesn't redirect the assistant reply.
+            const targetConvoId = state.activeConversationId;
 
             // callAPIStreaming always returns { text, generatedImages }
             // — including on abort (api-client swallows AbortError and we
             // finalize with the accumulator-so-far).
             const result = await callAPIStreaming(userMessage, attachmentMeta);
-            await finalizeStreamingMessage(result.text || '', result.generatedImages || []);
+            await finalizeStreamingMessage(result.text || '', result.generatedImages || [], targetConvoId);
         } catch (error) {
             // Real error path; abort flows through normally now.
             if (state.streamingMessageDiv) {
@@ -3327,7 +3378,7 @@ async function callAPI(userMessage, attachments = []) {
     if (attachments.length > 0 && params.messages.length > 0) {
         const lastMsg = params.messages[params.messages.length - 1];
         if (lastMsg.role === 'user') {
-            lastMsg.content = await buildAttachmentContentBlocks(lastMsg.content, attachments);
+            lastMsg.content = await buildAttachmentContentBlocks(lastMsg.content, attachments, params.provider);
         }
     }
 
@@ -3350,7 +3401,7 @@ async function callAPIStreaming(userMessage, attachments = []) {
     if (attachments.length > 0 && params.messages.length > 0) {
         const lastMsg = params.messages[params.messages.length - 1];
         if (lastMsg.role === 'user') {
-            lastMsg.content = await buildAttachmentContentBlocks(lastMsg.content, attachments);
+            lastMsg.content = await buildAttachmentContentBlocks(lastMsg.content, attachments, params.provider);
         }
     }
 
@@ -3476,7 +3527,19 @@ function appendStreamChunk(text) {
     }
 }
 
-async function finalizeStreamingMessage(fullText, generatedImages = []) {
+/**
+ * Finalize the streaming assistant bubble.
+ *
+ * @param {string} fullText - the raw accumulator from the stream
+ * @param {Array} generatedImages - Gemini multimodal images, if any
+ * @param {string} [targetConvoId] - the conversation id this stream was
+ *   started against. Pinning the convo here is critical: if the user
+ *   switches to a different conversation mid-stream, `getActiveConversation()`
+ *   would resolve to the NEW conversation at finalize-time, causing the
+ *   assistant reply to be written to the wrong conversation server-side.
+ *   Falls back to active for callers that don't pass it.
+ */
+async function finalizeStreamingMessage(fullText, generatedImages = [], targetConvoId = null) {
     if (!state.streamingMessageDiv) return;
 
     state.streamingMessageDiv.classList.remove('streaming');
@@ -3494,6 +3557,17 @@ async function finalizeStreamingMessage(fullText, generatedImages = []) {
 
     // Persist generated images to IndexedDB and produce attachment metadata.
     const attachments = await storeGeneratedImages(generatedImages);
+
+    // Bail-out for empty results (e.g., user clicked Stop before any chunk
+    // arrived). Persisting an empty assistant turn would pollute the
+    // conversation context on the next send. Remove the empty bubble too.
+    if (!cleanText.trim() && attachments.length === 0) {
+        state.streamingMessageDiv.remove();
+        state.streamingMessageDiv = null;
+        state.streamingAccumulator = '';
+        state.streamingGeneratedImages = [];
+        return;
+    }
 
     // Render any generated images above the text content.
     if (attachments.length > 0) {
@@ -3525,14 +3599,19 @@ async function finalizeStreamingMessage(fullText, generatedImages = []) {
 
     // Persist to server + local state. Awaits persistMessage so the server-
     // generated id is set on the local msg before any subsequent edit/delete.
-    const activeConvo = getActiveConversation();
-    if (activeConvo) {
+    // Uses the convo this stream was started against (NOT the current active
+    // convo) so a mid-stream conversation switch still writes the reply to
+    // the original conversation.
+    const targetConvo = targetConvoId
+        ? state.conversations[targetConvoId]
+        : getActiveConversation();
+    if (targetConvo) {
         const msg = { role: 'assistant', content: cleanText, attachments };
-        activeConvo.messages.push(msg);
-        state.streamingMessageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
-        activeConvo.updatedAt = Date.now();
+        targetConvo.messages.push(msg);
+        state.streamingMessageDiv.dataset.msgIndex = targetConvo.messages.length - 1;
+        targetConvo.updatedAt = Date.now();
         try {
-            const saved = await persistMessage(activeConvo.id, msg);
+            const saved = await persistMessage(targetConvo.id, msg);
             if (saved && saved.id) msg.id = saved.id;
         } catch (err) {
             console.error('Failed to persist assistant message:', err);
@@ -3723,7 +3802,17 @@ function blobToBase64(blob) {
  * server-side — large image batches may hit it. Multipart-upload support is
  * a future task.
  */
-async function buildAttachmentContentBlocks(textContent, attachments) {
+/**
+ * Build content blocks for the user's message.
+ *
+ * @param {string} textContent
+ * @param {Array} attachments
+ * @param {string} [provider] - 'anthropic' | 'google' | 'openai'. Used only
+ *   for audio gating today: Anthropic's API rejects audio content blocks,
+ *   so we skip them for that provider. The block shape itself is
+ *   Anthropic-flavored; the server-side Gemini provider translates it.
+ */
+async function buildAttachmentContentBlocks(textContent, attachments, provider) {
     const contentParts = [];
 
     for (const att of attachments) {
@@ -3742,6 +3831,17 @@ async function buildAttachmentContentBlocks(textContent, attachments) {
                 type: 'document',
                 source: { type: 'base64', media_type: att.mimeType, data: base64 }
             });
+        } else if (att.type === 'audio') {
+            // Anthropic doesn't accept audio content blocks at all — skip.
+            // Gemini does, via inline_data; the server-side Gemini provider
+            // translates this block.
+            if (provider === 'google') {
+                const base64 = await blobToBase64(blob);
+                contentParts.push({
+                    type: 'audio',
+                    source: { type: 'base64', media_type: att.mimeType, data: base64 }
+                });
+            }
         } else if (att.type === 'code' || att.type === 'document') {
             // Read text files as text and include inline
             const text = await blob.text();
@@ -3750,7 +3850,6 @@ async function buildAttachmentContentBlocks(textContent, attachments) {
                 text: `[File: ${att.fileName}]\n${text}`
             });
         }
-        // Audio is not natively supported by Anthropic - skip
     }
 
     // Add the user's text message
@@ -3867,6 +3966,12 @@ function setupEventListeners() {
         const input = elements.apiKeyInput;
         input.type = input.type === 'password' ? 'text' : 'password';
     });
+
+    // Explicit Clear-saved-key handler (the safe, intentional path for
+    // deleting a stored key — emptying the input does NOT do this).
+    if (elements.clearApiKeyBtn) {
+        elements.clearApiKeyBtn.addEventListener('click', clearStoredApiKey);
+    }
     
     // Size preset buttons - apply immediately and auto-save
     document.querySelectorAll('.size-preset-btn').forEach(btn => {

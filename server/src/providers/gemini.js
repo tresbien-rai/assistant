@@ -38,10 +38,28 @@ function buildRequestBody(params) {
         if (item.type === 'text') {
           return { text: item.text };
         } else if (item.type === 'image') {
-          // Convert Anthropic format to Gemini format
+          // Convert Anthropic-flavored image block to Gemini's inline_data.
           return {
             inline_data: {
               mime_type: item.source?.media_type || 'image/png',
+              data: item.source?.data || '',
+            },
+          };
+        } else if (item.type === 'document') {
+          // PDFs (Anthropic-flavored 'document' block) go inline for Gemini.
+          // Previously fell through to String(item) → '[object Object]'.
+          return {
+            inline_data: {
+              mime_type: item.source?.media_type || 'application/pdf',
+              data: item.source?.data || '',
+            },
+          };
+        } else if (item.type === 'audio') {
+          // Gemini supports audio via inline_data; Anthropic doesn't, so this
+          // block only reaches here when the frontend emits it for Gemini.
+          return {
+            inline_data: {
+              mime_type: item.source?.media_type || 'audio/wav',
               data: item.source?.data || '',
             },
           };
