@@ -9,6 +9,17 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 </head>
 <body>
+    <!-- Critical banner (full-width, persistent; for errors requiring user action) -->
+    <div class="critical-banner" id="criticalBanner" role="alert" aria-live="assertive" hidden>
+        <span class="critical-banner-icon" aria-hidden="true">⚠️</span>
+        <span class="critical-banner-message" id="criticalBannerMessage"></span>
+        <button class="critical-banner-action" id="criticalBannerAction" type="button" hidden></button>
+        <button class="critical-banner-dismiss" id="criticalBannerDismiss" type="button" aria-label="Dismiss">×</button>
+    </div>
+
+    <!-- Toast container (transient notifications, bottom-right) -->
+    <div class="toast-container" id="toastContainer" role="region" aria-label="Notifications" aria-live="polite"></div>
+
     <!-- Login Screen (shown when not authenticated) -->
     <div class="login-screen" id="loginScreen" hidden>
         <div class="login-card">
