@@ -2907,14 +2907,24 @@ function showToast(message, opts = {}) {
     const key = opts.key || `${type}:${message}`;
     const now = Date.now();
 
+    // Prune dedupe entries older than the window so the Map can't grow
+    // unbounded over a long session with many distinct messages.
+    for (const [k, t] of _recentToasts) {
+        if (now - t >= TOAST_DEDUPE_MS) _recentToasts.delete(k);
+    }
+
     // Dedupe: skip if an identical toast fired within the dedupe window.
     const last = _recentToasts.get(key);
     if (last && now - last < TOAST_DEDUPE_MS) return null;
     _recentToasts.set(key, now);
 
-    // Cap stacked toasts: drop the oldest when over the limit.
-    while (container.children.length >= TOAST_MAX) {
-        container.removeChild(container.firstElementChild);
+    // Cap stacked toasts: drop the oldest *non-hiding* toast when over the
+    // limit. Toasts mid-dismiss (class toast-hiding) linger ~300ms during the
+    // fade; counting them would let the cap evict a fully-visible newer toast.
+    let live = Array.from(container.children).filter(c => !c.classList.contains('toast-hiding'));
+    while (live.length >= TOAST_MAX) {
+        const oldest = live.shift();
+        if (oldest) oldest.remove();
     }
 
     const duration = opts.duration !== undefined
@@ -2974,12 +2984,14 @@ function showToast(message, opts = {}) {
  */
 function showCriticalBanner(message, opts = {}) {
     const banner = elements.criticalBanner;
-    if (!banner) return;
+    // Guard the inner nodes too — a partial HTML edit shouldn't turn an error
+    // display into an uncaught TypeError.
+    if (!banner || !elements.criticalBannerMessage) return;
 
     elements.criticalBannerMessage.textContent = message;
 
     const actionBtn = elements.criticalBannerAction;
-    if (opts.actionLabel && typeof opts.onAction === 'function') {
+    if (actionBtn && opts.actionLabel && typeof opts.onAction === 'function') {
         actionBtn.textContent = opts.actionLabel;
         actionBtn.hidden = false;
         // Replace handler by cloning to drop any prior listeners.
@@ -2987,7 +2999,7 @@ function showCriticalBanner(message, opts = {}) {
         fresh.addEventListener('click', opts.onAction);
         actionBtn.parentNode.replaceChild(fresh, actionBtn);
         elements.criticalBannerAction = fresh;
-    } else {
+    } else if (actionBtn) {
         actionBtn.hidden = true;
     }
 
@@ -3065,10 +3077,18 @@ function appendErrorMessage(error, opts = {}) {
         retryBtn.className = 'error-retry-btn';
         retryBtn.type = 'button';
         retryBtn.textContent = 'Retry';
+        // Not {once:true}: if a send is still in flight we keep the button (and
+        // the error bubble) so the user can retry once it settles. Only remove
+        // the bubble when we actually hand off to the retry handler — otherwise
+        // a no-op retry (isLoading) would destroy the error + retry affordance.
         retryBtn.addEventListener('click', () => {
+            if (state.isLoading) {
+                showToast('Please wait for the current response to finish, then retry.', { type: 'warning' });
+                return;
+            }
             messageDiv.remove();
             opts.retryHandler();
-        }, { once: true });
+        });
         contentDiv.appendChild(retryBtn);
     }
 
@@ -3099,31 +3119,41 @@ function displayError(error, context = {}) {
     const code = (error && error.name === 'ApiError') ? error.code : 'UNKNOWN_ERROR';
     const baseMsg = (error && error.message) || 'An unexpected error occurred.';
     const actionPrefix = context.action ? `Couldn't ${context.action}: ` : '';
+    // retryAfter may legitimately be 0 (retry immediately); only fall back to
+    // 60 when it's actually absent.
+    const retrySecs = (error && typeof error.retryAfter === 'number') ? error.retryAfter : 60;
 
-    switch (code) {
-        case 'AUTH_ERROR':
-            // 401s are handled by the global on401 handler (reload to login).
-            // If we reach here, surface a gentle toast as a fallback.
-            showToast('Your session has expired. Please sign in again.', {
-                type: 'warning', key: 'auth-expired',
-            });
-            return;
+    // 401s are handled globally (the on401 handler reloads to the login
+    // screen). Rendering a chat bubble that the imminent reload discards is
+    // pointless, so AUTH_ERROR always takes the toast fallback regardless of
+    // surface.
+    if (code === 'AUTH_ERROR') {
+        showToast('Your session has expired. Please sign in again.', {
+            type: 'warning', key: 'auth-expired',
+        });
+        return;
+    }
 
-        case 'RATE_LIMITED': {
-            const secs = (error && error.retryAfter) || 60;
-            showToast(`Rate limit reached. Try again in ${secs}s.`, {
-                type: 'warning', key: 'rate-limited', duration: Math.min(secs, 10) * 1000,
+    // Chat-turn failures get a DURABLE inline error in the thread (with Retry),
+    // whatever the code. The user's message is sitting there awaiting a reply,
+    // so an auto-dismissing toast would lose that context once it fades. For
+    // rate limits we additionally toast the wait time.
+    if (surface === 'chat') {
+        appendErrorMessage(error, { retryHandler: context.retryHandler });
+        if (code === 'RATE_LIMITED') {
+            showToast(`Rate limit reached. Try again in ${retrySecs}s.`, {
+                type: 'warning', key: 'rate-limited',
             });
-            return;
         }
+        return;
+    }
 
-        case 'PROVIDER_ERROR':
-            // Provider failures during a chat turn belong inline (with retry).
-            if (surface === 'chat') {
-                appendErrorMessage(error, { retryHandler: context.retryHandler });
-            } else {
-                showToast(`${actionPrefix}${baseMsg}`, { type: 'error' });
-            }
+    // Background (non-chat) failures route by code to the right surface.
+    switch (code) {
+        case 'RATE_LIMITED':
+            showToast(`Rate limit reached. Try again in ${retrySecs}s.`, {
+                type: 'warning', key: 'rate-limited',
+            });
             return;
 
         case 'VALIDATION_ERROR':
@@ -3135,15 +3165,12 @@ function displayError(error, context = {}) {
             showCriticalBanner(`Google Drive error: ${baseMsg}`);
             return;
 
+        case 'PROVIDER_ERROR':
         case 'NOT_FOUND':
         case 'SERVER_ERROR':
         case 'NETWORK_ERROR':
         default:
-            if (surface === 'chat') {
-                appendErrorMessage(error, { retryHandler: context.retryHandler });
-            } else {
-                showToast(`${actionPrefix}${baseMsg}`, { type: 'error' });
-            }
+            showToast(`${actionPrefix}${baseMsg}`, { type: 'error' });
             return;
     }
 }
@@ -3715,7 +3742,7 @@ async function callAPIStreaming(userMessage, attachments = []) {
         // ApiError-shaped object and throw — the throw rejects the stream
         // promise, which surfaces in the chat catch (partial bubble removed,
         // inline error + Retry shown).
-        if (payload.type === 'error' || payload.error) {
+        if (payload.type === 'error' || (payload.error && typeof payload.error === 'object')) {
             const provErr = payload.error || {};
             const err = new Error(provErr.message || 'The provider reported an error mid-response.');
             err.name = 'ApiError';
