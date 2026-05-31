@@ -30,6 +30,15 @@ const { personaAvatarRouter, avatarServingRouter } = require('./routes/avatars')
 // Initialize Express app
 const app = express();
 
+// Trust the hosting platform's reverse proxy (e.g. Railway) in production so
+// req.ip / X-Forwarded-For resolve to the real client. Required for the per-user
+// rate limiter to key on the correct IP; without it express-rate-limit warns and
+// can throttle all users as if they share one address. Disabled in dev (no proxy),
+// where trusting forwarded headers would let clients spoof their IP.
+if (!config.isDev) {
+  app.set('trust proxy', 1);
+}
+
 // Initialize database (getDb initializes if not already done)
 getDb();
 
