@@ -31,6 +31,18 @@ const { logger } = require('../utils/logger');
 // =============================================================================
 
 const AVATARS_DIR = path.resolve(__dirname, '../../data/avatars');
+
+// Ensure the avatars directory exists. multer's diskStorage does NOT create
+// its destination, so an upload would fail with ENOENT (500) if it's missing.
+// This matters in production: Railway mounts the persistent Volume at
+// server/data, which shadows the repo's committed data/avatars/.gitkeep, so the
+// subdirectory does not exist at boot until we create it here.
+try {
+  fs.mkdirSync(AVATARS_DIR, { recursive: true });
+} catch (err) {
+  logger.error({ err, dir: AVATARS_DIR }, 'Failed to ensure avatars directory exists');
+}
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
