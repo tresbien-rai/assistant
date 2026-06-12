@@ -8,6 +8,7 @@
  * - POST /api/auth/logout - Clear session
  */
 
+const crypto = require('node:crypto');
 const express = require('express');
 const { google } = require('googleapis');
 const config = require('../config');

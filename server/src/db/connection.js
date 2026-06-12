@@ -6,6 +6,7 @@
  */
 
 const Database = require('better-sqlite3');
+const crypto = require('node:crypto');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
