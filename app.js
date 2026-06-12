@@ -131,8 +131,24 @@ const ImageStore = {
     async init() {
         if (this.db) return this.db;
 
+        // IndexedDB can be entirely absent or blocked by the browser context
+        // (private mode in some browsers, or privacy/ad-block extensions that
+        // disable site storage). Guard so a missing global or a synchronous
+        // throw from open() surfaces as a clean rejection instead of an
+        // uncaught error that would abort app startup.
+        if (typeof indexedDB === 'undefined' || !indexedDB) {
+            throw new Error('IndexedDB is unavailable in this browser context');
+        }
+
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open(this.dbName, this.dbVersion);
+            let request;
+            try {
+                request = indexedDB.open(this.dbName, this.dbVersion);
+            } catch (err) {
+                console.error('Failed to open IndexedDB:', err);
+                reject(err);
+                return;
+            }
 
             request.onerror = () => {
                 console.error('Failed to open IndexedDB:', request.error);
@@ -818,10 +834,23 @@ async function init() {
     startSessionTimer();
 
     // ImageStore is retained for transient pre-send attachment blobs only.
-    await ImageStore.init();
-    window.addEventListener('beforeunload', () => {
-        ImageStore.revokeAllURLs();
-    });
+    // It is NOT required to run the app — avatars and all persisted data come
+    // from the server. If IndexedDB is unavailable (private mode, or a privacy/
+    // ad-block extension blocking site storage), degrade gracefully: the app
+    // loads normally and only image attachments are disabled for the session.
+    // Crashing init() here would log the user straight back out.
+    try {
+        await ImageStore.init();
+        window.addEventListener('beforeunload', () => {
+            ImageStore.revokeAllURLs();
+        });
+    } catch (err) {
+        console.warn('ImageStore (IndexedDB) unavailable — image attachments disabled this session:', err);
+        showToast(
+            'Image attachments are unavailable because this browser is blocking local storage (often a privacy extension or private mode). The rest of the app works normally.',
+            { type: 'warning', duration: 9000, key: 'imagestore-unavailable' }
+        );
+    }
 
     console.log('AI Assistant initialized!');
 }
