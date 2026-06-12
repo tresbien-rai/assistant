@@ -875,9 +875,16 @@ function hydrateSettings(settings) {
 function hydratePersonas(personas) {
     state.personas = {};
     for (const p of (personas || [])) {
-        // Server returns `expressions` as a parsed object. Empty default if
-        // absent or malformed.
-        const expressions = (p.expressions && typeof p.expressions === 'object')
+        // Server returns `expressions` as a parsed object. Backfill defaults
+        // when it is missing OR an empty object. Server-created default
+        // personas (e.g. the one made during the OAuth callback) have no
+        // expressions, which the DAL JSON-parses to `{}`. An empty object is
+        // truthy, so without the key-count check the persona would run with no
+        // expressions and the UI would crash reading e.g. expressions.neutral.emoji.
+        const hasExpressions = p.expressions
+            && typeof p.expressions === 'object'
+            && Object.keys(p.expressions).length > 0;
+        const expressions = hasExpressions
             ? p.expressions
             : { ...CONFIG.defaultExpressions };
         state.personas[p.id] = {
@@ -1593,8 +1600,11 @@ async function updateFloatingAvatar() {
 function updateStatusBar() {
     // Update mood
     const persona = getActivePersona();
-    const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
-    const expr = expressions[state.currentExpression] || expressions.neutral;
+    const expressions = (persona && persona.expressions && Object.keys(persona.expressions).length > 0)
+        ? persona.expressions
+        : CONFIG.defaultExpressions;
+    // Final guard: never let a missing expression entry throw and abort startup.
+    const expr = expressions[state.currentExpression] || expressions.neutral || { emoji: '🤖' };
     elements.statusMood.textContent = `${expr.emoji} ${state.currentExpression}`;
 
     // Update message count
