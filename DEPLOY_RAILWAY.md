@@ -198,14 +198,60 @@ Common first-deploy issues:
   set (cookie `Secure` flag needs HTTPS, which Railway provides).
 - **Data disappears after redeploy** → the Volume mount path isn't exactly
   `/app/server/data` (Step 4).
+- **After signing in you land on a Railway "Not Found / confirm that your domain has
+  provisioned" page** → you're being redirected to a domain Railway no longer serves.
+  This happens after you change or replace your Railway domain. Fix it per Step 8 below:
+  the `GOOGLE_REDIRECT_URI` variable (and the Google Authorized redirect URI) still point
+  at the *old* domain. Note an already-logged-in browser keeps working off its cookie, so
+  this often only shows up on a second device or in a private window.
 
 ---
 
-## One small code improvement worth making (optional)
+## Step 8 — Changing your domain (or adding a custom domain) later
 
-The app runs behind Railway's proxy. The per-user rate limiter identifies callers by IP,
-and behind a proxy Express needs `app.set('trust proxy', 1)` to read the real client IP
-from the `X-Forwarded-For` header. Without it, `express-rate-limit` (v8) logs a validation
-warning and may rate-limit everyone as if they share one IP. It won't stop the app from
-working, but it's a clean one-line fix I can add on a branch before you deploy if you'd
-like. (Auth still works fine without it because the OAuth redirect URI is set explicitly.)
+**No code changes are ever needed for a domain change** — the domain lives only in the
+`GOOGLE_REDIRECT_URI` env var. Whenever the domain changes, do these two updates and
+nothing else:
+
+1. **Railway → Variables:** set `GOOGLE_REDIRECT_URI` to
+   `https://<new-domain>/api/auth/google/callback` (saving triggers a redeploy).
+2. **Google Cloud Console → Credentials → your OAuth client → Authorized redirect URIs:**
+   add `https://<new-domain>/api/auth/google/callback`. Google allows multiple entries, so
+   you can keep the old domain and `localhost` there during the transition.
+
+Then visit the **new** URL and sign in with a fresh session (a private window, or after
+clearing the old bookmark). Remember: an existing logged-in browser keeps working off its
+cookie and hides the problem — always test a domain change in a private window or a second
+device.
+
+### Custom domain (e.g. `assistant.yourname.com`)
+
+Same two updates as above, plus DNS setup first:
+
+1. **Railway → Settings → Networking → Custom Domain** → enter your domain. Railway gives
+   you a **CNAME** target; add that record at your domain registrar. Wait until Railway
+   shows the domain as **provisioned** (DNS propagation + automatic SSL cert — usually
+   minutes, up to a couple of hours).
+2. Set `GOOGLE_REDIRECT_URI` to the custom domain's `/api/auth/google/callback`.
+3. Add that URL to Google's **Authorized redirect URIs**, and add the bare domain
+   (`yourname.com`) under the OAuth consent screen's **Authorized domains**.
+
+---
+
+## Notes on code already in place
+
+These were handled in the codebase, so you don't need to do anything — listed here for
+reference:
+
+- **`app.set('trust proxy', 1)` (production only)** — already in `server/src/index.js`.
+  Lets the per-user rate limiter read the real client IP from `X-Forwarded-For` behind
+  Railway's proxy. Without it, `express-rate-limit` (v8) would warn and could throttle all
+  users as one shared IP.
+- **Node pinned to `"20"`** via `engines.node` in the root `package.json` — Node 20 has a
+  prebuilt `better-sqlite3` binary, so the build skips native compilation (which would
+  otherwise fail in Railway's build image for lack of Python).
+- **Avatars directory auto-created at startup** (`server/src/routes/avatars.js`) — the
+  Volume mounts empty over `server/data`, so the app `mkdir`s `server/data/avatars` on boot
+  or uploads would 500.
+- **App startup hardened** — a blocked IndexedDB (privacy extensions/private mode) or a
+  persona with no expressions no longer aborts load; the app degrades gracefully.
