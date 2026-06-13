@@ -4729,15 +4729,17 @@ function setupComposerResizeGrip() {
 
     const MIN_H = 80;
     const maxH = () => Math.max(MIN_H, Math.round(window.innerHeight * 0.6));
+    const clamp = (cap) => Math.max(MIN_H, Math.min(maxH(), Math.round(cap)));
 
     let dragging = false;
     let startY = 0;
     let startCap = 0;
+    let currentCap = UiPrefs.get('composerMaxHeight') || 150;
 
-    const applyCap = (cap) => {
-        const clamped = Math.max(MIN_H, Math.min(maxH(), Math.round(cap)));
-        UiPrefs.set('composerMaxHeight', clamped);
-        document.documentElement.style.setProperty('--composer-max-height', `${clamped}px`);
+    // Update the live layout WITHOUT persisting — called on every pointermove.
+    const applyLive = (cap) => {
+        currentCap = clamp(cap);
+        document.documentElement.style.setProperty('--composer-max-height', `${currentCap}px`);
         autoResizeTextarea(elements.messageInput);
     };
 
@@ -4753,7 +4755,7 @@ function setupComposerResizeGrip() {
     grip.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         // Dragging up (clientY decreases) should grow the box.
-        applyCap(startCap + (startY - e.clientY));
+        applyLive(startCap + (startY - e.clientY));
     });
 
     const endDrag = (e) => {
@@ -4761,11 +4763,15 @@ function setupComposerResizeGrip() {
         dragging = false;
         grip.classList.remove('dragging');
         try { grip.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+        UiPrefs.set('composerMaxHeight', currentCap); // persist once, at gesture end
     };
     grip.addEventListener('pointerup', endDrag);
     grip.addEventListener('pointercancel', endDrag);
 
-    grip.addEventListener('dblclick', () => applyCap(UiPrefs.defaults.composerMaxHeight));
+    grip.addEventListener('dblclick', () => {
+        applyLive(UiPrefs.defaults.composerMaxHeight);
+        UiPrefs.set('composerMaxHeight', currentCap);
+    });
 }
 
 async function clearConversation() {
