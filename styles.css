@@ -23,6 +23,7 @@
     --sidebar-width: 320px;
     --status-bar-height: 56px;
     --input-height: 80px;
+    --composer-max-height: 150px;
     
     --radius-sm: 4px;
     --radius-md: 8px;
@@ -51,7 +52,8 @@ body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
-    height: 100vh;
+    height: 100vh; /* fallback for browsers without dvh */
+    height: 100dvh; /* dynamic viewport: accounts for mobile browser chrome */
     overflow: hidden;
 }
 
@@ -63,7 +65,8 @@ body {
 /* ===== App Layout ===== */
 .app-container {
     display: flex;
-    height: 100vh;
+    height: 100vh; /* fallback */
+    height: 100dvh;
 }
 
 /* ===== Sidebar ===== */
@@ -76,7 +79,8 @@ body {
     position: fixed;
     left: calc(-1 * var(--sidebar-width));
     top: 0;
-    height: 100vh;
+    height: 100vh; /* fallback */
+    height: 100dvh;
     z-index: 100;
     transition: left 0.3s ease;
     overflow-y: auto;
@@ -743,7 +747,8 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    height: 100vh; /* fallback */
+    height: 100dvh;
     min-width: 0; /* Prevent flex item from overflowing */
     overflow-x: hidden;
 }
@@ -1561,6 +1566,32 @@ body {
     flex-shrink: 0;
 }
 
+/* Drag grip to resize the composer's max height */
+.composer-resize-grip {
+    height: 12px;
+    margin: -6px 0 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ns-resize;
+    touch-action: none; /* let pointer drag work on touch without scrolling */
+}
+
+.composer-resize-grip::before {
+    content: '';
+    width: 44px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--border-color);
+    transition: background 0.2s, width 0.2s;
+}
+
+.composer-resize-grip:hover::before,
+.composer-resize-grip.dragging::before {
+    background: var(--accent);
+    width: 64px;
+}
+
 .input-wrapper {
     display: flex;
     gap: 12px;
@@ -1577,7 +1608,7 @@ body {
     font-family: var(--font-main);
     font-size: 1rem;
     resize: none;
-    max-height: 150px;
+    max-height: var(--composer-max-height, 150px);
     transition: border-color 0.2s;
 }
 

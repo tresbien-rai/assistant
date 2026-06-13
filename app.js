@@ -106,6 +106,41 @@ function renderMarkdown(content) {
     return marked.parse(content);
 }
 
+// ===== UI Preferences (device-local layout settings) =====
+// Layout prefs (composer height, sidebar width, chat width, avatar placement)
+// are intentionally per-device, so they live in localStorage rather than the
+// synced server settings — a phone and a desktop want different layouts.
+// All access is guarded: if localStorage is blocked (privacy mode/extensions)
+// we fall back to defaults and simply don't persist.
+const UiPrefs = {
+    KEY: 'ai_assistant_ui_prefs',
+    defaults: {
+        composerMaxHeight: 150, // px cap for the message box auto-grow
+    },
+    _data: null,
+    load() {
+        if (this._data) return this._data;
+        try {
+            const raw = localStorage.getItem(this.KEY);
+            this._data = raw ? { ...this.defaults, ...JSON.parse(raw) } : { ...this.defaults };
+        } catch {
+            this._data = { ...this.defaults };
+        }
+        return this._data;
+    },
+    get(key) { return this.load()[key]; },
+    set(key, value) {
+        this.load()[key] = value;
+        try { localStorage.setItem(this.KEY, JSON.stringify(this._data)); } catch { /* storage blocked */ }
+    },
+    reset(key) { this.set(key, this.defaults[key]); },
+    // Push current prefs into CSS custom properties on :root.
+    apply() {
+        const d = this.load();
+        document.documentElement.style.setProperty('--composer-max-height', `${d.composerMaxHeight}px`);
+    },
+};
+
 // ===== IndexedDB Image Store =====
 // Retained ONLY for transient pre-send attachment blobs (state.pendingAttachments
 // → IndexedDB → reload-resilient until send). Avatars and persona/expression
@@ -826,6 +861,10 @@ async function init() {
     if (state.activeConversationId) {
         await loadConversationMessages(state.activeConversationId);
     }
+
+    // Apply device-local layout preferences (composer height, etc.) before the
+    // first paint of the interactive UI.
+    UiPrefs.apply();
 
     // Wire UI after state is populated so listeners read coherent state.
     setupEventListeners();
@@ -4479,6 +4518,9 @@ function setupEventListeners() {
         }
     });
 
+    // Composer resize grip — drag to set the message box's max height (persisted).
+    setupComposerResizeGrip();
+
     // Send button
     elements.sendButton.addEventListener('click', sendMessage);
 
@@ -4674,8 +4716,62 @@ function closeSidebar() {
 
 // ===== Utility Functions =====
 function autoResizeTextarea(textarea) {
+    const cap = UiPrefs.get('composerMaxHeight') || 150;
     textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+    textarea.style.height = Math.min(textarea.scrollHeight, cap) + 'px';
+}
+
+// Drag the grip above the composer to grow/shrink its max height. The value is
+// clamped, persisted per-device, and reset on double-click.
+function setupComposerResizeGrip() {
+    const grip = document.getElementById('composerResizeGrip');
+    if (!grip) return;
+
+    const MIN_H = 80;
+    const maxH = () => Math.max(MIN_H, Math.round(window.innerHeight * 0.6));
+    const clamp = (cap) => Math.max(MIN_H, Math.min(maxH(), Math.round(cap)));
+
+    let dragging = false;
+    let startY = 0;
+    let startCap = 0;
+    let currentCap = UiPrefs.get('composerMaxHeight') || 150;
+
+    // Update the live layout WITHOUT persisting — called on every pointermove.
+    const applyLive = (cap) => {
+        currentCap = clamp(cap);
+        document.documentElement.style.setProperty('--composer-max-height', `${currentCap}px`);
+        autoResizeTextarea(elements.messageInput);
+    };
+
+    grip.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        startY = e.clientY;
+        startCap = UiPrefs.get('composerMaxHeight') || 150;
+        grip.classList.add('dragging');
+        try { grip.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        e.preventDefault();
+    });
+
+    grip.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        // Dragging up (clientY decreases) should grow the box.
+        applyLive(startCap + (startY - e.clientY));
+    });
+
+    const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        grip.classList.remove('dragging');
+        try { grip.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+        UiPrefs.set('composerMaxHeight', currentCap); // persist once, at gesture end
+    };
+    grip.addEventListener('pointerup', endDrag);
+    grip.addEventListener('pointercancel', endDrag);
+
+    grip.addEventListener('dblclick', () => {
+        applyLive(UiPrefs.defaults.composerMaxHeight);
+        UiPrefs.set('composerMaxHeight', currentCap);
+    });
 }
 
 async function clearConversation() {
