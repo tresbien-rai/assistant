@@ -820,6 +820,8 @@ const elements = {
     // Floating avatar
     floatingAvatar: document.getElementById('floatingAvatar'),
     avatarImage: document.getElementById('avatarImage'),
+    avatarSizeSlider: document.getElementById('avatarSizeSlider'),
+    avatarSizeValue: document.getElementById('avatarSizeValue'),
     avatarEmoji: document.getElementById('avatarEmoji'),
     avatarImg: document.getElementById('avatarImg'),
     floatingAvatarName: document.getElementById('floatingAvatarName'),
@@ -1109,12 +1111,10 @@ function saveAllSettingsFromUI() {
         lastTypedApiKey[currentProvider] = '';
     }
 
-    // Avatar settings (stay global)
+    // Avatar visibility is read here; size/position are kept authoritative in
+    // state by their own controls (presets, the size slider, and drag), so we
+    // don't read the preset buttons — that would clobber a free value.
     state.settings.showAvatar = elements.showAvatar.checked;
-    const activeSize = document.querySelector('.size-preset-btn.active');
-    if (activeSize) state.settings.avatarSize = activeSize.dataset.size;
-    const activePos = document.querySelector('.position-preset-btn.active');
-    if (activePos) state.settings.avatarPosition = activePos.dataset.position;
 
     // Model parameters (save to active persona)
     saveModelParamsFromUI();
@@ -1304,15 +1304,9 @@ async function updateUI() {
     // Load model parameters to UI (from active persona's modelConfig)
     loadModelParamsToUI();
 
-    // Update size preset buttons
-    document.querySelectorAll('.size-preset-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.size === state.settings.avatarSize);
-    });
-
-    // Update position preset buttons
-    document.querySelectorAll('.position-preset-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.position === state.settings.avatarPosition);
-    });
+    // Reflect avatar size (presets + slider) and position (presets) into the UI.
+    syncAvatarSizeControls();
+    syncAvatarPositionControls();
 
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
@@ -1578,23 +1572,182 @@ function updateAvatarPreview() {
     }
 }
 
+// ===== Floating avatar size/position (named presets OR free values) =====
+// avatarSize: a preset name OR a numeric px string. avatarPosition: a corner
+// preset OR "x,y" where x,y are 0..100 fractions of the AVAILABLE travel
+// (chat area minus the avatar), so a synced free position stays in-bounds
+// across different screen sizes.
+const AVATAR_PRESET_PX = { small: 80, medium: 120, large: 180, xlarge: 240 };
+const AVATAR_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const AVATAR_SIZE_MIN = 32;
+const AVATAR_SIZE_MAX = 480;
+const AVATAR_FONT_RATIO = 0.025; // px → rem for the emoji (120px → 3rem, matches presets)
+
+function isAvatarPreset(size) {
+    return Object.prototype.hasOwnProperty.call(AVATAR_PRESET_PX, size);
+}
+function isAvatarCorner(pos) {
+    return AVATAR_CORNERS.includes(pos);
+}
+function avatarSizeToPx(size) {
+    if (isAvatarPreset(size)) return AVATAR_PRESET_PX[size];
+    const n = parseInt(size, 10);
+    if (!Number.isFinite(n)) return AVATAR_PRESET_PX.medium;
+    return Math.max(AVATAR_SIZE_MIN, Math.min(AVATAR_SIZE_MAX, n));
+}
+function parseAvatarFreePos(pos) {
+    if (typeof pos !== 'string') return null;
+    const parts = pos.split(',');
+    if (parts.length !== 2) return null;
+    const x = parseFloat(parts[0]);
+    const y = parseFloat(parts[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+}
+
+function applyAvatarSize(image, size) {
+    if (isAvatarPreset(size)) {
+        image.className = `avatar-image size-${size}`;
+        image.style.width = '';
+        image.style.height = '';
+        image.style.fontSize = '';
+    } else {
+        const px = avatarSizeToPx(size);
+        image.className = 'avatar-image';
+        image.style.width = `${px}px`;
+        image.style.height = `${px}px`;
+        image.style.fontSize = `${px * AVATAR_FONT_RATIO}rem`;
+    }
+}
+
+function applyAvatarPosition(avatar, pos) {
+    const free = isAvatarCorner(pos) ? null : parseAvatarFreePos(pos);
+    if (!free) {
+        const corner = isAvatarCorner(pos) ? pos : CONFIG.defaults.avatarPosition;
+        avatar.className = `floating-avatar ${corner}`;
+        avatar.style.left = '';
+        avatar.style.top = '';
+        avatar.style.right = '';
+        avatar.style.bottom = '';
+        return;
+    }
+    avatar.className = 'floating-avatar';
+    const chatArea = document.getElementById('chatArea');
+    const cRect = chatArea.getBoundingClientRect();
+    const aRect = avatar.getBoundingClientRect();
+    const maxLeft = Math.max(0, cRect.width - aRect.width);
+    const maxTop = Math.max(0, cRect.height - aRect.height);
+    avatar.style.left = `${(free.x / 100) * maxLeft}px`;
+    avatar.style.top = `${(free.y / 100) * maxTop}px`;
+    avatar.style.right = 'auto';
+    avatar.style.bottom = 'auto';
+}
+
+// Reflect the current avatar size into the preset buttons + the slider/value.
+function syncAvatarSizeControls() {
+    const size = state.settings.avatarSize;
+    document.querySelectorAll('.size-preset-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.size === size);
+    });
+    const px = avatarSizeToPx(size);
+    if (elements.avatarSizeSlider) elements.avatarSizeSlider.value = String(px);
+    if (elements.avatarSizeValue) elements.avatarSizeValue.textContent = `${px}px`;
+}
+
+// Reflect the current avatar position into the corner preset buttons (none
+// active when the avatar is freely placed).
+function syncAvatarPositionControls() {
+    const pos = state.settings.avatarPosition;
+    document.querySelectorAll('.position-preset-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.position === pos);
+    });
+}
+
+// Drag the floating avatar (by its frame) to position it freely within the
+// chat area. The result is stored as "x,y" % of available travel and saved.
+function setupAvatarDrag() {
+    const avatar = elements.floatingAvatar;
+    if (!avatar) return;
+    const frame = avatar.querySelector('.avatar-frame');
+    const chatArea = document.getElementById('chatArea');
+    if (!frame || !chatArea) return;
+
+    let dragging = false;
+    let moved = false;
+    let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+    frame.addEventListener('pointerdown', (e) => {
+        if (!state.settings.showAvatar) return;
+        dragging = true;
+        moved = false;
+        const aRect = avatar.getBoundingClientRect();
+        const cRect = chatArea.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = aRect.left - cRect.left;
+        startTop = aRect.top - cRect.top;
+        avatar.classList.add('dragging');
+        try { frame.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        e.preventDefault();
+    });
+
+    frame.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        moved = true;
+        const cRect = chatArea.getBoundingClientRect();
+        const aRect = avatar.getBoundingClientRect();
+        const maxLeft = Math.max(0, cRect.width - aRect.width);
+        const maxTop = Math.max(0, cRect.height - aRect.height);
+        const left = Math.max(0, Math.min(maxLeft, startLeft + (e.clientX - startX)));
+        const top = Math.max(0, Math.min(maxTop, startTop + (e.clientY - startY)));
+        // Drop any corner preset but keep the base + dragging classes.
+        avatar.classList.remove('top-left', 'top-right', 'bottom-left', 'bottom-right');
+        avatar.style.left = `${left}px`;
+        avatar.style.top = `${top}px`;
+        avatar.style.right = 'auto';
+        avatar.style.bottom = 'auto';
+    });
+
+    const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        avatar.classList.remove('dragging');
+        try { frame.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+        if (!moved) return;
+        const cRect = chatArea.getBoundingClientRect();
+        const aRect = avatar.getBoundingClientRect();
+        const maxLeft = Math.max(1, cRect.width - aRect.width);
+        const maxTop = Math.max(1, cRect.height - aRect.height);
+        const xPct = Math.max(0, Math.min(100, ((aRect.left - cRect.left) / maxLeft) * 100));
+        const yPct = Math.max(0, Math.min(100, ((aRect.top - cRect.top) / maxTop) * 100));
+        state.settings.avatarPosition = `${xPct.toFixed(2)},${yPct.toFixed(2)}`;
+        syncAvatarPositionControls();
+        autoSaveSettings();
+    };
+    frame.addEventListener('pointerup', endDrag);
+    frame.addEventListener('pointercancel', endDrag);
+
+    // Re-clamp a freely-placed avatar when the viewport size changes.
+    window.addEventListener('resize', () => {
+        if (!isAvatarCorner(state.settings.avatarPosition)) {
+            applyAvatarPosition(avatar, state.settings.avatarPosition);
+        }
+    });
+}
+
 async function updateFloatingAvatar() {
     const avatar = elements.floatingAvatar;
     const image = elements.avatarImage;
     const persona = getActivePersona();
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
-    // Show/hide avatar
+    // Size first, so the avatar has correct dimensions before we position it.
+    applyAvatarSize(image, state.settings.avatarSize);
+
+    // Position (preset corner OR free "x,y"). This resets the wrapper's
+    // className, so apply the hidden state afterwards.
+    applyAvatarPosition(avatar, state.settings.avatarPosition);
     avatar.classList.toggle('hidden', !state.settings.showAvatar);
-
-    // Update position
-    avatar.className = `floating-avatar ${state.settings.avatarPosition}`;
-    if (!state.settings.showAvatar) {
-        avatar.classList.add('hidden');
-    }
-
-    // Update size
-    image.className = `avatar-image size-${state.settings.avatarSize}`;
 
     // Update image or emoji.
     // Priority: expression image > default avatar > emoji.
@@ -4397,28 +4550,38 @@ function setupEventListeners() {
         elements.clearApiKeyBtn.addEventListener('click', clearStoredApiKey);
     }
     
-    // Size preset buttons - apply immediately and auto-save
+    // Size preset buttons — set a named size, sync the slider, re-render, save.
     document.querySelectorAll('.size-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.size-preset-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            // Apply size immediately
-            elements.avatarImage.className = `avatar-image size-${btn.dataset.size}`;
+        btn.addEventListener('click', async () => {
+            state.settings.avatarSize = btn.dataset.size;
+            syncAvatarSizeControls();
+            await updateFloatingAvatar();
             autoSaveSettings();
         });
     });
 
-    // Position preset buttons - apply immediately and auto-save
+    // Position preset buttons — set a corner, re-render, save.
     document.querySelectorAll('.position-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.position-preset-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            // Apply position immediately
-            elements.floatingAvatar.className = `floating-avatar ${btn.dataset.position}`;
-            if (!state.settings.showAvatar) elements.floatingAvatar.classList.add('hidden');
+        btn.addEventListener('click', async () => {
+            state.settings.avatarPosition = btn.dataset.position;
+            syncAvatarPositionControls();
+            await updateFloatingAvatar();
             autoSaveSettings();
         });
     });
+
+    // Custom size slider — continuous scale beyond the presets.
+    if (elements.avatarSizeSlider) {
+        elements.avatarSizeSlider.addEventListener('input', async () => {
+            state.settings.avatarSize = String(elements.avatarSizeSlider.value);
+            syncAvatarSizeControls();
+            await updateFloatingAvatar();
+        });
+        elements.avatarSizeSlider.addEventListener('change', () => autoSaveSettings());
+    }
+
+    // Drag the floating avatar to position it freely.
+    setupAvatarDrag();
 
     // Show avatar checkbox - auto-save
     elements.showAvatar.addEventListener('change', async () => {

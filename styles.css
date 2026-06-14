@@ -1504,6 +1504,22 @@ body {
     transform: scale(0.8);
 }
 
+/* The frame is the draggable target (the wrapper stays pointer-events:none so
+   it doesn't block clicks on messages outside the box). */
+.floating-avatar .avatar-frame {
+    pointer-events: auto;
+    cursor: grab;
+    touch-action: none;
+}
+
+.floating-avatar.dragging {
+    transition: none; /* track the pointer without the 0.3s position easing */
+}
+
+.floating-avatar.dragging .avatar-frame {
+    cursor: grabbing;
+}
+
 /* Position classes */
 .floating-avatar.top-left {
     top: 20px;

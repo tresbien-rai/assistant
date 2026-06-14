@@ -290,6 +290,12 @@ When responding, you may optionally include an expression tag like [expression: 
                         <button type="button" class="size-preset-btn" data-size="large">L</button>
                         <button type="button" class="size-preset-btn" data-size="xlarge">XL</button>
                     </div>
+                    <div class="param-group avatar-size-control">
+                        <label for="avatarSizeSlider">
+                            Custom Size <span class="param-value" id="avatarSizeValue">120px</span>
+                        </label>
+                        <input type="range" id="avatarSizeSlider" min="32" max="480" step="4" value="120">
+                    </div>
 
                     <label>Avatar Position</label>
                     <div class="position-preset-buttons">
@@ -318,6 +324,8 @@ When responding, you may optionally include an expression tag like [expression: 
                             </svg>
                         </button>
                     </div>
+
+                    <p class="help-text">Tip: drag the avatar in the chat to place it anywhere. A preset above snaps it back to a corner.</p>
 
                     <div class="checkbox-wrapper">
                         <input type="checkbox" id="showAvatar" checked>
