@@ -106,6 +106,27 @@ function renderMarkdown(content) {
     return marked.parse(content);
 }
 
+// Feather-style SVG icons for message action buttons — consistent with the
+// app's other SVG buttons (send/attach/gear). stroke=currentColor so they
+// inherit the theme text color and the hover color.
+const ICON_SVG = {
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>',
+    rerun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>',
+    delete: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
+};
+
+// Single source of truth for the per-message action buttons (was duplicated in
+// the streaming and static render paths). rerunTitle differs by role.
+function messageActionsHTML(rerunTitle) {
+    return `
+        <button class="message-action-btn" data-action="copy" title="Copy" aria-label="Copy">${ICON_SVG.copy}</button>
+        <button class="message-action-btn" data-action="edit" title="Edit" aria-label="Edit">${ICON_SVG.edit}</button>
+        <button class="message-action-btn" data-action="rerun" title="${rerunTitle}" aria-label="${rerunTitle}">${ICON_SVG.rerun}</button>
+        <button class="message-action-btn danger" data-action="delete" title="Delete" aria-label="Delete">${ICON_SVG.delete}</button>
+    `;
+}
+
 // ===== UI Preferences (device-local layout settings) =====
 // Layout prefs (sidebar width, and later chat width / theme / avatar placement)
 // are intentionally per-device, so they live in localStorage rather than the
@@ -3125,12 +3146,7 @@ async function appendMessage(role, content, save = true, explicitIndex = null, a
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'message-actions';
         const rerunTitle = role === 'user' ? 'Resend' : 'Regenerate';
-        actionsDiv.innerHTML = `
-            <button class="message-action-btn" data-action="copy" title="Copy">&#128203;</button>
-            <button class="message-action-btn" data-action="edit" title="Edit">&#9998;</button>
-            <button class="message-action-btn" data-action="rerun" title="${rerunTitle}">&#128260;</button>
-            <button class="message-action-btn danger" data-action="delete" title="Delete">&#128465;</button>
-        `;
+        actionsDiv.innerHTML = messageActionsHTML(rerunTitle);
         messageDiv.appendChild(actionsDiv);
     }
 
@@ -4250,12 +4266,7 @@ async function finalizeStreamingMessage(fullText, generatedImages = [], targetCo
 
     const actionsDiv = document.createElement('div');
     actionsDiv.className = 'message-actions';
-    actionsDiv.innerHTML = `
-        <button class="message-action-btn" data-action="copy" title="Copy">&#128203;</button>
-        <button class="message-action-btn" data-action="edit" title="Edit">&#9998;</button>
-        <button class="message-action-btn" data-action="rerun" title="Regenerate">&#128260;</button>
-        <button class="message-action-btn danger" data-action="delete" title="Delete">&#128465;</button>
-    `;
+    actionsDiv.innerHTML = messageActionsHTML('Regenerate');
     state.streamingMessageDiv.appendChild(actionsDiv);
 
     // Persist to server + local state. Awaits persistMessage so the server-
