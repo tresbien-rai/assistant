@@ -214,7 +214,7 @@ function withThemeTransition(fn) {
     root.classList.add('theme-transition');
     fn();
     clearTimeout(withThemeTransition._t);
-    withThemeTransition._t = setTimeout(() => root.classList.remove('theme-transition'), 300);
+    withThemeTransition._t = setTimeout(() => root.classList.remove('theme-transition'), 480);
 }
 
 // Apply a custom accent (overrides the theme). Empty/invalid clears the override
