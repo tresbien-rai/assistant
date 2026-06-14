@@ -71,7 +71,8 @@ body {
 
 /* ===== Sidebar ===== */
 .sidebar {
-    width: var(--sidebar-width);
+    /* Cap at 85vw so a wide desktop width can't overflow a phone's drawer. */
+    width: min(var(--sidebar-width), 85vw);
     background-color: var(--bg-secondary);
     border-right: 1px solid var(--border-color);
     display: flex;
@@ -88,6 +89,42 @@ body {
 
 .sidebar.open {
     left: 0;
+}
+
+/* Sidebar resize handle — only meaningful on desktop, where the sidebar is
+   an in-flow column. Hidden on mobile (sidebar is an off-canvas overlay). */
+.sidebar-resize-handle {
+    display: none;
+}
+
+@media (min-width: 768px) {
+    .sidebar-resize-handle {
+        display: block;
+        flex: 0 0 6px;
+        align-self: stretch;
+        cursor: col-resize;
+        position: relative;
+        z-index: 50;
+        touch-action: none;
+    }
+
+    .sidebar-resize-handle::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2px;
+        background: var(--border-color);
+        transition: background 0.2s ease, width 0.2s ease;
+    }
+
+    .sidebar-resize-handle:hover::before,
+    .sidebar-resize-handle.dragging::before {
+        background: var(--accent);
+        width: 4px;
+    }
 }
 
 .sidebar-header {

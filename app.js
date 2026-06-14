@@ -106,6 +106,40 @@ function renderMarkdown(content) {
     return marked.parse(content);
 }
 
+// ===== UI Preferences (device-local layout settings) =====
+// Layout prefs (sidebar width, and later chat width / theme / avatar placement)
+// are intentionally per-device, so they live in localStorage rather than the
+// synced server settings — a phone and a desktop want different layouts.
+// All access is guarded: if localStorage is blocked (privacy mode/extensions)
+// we fall back to defaults and simply don't persist.
+const UiPrefs = {
+    KEY: 'ai_assistant_ui_prefs',
+    defaults: {
+        sidebarWidth: 320, // px; desktop sidebar column width
+    },
+    _data: null,
+    load() {
+        if (this._data) return this._data;
+        try {
+            const raw = localStorage.getItem(this.KEY);
+            this._data = raw ? { ...this.defaults, ...JSON.parse(raw) } : { ...this.defaults };
+        } catch {
+            this._data = { ...this.defaults };
+        }
+        return this._data;
+    },
+    get(key) { return this.load()[key]; },
+    set(key, value) {
+        this.load()[key] = value;
+        try { localStorage.setItem(this.KEY, JSON.stringify(this._data)); } catch { /* storage blocked */ }
+    },
+    // Push current prefs into CSS custom properties on :root.
+    apply() {
+        const d = this.load();
+        document.documentElement.style.setProperty('--sidebar-width', `${d.sidebarWidth}px`);
+    },
+};
+
 // ===== IndexedDB Image Store =====
 // Retained ONLY for transient pre-send attachment blobs (state.pendingAttachments
 // → IndexedDB → reload-resilient until send). Avatars and persona/expression
@@ -826,6 +860,10 @@ async function init() {
     if (state.activeConversationId) {
         await loadConversationMessages(state.activeConversationId);
     }
+
+    // Apply device-local layout preferences (sidebar width, etc.) before the
+    // first paint of the interactive UI.
+    UiPrefs.apply();
 
     // Wire UI after state is populated so listeners read coherent state.
     setupEventListeners();
@@ -4244,6 +4282,9 @@ function setupEventListeners() {
     elements.openSidebar.addEventListener('click', openSidebar);
     elements.closeSidebar.addEventListener('click', closeSidebar);
 
+    // Sidebar resize (desktop drag handle)
+    setupSidebarResize();
+
     // Critical banner dismiss (P0-17)
     if (elements.criticalBannerDismiss) {
         elements.criticalBannerDismiss.addEventListener('click', hideCriticalBanner);
@@ -4670,6 +4711,58 @@ function openSidebar() {
 function closeSidebar() {
     elements.sidebar.classList.remove('open');
     document.getElementById('sidebarOverlay').classList.remove('visible');
+}
+
+// Drag the handle on the sidebar's right edge to resize it (desktop only).
+// Width is clamped, persisted per-device, and reset on double-click. Persists
+// once at gesture end (not on every move) to avoid storage thrash.
+function setupSidebarResize() {
+    const handle = document.getElementById('sidebarResizeHandle');
+    if (!handle) return;
+
+    const MIN_W = 240;
+    const maxW = () => Math.min(640, Math.round(window.innerWidth * 0.5));
+    const clamp = (w) => Math.max(MIN_W, Math.min(maxW(), Math.round(w)));
+
+    let dragging = false;
+    let startX = 0;
+    let startW = 0;
+    let currentW = UiPrefs.get('sidebarWidth') || 320;
+
+    const applyLive = (w) => {
+        currentW = clamp(w);
+        document.documentElement.style.setProperty('--sidebar-width', `${currentW}px`);
+    };
+
+    handle.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        startX = e.clientX;
+        // Measure the rendered width (honors the min(var, 85vw) cap).
+        startW = elements.sidebar.getBoundingClientRect().width;
+        handle.classList.add('dragging');
+        try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        e.preventDefault();
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        applyLive(startW + (e.clientX - startX)); // drag right widens
+    });
+
+    const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('dragging');
+        try { handle.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+        UiPrefs.set('sidebarWidth', currentW); // persist once, at gesture end
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+
+    handle.addEventListener('dblclick', () => {
+        applyLive(UiPrefs.defaults.sidebarWidth);
+        UiPrefs.set('sidebarWidth', currentW);
+    });
 }
 
 // ===== Utility Functions =====
