@@ -32,7 +32,11 @@
     
     --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
-    
+
+    /* Code backgrounds (themed; syntax token colors come from highlight.js) */
+    --code-bg: rgba(0, 0, 0, 0.4);
+    --code-inline-bg: rgba(0, 0, 0, 0.3);
+
     /* Avatar sizes */
     --avatar-small: 80px;
     --avatar-medium: 120px;
@@ -55,6 +59,21 @@
     --border-color: #d9dded;
     --shadow: 0 4px 6px rgba(20, 22, 40, 0.08);
     --shadow-lg: 0 8px 32px rgba(20, 22, 40, 0.14);
+    --code-bg: #eef0f6;
+    --code-inline-bg: rgba(27, 29, 41, 0.06);
+}
+
+/* Theme cross-fade: transitions enabled only briefly while switching themes
+   (the `theme-transition` class is added by JS for ~300ms). Skipped entirely
+   for users who prefer reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+    html.theme-transition,
+    html.theme-transition *,
+    html.theme-transition *::before,
+    html.theme-transition *::after {
+        transition: background-color 0.28s ease, border-color 0.28s ease,
+                    color 0.28s ease, fill 0.28s ease, stroke 0.28s ease !important;
+    }
 }
 
 [data-theme="slate"] {
@@ -1131,7 +1150,7 @@ body {
 
 /* Inline code */
 .message-content code {
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: var(--code-inline-bg);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
@@ -1140,7 +1159,7 @@ body {
 
 /* Code blocks */
 .message-content pre {
-    background-color: rgba(0, 0, 0, 0.4);
+    background-color: var(--code-bg);
     padding: 12px;
     border-radius: var(--radius-md);
     overflow-x: auto;

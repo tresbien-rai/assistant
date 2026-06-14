@@ -191,6 +191,30 @@ function shadeHex(hex, amount) {
 function applyTheme(name) {
     const theme = THEMES.includes(name) ? name : 'midnight';
     document.documentElement.setAttribute('data-theme', theme);
+    applyCodeTheme(theme);
+}
+
+// Swap the highlight.js syntax theme: light tokens for the Light theme, dark
+// tokens otherwise. Both stylesheets are preloaded; we just toggle `disabled`.
+function applyCodeTheme(theme) {
+    const dark = document.getElementById('hljsDark');
+    const light = document.getElementById('hljsLight');
+    if (!dark || !light) return;
+    const useLight = theme === 'light';
+    dark.disabled = useLight;
+    light.disabled = !useLight;
+}
+
+// Run a theme/accent change wrapped in a short transition window so the palette
+// cross-fades instead of snapping. Transitions are enabled only while the
+// `theme-transition` class is present (see CSS), so normal interactions aren't
+// affected, and we never add it on load (no flash).
+function withThemeTransition(fn) {
+    const root = document.documentElement;
+    root.classList.add('theme-transition');
+    fn();
+    clearTimeout(withThemeTransition._t);
+    withThemeTransition._t = setTimeout(() => root.classList.remove('theme-transition'), 300);
 }
 
 // Apply a custom accent (overrides the theme). Empty/invalid clears the override
@@ -4579,7 +4603,7 @@ function setupEventListeners() {
     document.querySelectorAll('#themeOptions button').forEach(btn => {
         btn.addEventListener('click', () => {
             UiPrefs.set('theme', btn.dataset.themeName);
-            applyTheme(btn.dataset.themeName);
+            withThemeTransition(() => applyTheme(btn.dataset.themeName));
             syncAppearanceControls();
         });
     });
@@ -4593,13 +4617,13 @@ function setupEventListeners() {
     if (elements.accentPicker) {
         elements.accentPicker.addEventListener('input', () => {
             UiPrefs.set('accent', elements.accentPicker.value);
-            applyAccent(elements.accentPicker.value);
+            withThemeTransition(() => applyAccent(elements.accentPicker.value));
         });
     }
     if (elements.accentResetBtn) {
         elements.accentResetBtn.addEventListener('click', () => {
             UiPrefs.set('accent', '');
-            applyAccent('');
+            withThemeTransition(() => applyAccent(''));
             syncAppearanceControls();
         });
     }
