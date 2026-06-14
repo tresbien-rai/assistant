@@ -115,7 +115,10 @@ function renderMarkdown(content) {
 const UiPrefs = {
     KEY: 'ai_assistant_ui_prefs',
     defaults: {
-        sidebarWidth: 320, // px; desktop sidebar column width
+        sidebarWidth: 320,        // px; desktop sidebar column width
+        theme: 'midnight',        // midnight | light | slate
+        accent: '',               // '' = use the theme's default accent
+        chatWidth: 'comfortable', // narrow | comfortable | wide
     },
     _data: null,
     load() {
@@ -133,12 +136,76 @@ const UiPrefs = {
         this.load()[key] = value;
         try { localStorage.setItem(this.KEY, JSON.stringify(this._data)); } catch { /* storage blocked */ }
     },
-    // Push current prefs into CSS custom properties on :root.
+    // Push current prefs into CSS custom properties / theme attribute on :root.
     apply() {
         const d = this.load();
         document.documentElement.style.setProperty('--sidebar-width', `${d.sidebarWidth}px`);
+        applyTheme(d.theme);
+        applyAccent(d.accent);
+        applyChatWidth(d.chatWidth);
     },
 };
+
+// ===== Appearance: themes, accent color, chat width (device-local) =====
+const THEMES = ['midnight', 'light', 'slate'];
+const CHAT_WIDTHS = { narrow: 620, comfortable: 780, wide: 1040 };
+const DEFAULT_ACCENT = '#6c63ff';
+
+function hexToRgb(hex) {
+    const h = String(hex || '').replace('#', '');
+    const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    const n = parseInt(full, 16);
+    if (!Number.isFinite(n) || full.length !== 6) return null;
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('');
+}
+function shadeHex(hex, amount) {
+    const c = hexToRgb(hex);
+    if (!c) return hex;
+    return rgbToHex(c.r + c.r * amount, c.g + c.g * amount, c.b + c.b * amount);
+}
+
+function applyTheme(name) {
+    const theme = THEMES.includes(name) ? name : 'midnight';
+    document.documentElement.setAttribute('data-theme', theme);
+}
+
+// Apply a custom accent (overrides the theme). Empty/invalid clears the override
+// so the theme's default accent applies.
+function applyAccent(hex) {
+    const root = document.documentElement;
+    const rgb = hex ? hexToRgb(hex) : null;
+    if (!rgb) {
+        root.style.removeProperty('--accent');
+        root.style.removeProperty('--accent-hover');
+        root.style.removeProperty('--accent-subtle');
+        return;
+    }
+    root.style.setProperty('--accent', hex);
+    root.style.setProperty('--accent-hover', shadeHex(hex, -0.15));
+    root.style.setProperty('--accent-subtle', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`);
+}
+
+function applyChatWidth(name) {
+    const px = CHAT_WIDTHS[name] || CHAT_WIDTHS.comfortable;
+    document.documentElement.style.setProperty('--chat-max-width', `${px}px`);
+}
+
+// Reflect current appearance prefs into the settings-modal controls.
+function syncAppearanceControls() {
+    const d = UiPrefs.load();
+    const theme = THEMES.includes(d.theme) ? d.theme : 'midnight';
+    const width = CHAT_WIDTHS[d.chatWidth] ? d.chatWidth : 'comfortable';
+    document.querySelectorAll('#themeOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.themeName === theme);
+    });
+    document.querySelectorAll('#chatWidthOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.chatWidth === width);
+    });
+    if (elements.accentPicker) elements.accentPicker.value = d.accent || DEFAULT_ACCENT;
+}
 
 // ===== IndexedDB Image Store =====
 // Retained ONLY for transient pre-send attachment blobs (state.pendingAttachments
@@ -710,6 +777,10 @@ const elements = {
     closeSettingsModal: document.getElementById('closeSettingsModal'),
     openSettingsBtn: document.getElementById('openSettingsBtn'),
 
+    // Appearance controls
+    accentPicker: document.getElementById('accentPicker'),
+    accentResetBtn: document.getElementById('accentResetBtn'),
+
     // Chats tab elements
     personaFilter: document.getElementById('personaFilter'),
     newChatBtn: document.getElementById('newChatBtn'),
@@ -867,9 +938,8 @@ async function init() {
         await loadConversationMessages(state.activeConversationId);
     }
 
-    // Apply device-local layout preferences (sidebar width, etc.) before the
-    // first paint of the interactive UI.
-    UiPrefs.apply();
+    // (Appearance/layout prefs are applied early in bootstrap so they cover the
+    // login screen too — no need to re-apply here.)
 
     // Wire UI after state is populated so listeners read coherent state.
     setupEventListeners();
@@ -1311,6 +1381,9 @@ async function updateUI() {
     // Reflect avatar size (presets + slider) and position (presets) into the UI.
     syncAvatarSizeControls();
     syncAvatarPositionControls();
+
+    // Reflect appearance prefs (theme / accent / chat width) into the controls.
+    syncAppearanceControls();
 
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
@@ -4491,6 +4564,35 @@ function setupEventListeners() {
         }
     });
 
+    // Appearance: theme / accent / chat width (device-local, applied live)
+    document.querySelectorAll('#themeOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('theme', btn.dataset.themeName);
+            applyTheme(btn.dataset.themeName);
+            syncAppearanceControls();
+        });
+    });
+    document.querySelectorAll('#chatWidthOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('chatWidth', btn.dataset.chatWidth);
+            applyChatWidth(btn.dataset.chatWidth);
+            syncAppearanceControls();
+        });
+    });
+    if (elements.accentPicker) {
+        elements.accentPicker.addEventListener('input', () => {
+            UiPrefs.set('accent', elements.accentPicker.value);
+            applyAccent(elements.accentPicker.value);
+        });
+    }
+    if (elements.accentResetBtn) {
+        elements.accentResetBtn.addEventListener('click', () => {
+            UiPrefs.set('accent', '');
+            applyAccent('');
+            syncAppearanceControls();
+        });
+    }
+
     // Chats tab controls
     elements.newChatBtn.addEventListener('click', startNewConversation);
     elements.personaFilter.addEventListener('change', (e) => {
@@ -5109,6 +5211,11 @@ function consumeAuthCallbackParams() {
  * Decides between login screen and main app based on session state.
  */
 async function bootstrap() {
+    // Apply device-local appearance prefs (theme/accent/chat width/sidebar) as
+    // early as possible so the login screen and app render in the chosen theme
+    // without a flash of the default.
+    UiPrefs.apply();
+
     // Wire static event listeners that exist regardless of auth state.
     const loginBtn = document.getElementById('googleSignInBtn');
     if (loginBtn) loginBtn.addEventListener('click', handleLoginClick);

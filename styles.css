@@ -9,7 +9,7 @@
     --accent: #6c63ff;
     --accent-hover: #5a52d9;
     --accent-subtle: rgba(108, 99, 255, 0.2);
-    --user-bubble: #6c63ff;
+    --user-bubble: var(--accent); /* follows the accent color */
     --assistant-bubble: #2d2d44;
     --border-color: #2d2d44;
     --error: #ff6b6b;
@@ -38,6 +38,99 @@
     --avatar-medium: 120px;
     --avatar-large: 180px;
     --avatar-xlarge: 240px;
+}
+
+/* ===== Themes (device-local; applied via data-theme on <html>) ===== */
+/* Midnight is the default (:root above). Light and Slate override the palette;
+   --accent stays unless the user picks a custom accent (set inline by JS). */
+[data-theme="light"] {
+    --bg-primary: #f4f6fb;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #eaecf3;
+    --text-primary: #1b1d29;
+    --text-secondary: #565a6e;
+    --text-muted: #8a8fa3;
+    --accent-subtle: rgba(108, 99, 255, 0.12);
+    --assistant-bubble: #eceefb;
+    --border-color: #d9dded;
+    --shadow: 0 4px 6px rgba(20, 22, 40, 0.08);
+    --shadow-lg: 0 8px 32px rgba(20, 22, 40, 0.14);
+}
+
+[data-theme="slate"] {
+    --bg-primary: #1e2229;
+    --bg-secondary: #262b33;
+    --bg-tertiary: #171a20;
+    --text-primary: #e6e8ec;
+    --text-secondary: #9aa1ad;
+    --text-muted: #6b7280;
+    --assistant-bubble: #2b313b;
+    --border-color: #343a45;
+}
+
+/* ===== Appearance controls (theme / accent / chat width) ===== */
+.appearance-options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.appearance-options button {
+    flex: 1;
+    min-width: 72px;
+    padding: 8px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.appearance-options button:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.appearance-options button.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.accent-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.accent-row input[type="color"] {
+    width: 48px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: none;
+    cursor: pointer;
+}
+
+.accent-reset-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.accent-reset-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
 }
 
 /* ===== Reset & Base ===== */

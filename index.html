@@ -74,6 +74,32 @@
                     <button class="modal-close" id="closeSettingsModal" aria-label="Close settings">×</button>
                 </div>
                 <div class="settings-modal-body">
+                <!-- Appearance (device-local) -->
+                <div class="settings-section">
+                    <h3>Appearance</h3>
+                    <p class="section-note">Saved on this device.</p>
+
+                    <label>Theme</label>
+                    <div class="appearance-options" id="themeOptions">
+                        <button type="button" data-theme-name="midnight">Midnight</button>
+                        <button type="button" data-theme-name="light">Light</button>
+                        <button type="button" data-theme-name="slate">Slate</button>
+                    </div>
+
+                    <label for="accentPicker">Accent Color</label>
+                    <div class="accent-row">
+                        <input type="color" id="accentPicker" value="#6c63ff" aria-label="Accent color">
+                        <button type="button" class="accent-reset-btn" id="accentResetBtn">Reset</button>
+                    </div>
+
+                    <label>Chat Width</label>
+                    <div class="appearance-options" id="chatWidthOptions">
+                        <button type="button" data-chat-width="narrow">Narrow</button>
+                        <button type="button" data-chat-width="comfortable">Comfortable</button>
+                        <button type="button" data-chat-width="wide">Wide</button>
+                    </div>
+                </div>
+
                 <!-- Model Settings (per-persona) -->
                 <div class="settings-section">
                     <h3>Model Settings</h3>
