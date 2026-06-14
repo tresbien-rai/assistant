@@ -703,8 +703,12 @@ const elements = {
 
     // Sidebar tabs
     chatsTab: document.getElementById('chatsTab'),
-    settingsTab: document.getElementById('settingsTab'),
     personasTab: document.getElementById('personasTab'),
+
+    // Settings modal (relocated out of the sidebar)
+    settingsModal: document.getElementById('settingsModal'),
+    closeSettingsModal: document.getElementById('closeSettingsModal'),
+    openSettingsBtn: document.getElementById('openSettingsBtn'),
 
     // Chats tab elements
     personaFilter: document.getElementById('personaFilter'),
@@ -2302,6 +2306,21 @@ function closeModelModal() {
 }
 
 /**
+ * Open the settings modal (relocated out of the sidebar). The form fields are
+ * kept current by updateUI on every state change, so no refresh is needed here.
+ */
+function openSettingsModal() {
+    if (!elements.settingsModal) return;
+    closeSidebar(); // close the mobile drawer if it's open
+    elements.settingsModal.classList.add('visible');
+}
+
+function closeSettingsModal() {
+    if (!elements.settingsModal) return;
+    elements.settingsModal.classList.remove('visible');
+}
+
+/**
  * Handle fetch models button click
  */
 async function handleFetchModels() {
@@ -2792,7 +2811,7 @@ function editPersona(personaId) {
     state.activePersonaId = personaId;
     savePersonas();
     updateUI();
-    switchTab('settings');
+    openSettingsModal();
 }
 
 /**
@@ -4450,6 +4469,28 @@ function setupEventListeners() {
         });
     });
 
+    // Settings modal: relocate it to <body> so it overlays as a top-level
+    // element rather than living inside the sidebar's stacking context.
+    if (elements.settingsModal && elements.settingsModal.parentElement !== document.body) {
+        document.body.appendChild(elements.settingsModal);
+    }
+    if (elements.openSettingsBtn) {
+        elements.openSettingsBtn.addEventListener('click', openSettingsModal);
+    }
+    if (elements.closeSettingsModal) {
+        elements.closeSettingsModal.addEventListener('click', closeSettingsModal);
+    }
+    if (elements.settingsModal) {
+        elements.settingsModal.addEventListener('click', (e) => {
+            if (e.target === elements.settingsModal) closeSettingsModal();
+        });
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && elements.settingsModal && elements.settingsModal.classList.contains('visible')) {
+            closeSettingsModal();
+        }
+    });
+
     // Chats tab controls
     elements.newChatBtn.addEventListener('click', startNewConversation);
     elements.personaFilter.addEventListener('change', (e) => {
@@ -4868,12 +4909,14 @@ function createSidebarOverlay() {
 
 function openSidebar() {
     elements.sidebar.classList.add('open');
-    document.getElementById('sidebarOverlay').classList.add('visible');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) overlay.classList.add('visible');
 }
 
 function closeSidebar() {
     elements.sidebar.classList.remove('open');
-    document.getElementById('sidebarOverlay').classList.remove('visible');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) overlay.classList.remove('visible');
 }
 
 // Drag the handle on the sidebar's right edge to resize it (desktop only).

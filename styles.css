@@ -1825,6 +1825,33 @@ body {
     max-width: 600px;
 }
 
+/* Settings modal: roomy, with a fixed header and a scrolling body. */
+.modal-content.modal-settings {
+    max-width: 680px;
+    width: 92vw;
+    max-height: 88vh;
+    overflow: hidden; /* the body scrolls instead of the whole content */
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-content.modal-settings .modal-header {
+    flex-shrink: 0;
+}
+
+.settings-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* The settings sections were styled for the sidebar; the first one shouldn't
+   add a top border/gap at the top of the modal body. */
+.settings-modal-body .settings-section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
 .manage-models-btn {
     width: 100%;
     padding: 8px 12px;
