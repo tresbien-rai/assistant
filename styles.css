@@ -9,7 +9,7 @@
     --accent: #6c63ff;
     --accent-hover: #5a52d9;
     --accent-subtle: rgba(108, 99, 255, 0.2);
-    --user-bubble: #6c63ff;
+    --user-bubble: var(--accent); /* follows the accent color */
     --assistant-bubble: #2d2d44;
     --border-color: #2d2d44;
     --error: #ff6b6b;
@@ -38,6 +38,99 @@
     --avatar-medium: 120px;
     --avatar-large: 180px;
     --avatar-xlarge: 240px;
+}
+
+/* ===== Themes (device-local; applied via data-theme on <html>) ===== */
+/* Midnight is the default (:root above). Light and Slate override the palette;
+   --accent stays unless the user picks a custom accent (set inline by JS). */
+[data-theme="light"] {
+    --bg-primary: #f4f6fb;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #eaecf3;
+    --text-primary: #1b1d29;
+    --text-secondary: #565a6e;
+    --text-muted: #8a8fa3;
+    --accent-subtle: rgba(108, 99, 255, 0.12);
+    --assistant-bubble: #eceefb;
+    --border-color: #d9dded;
+    --shadow: 0 4px 6px rgba(20, 22, 40, 0.08);
+    --shadow-lg: 0 8px 32px rgba(20, 22, 40, 0.14);
+}
+
+[data-theme="slate"] {
+    --bg-primary: #1e2229;
+    --bg-secondary: #262b33;
+    --bg-tertiary: #171a20;
+    --text-primary: #e6e8ec;
+    --text-secondary: #9aa1ad;
+    --text-muted: #6b7280;
+    --assistant-bubble: #2b313b;
+    --border-color: #343a45;
+}
+
+/* ===== Appearance controls (theme / accent / chat width) ===== */
+.appearance-options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.appearance-options button {
+    flex: 1;
+    min-width: 72px;
+    padding: 8px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.appearance-options button:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.appearance-options button.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.accent-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.accent-row input[type="color"] {
+    width: 48px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: none;
+    cursor: pointer;
+}
+
+.accent-reset-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.accent-reset-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
 }
 
 /* ===== Reset & Base ===== */
@@ -71,7 +164,8 @@ body {
 
 /* ===== Sidebar ===== */
 .sidebar {
-    width: var(--sidebar-width);
+    /* Cap at 85vw so a wide desktop width can't overflow a phone's drawer. */
+    width: min(var(--sidebar-width), 85vw);
     background-color: var(--bg-secondary);
     border-right: 1px solid var(--border-color);
     display: flex;
@@ -88,6 +182,42 @@ body {
 
 .sidebar.open {
     left: 0;
+}
+
+/* Sidebar resize handle — only meaningful on desktop, where the sidebar is
+   an in-flow column. Hidden on mobile (sidebar is an off-canvas overlay). */
+.sidebar-resize-handle {
+    display: none;
+}
+
+@media (min-width: 768px) {
+    .sidebar-resize-handle {
+        display: block;
+        flex: 0 0 6px;
+        align-self: stretch;
+        cursor: col-resize;
+        position: relative;
+        z-index: 50;
+        touch-action: none;
+    }
+
+    .sidebar-resize-handle::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2px;
+        background: var(--border-color);
+        transition: background 0.2s ease, width 0.2s ease;
+    }
+
+    .sidebar-resize-handle:hover::before,
+    .sidebar-resize-handle.dragging::before {
+        background: var(--accent);
+        width: 4px;
+    }
 }
 
 .sidebar-header {
@@ -1467,6 +1597,22 @@ body {
     transform: scale(0.8);
 }
 
+/* The frame is the draggable target (the wrapper stays pointer-events:none so
+   it doesn't block clicks on messages outside the box). */
+.floating-avatar .avatar-frame {
+    pointer-events: auto;
+    cursor: grab;
+    touch-action: none;
+}
+
+.floating-avatar.dragging {
+    transition: none; /* track the pointer without the 0.3s position easing */
+}
+
+.floating-avatar.dragging .avatar-frame {
+    cursor: grabbing;
+}
+
 /* Position classes */
 .floating-avatar.top-left {
     top: 20px;
@@ -1770,6 +1916,33 @@ body {
 /* ===== Model Management Modal ===== */
 .modal-large {
     max-width: 600px;
+}
+
+/* Settings modal: roomy, with a fixed header and a scrolling body. */
+.modal-content.modal-settings {
+    max-width: 680px;
+    width: 92vw;
+    max-height: 88vh;
+    overflow: hidden; /* the body scrolls instead of the whole content */
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-content.modal-settings .modal-header {
+    flex-shrink: 0;
+}
+
+.settings-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* The settings sections were styled for the sidebar; the first one shouldn't
+   add a top border/gap at the top of the modal body. */
+.settings-modal-body .settings-section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
 }
 
 .manage-models-btn {

@@ -106,6 +106,107 @@ function renderMarkdown(content) {
     return marked.parse(content);
 }
 
+// ===== UI Preferences (device-local layout settings) =====
+// Layout prefs (sidebar width, and later chat width / theme / avatar placement)
+// are intentionally per-device, so they live in localStorage rather than the
+// synced server settings — a phone and a desktop want different layouts.
+// All access is guarded: if localStorage is blocked (privacy mode/extensions)
+// we fall back to defaults and simply don't persist.
+const UiPrefs = {
+    KEY: 'ai_assistant_ui_prefs',
+    defaults: {
+        sidebarWidth: 320,        // px; desktop sidebar column width
+        theme: 'midnight',        // midnight | light | slate
+        accent: '',               // '' = use the theme's default accent
+        chatWidth: 'comfortable', // narrow | comfortable | wide
+    },
+    _data: null,
+    load() {
+        if (this._data) return this._data;
+        try {
+            const raw = localStorage.getItem(this.KEY);
+            this._data = raw ? { ...this.defaults, ...JSON.parse(raw) } : { ...this.defaults };
+        } catch {
+            this._data = { ...this.defaults };
+        }
+        return this._data;
+    },
+    get(key) { return this.load()[key]; },
+    set(key, value) {
+        this.load()[key] = value;
+        try { localStorage.setItem(this.KEY, JSON.stringify(this._data)); } catch { /* storage blocked */ }
+    },
+    // Push current prefs into CSS custom properties / theme attribute on :root.
+    apply() {
+        const d = this.load();
+        document.documentElement.style.setProperty('--sidebar-width', `${d.sidebarWidth}px`);
+        applyTheme(d.theme);
+        applyAccent(d.accent);
+        applyChatWidth(d.chatWidth);
+    },
+};
+
+// ===== Appearance: themes, accent color, chat width (device-local) =====
+const THEMES = ['midnight', 'light', 'slate'];
+const CHAT_WIDTHS = { narrow: 620, comfortable: 780, wide: 1040 };
+const DEFAULT_ACCENT = '#6c63ff';
+
+function hexToRgb(hex) {
+    const h = String(hex || '').replace('#', '');
+    const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    const n = parseInt(full, 16);
+    if (!Number.isFinite(n) || full.length !== 6) return null;
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('');
+}
+function shadeHex(hex, amount) {
+    const c = hexToRgb(hex);
+    if (!c) return hex;
+    return rgbToHex(c.r + c.r * amount, c.g + c.g * amount, c.b + c.b * amount);
+}
+
+function applyTheme(name) {
+    const theme = THEMES.includes(name) ? name : 'midnight';
+    document.documentElement.setAttribute('data-theme', theme);
+}
+
+// Apply a custom accent (overrides the theme). Empty/invalid clears the override
+// so the theme's default accent applies.
+function applyAccent(hex) {
+    const root = document.documentElement;
+    const rgb = hex ? hexToRgb(hex) : null;
+    if (!rgb) {
+        root.style.removeProperty('--accent');
+        root.style.removeProperty('--accent-hover');
+        root.style.removeProperty('--accent-subtle');
+        return;
+    }
+    root.style.setProperty('--accent', hex);
+    root.style.setProperty('--accent-hover', shadeHex(hex, -0.15));
+    root.style.setProperty('--accent-subtle', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`);
+}
+
+function applyChatWidth(name) {
+    const px = CHAT_WIDTHS[name] || CHAT_WIDTHS.comfortable;
+    document.documentElement.style.setProperty('--chat-max-width', `${px}px`);
+}
+
+// Reflect current appearance prefs into the settings-modal controls.
+function syncAppearanceControls() {
+    const d = UiPrefs.load();
+    const theme = THEMES.includes(d.theme) ? d.theme : 'midnight';
+    const width = CHAT_WIDTHS[d.chatWidth] ? d.chatWidth : 'comfortable';
+    document.querySelectorAll('#themeOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.themeName === theme);
+    });
+    document.querySelectorAll('#chatWidthOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.chatWidth === width);
+    });
+    if (elements.accentPicker) elements.accentPicker.value = d.accent || DEFAULT_ACCENT;
+}
+
 // ===== IndexedDB Image Store =====
 // Retained ONLY for transient pre-send attachment blobs (state.pendingAttachments
 // → IndexedDB → reload-resilient until send). Avatars and persona/expression
@@ -669,8 +770,16 @@ const elements = {
 
     // Sidebar tabs
     chatsTab: document.getElementById('chatsTab'),
-    settingsTab: document.getElementById('settingsTab'),
     personasTab: document.getElementById('personasTab'),
+
+    // Settings modal (relocated out of the sidebar)
+    settingsModal: document.getElementById('settingsModal'),
+    closeSettingsModal: document.getElementById('closeSettingsModal'),
+    openSettingsBtn: document.getElementById('openSettingsBtn'),
+
+    // Appearance controls
+    accentPicker: document.getElementById('accentPicker'),
+    accentResetBtn: document.getElementById('accentResetBtn'),
 
     // Chats tab elements
     personaFilter: document.getElementById('personaFilter'),
@@ -786,6 +895,8 @@ const elements = {
     // Floating avatar
     floatingAvatar: document.getElementById('floatingAvatar'),
     avatarImage: document.getElementById('avatarImage'),
+    avatarSizeSlider: document.getElementById('avatarSizeSlider'),
+    avatarSizeValue: document.getElementById('avatarSizeValue'),
     avatarEmoji: document.getElementById('avatarEmoji'),
     avatarImg: document.getElementById('avatarImg'),
     floatingAvatarName: document.getElementById('floatingAvatarName'),
@@ -826,6 +937,9 @@ async function init() {
     if (state.activeConversationId) {
         await loadConversationMessages(state.activeConversationId);
     }
+
+    // (Appearance/layout prefs are applied early in bootstrap so they cover the
+    // login screen too — no need to re-apply here.)
 
     // Wire UI after state is populated so listeners read coherent state.
     setupEventListeners();
@@ -1071,12 +1185,10 @@ function saveAllSettingsFromUI() {
         lastTypedApiKey[currentProvider] = '';
     }
 
-    // Avatar settings (stay global)
+    // Avatar visibility is read here; size/position are kept authoritative in
+    // state by their own controls (presets, the size slider, and drag), so we
+    // don't read the preset buttons — that would clobber a free value.
     state.settings.showAvatar = elements.showAvatar.checked;
-    const activeSize = document.querySelector('.size-preset-btn.active');
-    if (activeSize) state.settings.avatarSize = activeSize.dataset.size;
-    const activePos = document.querySelector('.position-preset-btn.active');
-    if (activePos) state.settings.avatarPosition = activePos.dataset.position;
 
     // Model parameters (save to active persona)
     saveModelParamsFromUI();
@@ -1266,15 +1378,12 @@ async function updateUI() {
     // Load model parameters to UI (from active persona's modelConfig)
     loadModelParamsToUI();
 
-    // Update size preset buttons
-    document.querySelectorAll('.size-preset-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.size === state.settings.avatarSize);
-    });
+    // Reflect avatar size (presets + slider) and position (presets) into the UI.
+    syncAvatarSizeControls();
+    syncAvatarPositionControls();
 
-    // Update position preset buttons
-    document.querySelectorAll('.position-preset-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.position === state.settings.avatarPosition);
-    });
+    // Reflect appearance prefs (theme / accent / chat width) into the controls.
+    syncAppearanceControls();
 
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
@@ -1540,23 +1649,182 @@ function updateAvatarPreview() {
     }
 }
 
+// ===== Floating avatar size/position (named presets OR free values) =====
+// avatarSize: a preset name OR a numeric px string. avatarPosition: a corner
+// preset OR "x,y" where x,y are 0..100 fractions of the AVAILABLE travel
+// (chat area minus the avatar), so a synced free position stays in-bounds
+// across different screen sizes.
+const AVATAR_PRESET_PX = { small: 80, medium: 120, large: 180, xlarge: 240 };
+const AVATAR_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const AVATAR_SIZE_MIN = 32;
+const AVATAR_SIZE_MAX = 480;
+const AVATAR_FONT_RATIO = 0.025; // px → rem for the emoji (120px → 3rem, matches presets)
+
+function isAvatarPreset(size) {
+    return Object.prototype.hasOwnProperty.call(AVATAR_PRESET_PX, size);
+}
+function isAvatarCorner(pos) {
+    return AVATAR_CORNERS.includes(pos);
+}
+function avatarSizeToPx(size) {
+    if (isAvatarPreset(size)) return AVATAR_PRESET_PX[size];
+    const n = parseInt(size, 10);
+    if (!Number.isFinite(n)) return AVATAR_PRESET_PX.medium;
+    return Math.max(AVATAR_SIZE_MIN, Math.min(AVATAR_SIZE_MAX, n));
+}
+function parseAvatarFreePos(pos) {
+    if (typeof pos !== 'string') return null;
+    const parts = pos.split(',');
+    if (parts.length !== 2) return null;
+    const x = parseFloat(parts[0]);
+    const y = parseFloat(parts[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+}
+
+function applyAvatarSize(image, size) {
+    if (isAvatarPreset(size)) {
+        image.className = `avatar-image size-${size}`;
+        image.style.width = '';
+        image.style.height = '';
+        image.style.fontSize = '';
+    } else {
+        const px = avatarSizeToPx(size);
+        image.className = 'avatar-image';
+        image.style.width = `${px}px`;
+        image.style.height = `${px}px`;
+        image.style.fontSize = `${px * AVATAR_FONT_RATIO}rem`;
+    }
+}
+
+function applyAvatarPosition(avatar, pos) {
+    const free = isAvatarCorner(pos) ? null : parseAvatarFreePos(pos);
+    if (!free) {
+        const corner = isAvatarCorner(pos) ? pos : CONFIG.defaults.avatarPosition;
+        avatar.className = `floating-avatar ${corner}`;
+        avatar.style.left = '';
+        avatar.style.top = '';
+        avatar.style.right = '';
+        avatar.style.bottom = '';
+        return;
+    }
+    avatar.className = 'floating-avatar';
+    const chatArea = document.getElementById('chatArea');
+    const cRect = chatArea.getBoundingClientRect();
+    const aRect = avatar.getBoundingClientRect();
+    const maxLeft = Math.max(0, cRect.width - aRect.width);
+    const maxTop = Math.max(0, cRect.height - aRect.height);
+    avatar.style.left = `${(free.x / 100) * maxLeft}px`;
+    avatar.style.top = `${(free.y / 100) * maxTop}px`;
+    avatar.style.right = 'auto';
+    avatar.style.bottom = 'auto';
+}
+
+// Reflect the current avatar size into the preset buttons + the slider/value.
+function syncAvatarSizeControls() {
+    const size = state.settings.avatarSize;
+    document.querySelectorAll('.size-preset-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.size === size);
+    });
+    const px = avatarSizeToPx(size);
+    if (elements.avatarSizeSlider) elements.avatarSizeSlider.value = String(px);
+    if (elements.avatarSizeValue) elements.avatarSizeValue.textContent = `${px}px`;
+}
+
+// Reflect the current avatar position into the corner preset buttons (none
+// active when the avatar is freely placed).
+function syncAvatarPositionControls() {
+    const pos = state.settings.avatarPosition;
+    document.querySelectorAll('.position-preset-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.position === pos);
+    });
+}
+
+// Drag the floating avatar (by its frame) to position it freely within the
+// chat area. The result is stored as "x,y" % of available travel and saved.
+function setupAvatarDrag() {
+    const avatar = elements.floatingAvatar;
+    if (!avatar) return;
+    const frame = avatar.querySelector('.avatar-frame');
+    const chatArea = document.getElementById('chatArea');
+    if (!frame || !chatArea) return;
+
+    let dragging = false;
+    let moved = false;
+    let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+    frame.addEventListener('pointerdown', (e) => {
+        if (!state.settings.showAvatar) return;
+        dragging = true;
+        moved = false;
+        const aRect = avatar.getBoundingClientRect();
+        const cRect = chatArea.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = aRect.left - cRect.left;
+        startTop = aRect.top - cRect.top;
+        avatar.classList.add('dragging');
+        try { frame.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        e.preventDefault();
+    });
+
+    frame.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        moved = true;
+        const cRect = chatArea.getBoundingClientRect();
+        const aRect = avatar.getBoundingClientRect();
+        const maxLeft = Math.max(0, cRect.width - aRect.width);
+        const maxTop = Math.max(0, cRect.height - aRect.height);
+        const left = Math.max(0, Math.min(maxLeft, startLeft + (e.clientX - startX)));
+        const top = Math.max(0, Math.min(maxTop, startTop + (e.clientY - startY)));
+        // Drop any corner preset but keep the base + dragging classes.
+        avatar.classList.remove('top-left', 'top-right', 'bottom-left', 'bottom-right');
+        avatar.style.left = `${left}px`;
+        avatar.style.top = `${top}px`;
+        avatar.style.right = 'auto';
+        avatar.style.bottom = 'auto';
+    });
+
+    const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        avatar.classList.remove('dragging');
+        try { frame.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+        if (!moved) return;
+        const cRect = chatArea.getBoundingClientRect();
+        const aRect = avatar.getBoundingClientRect();
+        const maxLeft = Math.max(1, cRect.width - aRect.width);
+        const maxTop = Math.max(1, cRect.height - aRect.height);
+        const xPct = Math.max(0, Math.min(100, ((aRect.left - cRect.left) / maxLeft) * 100));
+        const yPct = Math.max(0, Math.min(100, ((aRect.top - cRect.top) / maxTop) * 100));
+        state.settings.avatarPosition = `${xPct.toFixed(2)},${yPct.toFixed(2)}`;
+        syncAvatarPositionControls();
+        autoSaveSettings();
+    };
+    frame.addEventListener('pointerup', endDrag);
+    frame.addEventListener('pointercancel', endDrag);
+
+    // Re-clamp a freely-placed avatar when the viewport size changes.
+    window.addEventListener('resize', () => {
+        if (!isAvatarCorner(state.settings.avatarPosition)) {
+            applyAvatarPosition(avatar, state.settings.avatarPosition);
+        }
+    });
+}
+
 async function updateFloatingAvatar() {
     const avatar = elements.floatingAvatar;
     const image = elements.avatarImage;
     const persona = getActivePersona();
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
-    // Show/hide avatar
+    // Size first, so the avatar has correct dimensions before we position it.
+    applyAvatarSize(image, state.settings.avatarSize);
+
+    // Position (preset corner OR free "x,y"). This resets the wrapper's
+    // className, so apply the hidden state afterwards.
+    applyAvatarPosition(avatar, state.settings.avatarPosition);
     avatar.classList.toggle('hidden', !state.settings.showAvatar);
-
-    // Update position
-    avatar.className = `floating-avatar ${state.settings.avatarPosition}`;
-    if (!state.settings.showAvatar) {
-        avatar.classList.add('hidden');
-    }
-
-    // Update size
-    image.className = `avatar-image size-${state.settings.avatarSize}`;
 
     // Update image or emoji.
     // Priority: expression image > default avatar > emoji.
@@ -2111,6 +2379,21 @@ function closeModelModal() {
 }
 
 /**
+ * Open the settings modal (relocated out of the sidebar). The form fields are
+ * kept current by updateUI on every state change, so no refresh is needed here.
+ */
+function openSettingsModal() {
+    if (!elements.settingsModal) return;
+    closeSidebar(); // close the mobile drawer if it's open
+    elements.settingsModal.classList.add('visible');
+}
+
+function closeSettingsModal() {
+    if (!elements.settingsModal) return;
+    elements.settingsModal.classList.remove('visible');
+}
+
+/**
  * Handle fetch models button click
  */
 async function handleFetchModels() {
@@ -2601,7 +2884,7 @@ function editPersona(personaId) {
     state.activePersonaId = personaId;
     savePersonas();
     updateUI();
-    switchTab('settings');
+    openSettingsModal();
 }
 
 /**
@@ -4244,6 +4527,9 @@ function setupEventListeners() {
     elements.openSidebar.addEventListener('click', openSidebar);
     elements.closeSidebar.addEventListener('click', closeSidebar);
 
+    // Sidebar resize (desktop drag handle)
+    setupSidebarResize();
+
     // Critical banner dismiss (P0-17)
     if (elements.criticalBannerDismiss) {
         elements.criticalBannerDismiss.addEventListener('click', hideCriticalBanner);
@@ -4255,6 +4541,57 @@ function setupEventListeners() {
             switchTab(tab.dataset.tab);
         });
     });
+
+    // Settings modal: relocate it to <body> so it overlays as a top-level
+    // element rather than living inside the sidebar's stacking context.
+    if (elements.settingsModal && elements.settingsModal.parentElement !== document.body) {
+        document.body.appendChild(elements.settingsModal);
+    }
+    if (elements.openSettingsBtn) {
+        elements.openSettingsBtn.addEventListener('click', openSettingsModal);
+    }
+    if (elements.closeSettingsModal) {
+        elements.closeSettingsModal.addEventListener('click', closeSettingsModal);
+    }
+    if (elements.settingsModal) {
+        elements.settingsModal.addEventListener('click', (e) => {
+            if (e.target === elements.settingsModal) closeSettingsModal();
+        });
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && elements.settingsModal && elements.settingsModal.classList.contains('visible')) {
+            closeSettingsModal();
+        }
+    });
+
+    // Appearance: theme / accent / chat width (device-local, applied live)
+    document.querySelectorAll('#themeOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('theme', btn.dataset.themeName);
+            applyTheme(btn.dataset.themeName);
+            syncAppearanceControls();
+        });
+    });
+    document.querySelectorAll('#chatWidthOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('chatWidth', btn.dataset.chatWidth);
+            applyChatWidth(btn.dataset.chatWidth);
+            syncAppearanceControls();
+        });
+    });
+    if (elements.accentPicker) {
+        elements.accentPicker.addEventListener('input', () => {
+            UiPrefs.set('accent', elements.accentPicker.value);
+            applyAccent(elements.accentPicker.value);
+        });
+    }
+    if (elements.accentResetBtn) {
+        elements.accentResetBtn.addEventListener('click', () => {
+            UiPrefs.set('accent', '');
+            applyAccent('');
+            syncAppearanceControls();
+        });
+    }
 
     // Chats tab controls
     elements.newChatBtn.addEventListener('click', startNewConversation);
@@ -4356,28 +4693,38 @@ function setupEventListeners() {
         elements.clearApiKeyBtn.addEventListener('click', clearStoredApiKey);
     }
     
-    // Size preset buttons - apply immediately and auto-save
+    // Size preset buttons — set a named size, sync the slider, re-render, save.
     document.querySelectorAll('.size-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.size-preset-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            // Apply size immediately
-            elements.avatarImage.className = `avatar-image size-${btn.dataset.size}`;
+        btn.addEventListener('click', async () => {
+            state.settings.avatarSize = btn.dataset.size;
+            syncAvatarSizeControls();
+            await updateFloatingAvatar();
             autoSaveSettings();
         });
     });
 
-    // Position preset buttons - apply immediately and auto-save
+    // Position preset buttons — set a corner, re-render, save.
     document.querySelectorAll('.position-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.position-preset-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            // Apply position immediately
-            elements.floatingAvatar.className = `floating-avatar ${btn.dataset.position}`;
-            if (!state.settings.showAvatar) elements.floatingAvatar.classList.add('hidden');
+        btn.addEventListener('click', async () => {
+            state.settings.avatarPosition = btn.dataset.position;
+            syncAvatarPositionControls();
+            await updateFloatingAvatar();
             autoSaveSettings();
         });
     });
+
+    // Custom size slider — continuous scale beyond the presets.
+    if (elements.avatarSizeSlider) {
+        elements.avatarSizeSlider.addEventListener('input', async () => {
+            state.settings.avatarSize = String(elements.avatarSizeSlider.value);
+            syncAvatarSizeControls();
+            await updateFloatingAvatar();
+        });
+        elements.avatarSizeSlider.addEventListener('change', () => autoSaveSettings());
+    }
+
+    // Drag the floating avatar to position it freely.
+    setupAvatarDrag();
 
     // Show avatar checkbox - auto-save
     elements.showAvatar.addEventListener('change', async () => {
@@ -4664,12 +5011,66 @@ function createSidebarOverlay() {
 
 function openSidebar() {
     elements.sidebar.classList.add('open');
-    document.getElementById('sidebarOverlay').classList.add('visible');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) overlay.classList.add('visible');
 }
 
 function closeSidebar() {
     elements.sidebar.classList.remove('open');
-    document.getElementById('sidebarOverlay').classList.remove('visible');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) overlay.classList.remove('visible');
+}
+
+// Drag the handle on the sidebar's right edge to resize it (desktop only).
+// Width is clamped, persisted per-device, and reset on double-click. Persists
+// once at gesture end (not on every move) to avoid storage thrash.
+function setupSidebarResize() {
+    const handle = document.getElementById('sidebarResizeHandle');
+    if (!handle) return;
+
+    const MIN_W = 240;
+    const maxW = () => Math.min(640, Math.round(window.innerWidth * 0.5));
+    const clamp = (w) => Math.max(MIN_W, Math.min(maxW(), Math.round(w)));
+
+    let dragging = false;
+    let startX = 0;
+    let startW = 0;
+    let currentW = UiPrefs.get('sidebarWidth') || 320;
+
+    const applyLive = (w) => {
+        currentW = clamp(w);
+        document.documentElement.style.setProperty('--sidebar-width', `${currentW}px`);
+    };
+
+    handle.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        startX = e.clientX;
+        // Measure the rendered width (honors the min(var, 85vw) cap).
+        startW = elements.sidebar.getBoundingClientRect().width;
+        handle.classList.add('dragging');
+        try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        e.preventDefault();
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        applyLive(startW + (e.clientX - startX)); // drag right widens
+    });
+
+    const endDrag = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('dragging');
+        try { handle.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+        UiPrefs.set('sidebarWidth', currentW); // persist once, at gesture end
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+
+    handle.addEventListener('dblclick', () => {
+        applyLive(UiPrefs.defaults.sidebarWidth);
+        UiPrefs.set('sidebarWidth', currentW);
+    });
 }
 
 // ===== Utility Functions =====
@@ -4810,6 +5211,11 @@ function consumeAuthCallbackParams() {
  * Decides between login screen and main app based on session state.
  */
 async function bootstrap() {
+    // Apply device-local appearance prefs (theme/accent/chat width/sidebar) as
+    // early as possible so the login screen and app render in the chosen theme
+    // without a flash of the default.
+    UiPrefs.apply();
+
     // Wire static event listeners that exist regardless of auth state.
     const loginBtn = document.getElementById('googleSignInBtn');
     if (loginBtn) loginBtn.addEventListener('click', handleLoginClick);

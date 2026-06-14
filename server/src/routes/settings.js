@@ -20,6 +20,30 @@ const router = express.Router();
 const VALID_AVATAR_SIZES = ['small', 'medium', 'large', 'xlarge'];
 const VALID_AVATAR_POSITIONS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
+// Avatar size/position accept EITHER a named preset OR a free value:
+//   size:     a preset name, or a numeric px string in [32, 480]
+//   position: a preset corner, or "x,y" where x,y are 0..100 (% of available travel)
+// Stored as text in the existing columns — no schema change needed.
+const AVATAR_SIZE_MIN = 32;
+const AVATAR_SIZE_MAX = 480;
+
+function isValidAvatarSize(v) {
+  if (typeof v !== 'string') return false;
+  if (VALID_AVATAR_SIZES.includes(v)) return true;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= AVATAR_SIZE_MIN && n <= AVATAR_SIZE_MAX;
+}
+
+function isValidAvatarPosition(v) {
+  if (typeof v !== 'string') return false;
+  if (VALID_AVATAR_POSITIONS.includes(v)) return true;
+  const parts = v.split(',');
+  if (parts.length !== 2) return false;
+  const x = Number(parts[0]);
+  const y = Number(parts[1]);
+  return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 100 && y >= 0 && y <= 100;
+}
+
 // All routes require authentication
 router.use(authenticate);
 
@@ -42,22 +66,18 @@ router.get('/', asyncHandler(async (req, res) => {
 router.put('/', asyncHandler(async (req, res) => {
   const { avatarSize, avatarPosition, showAvatar, customModels } = req.body;
 
-  // Validate avatarSize if provided
-  if (avatarSize !== undefined) {
-    if (typeof avatarSize !== 'string' || !VALID_AVATAR_SIZES.includes(avatarSize)) {
-      throw AppError.validation(
-        `Invalid avatarSize: ${avatarSize}. Must be one of: ${VALID_AVATAR_SIZES.join(', ')}`
-      );
-    }
+  // Validate avatarSize if provided (preset name or numeric px string)
+  if (avatarSize !== undefined && !isValidAvatarSize(avatarSize)) {
+    throw AppError.validation(
+      `Invalid avatarSize: ${avatarSize}. Must be a preset (${VALID_AVATAR_SIZES.join(', ')}) or a number ${AVATAR_SIZE_MIN}-${AVATAR_SIZE_MAX}.`
+    );
   }
 
-  // Validate avatarPosition if provided
-  if (avatarPosition !== undefined) {
-    if (typeof avatarPosition !== 'string' || !VALID_AVATAR_POSITIONS.includes(avatarPosition)) {
-      throw AppError.validation(
-        `Invalid avatarPosition: ${avatarPosition}. Must be one of: ${VALID_AVATAR_POSITIONS.join(', ')}`
-      );
-    }
+  // Validate avatarPosition if provided (preset corner or "x,y" percentages)
+  if (avatarPosition !== undefined && !isValidAvatarPosition(avatarPosition)) {
+    throw AppError.validation(
+      `Invalid avatarPosition: ${avatarPosition}. Must be a preset (${VALID_AVATAR_POSITIONS.join(', ')}) or "x,y" with x,y in 0-100.`
+    );
   }
 
   // Validate showAvatar if provided
