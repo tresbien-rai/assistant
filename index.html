@@ -282,13 +282,19 @@
                     <input type="text" id="assistantName" placeholder="Assistant" value="Assistant">
 
                     <label for="systemPrompt">System Prompt</label>
-                    <textarea id="systemPrompt" rows="6" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
+                    <div class="textarea-resizable">
+                        <textarea id="systemPrompt" rows="6" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
 
 When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.</textarea>
+                        <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+                    </div>
                     <p class="help-text">This defines your assistant's personality and behavior.</p>
 
                     <label for="prefillInput">Response Prefill</label>
-                    <textarea id="prefillInput" rows="2" placeholder="Text to start assistant responses with..."></textarea>
+                    <div class="textarea-resizable">
+                        <textarea id="prefillInput" rows="2" placeholder="Text to start assistant responses with..."></textarea>
+                        <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+                    </div>
                     <p class="help-text">Model continues from this text. Hidden in responses.</p>
                 </div>
 
