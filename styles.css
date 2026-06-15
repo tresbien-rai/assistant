@@ -596,8 +596,59 @@ body {
 }
 
 .settings-section textarea {
-    resize: vertical;
+    resize: none; /* native grip replaced by a themed handle (see below) */
     min-height: 100px;
+}
+
+/* Resizable textbox: the native corner grip clashed with (and sat on top of)
+   the scrollbar. Replace it with a themed drag-bar along the bottom edge, so
+   the scrollbar sits cleanly inside the box. */
+.textarea-resizable {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 12px;
+}
+
+.textarea-resizable textarea {
+    margin-bottom: 0;
+    border-bottom: none;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.textarea-resize-handle {
+    height: 14px;
+    flex-shrink: 0;
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-bottom-left-radius: var(--radius-md);
+    border-bottom-right-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    cursor: ns-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+}
+
+.textarea-resize-handle::before {
+    content: '';
+    width: 28px;
+    height: 3px;
+    border-radius: var(--radius-full);
+    background: var(--border-color);
+    transition: background 0.2s ease;
+}
+
+.textarea-resize-handle:hover::before,
+.textarea-resize-handle.dragging::before {
+    background: var(--accent);
+}
+
+/* Keep the box outline continuous when the textarea is focused. */
+.textarea-resizable:focus-within textarea,
+.textarea-resizable:focus-within .textarea-resize-handle {
+    border-color: var(--accent);
 }
 
 .api-key-wrapper {

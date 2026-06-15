@@ -4565,6 +4565,9 @@ function setupEventListeners() {
     // Sidebar resize (desktop drag handle)
     setupSidebarResize();
 
+    // Resizable settings textboxes (themed bottom drag-bar)
+    setupTextareaResizers();
+
     // Critical banner dismiss (P0-17)
     if (elements.criticalBannerDismiss) {
         elements.criticalBannerDismiss.addEventListener('click', hideCriticalBanner);
@@ -5113,6 +5116,45 @@ function autoResizeTextarea(textarea) {
     // Grow to fit content; CSS max-height caps it (then the textarea scrolls).
     textarea.style.height = 'auto';
     textarea.style.height = textarea.scrollHeight + 'px';
+}
+
+// Wire the themed bottom drag-bars that replace the native textarea grip.
+// Each `.textarea-resize-handle` resizes the textarea immediately before it.
+function setupTextareaResizers() {
+    const MIN_H = 80;
+    const MAX_H = 600;
+    document.querySelectorAll('.textarea-resize-handle').forEach(handle => {
+        const ta = handle.previousElementSibling;
+        if (!ta || ta.tagName !== 'TEXTAREA') return;
+
+        let dragging = false;
+        let startY = 0;
+        let startH = 0;
+
+        handle.addEventListener('pointerdown', (e) => {
+            dragging = true;
+            startY = e.clientY;
+            startH = ta.getBoundingClientRect().height;
+            handle.classList.add('dragging');
+            try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+            e.preventDefault();
+        });
+
+        handle.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            const h = Math.max(MIN_H, Math.min(MAX_H, startH + (e.clientY - startY)));
+            ta.style.height = `${h}px`;
+        });
+
+        const end = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            handle.classList.remove('dragging');
+            try { handle.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+        };
+        handle.addEventListener('pointerup', end);
+        handle.addEventListener('pointercancel', end);
+    });
 }
 
 async function clearConversation() {
