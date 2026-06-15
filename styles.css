@@ -17,22 +17,45 @@
     --warning: #ffd43b;
     --info: #4dabf7;
 
-    --font-main: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
     --font-mono: 'Fira Code', 'Consolas', monospace;
-    
+
+    /* Type scale (modular ~1.25; rem-based) */
+    --text-xs: 0.75rem;    /* 12px — timestamps, badges, help text */
+    --text-sm: 0.875rem;   /* 14px — labels, sidebar items, buttons */
+    --text-base: 1rem;     /* 16px — message/body text */
+    --text-lg: 1.125rem;   /* 18px — sub-headings */
+    --text-xl: 1.375rem;   /* 22px — modal/section titles */
+    --text-2xl: 1.75rem;   /* 28px — welcome heading */
+
+    /* Spacing scale (4px grid) */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+
     --sidebar-width: 320px;
     --status-bar-height: 56px;
     --input-height: 80px;
     --chat-max-width: 780px; /* shared by the message column and the composer */
-    
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 16px;
+
+    /* Corner radii — softer/rounder; text buttons use --radius-full (pills) */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 18px;
     --radius-full: 9999px;
-    
+
+    /* Elevation — subtle for resting surfaces, deeper for floating ones */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
     --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
-    
+
+    /* Code backgrounds (themed; syntax token colors come from highlight.js) */
+    --code-bg: rgba(0, 0, 0, 0.4);
+    --code-inline-bg: rgba(0, 0, 0, 0.3);
+
     /* Avatar sizes */
     --avatar-small: 80px;
     --avatar-medium: 120px;
@@ -53,8 +76,24 @@
     --accent-subtle: rgba(108, 99, 255, 0.12);
     --assistant-bubble: #eceefb;
     --border-color: #d9dded;
+    --shadow-sm: 0 1px 3px rgba(20, 22, 40, 0.06);
     --shadow: 0 4px 6px rgba(20, 22, 40, 0.08);
     --shadow-lg: 0 8px 32px rgba(20, 22, 40, 0.14);
+    --code-bg: #eef0f6;
+    --code-inline-bg: rgba(27, 29, 41, 0.06);
+}
+
+/* Theme cross-fade: transitions enabled only briefly while switching themes
+   (the `theme-transition` class is added by JS for ~300ms). Skipped entirely
+   for users who prefer reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+    html.theme-transition,
+    html.theme-transition *,
+    html.theme-transition *::before,
+    html.theme-transition *::after {
+        transition: background-color 0.45s ease, border-color 0.45s ease,
+                    color 0.45s ease, fill 0.45s ease, stroke 0.45s ease !important;
+    }
 }
 
 [data-theme="slate"] {
@@ -1131,7 +1170,7 @@ body {
 
 /* Inline code */
 .message-content code {
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: var(--code-inline-bg);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
@@ -1140,7 +1179,7 @@ body {
 
 /* Code blocks */
 .message-content pre {
-    background-color: rgba(0, 0, 0, 0.4);
+    background-color: var(--code-bg);
     padding: 12px;
     border-radius: var(--radius-md);
     overflow-x: auto;
