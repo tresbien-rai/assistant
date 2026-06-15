@@ -56,6 +56,10 @@
     --code-bg: rgba(0, 0, 0, 0.4);
     --code-inline-bg: rgba(0, 0, 0, 0.3);
 
+    /* Scrollbar thumb (track uses --bg-tertiary) */
+    --scrollbar-thumb: #3a3f5c;
+    --scrollbar-thumb-hover: #4a4f72;
+
     /* Avatar sizes */
     --avatar-small: 80px;
     --avatar-medium: 120px;
@@ -81,6 +85,8 @@
     --shadow-lg: 0 8px 32px rgba(20, 22, 40, 0.14);
     --code-bg: #eef0f6;
     --code-inline-bg: rgba(27, 29, 41, 0.06);
+    --scrollbar-thumb: #c2c7d6;
+    --scrollbar-thumb-hover: #a9afc4;
 }
 
 /* Theme cross-fade: transitions enabled only briefly while switching themes
@@ -105,6 +111,8 @@
     --text-muted: #6b7280;
     --assistant-bubble: #2b313b;
     --border-color: #343a45;
+    --scrollbar-thumb: #3a414d;
+    --scrollbar-thumb-hover: #4b5360;
 }
 
 /* ===== Appearance controls (theme / accent / chat width) ===== */
@@ -2371,9 +2379,14 @@ body {
     }
 }
 
-/* ===== Scrollbar Styling ===== */
+/* ===== Scrollbar Styling (Chromium) =====
+   Defined track + inset rounded thumb + triangle arrow buttons top/bottom,
+   styled after the Claude desktop scrollbar. Theme-aware via --scrollbar-thumb.
+   Note: do NOT also set the standard scrollbar-width/scrollbar-color, or
+   Chromium ignores these ::-webkit rules (incl. the arrow buttons). */
 ::-webkit-scrollbar {
-    width: 8px;
+    width: 14px;
+    height: 14px;
 }
 
 ::-webkit-scrollbar-track {
@@ -2381,12 +2394,43 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 4px;
+    background: var(--scrollbar-thumb);
+    border-radius: 8px;
+    border: 3px solid var(--bg-tertiary); /* inset padding so the thumb floats */
+    min-height: 36px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--text-secondary);
+    background: var(--scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+    background: var(--bg-tertiary);
+}
+
+/* Arrow buttons: hide everything by default, then show up/down triangles on
+   vertical scrollbars (horizontal scrollbars stay arrow-less). */
+::-webkit-scrollbar-button {
+    display: none;
+}
+
+::-webkit-scrollbar-button:single-button:vertical:decrement,
+::-webkit-scrollbar-button:single-button:vertical:increment {
+    display: block;
+    width: 14px;
+    height: 14px;
+    background-color: var(--bg-tertiary);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 8px 8px;
+}
+
+::-webkit-scrollbar-button:single-button:vertical:decrement {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%238a8fa3' d='M4 2 L7 6 L1 6 Z'/%3E%3C/svg%3E");
+}
+
+::-webkit-scrollbar-button:single-button:vertical:increment {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%238a8fa3' d='M1 2 L7 2 L4 6 Z'/%3E%3C/svg%3E");
 }
 
 /* ===== Advanced Settings / Model Parameters ===== */
