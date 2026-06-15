@@ -496,11 +496,13 @@ When responding, you may optionally include an expression tag like [expression: 
                         </svg>
                     </button>
                     <input type="file" id="fileAttachInput" multiple accept="image/*,.pdf,.txt,.csv,.md,.json,.js,.py,.html,.css,.ts,.xml,.yaml,.yml,.mp3,.wav,.ogg,.webm" class="file-input-hidden">
-                    <textarea
-                        id="messageInput"
-                        placeholder="Type your message..."
-                        rows="1"
-                    ></textarea>
+                    <div class="composer-field">
+                        <textarea
+                            id="messageInput"
+                            placeholder="Type your message..."
+                            rows="1"
+                        ></textarea>
+                    </div>
                     <button class="send-button" id="sendButton" disabled aria-label="Send message">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="22" y1="2" x2="11" y2="13"></line>
