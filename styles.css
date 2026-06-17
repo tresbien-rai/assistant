@@ -3029,3 +3029,70 @@ body {
         max-width: none;
     }
 }
+
+/* =====================================================================
+   Button system (pills)
+   Unifies the text action buttons into a consistent pill language.
+   Colors come from each button's own rule (accent = primary, bordered =
+   secondary, red = destructive); this block standardizes shape, alignment,
+   padding, weight, and states. Icon buttons and segmented toggles (size/
+   position/theme/width presets, tabs) keep their own styling.
+   ===================================================================== */
+.new-chat-btn,
+.new-persona-btn,
+.fetch-models-btn,
+.add-model-btn,
+.manage-models-btn,
+.file-upload-btn,
+.add-expression-btn,
+.logout-btn,
+.modal-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: 9px 18px;
+    border-radius: var(--radius-full);
+    font-family: var(--font-main);
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+/* Unify the dashed "upload/add" buttons into solid secondary pills. */
+.file-upload-btn,
+.add-expression-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.file-upload-btn:hover,
+.add-expression-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Consistent disabled state for action buttons. */
+.new-chat-btn:disabled,
+.new-persona-btn:disabled,
+.fetch-models-btn:disabled,
+.add-model-btn:disabled,
+.manage-models-btn:disabled,
+.file-upload-btn:disabled,
+.add-expression-btn:disabled,
+.logout-btn:disabled,
+.modal-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* The "clear saved key" stays a small, quiet destructive pill. */
+.clear-api-key-btn {
+    border-radius: var(--radius-full);
+    padding: 4px 12px;
+}
+
+/* The flex `gap` now handles icon/label spacing — drop the old margin. */
+.file-upload-btn svg {
+    margin-right: 0;
+}
