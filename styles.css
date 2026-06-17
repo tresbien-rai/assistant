@@ -156,15 +156,30 @@
 
 .accent-row input[type="color"] {
     width: 48px;
-    height: 34px;
+    height: 36px;
     padding: 0;
-    border: 1px solid var(--border-color);
+    border: none; /* no outer box — the swatch itself is the porthole */
     border-radius: var(--radius-md);
     background: none;
     cursor: pointer;
 }
 
+/* Round/border the native swatch directly so there's no rounded-outer /
+   square-inner clash (no double packaging). */
+.accent-row input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+.accent-row input[type="color"]::-webkit-color-swatch {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+.accent-row input[type="color"]::-moz-color-swatch {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
 .accent-reset-btn {
+    height: 36px;
     background: none;
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
@@ -1949,6 +1964,14 @@ body {
 .modal-overlay.visible {
     opacity: 1;
     visibility: visible;
+}
+
+/* Secondary modals can be opened from within the settings modal, so they must
+   stack above it (the settings modal is moved to the end of <body>, which would
+   otherwise put it on top at equal z-index). */
+#modelModal,
+#expressionModal {
+    z-index: 250;
 }
 
 .modal-content {
