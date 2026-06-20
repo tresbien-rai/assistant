@@ -1508,36 +1508,73 @@ body {
 }
 
 /* Message attachments in sent messages */
+/* ===== Shared attachment-card pieces (composer tray + in-message) ===== */
+.att-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 2;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    line-height: 1.5;
+}
+
+.att-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.9rem;
+    color: var(--text-secondary);
+}
+
+.att-name {
+    padding: 6px 8px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+}
+
+/* ===== In-message attachments ===== */
 .message-attachments {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px;
     margin-bottom: 8px;
 }
 
+/* Image cards: bounded preview + filename caption. */
 .message-attachment {
+    position: relative;
     border-radius: var(--radius-md);
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
     cursor: pointer;
 }
 
 .message-attachment img {
-    max-width: 300px;
+    max-width: 240px;
     max-height: 200px;
     display: block;
-    border-radius: var(--radius-md);
 }
 
-.message-attachment .file-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    color: var(--text-secondary);
+/* File cards: fixed-width card with badge + icon + name (no preview). */
+.message-attachment--file {
+    width: 200px;
+    cursor: default;
+}
+
+.message-attachment--file .att-icon {
+    height: 72px;
 }
 
 /* AI Generated images */
@@ -1624,18 +1661,19 @@ body {
 
 .attachment-preview-area {
     display: flex;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 10px; /* separate the tray from the input field */
     overflow-x: auto;
-    border-bottom: 1px solid var(--border-color);
+    border: 1px solid var(--border-color);
     background: var(--bg-tertiary);
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    border-radius: var(--radius-md);
 }
 
+/* Fixed-size card so the tray doesn't expand with filename length. */
 .attachment-preview-item {
     position: relative;
-    min-width: 80px;
-    max-width: 120px;
+    width: 120px;
     flex-shrink: 0;
     border-radius: var(--radius-md);
     overflow: hidden;
@@ -1645,37 +1683,26 @@ body {
 
 .attachment-preview-item img {
     width: 100%;
-    height: 60px;
+    height: 72px;
     object-fit: cover;
+    display: block;
 }
 
-.attachment-preview-item .file-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 60px;
-    font-size: 1.5rem;
-}
-
-.attachment-preview-item .file-name {
-    font-size: var(--text-xs);
-    padding: 2px 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-secondary);
+.attachment-preview-item .att-icon {
+    height: 72px;
 }
 
 .attachment-preview-item .remove-attachment {
     position: absolute;
-    top: 2px;
-    right: 2px;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
     background: rgba(0, 0, 0, 0.6);
     color: white;
     border: none;
     border-radius: 50%;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     font-size: var(--text-xs);
     cursor: pointer;
     display: flex;
