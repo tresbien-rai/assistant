@@ -3855,17 +3855,22 @@ function renderMessageAttachments(attachments, containerDiv) {
         const attEl = document.createElement('div');
         attEl.className = 'message-attachment';
 
-        // Add special class for AI-generated images
-        if (att.type === 'generated') {
-            attEl.classList.add('generated-image');
-        }
+        const isImage = (att.type === 'image' || att.type === 'generated') && att.imageStoreKey;
 
-        if ((att.type === 'image' || att.type === 'generated') && att.imageStoreKey) {
-            // Create wrapper for image + download button
+        if (isImage) {
+            if (att.type === 'generated') {
+                // The "AI Generated" badge is drawn via CSS ::before.
+                attEl.classList.add('generated-image');
+            } else {
+                const badge = document.createElement('span');
+                badge.className = 'att-badge';
+                badge.textContent = getFileTypeLabel(att.fileName, att.mimeType);
+                attEl.appendChild(badge);
+            }
+
             const imgWrapper = document.createElement('div');
             imgWrapper.className = 'attachment-image-wrapper';
 
-            // Load image from IndexedDB
             const img = document.createElement('img');
             img.alt = att.fileName || (att.type === 'generated' ? 'Generated image' : 'Attached image');
             img.loading = 'lazy';
@@ -3874,7 +3879,6 @@ function renderMessageAttachments(attachments, containerDiv) {
             });
             imgWrapper.appendChild(img);
 
-            // Add download button for generated images
             if (att.type === 'generated') {
                 const downloadBtn = document.createElement('button');
                 downloadBtn.className = 'download-btn';
@@ -3888,11 +3892,34 @@ function renderMessageAttachments(attachments, containerDiv) {
             }
 
             attEl.appendChild(imgWrapper);
+
+            // Filename caption for uploaded images (generated ones have no real name).
+            if (att.fileName && att.type !== 'generated') {
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'att-name';
+                nameDiv.textContent = att.fileName;
+                nameDiv.title = att.fileName;
+                attEl.appendChild(nameDiv);
+            }
         } else {
-            const badge = document.createElement('div');
-            badge.className = 'file-badge';
-            badge.textContent = `${getFileIcon(att.mimeType)} ${att.fileName || 'File'}`;
+            // Non-image file → compact card (type badge + icon + filename), no preview.
+            attEl.classList.add('message-attachment--file');
+
+            const badge = document.createElement('span');
+            badge.className = 'att-badge';
+            badge.textContent = getFileTypeLabel(att.fileName, att.mimeType);
             attEl.appendChild(badge);
+
+            const iconDiv = document.createElement('div');
+            iconDiv.className = 'att-icon';
+            iconDiv.textContent = getFileIcon(att.mimeType);
+            attEl.appendChild(iconDiv);
+
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'att-name';
+            nameDiv.textContent = att.fileName || 'File';
+            nameDiv.title = att.fileName || 'File';
+            attEl.appendChild(nameDiv);
         }
 
         containerDiv.appendChild(attEl);
@@ -3917,6 +3944,18 @@ function getFileIcon(mimeType) {
         case 'document': return '\u{1F4C4}';
         default: return '\u{1F4CE}';
     }
+}
+
+// Short uppercase label for an attachment's type badge — the file extension
+// when it's a sane length, else a category fallback (IMG/AUDIO/CODE/DOC).
+function getFileTypeLabel(fileName, mimeType) {
+    if (fileName && fileName.includes('.')) {
+        const ext = fileName.split('.').pop();
+        if (ext && ext.length >= 1 && ext.length <= 4 && /^[a-z0-9]+$/i.test(ext)) {
+            return ext.toUpperCase();
+        }
+    }
+    return ({ image: 'IMG', audio: 'AUDIO', code: 'CODE', document: 'DOC' })[getFileCategory(mimeType)] || 'FILE';
 }
 
 // ===== API Communication =====
@@ -4407,6 +4446,11 @@ function renderAttachmentPreviews() {
         const item = document.createElement('div');
         item.className = 'attachment-preview-item';
 
+        const badge = document.createElement('span');
+        badge.className = 'att-badge';
+        badge.textContent = getFileTypeLabel(att.fileName, att.mimeType);
+        item.appendChild(badge);
+
         if (att.type === 'image' && att.previewUrl) {
             const img = document.createElement('img');
             img.src = att.previewUrl;
@@ -4414,13 +4458,13 @@ function renderAttachmentPreviews() {
             item.appendChild(img);
         } else {
             const iconDiv = document.createElement('div');
-            iconDiv.className = 'file-icon';
+            iconDiv.className = 'att-icon';
             iconDiv.textContent = getFileIcon(att.mimeType);
             item.appendChild(iconDiv);
         }
 
         const nameDiv = document.createElement('div');
-        nameDiv.className = 'file-name';
+        nameDiv.className = 'att-name';
         nameDiv.textContent = att.fileName;
         nameDiv.title = att.fileName;
         item.appendChild(nameDiv);
