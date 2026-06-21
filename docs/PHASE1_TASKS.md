@@ -26,6 +26,53 @@ A **Projects** system that gives conversations persistent background context
 
 ---
 
+## Design decisions (locked 2026-06-20)
+
+These were settled at the start of the Phase 1 session and shape the tasks below.
+The north star is **a model-agnostic clone of Claude's Projects feature**: a
+custom-buildable persistent memory/reference system that works against *any*
+provider API (Anthropic, Gemini, OpenAI, …), not just Anthropic.
+
+1. **Knowledge strategy: full-context injection now, retrieval-ready later.**
+   v1 downloads the project's files and prepends their contents to the model
+   context every turn, guarded by a token/size budget + a user-facing warning
+   when the knowledge base is too large. This is identical across all providers
+   (no provider-specific retrieval machinery). The injection layer must be
+   written as a single, swappable "context assembler" so a future retrieval/RAG
+   path (chunking + embeddings + vector store) can replace the "include
+   everything" step **without** touching the routes or the frontend.
+
+2. **File-type support: text/code + PDF.** v1 accepts plain text, markdown, and
+   source-code files (used verbatim) plus **PDF** (server-side text extraction
+   via `pdf-parse`). Other binary types (Office docs, images, etc.) are rejected
+   on upload with a clear validation error for now. Multimodal image refs are
+   explicitly **out of scope** for v1.
+
+3. **Cost note — prompt caching is a fast-follow, not v1.** Re-injecting a large
+   knowledge base every turn is expensive without provider prompt caching
+   (Anthropic `cache_control`, Gemini cached content; OpenAI auto-caches). v1
+   ships without it; revisit once injection works end-to-end. The budget guard
+   in P1-05 keeps costs bounded in the meantime.
+
+4. **Chat route is currently stateless re: conversations.** `POST /api/chat[/stream]`
+   receives `messages` + `systemPrompt` from the client and never looks up the
+   conversation. P1-05 therefore must thread a `conversationId` (preferred) or
+   `projectId` through the chat request bodies so the server can resolve the
+   project and assemble context **server-side**. The client must never send file
+   contents — it only references the conversation/project by id.
+
+5. **Project delete behavior:** delete the DB rows (cascades to `project_files`)
+   **and move the project's Drive folder to trash** (recoverable by the user
+   from Drive's trash). `drive.file` scope covers trashing folders the app
+   created. Conversations that referenced the project keep working — their
+   `project_id` simply resolves to nothing and no context is injected.
+
+6. **Limits live in `config.js`.** Add a `projectFiles` config block (per-file
+   upload cap, accepted MIME/extension allow-list, assembled-context budget +
+   warning threshold) rather than scattering magic numbers across routes.
+
+---
+
 ## Tasks
 
 ### Backend — Drive foundation
@@ -49,23 +96,34 @@ A **Projects** system that gives conversations persistent background context
 - **P1-03 — Project CRUD routes** (`server/src/routes/projects.js`, mount in
   `index.js`): `GET/POST/PUT/DELETE /api/projects`. On **create**, also create
   the project's Drive folder under `AI Assistant/projects/{name}` and store
-  `drive_folder_id`. Decide delete behavior (recommend: delete the DB rows;
-  leave Drive files, or trash the folder — document the choice). All routes
-  behind `authenticate`.
+  `drive_folder_id`. Delete behavior is fixed per decision #5 (delete DB rows +
+  trash the Drive folder). All routes behind `authenticate`.
 
 - **P1-04 — Project file routes**: `POST /api/projects/:id/files` (multipart,
   `multer` is already a dep) → upload to the project's Drive folder → record in
   `project_files`. `GET /api/projects/:id/files` → list from SQLite (cached
   metadata, avoid Drive calls). `DELETE /api/projects/:id/files/:fileId` →
-  delete from Drive + DB. Enforce the 10MB/file soft limit.
+  delete from Drive + DB. Enforce the per-file size cap and the **accepted-type
+  allow-list** (text/code + PDF — see decision #2) from the `projectFiles` config
+  block (decision #6); reject other types with `AppError.validation`. PDFs are
+  stored as-is on Drive; text extraction happens later at injection time (P1-05),
+  not on upload.
 
 ### Backend — Context injection
-- **P1-05 — Inject project context into chat** (`server/src/routes/chat.js`)
-  When the conversation has a `project_id`: assemble (1) project instructions,
-  (2) text-file contents (download from Drive on demand; cache in memory/temp to
-  limit Drive calls), (3) binary files as multimodal refs where the provider
-  supports it. Prepend this **before** the persona's system prompt. Add a
-  token-budget guard + a user-facing warning when project context is very large.
+- **P1-05 — Inject project context into chat** (`server/src/routes/chat.js` +
+  a new context-assembler module, e.g. `server/src/utils/projectContext.js`).
+  First thread a `conversationId` (preferred) or `projectId` through the
+  `/api/chat` and `/api/chat/stream` request bodies (decision #4) so the server
+  can resolve the project itself. When the resolved conversation has a
+  `project_id`, the assembler builds: (1) project instructions, (2) text/code
+  file contents verbatim, (3) **PDF** contents via `pdf-parse` text extraction —
+  all downloaded from Drive on demand and cached (in-memory keyed by
+  `drive_file_id`) to limit Drive calls within a conversation. Prepend the
+  assembled block **before** the persona's system prompt. Enforce the
+  assembled-context budget from config (decision #6): truncate + attach a
+  user-facing warning when the knowledge base exceeds it. Keep the "include
+  everything" step isolated behind one function so retrieval can replace it later
+  (decision #1). Multimodal/image refs are **out of scope** for v1 (decision #2).
 
 ### Frontend — client + UI
 - **P1-06 — API client + state** (`api-client.js`, `app.js`):

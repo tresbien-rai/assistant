@@ -35,6 +35,17 @@ persona is used). Files are stored on the **user's Google Drive** (the backend
 uploads/downloads via the Drive API); SQLite caches file metadata + Drive file
 IDs. See `docs/PHASE1_TASKS.md` for the breakdown and suggested order.
 
+**Locked design decisions (2026-06-20)** — see the "Design decisions" section in
+`docs/PHASE1_TASKS.md` for the full rationale. In short: the goal is a
+**model-agnostic clone of Claude's Projects** (works against any provider, not
+just Anthropic); v1 uses **full-context injection** (download files, prepend
+their text every turn, budget-guarded) built behind a swappable assembler so
+**retrieval/RAG can drop in later**; v1 supports **text/code + PDF** files (PDF
+via `pdf-parse`), other binaries rejected; the chat route is **stateless re:
+conversations** today, so P1-05 must thread `conversationId`/`projectId` to
+resolve+assemble context server-side; project delete trashes the Drive folder +
+deletes DB rows; limits live in a `projectFiles` block in `config.js`.
+
 ## Already in place (don't rebuild)
 - DB: `projects`, `project_files` tables (+ indexes) in `db/schema.sql`;
   `conversations.project_id` nullable FK.
