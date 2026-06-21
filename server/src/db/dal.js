@@ -694,6 +694,189 @@ function getApiKeyProviders(userId) {
 }
 
 // =============================================================================
+// PROJECTS
+// =============================================================================
+
+/**
+ * Create a new project
+ * @param {string} userId - The user's UUID
+ * @param {Object} data - Project data
+ * @param {string} data.name - Project name
+ * @param {string} [data.instructions] - Project instructions
+ * @param {string} [data.driveFolderId] - Drive folder id backing this project
+ * @returns {Object} The created project record
+ */
+function createProject(userId, { name, instructions, driveFolderId }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+
+  const stmt = db.prepare(`
+    INSERT INTO projects (id, user_id, name, instructions, drive_folder_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(id, userId, name || 'New Project', instructions || '', driveFolderId || '', timestamp, timestamp);
+
+  return getProjectById(id, userId);
+}
+
+/**
+ * Get all projects for a user
+ * @param {string} userId - The user's UUID
+ * @returns {Array} Array of project records (with file counts)
+ */
+function listProjectsByUser(userId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT p.*,
+           (SELECT COUNT(*) FROM project_files f WHERE f.project_id = p.id) as file_count
+    FROM projects p
+    WHERE p.user_id = ?
+    ORDER BY p.updated_at DESC
+  `).all(userId);
+}
+
+/**
+ * Get a single project by ID (only if owned by the user)
+ * @param {string} projectId - The project's UUID
+ * @param {string} userId - The user's UUID
+ * @returns {Object|undefined} The project record or undefined
+ */
+function getProjectById(projectId, userId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM projects WHERE id = ? AND user_id = ?
+  `).get(projectId, userId);
+}
+
+/**
+ * Update a project
+ * @param {string} projectId - The project's UUID
+ * @param {string} userId - The user's UUID
+ * @param {Object} data - Fields to update (name, instructions, driveFolderId)
+ * @returns {Object|undefined} The updated project or undefined if not found
+ */
+function updateProject(projectId, userId, data) {
+  const db = getDb();
+  const existing = getProjectById(projectId, userId);
+  if (!existing) return undefined;
+
+  const timestamp = now();
+  const updates = [];
+  const values = [];
+
+  if (data.name !== undefined) {
+    updates.push('name = ?');
+    values.push(data.name);
+  }
+  if (data.instructions !== undefined) {
+    updates.push('instructions = ?');
+    values.push(data.instructions);
+  }
+  if (data.driveFolderId !== undefined) {
+    updates.push('drive_folder_id = ?');
+    values.push(data.driveFolderId);
+  }
+
+  if (updates.length === 0) {
+    return existing;
+  }
+
+  updates.push('updated_at = ?');
+  values.push(timestamp);
+  values.push(projectId);
+  values.push(userId);
+
+  db.prepare(`
+    UPDATE projects SET ${updates.join(', ')} WHERE id = ? AND user_id = ?
+  `).run(...values);
+
+  return getProjectById(projectId, userId);
+}
+
+/**
+ * Delete a project and its file metadata (project_files cascade via FK).
+ * Trashing the backing Drive folder is the route's responsibility.
+ * @param {string} projectId - The project's UUID
+ * @param {string} userId - The user's UUID
+ * @returns {boolean} True if deleted, false if not found
+ */
+function deleteProject(projectId, userId) {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM projects WHERE id = ? AND user_id = ?').run(projectId, userId);
+  return result.changes > 0;
+}
+
+// =============================================================================
+// PROJECT FILES
+// =============================================================================
+//
+// File functions are scoped by projectId. Callers MUST first verify the project
+// belongs to the user (via getProjectById(projectId, userId)) before using these.
+
+/**
+ * Record a project file's metadata (the bytes live on Drive).
+ * @param {string} projectId - The project's UUID
+ * @param {Object} data - File metadata
+ * @param {string} data.filename - Original filename
+ * @param {string} [data.mimeType] - MIME type
+ * @param {number} [data.sizeBytes] - File size in bytes
+ * @param {string} [data.driveFileId] - Drive file id
+ * @returns {Object} The created project_files record
+ */
+function addProjectFile(projectId, { filename, mimeType, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+
+  db.prepare(`
+    INSERT INTO project_files (id, project_id, filename, mime_type, size_bytes, drive_file_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, projectId, filename, mimeType || '', sizeBytes || 0, driveFileId || '', timestamp);
+
+  return db.prepare('SELECT * FROM project_files WHERE id = ?').get(id);
+}
+
+/**
+ * List a project's files (metadata only, from SQLite — no Drive calls).
+ * @param {string} projectId - The project's UUID
+ * @returns {Array} Array of project_files records
+ */
+function listProjectFiles(projectId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM project_files WHERE project_id = ? ORDER BY created_at ASC
+  `).all(projectId);
+}
+
+/**
+ * Get a single project file (scoped to its project).
+ * @param {string} fileId - The file's UUID
+ * @param {string} projectId - The project's UUID
+ * @returns {Object|undefined} The project_files record or undefined
+ */
+function getProjectFile(fileId, projectId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM project_files WHERE id = ? AND project_id = ?
+  `).get(fileId, projectId);
+}
+
+/**
+ * Delete a project file's metadata row (scoped to its project).
+ * Removing the file from Drive is the route's responsibility.
+ * @param {string} fileId - The file's UUID
+ * @param {string} projectId - The project's UUID
+ * @returns {boolean} True if deleted, false if not found
+ */
+function deleteProjectFile(fileId, projectId) {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM project_files WHERE id = ? AND project_id = ?').run(fileId, projectId);
+  return result.changes > 0;
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
@@ -734,4 +917,17 @@ module.exports = {
   upsertApiKey,
   deleteApiKey,
   getApiKeyProviders,
+
+  // Projects
+  createProject,
+  listProjectsByUser,
+  getProjectById,
+  updateProject,
+  deleteProject,
+
+  // Project Files
+  addProjectFile,
+  listProjectFiles,
+  getProjectFile,
+  deleteProjectFile,
 };
