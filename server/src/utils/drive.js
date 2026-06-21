@@ -162,8 +162,11 @@ async function execute(auth, label, fn) {
   } catch (err) {
     if (isAuthError(err)) {
       logger.info({ label }, 'Drive access token rejected; refreshing and retrying once');
-      await forceRefresh(auth);
       try {
+        // forceRefresh is inside the try so a failed refresh (e.g. the refresh
+        // token was revoked → invalid_grant) is also wrapped as a DRIVE_ERROR,
+        // surfacing the "reconnect your account" path instead of a generic 500.
+        await forceRefresh(auth);
         return await fn(drive);
       } catch (retryErr) {
         throw wrapDriveError(retryErr, label);
