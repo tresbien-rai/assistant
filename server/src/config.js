@@ -38,6 +38,11 @@ const config = {
   projectFiles: {
     // Per-file upload cap.
     maxFileBytes: parseInt(process.env.PROJECT_FILE_MAX_BYTES, 10) || 10 * 1024 * 1024, // 10MB
+    // Assembled project-context budget, in characters. The context assembler
+    // (P1-05) truncates and warns once the combined instructions + file text
+    // exceed this, so a large knowledge base can't blow up the prompt / cost on
+    // every turn. ~4 chars per token, so ~500k chars ≈ ~125k tokens.
+    contextBudgetChars: parseInt(process.env.PROJECT_CONTEXT_BUDGET_CHARS, 10) || 500000,
     // Accepted file extensions: text/code + PDF (Phase 1 decision #2). Lowercase,
     // leading dot. Anything else is rejected on upload. Extension is the reliable
     // signal here because browsers send inconsistent MIME types for source files.
