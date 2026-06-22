@@ -118,12 +118,16 @@ function getProvider(provider) {
  * @returns {Promise<{ text: string, warning: string|null }|null>}
  */
 async function resolveProjectContext(req) {
-  const { conversationId, projectId } = req.body;
   const userId = req.user.userId;
+  // Guard the types: these come straight from the request body, and passing a
+  // non-string to better-sqlite3 throws (TypeError) rather than simply missing.
+  const conversationId = typeof req.body.conversationId === 'string' ? req.body.conversationId : null;
+  const projectId = typeof req.body.projectId === 'string' ? req.body.projectId : null;
 
   let project = null;
   if (conversationId) {
-    const conversation = dal.getConversationById(conversationId, userId);
+    // Metadata-only lookup — we just need project_id, not the message history.
+    const conversation = dal.getConversationMeta(conversationId, userId);
     if (conversation && conversation.project_id) {
       project = dal.getProjectById(conversation.project_id, userId);
     }
