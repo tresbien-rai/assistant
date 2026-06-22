@@ -31,6 +31,34 @@ const config = {
   // Database
   dbPath: process.env.DB_PATH || './data/assistant.db',
 
+  // Project files (Phase 1)
+  // Centralizes the limits/allow-list for project knowledge files so they are
+  // not scattered across routes. Files live on the user's Google Drive; these
+  // govern what may be uploaded and (later, P1-05) how much context is assembled.
+  projectFiles: {
+    // Per-file upload cap.
+    maxFileBytes: parseInt(process.env.PROJECT_FILE_MAX_BYTES, 10) || 10 * 1024 * 1024, // 10MB
+    // Accepted file extensions: text/code + PDF (Phase 1 decision #2). Lowercase,
+    // leading dot. Anything else is rejected on upload. Extension is the reliable
+    // signal here because browsers send inconsistent MIME types for source files.
+    acceptedExtensions: [
+      // Plain text / docs / data
+      '.txt', '.text', '.md', '.markdown', '.rst', '.log',
+      '.csv', '.tsv', '.json', '.jsonl', '.ndjson',
+      '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.env', '.xml',
+      // Web
+      '.html', '.htm', '.css', '.scss', '.sass', '.less',
+      // Code
+      '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx',
+      '.py', '.rb', '.go', '.rs', '.java', '.kt', '.scala',
+      '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.cs', '.php', '.swift',
+      '.sh', '.bash', '.zsh', '.bat', '.ps1',
+      '.sql', '.graphql', '.proto', '.tex', '.r', '.lua', '.pl',
+      // Documents
+      '.pdf',
+    ],
+  },
+
   // Static files (frontend) - relative to server/src/, so ../../ goes to project root
   staticPath: process.env.STATIC_PATH || '../../',
 };
