@@ -14,6 +14,8 @@ const express = require('express');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { getDecryptedApiKey } = require('./apiKeys');
+const dal = require('../db/dal');
+const { assembleProjectContext } = require('../utils/projectContext');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
 
@@ -104,6 +106,52 @@ function getProvider(provider) {
 // so req.user is already available when requests reach this router.
 
 /**
+ * Resolve the project for a chat request and assemble its context block.
+ *
+ * The chat route is otherwise stateless about conversations, so the client
+ * passes either a `conversationId` (preferred — the project is resolved from the
+ * conversation) or an explicit `projectId` (e.g. a new chat not yet persisted).
+ * The project is always re-loaded user-scoped, so the client can never inject
+ * another user's project or arbitrary file contents.
+ *
+ * @param {Object} req - Express request (req.user, req.body)
+ * @returns {Promise<{ text: string, warning: string|null }|null>}
+ */
+async function resolveProjectContext(req) {
+  const userId = req.user.userId;
+  // Guard the types: these come straight from the request body, and passing a
+  // non-string to better-sqlite3 throws (TypeError) rather than simply missing.
+  const conversationId = typeof req.body.conversationId === 'string' ? req.body.conversationId : null;
+  const projectId = typeof req.body.projectId === 'string' ? req.body.projectId : null;
+
+  let project = null;
+  if (conversationId) {
+    // Metadata-only lookup — we just need project_id, not the message history.
+    const conversation = dal.getConversationMeta(conversationId, userId);
+    if (conversation && conversation.project_id) {
+      project = dal.getProjectById(conversation.project_id, userId);
+    }
+  } else if (projectId) {
+    project = dal.getProjectById(projectId, userId);
+  }
+
+  if (!project) return null;
+  return assembleProjectContext(userId, project);
+}
+
+/**
+ * Combine the assembled project context (if any) with the persona's system
+ * prompt. Project context goes FIRST so it frames the persona instructions.
+ * @param {{text: string}|null} projectContext
+ * @param {string} [systemPrompt]
+ * @returns {string|undefined}
+ */
+function applyProjectContext(projectContext, systemPrompt) {
+  if (!projectContext?.text) return systemPrompt;
+  return `${projectContext.text}\n\n${systemPrompt || ''}`.trim();
+}
+
+/**
  * POST /api/chat
  * Non-streaming chat completion
  *
@@ -145,22 +193,32 @@ router.post('/', asyncHandler(async (req, res) => {
   // Get provider module
   const providerModule = getProvider(provider);
 
+  // Inject project context (instructions + files) before the persona prompt.
+  const projectContext = await resolveProjectContext(req);
+  const effectiveSystemPrompt = applyProjectContext(projectContext, systemPrompt);
+
   logger.info({
     userId: req.user.userId,
     provider,
     model,
     messageCount: messages.length,
+    projectContext: Boolean(projectContext?.text),
   }, 'Chat request');
 
   // Call provider's chat method
   const result = await providerModule.chat(apiKey, {
     model,
     messages,
-    systemPrompt,
+    systemPrompt: effectiveSystemPrompt,
     modelParams,
     prefill,
     attachments,
   });
+
+  if (projectContext?.warning) {
+    result.contextWarning = projectContext.warning;
+    res.setHeader('X-Project-Context-Warning', encodeURIComponent(projectContext.warning));
+  }
 
   res.json(result);
 }));
@@ -187,11 +245,21 @@ router.post('/stream', asyncHandler(async (req, res) => {
     throw AppError.validation(`Streaming not supported for provider: ${provider}`);
   }
 
+  // Inject project context (instructions + files) before the persona prompt.
+  // Resolved before any SSE headers are sent so the warning header is valid.
+  const projectContext = await resolveProjectContext(req);
+  const effectiveSystemPrompt = applyProjectContext(projectContext, systemPrompt);
+
+  if (projectContext?.warning) {
+    res.setHeader('X-Project-Context-Warning', encodeURIComponent(projectContext.warning));
+  }
+
   logger.info({
     userId: req.user.userId,
     provider,
     model,
     messageCount: messages.length,
+    projectContext: Boolean(projectContext?.text),
   }, 'Stream request');
 
   // Set up abort handling for client disconnect
@@ -206,7 +274,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
   await providerModule.stream(apiKey, {
     model,
     messages,
-    systemPrompt,
+    systemPrompt: effectiveSystemPrompt,
     modelParams,
     prefill,
     attachments,

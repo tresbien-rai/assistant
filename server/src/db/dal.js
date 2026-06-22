@@ -301,6 +301,19 @@ function getConversationsByUser(userId, { personaId, limit, offset } = {}) {
 }
 
 /**
+ * Get a single conversation's metadata (no messages), user-scoped.
+ * Lightweight alternative to getConversationById for hot paths that only need
+ * fields like project_id and don't want to load the full message history.
+ * @param {string} conversationId - The conversation's UUID
+ * @param {string} userId - The user's UUID
+ * @returns {Object|undefined} The conversation row or undefined
+ */
+function getConversationMeta(conversationId, userId) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM conversations WHERE id = ? AND user_id = ?').get(conversationId, userId);
+}
+
+/**
  * Get a single conversation by ID with all its messages
  * @param {string} conversationId - The conversation's UUID
  * @param {string} userId - The user's UUID
@@ -897,6 +910,7 @@ module.exports = {
 
   // Conversations
   getConversationsByUser,
+  getConversationMeta,
   getConversationById,
   createConversation,
   updateConversation,
