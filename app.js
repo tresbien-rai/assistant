@@ -986,7 +986,13 @@ async function init() {
         API.personas.list(),
         API.conversations.list(),
         API.apiKeys.list(),
-        API.projects.list(),
+        // Projects are non-essential to core chat — degrade to empty on failure
+        // rather than blocking the whole app load (the others are essential and
+        // intentionally fail-fast).
+        API.projects.list().catch(err => {
+            console.warn('Failed to load projects; continuing without them:', err);
+            return [];
+        }),
     ]);
 
     hydrateSettings(settings);
