@@ -54,6 +54,7 @@
             <div class="sidebar-tabs">
                 <button class="sidebar-tab active" data-tab="chats">Chats</button>
                 <button class="sidebar-tab" data-tab="personas">Personas</button>
+                <button class="sidebar-tab" data-tab="projects">Projects</button>
                 <button class="close-sidebar" id="closeSidebar">×</button>
             </div>
 
@@ -405,6 +406,15 @@ When responding, you may optionally include an expression tag like [expression: 
                     <!-- Populated dynamically -->
                 </div>
             </div>
+
+            <!-- Projects Tab Content -->
+            <div class="tab-content" id="projectsTab" data-tab="projects">
+                <button class="new-project-btn" id="newProjectBtn">+ New Project</button>
+                <div class="project-list" id="projectList">
+                    <!-- Populated dynamically -->
+                </div>
+                <p class="empty-state" id="noProjectsMessage">No projects yet. Create one to give conversations shared instructions and files.</p>
+            </div>
         </aside>
 
         <!-- Sidebar resize handle (desktop only; drag to resize, double-click to reset) -->
@@ -614,6 +624,27 @@ When responding, you may optionally include an expression tag like [expression: 
                         <button type="button" class="add-model-btn" id="addModelBtn">Add Model</button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Create/Edit Modal -->
+    <div class="modal-overlay" id="projectModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="projectModalTitle">New Project</h3>
+                <button class="modal-close" id="closeProjectModal" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <label for="projectNameInput">Name</label>
+                <input type="text" id="projectNameInput" placeholder="e.g., Research Notes" maxlength="100">
+
+                <label for="projectInstructionsInput">Instructions</label>
+                <textarea id="projectInstructionsInput" rows="6" placeholder="Background context or instructions injected into every conversation in this project (optional)."></textarea>
+                <p class="help-text">These instructions and the project's files are added to the model's context for any conversation assigned to this project.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn primary" id="saveProjectBtn">Save</button>
             </div>
         </div>
     </div>

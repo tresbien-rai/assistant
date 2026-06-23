@@ -552,10 +552,16 @@ const state = {
     // API.conversations.get(id) when the conversation becomes active.
     conversations: {},
     activeConversationId: null,
+    // Projects stored by ID (from API.projects.list). Metadata only — file lists
+    // are fetched on demand via API.projects.files.list(id).
+    projects: {},
+    activeProjectId: null,
     // UI state (session-local, no server source)
     ui: {
         activeTab: 'chats',
-        conversationFilter: 'active' // 'active' means filter by activePersonaId, or 'all'
+        conversationFilter: 'active', // 'active' means filter by activePersonaId, or 'all'
+        // Project modal mode: holds the id being edited, or null when creating.
+        editingProjectId: null
     },
     currentExpression: 'neutral',
     isLoading: false,
@@ -816,6 +822,7 @@ const elements = {
     // Sidebar tabs
     chatsTab: document.getElementById('chatsTab'),
     personasTab: document.getElementById('personasTab'),
+    projectsTab: document.getElementById('projectsTab'),
 
     // Settings modal (relocated out of the sidebar)
     settingsModal: document.getElementById('settingsModal'),
@@ -835,6 +842,19 @@ const elements = {
     // Personas tab elements
     newPersonaBtn: document.getElementById('newPersonaBtn'),
     personaList: document.getElementById('personaList'),
+
+    // Projects tab elements
+    newProjectBtn: document.getElementById('newProjectBtn'),
+    projectList: document.getElementById('projectList'),
+    noProjectsMessage: document.getElementById('noProjectsMessage'),
+
+    // Project create/edit modal
+    projectModal: document.getElementById('projectModal'),
+    projectModalTitle: document.getElementById('projectModalTitle'),
+    closeProjectModal: document.getElementById('closeProjectModal'),
+    projectNameInput: document.getElementById('projectNameInput'),
+    projectInstructionsInput: document.getElementById('projectInstructionsInput'),
+    saveProjectBtn: document.getElementById('saveProjectBtn'),
 
     // Settings inputs
     providerSelect: document.getElementById('providerSelect'),
@@ -961,17 +981,19 @@ const elements = {
 // hydrates the in-memory `state` object, then wires the UI.
 async function init() {
     // Parallel fetch — these are independent endpoints.
-    const [settings, personas, conversations, apiKeyStatus] = await Promise.all([
+    const [settings, personas, conversations, apiKeyStatus, projects] = await Promise.all([
         API.settings.get(),
         API.personas.list(),
         API.conversations.list(),
         API.apiKeys.list(),
+        API.projects.list(),
     ]);
 
     hydrateSettings(settings);
     hydratePersonas(personas);
     hydrateConversations(conversations);
     hydrateApiKeyStatus(apiKeyStatus);
+    hydrateProjects(projects);
 
     // Pick the most recently updated persona/conversation as active.
     pickActivePersona();
@@ -1103,6 +1125,20 @@ function hydrateConversations(conversations) {
             updatedAt: c.updatedAt,
             messageCount: c.messageCount || 0,
             messages: undefined,
+        };
+    }
+}
+
+function hydrateProjects(projects) {
+    state.projects = {};
+    for (const p of (projects || [])) {
+        state.projects[p.id] = {
+            id: p.id,
+            name: p.name,
+            instructions: p.instructions || '',
+            fileCount: p.fileCount || 0,
+            createdAt: p.createdAt,
+            updatedAt: p.updatedAt,
         };
     }
 }
@@ -2523,6 +2559,8 @@ async function switchTab(tabName) {
         renderConversationList();
     } else if (tabName === 'personas') {
         await renderPersonaList();
+    } else if (tabName === 'projects') {
+        renderProjectList();
     }
 }
 
@@ -2998,6 +3036,222 @@ async function startNewPersona() {
     }
     await renderPersonaList();
     editPersona(id);
+}
+
+// ===== Projects =====
+
+/**
+ * Render the project list in the projects tab.
+ */
+function renderProjectList() {
+    const container = elements.projectList;
+    container.innerHTML = '';
+
+    const projects = Object.values(state.projects);
+    projects.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    if (projects.length === 0) {
+        elements.noProjectsMessage.style.display = 'block';
+        return;
+    }
+    elements.noProjectsMessage.style.display = 'none';
+
+    projects.forEach(project => {
+        const item = document.createElement('div');
+        item.className = `project-item ${project.id === state.activeProjectId ? 'active' : ''}`;
+        item.dataset.projectId = project.id;
+
+        const count = project.fileCount || 0;
+        const meta = `${count} file${count !== 1 ? 's' : ''}`;
+
+        item.innerHTML = `
+            <div class="project-info" data-project-id="${project.id}">
+                <span class="project-name">${escapeHtml(project.name || 'Untitled Project')}</span>
+                <span class="project-meta">${meta}</span>
+            </div>
+            <button class="project-menu-btn" data-project-id="${project.id}" title="Options">⋯</button>
+        `;
+
+        container.appendChild(item);
+    });
+
+    // Clicking a project opens it for editing (file management arrives in P1-09).
+    container.querySelectorAll('.project-info').forEach(info => {
+        info.addEventListener('click', () => editProject(info.dataset.projectId));
+    });
+
+    container.querySelectorAll('.project-menu-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showProjectMenu(btn, btn.dataset.projectId);
+        });
+    });
+}
+
+/**
+ * Show the context menu for a project (Edit / Delete).
+ * @param {HTMLElement} anchorEl
+ * @param {string} projectId
+ */
+function showProjectMenu(anchorEl, projectId) {
+    const existingMenu = document.querySelector('.context-menu');
+    if (existingMenu) existingMenu.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = `
+        <button class="context-menu-item" data-action="edit">Edit</button>
+        <button class="context-menu-item danger" data-action="delete">Delete</button>
+    `;
+
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.left = `${rect.left - 80}px`;
+
+    document.body.appendChild(menu);
+
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const action = item.dataset.action;
+            menu.remove();
+            if (action === 'edit') {
+                editProject(projectId);
+            } else if (action === 'delete') {
+                deleteProjectPrompt(projectId);
+            }
+        });
+    });
+
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }, 0);
+}
+
+/**
+ * Open the project modal. Pass a projectId to edit, or null/omit to create.
+ * Unlike personas, projects are created via the modal's Save (which also makes
+ * the Drive folder) so an abandoned "New Project" never creates anything.
+ * @param {string|null} [projectId]
+ */
+function openProjectModal(projectId = null) {
+    state.ui.editingProjectId = projectId;
+    const project = projectId ? state.projects[projectId] : null;
+
+    elements.projectModalTitle.textContent = project ? 'Edit Project' : 'New Project';
+    elements.projectNameInput.value = project ? (project.name || '') : '';
+    elements.projectInstructionsInput.value = project ? (project.instructions || '') : '';
+
+    closeSidebar(); // close the mobile drawer if open
+    elements.projectModal.classList.add('visible');
+    elements.projectNameInput.focus();
+}
+
+function closeProjectModal() {
+    elements.projectModal.classList.remove('visible');
+    state.ui.editingProjectId = null;
+}
+
+/**
+ * Save the project modal — create or update depending on editingProjectId.
+ */
+async function saveProject() {
+    const name = elements.projectNameInput.value.trim();
+    const instructions = elements.projectInstructionsInput.value;
+
+    if (!name) {
+        showToast('Project name is required.', { type: 'error' });
+        elements.projectNameInput.focus();
+        return;
+    }
+
+    const editingId = state.ui.editingProjectId;
+    elements.saveProjectBtn.disabled = true;
+    try {
+        if (editingId) {
+            const updated = await API.projects.update(editingId, { name, instructions });
+            state.projects[editingId] = {
+                ...state.projects[editingId],
+                name: updated.name,
+                instructions: updated.instructions,
+                updatedAt: updated.updatedAt,
+            };
+        } else {
+            const created = await API.projects.create({ name, instructions });
+            state.projects[created.id] = {
+                id: created.id,
+                name: created.name,
+                instructions: created.instructions || '',
+                fileCount: created.fileCount || 0,
+                createdAt: created.createdAt,
+                updatedAt: created.updatedAt,
+            };
+        }
+    } catch (err) {
+        console.error('Failed to save project:', err);
+        displayError(err, { action: 'save project' });
+        return;
+    } finally {
+        elements.saveProjectBtn.disabled = false;
+    }
+
+    closeProjectModal();
+    renderProjectList();
+}
+
+/**
+ * Open the modal to create a new project.
+ */
+function startNewProject() {
+    openProjectModal(null);
+}
+
+/**
+ * Open the modal to edit an existing project.
+ * @param {string} projectId
+ */
+function editProject(projectId) {
+    if (!state.projects[projectId]) return;
+    openProjectModal(projectId);
+}
+
+/**
+ * Confirm and delete a project. The backend moves its Drive folder to the trash
+ * (recoverable) and removes the DB rows. Conversations that referenced the
+ * project keep working — they just stop receiving its context.
+ * @param {string} projectId
+ */
+async function deleteProjectPrompt(projectId) {
+    const project = state.projects[projectId];
+    if (!project) return;
+
+    const count = project.fileCount || 0;
+    let message = `Delete project "${project.name}"?`;
+    if (count > 0) {
+        message += `\n\nIts ${count} file${count !== 1 ? 's' : ''} will be moved to your Google Drive trash.`;
+    }
+    message += '\n\nConversations using this project will keep working without its context.';
+
+    if (!confirm(message)) return;
+
+    try {
+        await API.projects.delete(projectId);
+    } catch (err) {
+        console.error('Failed to delete project:', err);
+        displayError(err, { action: 'delete project' });
+        return;
+    }
+
+    delete state.projects[projectId];
+    if (state.activeProjectId === projectId) {
+        state.activeProjectId = null;
+    }
+    renderProjectList();
 }
 
 /**
@@ -4685,9 +4939,22 @@ function setupEventListeners() {
     // Personas tab controls
     elements.newPersonaBtn.addEventListener('click', startNewPersona);
 
+    // Projects tab controls
+    elements.newProjectBtn.addEventListener('click', startNewProject);
+    elements.closeProjectModal.addEventListener('click', closeProjectModal);
+    elements.saveProjectBtn.addEventListener('click', saveProject);
+    elements.projectModal.addEventListener('click', (e) => {
+        if (e.target === elements.projectModal) closeProjectModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && elements.projectModal.classList.contains('visible')) {
+            closeProjectModal();
+        }
+    });
+
     // Close any open context menus when clicking elsewhere
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.context-menu') && !e.target.closest('.conversation-menu-btn') && !e.target.closest('.persona-menu-btn')) {
+        if (!e.target.closest('.context-menu') && !e.target.closest('.conversation-menu-btn') && !e.target.closest('.persona-menu-btn') && !e.target.closest('.project-menu-btn')) {
             const existingMenu = document.querySelector('.context-menu');
             if (existingMenu) existingMenu.remove();
         }

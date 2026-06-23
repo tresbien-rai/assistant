@@ -326,6 +326,52 @@
     },
 
     // -------------------------------------------------------------------------
+    // PROJECTS
+    // -------------------------------------------------------------------------
+    projects: {
+      /** Returns [{ id, name, instructions, fileCount, createdAt, updatedAt }]. */
+      list() {
+        return request('GET', '/api/projects');
+      },
+      get(id) {
+        return request('GET', `/api/projects/${encodeURIComponent(id)}`);
+      },
+      /** data = { name, instructions? }. Creates the backing Drive folder. */
+      create(data) {
+        return request('POST', '/api/projects', { body: data });
+      },
+      /** data = { name?, instructions? }. */
+      update(id, data) {
+        return request('PUT', `/api/projects/${encodeURIComponent(id)}`, { body: data });
+      },
+      delete(id) {
+        return request('DELETE', `/api/projects/${encodeURIComponent(id)}`);
+      },
+
+      // Project files (stored on the user's Google Drive).
+      files: {
+        /** Returns [{ id, projectId, filename, mimeType, sizeBytes, createdAt }]. */
+        list(projectId) {
+          return request('GET', `/api/projects/${encodeURIComponent(projectId)}/files`);
+        },
+        /** Uploads a single file (multipart). @param {File|Blob} file */
+        upload(projectId, file) {
+          const fd = new FormData();
+          fd.append('file', file);
+          return request('POST', `/api/projects/${encodeURIComponent(projectId)}/files`, {
+            body: fd,
+          });
+        },
+        delete(projectId, fileId) {
+          return request(
+            'DELETE',
+            `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`
+          );
+        },
+      },
+    },
+
+    // -------------------------------------------------------------------------
     // MESSAGES
     // -------------------------------------------------------------------------
     messages: {
