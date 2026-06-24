@@ -659,13 +659,16 @@ body {
     border-color: var(--accent);
 }
 
-/* Inner textarea is borderless/transparent — the wrapper is the visible box. */
+/* Inner textarea is borderless/transparent — the wrapper is the visible box.
+   resize:none lives here (not just under .settings-section) so any wrapped
+   textarea loses the native corner grip and is sized only via the drag handle. */
 .textarea-resizable textarea,
 .textarea-resizable textarea:focus {
     border: none;
     border-radius: 0;
     background: transparent;
     margin-bottom: 0;
+    resize: none;
 }
 
 .textarea-resize-handle {
