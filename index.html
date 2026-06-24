@@ -433,6 +433,9 @@ When responding, you may optionally include an expression tag like [expression: 
                         </svg>
                     </button>
                     <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
+                    <select class="project-select" id="projectSelect" title="Project context for this conversation" aria-label="Project for this conversation">
+                        <option value="">No project</option>
+                    </select>
                 </div>
                 
                 <div class="status-center">
@@ -645,6 +648,24 @@ When responding, you may optionally include an expression tag like [expression: 
                     <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
                 </div>
                 <p class="help-text">These instructions and the project's files are added to the model's context for any conversation assigned to this project.</p>
+
+                <div class="project-files-section" id="projectFilesSection" hidden>
+                    <label>Files</label>
+                    <div class="project-file-list" id="projectFileList">
+                        <!-- Populated dynamically -->
+                    </div>
+                    <p class="empty-state" id="noProjectFilesMessage">No files yet.</p>
+                    <div class="file-upload-wrapper">
+                        <input type="file" id="projectFileInput" class="file-input-hidden" multiple>
+                        <button type="button" class="file-upload-btn" id="projectFileUploadBtn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                            Upload files
+                        </button>
+                    </div>
+                    <p class="help-text">Text, code, and PDF files up to 10MB each.</p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="modal-btn primary" id="saveProjectBtn">Save</button>

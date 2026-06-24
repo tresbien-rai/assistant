@@ -544,6 +544,110 @@ body {
     line-height: 1;
 }
 
+/* ===== Project selector (status bar) ===== */
+.project-select {
+    max-width: 160px;
+    padding: 3px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+}
+
+.project-select:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.project-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ===== Project files (modal) ===== */
+.project-files-section {
+    margin-top: 8px;
+}
+
+.project-file-list {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 8px;
+}
+
+.project-file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.project-file-item:last-child {
+    border-bottom: none;
+}
+
+/* Row-friendly version of the attachment type chip (.att-badge is absolute). */
+.project-file-badge {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.project-file-name {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.project-file-size {
+    flex-shrink: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.project-file-download,
+.project-file-delete {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: var(--text-base);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.project-file-download:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+.project-file-delete:hover {
+    background: var(--border-color);
+    color: var(--danger, #e5534b);
+}
+
 /* ===== Context Menu ===== */
 .context-menu {
     position: absolute;
