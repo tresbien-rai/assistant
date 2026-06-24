@@ -640,7 +640,10 @@ When responding, you may optionally include an expression tag like [expression: 
                 <input type="text" id="projectNameInput" placeholder="e.g., Research Notes" maxlength="100">
 
                 <label for="projectInstructionsInput">Instructions</label>
-                <textarea id="projectInstructionsInput" rows="6" placeholder="Background context or instructions injected into every conversation in this project (optional)."></textarea>
+                <div class="textarea-resizable">
+                    <textarea id="projectInstructionsInput" rows="6" placeholder="Background context or instructions injected into every conversation in this project (optional)."></textarea>
+                    <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+                </div>
                 <p class="help-text">These instructions and the project's files are added to the model's context for any conversation assigned to this project.</p>
             </div>
             <div class="modal-footer">
