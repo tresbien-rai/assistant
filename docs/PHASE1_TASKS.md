@@ -80,7 +80,7 @@ provider API (Anthropic, Gemini, OpenAI, …), not just Anthropic.
   Build an authenticated `google.auth.OAuth2` client from a user's *decrypted*
   `drive_token` / `drive_refresh`. **Refresh** the access token when expired and
   persist the new one (`dal.updateUserDriveTokens`). Expose helpers:
-  `ensureAppFolders(auth)` (creates `AI Assistant/projects/` once, returns IDs),
+  `ensureAppFolders(auth)` (creates `Tessera/projects/` once, returns IDs),
   `createFolder`, `uploadFile`, `downloadFileText`, `downloadFileBytes`,
   `deleteFile`, `listFiles`. Wrap Drive failures in `AppError.drive()`.
   *Gotcha:* `drive.file` only grants access to files the app itself creates —
@@ -95,7 +95,7 @@ provider API (Anthropic, Gemini, OpenAI, …), not just Anthropic.
 ### Backend — Projects API
 - **P1-03 — Project CRUD routes** (`server/src/routes/projects.js`, mount in
   `index.js`): `GET/POST/PUT/DELETE /api/projects`. On **create**, also create
-  the project's Drive folder under `AI Assistant/projects/{name}` and store
+  the project's Drive folder under `Tessera/projects/{name}` and store
   `drive_folder_id`. Delete behavior is fixed per decision #5 (delete DB rows +
   trash the Drive folder). All routes behind `authenticate`.
 

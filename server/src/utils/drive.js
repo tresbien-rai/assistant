@@ -8,7 +8,7 @@
  *
  * Scope note: the app uses the `drive.file` OAuth scope, which only grants
  * access to files/folders the app itself created or opened. That is exactly the
- * model here — the app owns an `AI Assistant/projects/...` folder tree. Do NOT
+ * model here — the app owns a `Tessera/projects/...` folder tree. Do NOT
  * expect to browse the user's whole Drive.
  *
  * All Drive failures are wrapped in `AppError.drive()`. Tokens are never logged.
@@ -23,8 +23,8 @@ const { encrypt, decrypt } = require('./encryption');
 const AppError = require('./AppError');
 const { logger } = require('./logger');
 
-// App folder layout on the user's Drive
-const APP_ROOT_FOLDER = 'AI Assistant';
+// App folder layout on the user's Drive (root name is configurable; see config).
+const APP_ROOT_FOLDER = config.driveRootFolder;
 const PROJECTS_FOLDER = 'projects';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
@@ -230,7 +230,7 @@ async function ensureFolder(auth, name, parentId) {
 }
 
 /**
- * Ensure the app's folder tree exists: `AI Assistant/projects/`.
+ * Ensure the app's folder tree exists: `{driveRootFolder}/projects/`.
  * Idempotent — safe to call on every project create.
  * @param {import('google-auth-library').OAuth2Client} auth
  * @returns {Promise<{rootId: string, projectsId: string}>}

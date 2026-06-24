@@ -4,7 +4,7 @@ AI ASSISTANT - DEVELOPMENT PLAN
 Last updated: 2026-05-22
 
 This document outlines the architecture, priorities, and phased implementation
-plan for evolving the AI Assistant from a client-side browser app into a
+plan for evolving Tessera from a client-side browser app into a
 full-featured, server-backed application.
 
 NOTE: This project is a vibe coding experiment. The human collaborator is a
@@ -90,7 +90,7 @@ File storage: Hybrid approach
     to inject as context), then cleaned up
 
 Google Cloud Console: Already set up (used for RisuAI)
-  - Create a separate project for the AI Assistant app
+  - Create a separate project for the Tessera app
   - OAuth 2.0 client credentials for Google Drive API
   - Scopes: drive.file (files created/opened by the app)
 
@@ -216,7 +216,7 @@ Data model:
 Google Drive file storage:
 
   On the user's Drive, the app creates a root folder structure:
-    AI Assistant/
+    Tessera/
       projects/
         {project-name}/
           file1.txt

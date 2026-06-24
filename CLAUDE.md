@@ -15,7 +15,7 @@ repo may lag behind origin. Run `git fetch` before reviewing project state.
 
 ## Project Summary
 
-Personal AI Assistant - a server-backed chat interface with Google OAuth authentication. Users sign in with Google (which also connects their Google Drive) and store API keys server-side. Features customizable personas with avatar expressions and conversation history synced across devices.
+Tessera - a personal, server-backed AI chat interface with Google OAuth authentication. Users sign in with Google (which also connects their Google Drive) and store API keys server-side. Features customizable personas with avatar expressions and conversation history synced across devices.
 
 ## Tech Stack
 
