@@ -855,6 +855,14 @@ const elements = {
     projectNameInput: document.getElementById('projectNameInput'),
     projectInstructionsInput: document.getElementById('projectInstructionsInput'),
     saveProjectBtn: document.getElementById('saveProjectBtn'),
+    projectFilesSection: document.getElementById('projectFilesSection'),
+    projectFileList: document.getElementById('projectFileList'),
+    noProjectFilesMessage: document.getElementById('noProjectFilesMessage'),
+    projectFileInput: document.getElementById('projectFileInput'),
+    projectFileUploadBtn: document.getElementById('projectFileUploadBtn'),
+
+    // Project selector (status bar)
+    projectSelect: document.getElementById('projectSelect'),
 
     // Settings inputs
     providerSelect: document.getElementById('providerSelect'),
@@ -1475,6 +1483,9 @@ async function updateUI() {
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
+
+    // Reflect the active conversation's project in the header selector.
+    populateProjectSelect();
 
     // Update avatar preview in settings (async - loads from IndexedDB)
     await updateAvatarPreview();
@@ -3153,9 +3164,26 @@ function openProjectModal(projectId = null) {
     elements.projectNameInput.value = project ? (project.name || '') : '';
     elements.projectInstructionsInput.value = project ? (project.instructions || '') : '';
 
+    // Files can only be attached to a project that exists, so the section is
+    // shown only in edit mode. (Creating transitions into edit mode on Save.)
+    if (project) {
+        showProjectFilesSection(true);
+        renderProjectFiles(project.id);
+    } else {
+        showProjectFilesSection(false);
+    }
+
     closeSidebar(); // close the mobile drawer if open
     elements.projectModal.classList.add('visible');
     elements.projectNameInput.focus();
+}
+
+/**
+ * Toggle the modal's file-management section.
+ * @param {boolean} visible
+ */
+function showProjectFilesSection(visible) {
+    elements.projectFilesSection.hidden = !visible;
 }
 
 function closeProjectModal() {
@@ -3178,6 +3206,7 @@ async function saveProject() {
 
     const editingId = state.ui.editingProjectId;
     elements.saveProjectBtn.disabled = true;
+    let createdId = null;
     try {
         if (editingId) {
             const updated = await API.projects.update(editingId, { name, instructions });
@@ -3197,6 +3226,7 @@ async function saveProject() {
                 createdAt: created.createdAt,
                 updatedAt: created.updatedAt,
             };
+            createdId = created.id;
         }
     } catch (err) {
         console.error('Failed to save project:', err);
@@ -3206,8 +3236,19 @@ async function saveProject() {
         elements.saveProjectBtn.disabled = false;
     }
 
-    closeProjectModal();
     renderProjectList();
+    populateProjectSelect(); // keep the status-bar selector options in sync
+
+    if (createdId) {
+        // Stay open and switch into edit mode so the user can add files right away.
+        state.ui.editingProjectId = createdId;
+        elements.projectModalTitle.textContent = 'Edit Project';
+        showProjectFilesSection(true);
+        renderProjectFiles(createdId);
+        showToast('Project created. You can now add files.', { type: 'success' });
+    } else {
+        closeProjectModal();
+    }
 }
 
 /**
@@ -3258,6 +3299,167 @@ async function deleteProjectPrompt(projectId) {
         state.activeProjectId = null;
     }
     renderProjectList();
+    populateProjectSelect(); // drop the deleted project from the selector
+}
+
+/**
+ * Populate the status-bar project selector and reflect the active
+ * conversation's project. Disabled when there's no active conversation.
+ */
+function populateProjectSelect() {
+    const select = elements.projectSelect;
+    if (!select) return;
+
+    const activeConvo = getActiveConversation();
+    const currentProjectId = activeConvo ? (activeConvo.projectId || '') : '';
+
+    const projects = Object.values(state.projects)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    select.innerHTML = '';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'No project';
+    select.appendChild(none);
+    for (const p of projects) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name || 'Untitled Project';
+        select.appendChild(opt);
+    }
+
+    // Select the conversation's project if it still exists, else "No project".
+    select.value = state.projects[currentProjectId] ? currentProjectId : '';
+    select.disabled = !activeConvo;
+}
+
+/**
+ * Assign (or clear) the active conversation's project from the selector.
+ */
+async function onProjectSelectChange() {
+    const activeConvo = getActiveConversation();
+    if (!activeConvo) return;
+
+    const newProjectId = elements.projectSelect.value || null;
+    const prev = activeConvo.projectId || null;
+    if (newProjectId === prev) return;
+
+    try {
+        await API.conversations.update(activeConvo.id, { projectId: newProjectId });
+    } catch (err) {
+        console.error('Failed to set conversation project:', err);
+        displayError(err, { action: 'set project' });
+        populateProjectSelect(); // revert the control to the real state
+        return;
+    }
+    activeConvo.projectId = newProjectId;
+}
+
+/**
+ * Render the file list for a project inside the modal, and keep the cached
+ * file count in sync.
+ * @param {string} projectId
+ */
+async function renderProjectFiles(projectId) {
+    const listEl = elements.projectFileList;
+    listEl.innerHTML = '';
+
+    let files;
+    try {
+        files = await API.projects.files.list(projectId);
+    } catch (err) {
+        console.error('Failed to load project files:', err);
+        displayError(err, { action: 'load files' });
+        return;
+    }
+
+    if (state.projects[projectId]) {
+        state.projects[projectId].fileCount = files.length;
+        renderProjectList();
+    }
+
+    if (files.length === 0) {
+        elements.noProjectFilesMessage.style.display = 'block';
+        return;
+    }
+    elements.noProjectFilesMessage.style.display = 'none';
+
+    files.forEach(f => {
+        const row = document.createElement('div');
+        row.className = 'project-file-item';
+        const label = getFileTypeLabel(f.filename, f.mimeType);
+        const href = API.projects.files.contentUrl(projectId, f.id);
+        row.innerHTML = `
+            <span class="project-file-badge">${escapeHtml(label)}</span>
+            <span class="project-file-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
+            <span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>
+            <a class="project-file-download" href="${href}" download title="Download">⤓</a>
+            <button class="project-file-delete" type="button" title="Delete">✕</button>
+        `;
+        row.querySelector('.project-file-delete')
+            .addEventListener('click', () => deleteProjectFilePrompt(projectId, f.id, f.filename));
+        listEl.appendChild(row);
+    });
+}
+
+/**
+ * Upload one or more files to a project, then refresh the list.
+ * @param {string} projectId
+ * @param {FileList|File[]} fileList
+ */
+async function uploadProjectFiles(projectId, fileList) {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+
+    elements.projectFileUploadBtn.disabled = true;
+    let failures = 0;
+    for (const file of files) {
+        try {
+            await API.projects.files.upload(projectId, file);
+        } catch (err) {
+            failures++;
+            console.error('Failed to upload file:', file.name, err);
+            displayError(err, { action: 'upload file' });
+        }
+    }
+    elements.projectFileUploadBtn.disabled = false;
+    elements.projectFileInput.value = ''; // allow re-selecting the same file
+    await renderProjectFiles(projectId);
+
+    const ok = files.length - failures;
+    if (ok > 0) {
+        showToast(`Uploaded ${ok} file${ok !== 1 ? 's' : ''}.`, { type: 'success' });
+    }
+}
+
+/**
+ * Confirm and delete a single project file (from Drive + DB).
+ * @param {string} projectId
+ * @param {string} fileId
+ * @param {string} filename
+ */
+async function deleteProjectFilePrompt(projectId, fileId, filename) {
+    if (!confirm(`Delete file "${filename}"? This removes it from the project and your Google Drive.`)) return;
+    try {
+        await API.projects.files.delete(projectId, fileId);
+    } catch (err) {
+        console.error('Failed to delete file:', err);
+        displayError(err, { action: 'delete file' });
+        return;
+    }
+    await renderProjectFiles(projectId);
+}
+
+/**
+ * Format a byte count as a short human-readable size.
+ * @param {number} bytes
+ * @returns {string}
+ */
+function formatFileSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**
@@ -4347,6 +4549,9 @@ function buildChatRequest() {
         systemPrompt,
         modelParams: modelConfig.modelParams,
         ...(prefillText ? { prefill: prefillText } : {}),
+        // Lets the server resolve this conversation's project and inject its
+        // instructions + file context (P1-05). Harmless when there's no project.
+        ...(state.activeConversationId ? { conversationId: state.activeConversationId } : {}),
     };
 }
 
@@ -4957,6 +5162,16 @@ function setupEventListeners() {
             closeProjectModal();
         }
     });
+
+    // Project file upload (modal)
+    elements.projectFileUploadBtn.addEventListener('click', () => elements.projectFileInput.click());
+    elements.projectFileInput.addEventListener('change', () => {
+        const projectId = state.ui.editingProjectId;
+        if (projectId) uploadProjectFiles(projectId, elements.projectFileInput.files);
+    });
+
+    // Project selector (status bar) — assign a project to the active conversation
+    elements.projectSelect.addEventListener('change', onProjectSelectChange);
 
     // Close any open context menus when clicking elsewhere
     document.addEventListener('click', (e) => {

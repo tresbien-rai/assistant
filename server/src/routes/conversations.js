@@ -157,10 +157,10 @@ router.post('/', asyncHandler(async (req, res) => {
 /**
  * PUT /api/conversations/:id
  * Updates conversation metadata (only if owned by user)
- * Body: { title?, personaId? }
+ * Body: { title?, personaId?, projectId? }
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { title, personaId } = req.body;
+  const { title, personaId, projectId } = req.body;
   const updateData = {};
 
   // Validate and collect fields to update
@@ -178,6 +178,19 @@ router.put('/:id', asyncHandler(async (req, res) => {
       throw AppError.validation('Invalid personaId: persona not found');
     }
     updateData.personaId = personaId;
+  }
+
+  if (projectId !== undefined) {
+    // null/empty clears the project; otherwise it must belong to the user.
+    if (projectId === null || projectId === '') {
+      updateData.projectId = null;
+    } else {
+      const project = dal.getProjectById(projectId, req.user.userId);
+      if (!project) {
+        throw AppError.validation('Invalid projectId: project not found');
+      }
+      updateData.projectId = projectId;
+    }
   }
 
   const conversation = dal.updateConversation(req.params.id, req.user.userId, updateData);

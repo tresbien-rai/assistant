@@ -368,6 +368,10 @@
             `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`
           );
         },
+        /** URL for downloading a file's content (auth via cookie; use in <a download>). */
+        contentUrl(projectId, fileId) {
+          return `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/content`;
+        },
       },
     },
 

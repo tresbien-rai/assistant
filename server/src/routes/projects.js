@@ -261,6 +261,27 @@ router.get('/:id/files', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * GET /api/projects/:id/files/:fileId/content
+ * Stream a file's bytes from Drive (for download). Auth via cookie, so it can be
+ * used directly as an <a href download>.
+ */
+router.get('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
+  requireProject(req.params.id, req.user.userId);
+
+  const file = dal.getProjectFile(req.params.fileId, req.params.id);
+  if (!file || !file.drive_file_id) {
+    throw AppError.notFound('File');
+  }
+
+  const auth = drive.getAuthForUser(req.user.userId);
+  const bytes = await drive.downloadFileBytes(auth, file.drive_file_id);
+
+  res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`);
+  res.send(bytes);
+}));
+
+/**
  * POST /api/projects/:id/files
  * Upload a file (multipart field "file") to the project's Drive folder and
  * record its metadata.
