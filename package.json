@@ -1,7 +1,7 @@
 {
-  "name": "ai-assistant",
+  "name": "tessera",
   "version": "0.1.0",
-  "description": "A personal AI assistant with customizable personas",
+  "description": "Tessera — a personal AI assistant with customizable personas",
   "scripts": {
     "dev": "npx http-server . -p 3000 -c-1"
   },

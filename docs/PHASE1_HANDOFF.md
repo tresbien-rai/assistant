@@ -88,7 +88,7 @@ deletes DB rows; limits live in a `projectFiles` block in `config.js`.
   when needed, persisting the new access token via `dal.updateUserDriveTokens`.
   This is the first thing to get right (P1-01).
 - **`drive.file` scope** only exposes files the app itself created/opened — which
-  is exactly the model here (the app makes its own `AI Assistant/projects/...`
+  is exactly the model here (the app makes its own `Tessera/projects/...`
   folders). It's a **non-sensitive** scope, so **no Google app verification** is
   needed. Just ensure the **Drive API is enabled** in the Cloud project.
 - **Storage location:** project files live on Drive, **not** on the Railway

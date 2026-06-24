@@ -31,6 +31,11 @@ const config = {
   // Database
   dbPath: process.env.DB_PATH || './data/assistant.db',
 
+  // Name of the app's root folder on the user's Google Drive (contains
+  // `projects/`). Overridable via env so the brand can change without a code
+  // edit; defaults to the app name.
+  driveRootFolder: process.env.DRIVE_ROOT_FOLDER || 'Tessera',
+
   // Project files (Phase 1)
   // Centralizes the limits/allow-list for project knowledge files so they are
   // not scattered across routes. Files live on the user's Google Drive; these

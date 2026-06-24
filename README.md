@@ -1,4 +1,4 @@
-# AI Assistant
+# Tessera
 
 A personal AI assistant with customizable personas. Use your own API keys to chat with Claude or Gemini.
 

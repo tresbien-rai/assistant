@@ -1,5 +1,5 @@
 /**
- * AI Assistant - Main Application Logic
+ * Tessera - Main Application Logic
  * 
  * Features:
  * - Multi-provider API support (Claude, with OpenAI/Gemini coming)
@@ -1039,7 +1039,7 @@ async function init() {
         );
     }
 
-    console.log('AI Assistant initialized!');
+    console.log('Tessera initialized!');
 }
 
 // ===== Server → state hydration =====

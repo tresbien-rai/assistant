@@ -1,6 +1,6 @@
 # Deploying to Railway (P0-18)
 
-A follow-along guide for shipping the Personal AI Assistant to Railway.
+A follow-along guide for shipping Tessera to Railway.
 
 This app is **one Express service** that does two jobs at once: it serves the API
 (`/api/...`) *and* the frontend files (`index.html`, `app.js`, `styles.css`). So you
@@ -56,7 +56,7 @@ don't reuse the dev values.
 This is the part most likely to trip you up, so go slowly.
 
 1. Go to <https://console.cloud.google.com/> and create a **new project** (top-left
-   project dropdown → New Project). Name it anything, e.g. `ai-assistant`.
+   project dropdown → New Project). Name it anything, e.g. `tessera`.
 2. **Enable the APIs** you need. Go to *APIs & Services → Library* and enable:
    - **Google Drive API** (used in Phase 1, but enable it now so you don't redo this).
 3. **Configure the OAuth consent screen** (*APIs & Services → OAuth consent screen*):
@@ -152,6 +152,9 @@ Notes:
   and fix it in Step 6.
 - Do **not** set `PORT` (Railway provides it) and you don't need `DB_PATH` or
   `STATIC_PATH` (the defaults are correct for this layout).
+- Optional: `DRIVE_ROOT_FOLDER` overrides the name of the app's root folder on the
+  user's Google Drive (defaults to `Tessera`), and `PROJECT_FILE_MAX_BYTES` /
+  `PROJECT_CONTEXT_BUDGET_CHARS` tune project-file limits. Leave unset to use defaults.
 
 ---
 

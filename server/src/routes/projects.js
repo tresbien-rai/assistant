@@ -3,7 +3,7 @@
  *
  * A project bundles instructions + files that get injected as context into any
  * conversation assigned to it (independent of persona). Files live on the user's
- * Google Drive under `AI Assistant/projects/{name}`; SQLite stores only metadata
+ * Google Drive under `Tessera/projects/{name}`; SQLite stores only metadata
  * + Drive file IDs.
  *
  * Project CRUD:

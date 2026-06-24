@@ -1,5 +1,5 @@
 -- =============================================================================
--- AI Assistant Database Schema
+-- Tessera Database Schema
 -- =============================================================================
 -- All tables use TEXT UUIDs for primary keys (generated via crypto.randomUUID)
 -- All timestamps are INTEGER Unix milliseconds
