@@ -3564,6 +3564,11 @@ async function setExpression(exprName) {
 function renderConversation() {
     elements.messagesContainer.innerHTML = '';
 
+    // Keep the header project selector in sync with the active conversation.
+    // renderConversation is the chokepoint every active-conversation change hits
+    // (switch / new / delete), including paths that don't call updateUI.
+    populateProjectSelect();
+
     const activeConvo = getActiveConversation();
     const messages = activeConvo ? activeConvo.messages : [];
     const persona = getActivePersona();
