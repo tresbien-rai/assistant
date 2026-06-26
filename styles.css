@@ -573,6 +573,14 @@ body {
     margin-top: 8px;
 }
 
+/* Quiet, inline empty state here — the global .empty-state grey box looks
+   oversized for this small list area. */
+.project-files-section .empty-state {
+    padding: 8px 0;
+    background: none;
+    border-radius: 0;
+}
+
 .project-file-list {
     display: flex;
     flex-direction: column;
@@ -773,6 +781,10 @@ body {
     background: transparent;
     margin-bottom: 0;
     resize: none;
+    /* The wrapper has no padding, so the textarea owns its inner padding. Lives
+       here (not just .settings-section) so wrapped textareas elsewhere — e.g. the
+       project modal — aren't flush against the edge. */
+    padding: 10px 12px;
 }
 
 .textarea-resize-handle {

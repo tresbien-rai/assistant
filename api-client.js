@@ -495,6 +495,13 @@
           throw apiError;
         }
 
+        // Surface the project-context budget/Drive warning (sent as a header on
+        // the streaming response) as a synthetic event before the stream body.
+        const ctxWarning = response.headers.get('X-Project-Context-Warning');
+        if (ctxWarning) {
+          try { onEvent({ event: 'project-context-warning', warning: decodeURIComponent(ctxWarning) }); } catch { /* noop */ }
+        }
+
         try {
           await consumeSseStream(response, onEvent);
         } catch (err) {
