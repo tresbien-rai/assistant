@@ -1,5 +1,9 @@
 # Phase 1 — Projects (Google Drive file context)
 
+> **STATUS: ✅ COMPLETE (2026-06-25).** All tasks P1-01 … P1-12 shipped and merged.
+> Live-validated end-to-end on Anthropic and Gemini (Drive file creation + project
+> context injection confirmed). Next: **Phase 2** — see `docs/PHASE2_HANDOFF.md`.
+
 Detailed task breakdown for Phase 1. Companion to `docs/PHASE1_HANDOFF.md`
 (orientation) and the Phase 1 section of `PLANNING.txt` (the original spec).
 
