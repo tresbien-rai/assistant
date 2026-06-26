@@ -90,6 +90,30 @@ Tools: `create_file(filename, content, mime_type)`, `read_file(filename)`,
   persona and the selected project, what each tab should show/do on switch, and
   whether the chat view should change context. Then implement the agreed model.
 
+- **P2-U4 — "View sent request" inspector** (advanced / dev-level feature)
+  Let the user inspect the exact request sent to the provider — messages, the
+  **assembled** system prompt (incl. injected project context), model params,
+  prefill, and (once Track A lands) tool definitions. Inspired by RisuAI's prompt/
+  request inspection. *Feasibility + exact UX to be explored in-session.*
+  - **Key design note:** the final payload is built **server-side** (project-
+    context prepend in `resolveProjectContext`, prefill appended by the provider
+    modules, provider-specific `buildRequestBody`), so the frontend doesn't have
+    the true request. Showing the real thing means the server must expose the
+    assembled body — recommend a **dry-run/preview path** (e.g.
+    `POST /api/chat/preview` that runs the same assembly as `/api/chat` and
+    returns the built provider body **without** calling the provider), rather
+    than reconstructing it on the client.
+  - **Security:** the API key is added as a header server-side and is **never** in
+    the request body — keep it that way; the preview must never include it. The
+    body does contain the system prompt + project file text (the user's own
+    data), which is fine to show the owner.
+  - **Frontend:** gate behind an "advanced/developer" toggle (e.g. in Settings);
+    surface as a per-message "view request" action or a button that opens a modal
+    with pretty-printed JSON (reuse the modal + code-block styling). Showing the
+    provider-native body (Anthropic vs Gemini shape) is the most accurate.
+  - Pairs naturally with Track A — seeing tool definitions in the payload is
+    useful while building tool use.
+
 ---
 
 ## Suggested order

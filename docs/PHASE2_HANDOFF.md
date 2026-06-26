@@ -99,6 +99,12 @@ Anthropic `tool_use`/`tool_result`, Gemini `functionCall`/`functionResponse`
    **This one needs a design discussion at the start of the session** before
    coding — clarify how the active conversation relates to the active persona and
    selected project, and what each tab should do on switch.
+4. **"View sent request" inspector** (advanced / dev-level) — let the user see the
+   exact payload sent to the provider (assembled system prompt incl. project
+   context, messages, params, prefill, later tool defs), à la RisuAI. The true
+   request is assembled server-side, so this likely needs a dry-run/preview
+   endpoint rather than client-side reconstruction; never expose the API key.
+   Feasibility to be explored in-session.
 
 ## Conventions / workflow (important)
 - **All task work on a feature branch → PR → `/code-review` → fix findings →
