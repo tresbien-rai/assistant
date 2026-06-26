@@ -4576,10 +4576,20 @@ async function callAPI(userMessage, attachments = []) {
     }
 
     const res = await API.chat.send(params);
+    if (res.contextWarning) showProjectContextWarning(res.contextWarning);
     const generatedAttachments = res.generatedImages
         ? await storeGeneratedImages(res.generatedImages)
         : [];
     return { text: res.text || '', attachments: generatedAttachments };
+}
+
+/**
+ * Show a soft, deduplicated warning when a project's injected context was
+ * truncated or partially unavailable (budget exceeded / Drive issue).
+ * @param {string} message
+ */
+function showProjectContextWarning(message) {
+    showToast(message, { type: 'warning', duration: 8000, key: 'project-context-warning' });
 }
 
 // ===== Streaming Support =====
@@ -4602,6 +4612,12 @@ async function callAPIStreaming(userMessage, attachments = []) {
     state.streamingGeneratedImages = [];
 
     await API.chat.stream(params, (ev) => {
+        // Synthetic event from the client (not provider SSE): project-context
+        // budget/Drive warning surfaced from the response header.
+        if (ev.event === 'project-context-warning') {
+            if (ev.warning) showProjectContextWarning(ev.warning);
+            return;
+        }
         if (!ev.data) return;
         let payload;
         try { payload = JSON.parse(ev.data); } catch { return; }
