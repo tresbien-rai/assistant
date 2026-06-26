@@ -188,10 +188,13 @@ Tasks:
 
 
 --------------------------------------------------------------------------------
-Phase 1: Projects
+Phase 1: Projects                                    [COMPLETE — 2026-06-25]
 --------------------------------------------------------------------------------
 Priority: HIGH
 Depends on: Phase 0
+Status: DONE & deployed. Projects (instructions + Drive-backed files) inject
+  context into any assigned conversation; full-context injection (text + PDF)
+  works live on Anthropic and Gemini. See docs/PHASE1_TASKS.md (all tasks done).
 
 Goal: Implement a Projects system that provides persistent background context
 for conversations, independent of personas. Files are stored on the user's
