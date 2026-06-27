@@ -959,6 +959,8 @@ const elements = {
     // Status bar
     headerAssistantName: document.getElementById('headerAssistantName'),
     modelIndicator: document.getElementById('modelIndicator'),
+    personaButton: document.getElementById('personaButton'),
+    modelButton: document.getElementById('modelButton'),
     statusMood: document.getElementById('statusMood'),
     statusMessages: document.getElementById('statusMessages'),
     statusTokens: document.getElementById('statusTokens'),
@@ -2985,6 +2987,158 @@ function editPersona(personaId) {
     savePersonas();
     updateUI();
     openSettingsModal();
+}
+
+// ===== Top-bar popovers (P2-U3a) =====
+
+/**
+ * Position a context-menu/popover relative to its anchor button. `align`
+ * controls which edge lines up: 'left' pins the menu's left edge to the
+ * anchor's left, 'right' pins its right edge to the anchor's right (so menus
+ * opened from the right side of the bar don't overflow off-screen).
+ * @param {HTMLElement} menu
+ * @param {HTMLElement} anchorEl
+ * @param {'left'|'right'} align
+ */
+function positionPopover(menu, anchorEl, align) {
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${rect.bottom + 6}px`;
+    if (align === 'right') {
+        menu.style.right = `${window.innerWidth - rect.right}px`;
+    } else {
+        menu.style.left = `${rect.left}px`;
+    }
+}
+
+/**
+ * Close `menu` on the next outside click. The anchor is excluded so clicking
+ * the trigger button again doesn't immediately re-close the freshly opened menu.
+ * @param {HTMLElement} menu
+ * @param {HTMLElement} anchorEl
+ */
+function attachPopoverOutsideClose(menu, anchorEl) {
+    setTimeout(() => {
+        document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target) && !anchorEl.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        });
+    }, 0);
+}
+
+/**
+ * Switch the active persona's model (from the top-bar model popover). Mirrors
+ * the settings-modal model dropdown: writes to the persona's modelConfig and
+ * re-renders. No-op if unchanged or there's no active persona.
+ * @param {string} modelId
+ */
+function selectModel(modelId) {
+    const persona = getActivePersona();
+    if (!persona || !persona.modelConfig) return;
+    if (persona.modelConfig.model === modelId) return;
+    persona.modelConfig.model = modelId;
+    persona.updatedAt = Date.now();
+    savePersonas();
+    updateUI();
+}
+
+/**
+ * Top-bar model button popover: quick-switch among the active persona's
+ * provider's configured models, plus a link to the Manage Models modal.
+ * @param {HTMLElement} anchorEl
+ */
+function showModelMenu(anchorEl) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const modelConfig = getActiveModelConfig();
+    const provider = modelConfig.provider;
+    const models = state.settings.customModels[provider] || [];
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu context-menu-wide';
+
+    let html = '';
+    if (models.length === 0) {
+        html += `<div class="context-menu-empty">No models configured</div>`;
+    } else {
+        models.forEach(m => {
+            const active = m.id === modelConfig.model ? ' active' : '';
+            html += `<button class="context-menu-item${active}" data-model-id="${escapeHtml(m.id)}">${escapeHtml(m.name)}</button>`;
+        });
+    }
+    html += `<div class="context-menu-separator"></div>`;
+    html += `<button class="context-menu-item" data-action="manage">Manage models…</button>`;
+    menu.innerHTML = html;
+
+    positionPopover(menu, anchorEl, 'right');
+    document.body.appendChild(menu);
+
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            menu.remove();
+            if (item.dataset.action === 'manage') {
+                openModelModal();
+                return;
+            }
+            if (item.dataset.modelId) {
+                selectModel(item.dataset.modelId);
+            }
+        });
+    });
+
+    attachPopoverOutsideClose(menu, anchorEl);
+}
+
+/**
+ * Top-bar persona button popover: edit the current persona, create a new one,
+ * or jump to another persona's chats. Switching does NOT reassign the current
+ * conversation — see docs/PHASE2_UX_DESIGN.md.
+ * @param {HTMLElement} anchorEl
+ */
+function showPersonaPopover(anchorEl) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu context-menu-wide';
+
+    let html = '';
+    html += `<button class="context-menu-item" data-action="edit">Edit persona</button>`;
+    html += `<button class="context-menu-item" data-action="new">+ New persona</button>`;
+
+    const personas = Object.values(state.personas)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    if (personas.length > 0) {
+        html += `<div class="context-menu-separator"></div>`;
+        html += `<div class="context-menu-label">Switch persona</div>`;
+        personas.forEach(p => {
+            const active = p.id === state.activePersonaId ? ' active' : '';
+            html += `<button class="context-menu-item${active}" data-persona-id="${escapeHtml(p.id)}">${escapeHtml(p.name || 'Untitled')}</button>`;
+        });
+    }
+    menu.innerHTML = html;
+
+    positionPopover(menu, anchorEl, 'left');
+    document.body.appendChild(menu);
+
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            menu.remove();
+            const action = item.dataset.action;
+            if (action === 'edit') {
+                if (state.activePersonaId) editPersona(state.activePersonaId);
+            } else if (action === 'new') {
+                startNewPersona();
+            } else if (item.dataset.personaId) {
+                switchPersona(item.dataset.personaId);
+            }
+        });
+    });
+
+    attachPopoverOutsideClose(menu, anchorEl);
 }
 
 /**
@@ -5117,6 +5271,18 @@ function setupEventListeners() {
     }
     if (elements.openSettingsBtn) {
         elements.openSettingsBtn.addEventListener('click', openSettingsModal);
+    }
+    if (elements.personaButton) {
+        elements.personaButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showPersonaPopover(elements.personaButton);
+        });
+    }
+    if (elements.modelButton) {
+        elements.modelButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showModelMenu(elements.modelButton);
+        });
     }
     if (elements.closeSettingsModal) {
         elements.closeSettingsModal.addEventListener('click', closeSettingsModal);
