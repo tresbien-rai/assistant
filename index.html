@@ -51,24 +51,21 @@
     <div class="app-container" id="appContainer" hidden>
         <!-- Sidebar with tabs -->
         <aside class="sidebar" id="sidebar">
-            <!-- Tab Bar -->
+            <!-- Tab Bar (Personas tab retired — persona management is in the
+                 top-bar persona popover) -->
             <div class="sidebar-tabs">
                 <button class="sidebar-tab active" data-tab="chats">Chats</button>
-                <button class="sidebar-tab" data-tab="personas">Personas</button>
                 <button class="sidebar-tab" data-tab="projects">Workspaces</button>
                 <button class="close-sidebar" id="closeSidebar">×</button>
             </div>
 
             <!-- Chats Tab Content -->
             <div class="tab-content active" id="chatsTab" data-tab="chats">
-                <div class="tab-header">
+                <div class="tab-header" id="chatsTabHeader" hidden>
                     <div class="workspace-scope-banner" id="workspaceScopeBanner" hidden>
                         <button class="workspace-leave-btn" id="workspaceLeaveBtn" type="button" title="Back to all chats">‹ All chats</button>
                         <span class="workspace-scope-name" id="workspaceScopeName"></span>
                     </div>
-                    <select id="personaFilter" class="persona-filter">
-                        <!-- Populated dynamically -->
-                    </select>
                 </div>
                 <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
                 <div class="conversation-list" id="conversationList">
@@ -404,15 +401,7 @@ When responding, you may optionally include an expression tag like [expression: 
               </div><!-- /.modal-content -->
             </div><!-- /#settingsModal -->
 
-            <!-- Personas Tab Content -->
-            <div class="tab-content" id="personasTab" data-tab="personas">
-                <button class="new-persona-btn" id="newPersonaBtn">+ New Persona</button>
-                <div class="persona-list" id="personaList">
-                    <!-- Populated dynamically -->
-                </div>
-            </div>
-
-            <!-- Projects Tab Content -->
+            <!-- Workspaces Tab Content -->
             <div class="tab-content" id="projectsTab" data-tab="projects">
                 <button class="new-project-btn" id="newProjectBtn">+ New Workspace</button>
                 <div class="project-list" id="projectList">

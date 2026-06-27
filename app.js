@@ -560,7 +560,8 @@ const state = {
     // UI state (session-local, no server source)
     ui: {
         activeTab: 'chats',
-        conversationFilter: 'active', // 'active' means filter by activePersonaId, or 'all'
+        // Persona group ids collapsed in the home chat list (session-only).
+        collapsedPersonaGroups: new Set(),
         // Project modal mode: holds the id being edited, or null when creating.
         editingProjectId: null
     },
@@ -823,9 +824,9 @@ const elements = {
     openSidebar: document.getElementById('openSidebar'),
     closeSidebar: document.getElementById('closeSidebar'),
 
-    // Sidebar tabs
+    // Sidebar tabs (Personas tab retired in P2-U3b part 2 — persona management
+    // now lives in the top-bar persona popover)
     chatsTab: document.getElementById('chatsTab'),
-    personasTab: document.getElementById('personasTab'),
     projectsTab: document.getElementById('projectsTab'),
 
     // Settings modal (relocated out of the sidebar)
@@ -838,17 +839,13 @@ const elements = {
     accentResetBtn: document.getElementById('accentResetBtn'),
 
     // Chats tab elements
-    personaFilter: document.getElementById('personaFilter'),
+    chatsTabHeader: document.getElementById('chatsTabHeader'),
     newChatBtn: document.getElementById('newChatBtn'),
     conversationList: document.getElementById('conversationList'),
     noConversationsMessage: document.getElementById('noConversationsMessage'),
     workspaceScopeBanner: document.getElementById('workspaceScopeBanner'),
     workspaceScopeName: document.getElementById('workspaceScopeName'),
     workspaceLeaveBtn: document.getElementById('workspaceLeaveBtn'),
-
-    // Personas tab elements
-    newPersonaBtn: document.getElementById('newPersonaBtn'),
-    personaList: document.getElementById('personaList'),
 
     // Projects tab elements
     newProjectBtn: document.getElementById('newProjectBtn'),
@@ -1533,7 +1530,6 @@ async function updateUI() {
     renderConversation();
 
     // Update sidebar lists
-    populatePersonaFilter();
     renderConversationList();
 }
 
@@ -2598,114 +2594,176 @@ async function switchTab(tabName) {
     // Refresh content when switching to certain tabs
     if (tabName === 'chats') {
         renderConversationList();
-    } else if (tabName === 'personas') {
-        await renderPersonaList();
     } else if (tabName === 'projects') {
         renderProjectList();
     }
 }
 
 /**
- * Populate the persona filter dropdown in chats tab
+ * Inner avatar markup (img or emoji) for a persona. Shared by the persona-
+ * grouped chat list and the workspace chat rows.
+ * @param {Object} persona
+ * @returns {string}
  */
-function populatePersonaFilter() {
-    const select = elements.personaFilter;
-    select.innerHTML = '';
-
-    // Add "All Personas" option
-    const allOption = document.createElement('option');
-    allOption.value = 'all';
-    allOption.textContent = 'All Personas';
-    select.appendChild(allOption);
-
-    // Add each persona
-    Object.values(state.personas).forEach(persona => {
-        const option = document.createElement('option');
-        option.value = persona.id;
-        option.textContent = persona.name;
-        if (state.ui.conversationFilter === 'active' && persona.id === state.activePersonaId) {
-            option.selected = true;
-        } else if (state.ui.conversationFilter === persona.id) {
-            option.selected = true;
-        }
-        select.appendChild(option);
-    });
-
-    // Select "All" if that's the filter
-    if (state.ui.conversationFilter === 'all') {
-        select.value = 'all';
+function personaAvatarHTML(persona) {
+    if (!persona) return `<span class="avatar-emoji">🤖</span>`;
+    if (persona.avatarFilename) {
+        // Cache-bust by updatedAt so a re-upload is reflected immediately.
+        const cacheBust = persona.updatedAt ? `?v=${persona.updatedAt}` : '';
+        const imageUrl = `${API.avatars.getUrl(persona.id)}${cacheBust}`;
+        return `<img src="${imageUrl}" alt="${escapeHtml(persona.name || '')}">`;
     }
+    const firstExpr = Object.values(persona.expressions || {})[0];
+    const avatarEmoji = firstExpr?.emoji || '🤖';
+    return `<span class="avatar-emoji">${avatarEmoji}</span>`;
 }
 
 /**
- * Render the conversation list in the chats tab
+ * Markup for a single conversation row. `showPersonaAvatar` adds the owning
+ * persona's avatar (used in the workspace list where personas are mixed; the
+ * home list shows the avatar on the group header instead).
+ * @param {Object} convo
+ * @param {boolean} showPersonaAvatar
+ * @returns {string}
  */
-function renderConversationList() {
-    const container = elements.conversationList;
-    container.innerHTML = '';
-
-    // Determine which conversations to show
-    let conversations = Object.values(state.conversations);
-
-    if (state.activeProjectId) {
-        // Inside a workspace: show that workspace's chats (flat, any persona).
-        // The persona filter does not apply here — the workspace is the scope.
-        conversations = conversations.filter(c => c.projectId === state.activeProjectId);
-    } else {
-        // Home (no workspace): filter by persona unless "all".
-        const filterPersonaId = state.ui.conversationFilter === 'active'
-            ? state.activePersonaId
-            : state.ui.conversationFilter;
-
-        if (filterPersonaId && filterPersonaId !== 'all') {
-            conversations = conversations.filter(c => c.personaId === filterPersonaId);
-        }
-    }
-
-    // Sort by updatedAt descending (most recent first)
-    conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-    // Show empty state if no conversations
-    if (conversations.length === 0) {
-        elements.noConversationsMessage.style.display = 'block';
-        return;
-    }
-    elements.noConversationsMessage.style.display = 'none';
-
-    // Render each conversation
-    conversations.forEach(convo => {
-        const item = document.createElement('div');
-        item.className = `conversation-item ${convo.id === state.activeConversationId ? 'active' : ''}`;
-        item.dataset.conversationId = convo.id;
-
-        const timeAgo = formatTimeAgo(convo.updatedAt || convo.createdAt);
-
-        item.innerHTML = `
+function conversationRowHTML(convo, showPersonaAvatar) {
+    const timeAgo = formatTimeAgo(convo.updatedAt || convo.createdAt);
+    const active = convo.id === state.activeConversationId ? 'active' : '';
+    const avatar = showPersonaAvatar
+        ? `<div class="conversation-persona-avatar">${personaAvatarHTML(state.personas[convo.personaId])}</div>`
+        : '';
+    return `
+        <div class="conversation-item ${active}" data-conversation-id="${convo.id}">
+            ${avatar}
             <div class="conversation-info" data-conversation-id="${convo.id}">
                 <span class="conversation-title">${escapeHtml(convo.title || 'New Chat')}</span>
                 <span class="conversation-time">${timeAgo}</span>
             </div>
             <button class="conversation-menu-btn" data-conversation-id="${convo.id}" title="Options">⋯</button>
-        `;
+        </div>
+    `;
+}
 
-        container.appendChild(item);
-    });
-
-    // Add click listeners for conversation items
+/**
+ * Wire click + menu listeners for all conversation rows currently in `container`.
+ * @param {HTMLElement} container
+ */
+function wireConversationRows(container) {
     container.querySelectorAll('.conversation-info').forEach(info => {
-        info.addEventListener('click', () => {
-            const convoId = info.dataset.conversationId;
-            switchConversation(convoId);
-        });
+        info.addEventListener('click', () => switchConversation(info.dataset.conversationId));
     });
-
-    // Add click listeners for menu buttons
     container.querySelectorAll('.conversation-menu-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             showConversationMenu(btn, btn.dataset.conversationId);
         });
     });
+}
+
+/**
+ * Render the chat list in the sidebar. Dispatches by context:
+ * - inside a workspace → flat list scoped to that workspace (persona avatars).
+ * - home → chats grouped by persona under collapsible headers.
+ */
+function renderConversationList() {
+    const container = elements.conversationList;
+    container.innerHTML = '';
+
+    if (state.activeProjectId) {
+        renderWorkspaceChatList(container);
+    } else {
+        renderGroupedChatList(container);
+    }
+}
+
+/**
+ * Flat list of the active workspace's chats (any persona), most-recent first.
+ * @param {HTMLElement} container
+ */
+function renderWorkspaceChatList(container) {
+    const conversations = Object.values(state.conversations)
+        .filter(c => c.projectId === state.activeProjectId)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    if (conversations.length === 0) {
+        elements.noConversationsMessage.style.display = 'block';
+        return;
+    }
+    elements.noConversationsMessage.style.display = 'none';
+
+    container.innerHTML = conversations.map(c => conversationRowHTML(c, true)).join('');
+    wireConversationRows(container);
+}
+
+/**
+ * Home view: chats grouped by persona under collapsible headers ("chats with
+ * X"). Only personas with at least one chat get a group; the active persona's
+ * group sorts first, the rest by most-recent activity.
+ * @param {HTMLElement} container
+ */
+function renderGroupedChatList(container) {
+    const all = Object.values(state.conversations);
+
+    if (all.length === 0) {
+        elements.noConversationsMessage.style.display = 'block';
+        return;
+    }
+    elements.noConversationsMessage.style.display = 'none';
+
+    // Group conversations by persona, tracking each group's latest activity.
+    const groups = new Map(); // personaId -> { convos: [], latest }
+    for (const c of all) {
+        const pid = c.personaId || '__none__';
+        if (!groups.has(pid)) groups.set(pid, { convos: [], latest: 0 });
+        const g = groups.get(pid);
+        g.convos.push(c);
+        g.latest = Math.max(g.latest, c.updatedAt || c.createdAt || 0);
+    }
+
+    // Order: active persona first, then by most-recent activity.
+    const ordered = [...groups.entries()].sort((a, b) => {
+        if (a[0] === state.activePersonaId) return -1;
+        if (b[0] === state.activePersonaId) return 1;
+        return b[1].latest - a[1].latest;
+    });
+
+    let html = '';
+    for (const [pid, g] of ordered) {
+        const persona = state.personas[pid];
+        const name = persona ? (persona.name || 'Untitled') : 'No persona';
+        const collapsed = state.ui.collapsedPersonaGroups.has(pid);
+        const rows = g.convos
+            .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+            .map(c => conversationRowHTML(c, false))
+            .join('');
+        html += `
+            <div class="persona-group" data-persona-id="${escapeHtml(pid)}">
+                <button class="persona-group-header" data-persona-id="${escapeHtml(pid)}" type="button">
+                    <svg class="group-chevron ${collapsed ? 'collapsed' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    <div class="conversation-persona-avatar">${personaAvatarHTML(persona)}</div>
+                    <span class="persona-group-name">${escapeHtml(name)}</span>
+                    <span class="persona-group-count">${g.convos.length}</span>
+                </button>
+                <div class="persona-group-body" ${collapsed ? 'hidden' : ''}>${rows}</div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+
+    // Collapse/expand on header click.
+    container.querySelectorAll('.persona-group-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const pid = header.dataset.personaId;
+            if (state.ui.collapsedPersonaGroups.has(pid)) {
+                state.ui.collapsedPersonaGroups.delete(pid);
+            } else {
+                state.ui.collapsedPersonaGroups.add(pid);
+            }
+            renderConversationList();
+        });
+    });
+
+    wireConversationRows(container);
 }
 
 /**
@@ -2862,146 +2920,30 @@ async function startNewConversation() {
 }
 
 /**
- * Render the persona list in the personas tab
- */
-async function renderPersonaList() {
-    const container = elements.personaList;
-    container.innerHTML = '';
-
-    const personas = Object.values(state.personas);
-
-    // Sort by updatedAt descending
-    personas.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-    for (const persona of personas) {
-        // Count conversations for this persona
-        const convoCount = Object.values(state.conversations).filter(c => c.personaId === persona.id).length;
-
-        const item = document.createElement('div');
-        item.className = `persona-item ${persona.id === state.activePersonaId ? 'active' : ''}`;
-        item.dataset.personaId = persona.id;
-
-        // Avatar comes from /api/avatars/:id/avatar — cache-busted by
-        // persona.updatedAt so a re-upload is visible immediately.
-        let avatarContent = '';
-        if (persona.avatarFilename) {
-            const cacheBust = persona.updatedAt ? `?v=${persona.updatedAt}` : '';
-            const imageUrl = `${API.avatars.getUrl(persona.id)}${cacheBust}`;
-            avatarContent = `<img src="${imageUrl}" alt="${escapeHtml(persona.name)}">`;
-        } else {
-            // Fallback to emoji if no avatar
-            const firstExpr = Object.values(persona.expressions || {})[0];
-            const avatarEmoji = firstExpr?.emoji || '🤖';
-            avatarContent = `<span class="avatar-emoji">${avatarEmoji}</span>`;
-        }
-
-        item.innerHTML = `
-            <div class="persona-avatar">${avatarContent}</div>
-            <div class="persona-details" data-persona-id="${persona.id}">
-                <span class="persona-name">${escapeHtml(persona.name)}</span>
-                <span class="persona-convo-count">${convoCount} conversation${convoCount !== 1 ? 's' : ''}</span>
-            </div>
-            <button class="persona-menu-btn" data-persona-id="${persona.id}" title="Options">⋯</button>
-        `;
-
-        container.appendChild(item);
-    }
-
-    // Add click listeners for persona items (to switch)
-    container.querySelectorAll('.persona-details').forEach(info => {
-        info.addEventListener('click', () => {
-            const personaId = info.dataset.personaId;
-            switchPersona(personaId);
-        });
-    });
-
-    // Also make avatar clickable
-    container.querySelectorAll('.persona-avatar').forEach(avatar => {
-        avatar.addEventListener('click', () => {
-            const personaId = avatar.closest('.persona-item').dataset.personaId;
-            switchPersona(personaId);
-        });
-    });
-
-    // Add click listeners for menu buttons
-    container.querySelectorAll('.persona-menu-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showPersonaMenu(btn, btn.dataset.personaId);
-        });
-    });
-}
-
-/**
- * Switch to a different persona
+ * Switch the active persona (from the top-bar persona popover). With the home
+ * chat list grouped by persona, this just sets the active persona, makes sure
+ * its group is expanded, and shows the home view scrolled to that group.
  * @param {string} personaId
  */
 async function switchPersona(personaId) {
     if (!state.personas[personaId]) return;
 
     state.activePersonaId = personaId;
+    state.ui.collapsedPersonaGroups.delete(personaId);
 
-    // Update the conversation filter to show this persona's conversations
-    state.ui.conversationFilter = 'active';
+    // Leaving any workspace so the persona's grouped chats are actually visible
+    // (inside a workspace the list is workspace-scoped, not persona-grouped).
+    if (state.activeProjectId) {
+        state.activeProjectId = null;
+        UiPrefs.set('activeProject', null);
+    }
 
     savePersonas();
-    populatePersonaFilter();
-    renderConversationList();
-    await renderPersonaList();
     await updateUI();
-
-    // Switch to chats tab to show the persona's conversations
     await switchTab('chats');
-}
 
-/**
- * Show context menu for a persona
- * @param {HTMLElement} anchorEl
- * @param {string} personaId
- */
-function showPersonaMenu(anchorEl, personaId) {
-    // Remove any existing menu
-    const existingMenu = document.querySelector('.context-menu');
-    if (existingMenu) existingMenu.remove();
-
-    const menu = document.createElement('div');
-    menu.className = 'context-menu';
-    menu.innerHTML = `
-        <button class="context-menu-item" data-action="edit">Edit</button>
-        <button class="context-menu-item danger" data-action="delete">Delete</button>
-    `;
-
-    // Position the menu
-    const rect = anchorEl.getBoundingClientRect();
-    menu.style.position = 'fixed';
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${rect.left - 80}px`;
-
-    document.body.appendChild(menu);
-
-    // Handle menu item clicks
-    menu.querySelectorAll('.context-menu-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const action = item.dataset.action;
-            menu.remove();
-
-            if (action === 'edit') {
-                editPersona(personaId);
-            } else if (action === 'delete') {
-                deletePersonaPrompt(personaId);
-            }
-        });
-    });
-
-    // Close menu on outside click
-    setTimeout(() => {
-        document.addEventListener('click', function closeMenu(e) {
-            if (!menu.contains(e.target)) {
-                menu.remove();
-                document.removeEventListener('click', closeMenu);
-            }
-        });
-    }, 0);
+    const groupEl = document.querySelector(`.persona-group[data-persona-id="${CSS.escape(personaId)}"]`);
+    if (groupEl) groupEl.scrollIntoView({ block: 'nearest' });
 }
 
 /**
@@ -3136,6 +3078,9 @@ function showPersonaPopover(anchorEl) {
     let html = '';
     html += `<button class="context-menu-item" data-action="edit">Edit persona</button>`;
     html += `<button class="context-menu-item" data-action="new">+ New persona</button>`;
+    if (state.activePersonaId) {
+        html += `<button class="context-menu-item danger" data-action="delete">Delete persona</button>`;
+    }
 
     const personas = Object.values(state.personas)
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -3160,6 +3105,8 @@ function showPersonaPopover(anchorEl) {
                 if (state.activePersonaId) editPersona(state.activePersonaId);
             } else if (action === 'new') {
                 startNewPersona();
+            } else if (action === 'delete') {
+                if (state.activePersonaId) deletePersonaPrompt(state.activePersonaId);
             } else if (item.dataset.personaId) {
                 switchPersona(item.dataset.personaId);
             }
@@ -3215,7 +3162,6 @@ async function deletePersonaPrompt(personaId) {
             state.activeConversationId = null;
         }
 
-        await renderPersonaList();
         renderConversationList();
         renderConversation();
         await updateUI();
@@ -3233,7 +3179,6 @@ async function startNewPersona() {
         console.error('Failed to create persona:', err);
         return;
     }
-    await renderPersonaList();
     editPersona(id);
 }
 
@@ -3506,11 +3451,11 @@ function updateWorkspaceUI() {
     if (elements.projectChipName) elements.projectChipName.textContent = name;
     if (elements.projectChip) elements.projectChip.classList.toggle('active', !!project);
 
-    // Sidebar: show the scope banner (with a "leave" affordance) and hide the
-    // persona filter while inside a workspace; the workspace is the scope there.
+    // Sidebar chats-tab header holds the workspace scope banner; show it only
+    // while inside a workspace (it's empty otherwise).
     if (elements.workspaceScopeBanner) elements.workspaceScopeBanner.hidden = !project;
     if (elements.workspaceScopeName && project) elements.workspaceScopeName.textContent = name;
-    if (elements.personaFilter) elements.personaFilter.hidden = !!project;
+    if (elements.chatsTabHeader) elements.chatsTabHeader.hidden = !project;
 }
 
 /**
@@ -5468,15 +5413,8 @@ function setupEventListeners() {
 
     // Chats tab controls
     elements.newChatBtn.addEventListener('click', startNewConversation);
-    elements.personaFilter.addEventListener('change', (e) => {
-        state.ui.conversationFilter = e.target.value === 'all' ? 'all' : e.target.value;
-        renderConversationList();
-    });
 
-    // Personas tab controls
-    elements.newPersonaBtn.addEventListener('click', startNewPersona);
-
-    // Projects tab controls
+    // Workspaces tab controls (persona management lives in the top-bar popover)
     elements.newProjectBtn.addEventListener('click', startNewProject);
     elements.closeProjectModal.addEventListener('click', closeProjectModal);
     elements.saveProjectBtn.addEventListener('click', saveProject);

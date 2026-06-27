@@ -512,6 +512,91 @@ body {
     opacity: 1;
 }
 
+/* ===== Persona-grouped chat list (home) ===== */
+.persona-group {
+    margin-bottom: 4px;
+}
+
+.persona-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.persona-group-header:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.group-chevron {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    transition: transform 0.15s;
+}
+
+.group-chevron.collapsed {
+    transform: rotate(-90deg);
+}
+
+.persona-group-name {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.persona-group-count {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    flex: 0 0 auto;
+}
+
+/* Slightly indent chat rows under a persona header */
+.persona-group-body .conversation-item {
+    margin-left: 8px;
+}
+
+/* Small persona avatar on group headers and workspace chat rows */
+.conversation-persona-avatar {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-tertiary);
+}
+
+.conversation-persona-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.conversation-persona-avatar .avatar-emoji {
+    font-size: 13px;
+    line-height: 1;
+}
+
+.conversation-item .conversation-persona-avatar {
+    margin-right: 8px;
+}
+
 .conversation-menu-btn:hover,
 .persona-menu-btn:hover,
 .project-menu-btn:hover {
