@@ -432,7 +432,10 @@ When responding, you may optionally include an expression tag like [expression: 
                             <line x1="3" y1="18" x2="21" y2="18"></line>
                         </svg>
                     </button>
-                    <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
+                    <button class="persona-button" id="personaButton" aria-haspopup="true" title="Persona options" aria-label="Persona options">
+                        <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                     <select class="project-select" id="projectSelect" title="Project context for this conversation" aria-label="Project for this conversation">
                         <option value="">No project</option>
                     </select>
@@ -458,7 +461,10 @@ When responding, you may optionally include an expression tag like [expression: 
                 </div>
                 
                 <div class="status-right">
-                    <span class="model-badge" id="modelIndicator">Claude Sonnet 4</span>
+                    <button class="model-button" id="modelButton" aria-haspopup="true" title="Switch model" aria-label="Switch model">
+                        <span class="model-badge" id="modelIndicator">Claude Sonnet 4</span>
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                     <button class="avatar-toggle-btn" id="avatarToggleBtn" title="Toggle Avatar">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
