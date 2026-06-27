@@ -279,6 +279,17 @@
       logout() {
         return request('POST', '/api/auth/logout');
       },
+
+      /** Public auth capabilities (e.g. whether dev-login is available). */
+      config() {
+        return request('GET', '/api/auth/config');
+      },
+
+      /** DEV-ONLY: sign in as a local stub user. 404s unless the server has
+       *  ALLOW_DEV_LOGIN enabled in development. */
+      devLogin() {
+        return request('POST', '/api/auth/dev-login');
+      },
     },
 
     // -------------------------------------------------------------------------

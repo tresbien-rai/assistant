@@ -5789,6 +5789,26 @@ function handleLoginClick() {
     window.location.href = API.auth.getGoogleLoginUrl();
 }
 
+/**
+ * DEV-ONLY: sign in as a local stub user via the dev-login bypass, then reload
+ * so bootstrap picks up the new session. Only reachable when the server has
+ * ALLOW_DEV_LOGIN enabled (the button is hidden otherwise).
+ */
+async function handleDevLoginClick() {
+    const btn = document.getElementById('devLoginBtn');
+    if (btn) btn.disabled = true;
+    try {
+        await API.auth.devLogin();
+    } catch (err) {
+        console.error('Dev login failed:', err);
+        if (btn) btn.disabled = false;
+        showLoginScreen('Dev login failed. Is ALLOW_DEV_LOGIN=true set on the server?');
+        return;
+    }
+    // Full navigation so bootstrap re-runs against the new session cookie.
+    window.location.href = '/?auth=success';
+}
+
 async function handleLogoutClick() {
     const btn = document.getElementById('logoutBtn');
     if (btn) btn.disabled = true;
@@ -5852,6 +5872,22 @@ async function bootstrap() {
 
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogoutClick);
+
+    // Reveal the dev-login button only when the server reports the bypass is
+    // enabled (development + ALLOW_DEV_LOGIN). Non-fatal: a failed probe just
+    // leaves the button hidden, so normal Google sign-in is unaffected.
+    try {
+        const authConfig = await API.auth.config();
+        if (authConfig && authConfig.devLogin) {
+            const devBtn = document.getElementById('devLoginBtn');
+            if (devBtn) {
+                devBtn.hidden = false;
+                devBtn.addEventListener('click', handleDevLoginClick);
+            }
+        }
+    } catch (err) {
+        console.warn('Auth config probe failed:', err);
+    }
 
     // If any future API call returns 401 (e.g., JWT expired), kick back to login.
     // We navigate via window.location to fully reset client state — an in-place

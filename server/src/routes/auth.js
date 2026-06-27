@@ -37,6 +37,50 @@ const SCOPES = [
 ];
 
 /**
+ * Seed a brand-new user with the default persona + settings. Shared by the
+ * OAuth callback and the dev-login path so both produce an identical starting
+ * state.
+ * @param {string} userId
+ */
+function seedNewUserDefaults(userId) {
+  dal.createPersona(userId, {
+    name: 'Assistant',
+    systemPrompt: 'You are a helpful AI assistant.',
+    modelConfig: {
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-20250514',
+      modelParams: {
+        temperature: 1.0,
+        maxTokens: 8192,
+        streaming: true,
+      },
+    },
+  });
+
+  dal.upsertSettings(userId, {
+    avatarSize: 'medium',
+    avatarPosition: 'top-right',
+    showAvatar: true,
+  });
+}
+
+/**
+ * Set the auth JWT as an httpOnly cookie. Shared by the OAuth callback and the
+ * dev-login path so the session cookie is identical regardless of how the user
+ * authenticated.
+ * @param {import('express').Response} res
+ * @param {string} token
+ */
+function setAuthCookie(res, token) {
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: !config.isDev,
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+}
+
+/**
  * GET /api/auth/google
  * Initiates the Google OAuth flow
  * Redirects user to Google's consent screen
@@ -132,27 +176,8 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
         driveRefresh: encryptedRefreshToken,
       });
 
-      // Create default persona for new user
-      dal.createPersona(user.id, {
-        name: 'Assistant',
-        systemPrompt: 'You are a helpful AI assistant.',
-        modelConfig: {
-          provider: 'anthropic',
-          model: 'claude-sonnet-4-20250514',
-          modelParams: {
-            temperature: 1.0,
-            maxTokens: 8192,
-            streaming: true,
-          },
-        },
-      });
-
-      // Create default settings for new user
-      dal.upsertSettings(user.id, {
-        avatarSize: 'medium',
-        avatarPosition: 'top-right',
-        showAvatar: true,
-      });
+      // Seed default persona + settings for the new user
+      seedNewUserDefaults(user.id);
 
       logger.info({ userId: user.id }, 'New user created with default persona and settings');
     }
@@ -165,12 +190,7 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
     });
 
     // Set token as httpOnly cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: !config.isDev,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    setAuthCookie(res, token);
 
     // Redirect to frontend with success
     // The frontend can read the cookie automatically for API calls
@@ -247,5 +267,53 @@ router.get('/status', (req, res) => {
     res.json({ authenticated: false });
   }
 });
+
+/**
+ * GET /api/auth/config
+ * Public, non-sensitive auth capabilities for the frontend to adapt its login
+ * screen. Currently just whether the dev-login bypass is available.
+ */
+router.get('/config', (req, res) => {
+  res.json({ devLogin: config.allowDevLogin });
+});
+
+/**
+ * POST /api/auth/dev-login
+ * DEV-ONLY login bypass. Find-or-creates a local stub user (no Google Drive
+ * access) and issues the same session cookie the OAuth callback would. The
+ * route is only registered when config.allowDevLogin is true (dev + explicit
+ * ALLOW_DEV_LOGIN opt-in), so it does not exist at all in production.
+ */
+if (config.allowDevLogin) {
+  const DEV_GOOGLE_ID = 'dev-local-user';
+
+  router.post('/dev-login', asyncHandler(async (req, res) => {
+    let user = dal.findUserByGoogleId(DEV_GOOGLE_ID);
+
+    if (!user) {
+      logger.warn('Creating dev-login stub user (ALLOW_DEV_LOGIN enabled — dev only)');
+      user = dal.createUser({
+        googleId: DEV_GOOGLE_ID,
+        email: 'dev@local.test',
+        displayName: 'Dev User',
+        driveToken: null,
+        driveRefresh: null,
+      });
+      seedNewUserDefaults(user.id);
+    }
+
+    const token = generateToken({
+      userId: user.id,
+      email: user.email,
+      displayName: user.display_name,
+    });
+
+    setAuthCookie(res, token);
+
+    res.json({ success: true });
+  }));
+
+  logger.warn('Dev-login bypass is ENABLED (POST /api/auth/dev-login) — dev only');
+}
 
 module.exports = router;

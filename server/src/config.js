@@ -11,6 +11,14 @@ const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isDev: (process.env.NODE_ENV || 'development') === 'development',
 
+  // Dev-only login bypass. Lets a local stub user sign in WITHOUT Google OAuth
+  // for UI testing. Double-gated: only when running in development AND the
+  // explicit opt-in env var is set. In production NODE_ENV=production forces
+  // this false, so the dev-login route is never even registered. NEVER set
+  // ALLOW_DEV_LOGIN in a deployed environment.
+  allowDevLogin: (process.env.NODE_ENV || 'development') === 'development'
+    && process.env.ALLOW_DEV_LOGIN === 'true',
+
   // JWT
   // Default secret for development only - MUST be set in production
   jwtSecret: process.env.JWT_SECRET || 'dev-jwt-secret-do-not-use-in-production',
