@@ -140,6 +140,7 @@ const UiPrefs = {
         theme: 'midnight',        // midnight | light | slate
         accent: '',               // '' = use the theme's default accent
         chatWidth: 'comfortable', // narrow | comfortable | wide
+        activeProject: null,      // id of the entered workspace, or null (home)
     },
     _data: null,
     load() {
@@ -592,6 +593,9 @@ const state = {
 async function createConversation(title = 'New Chat') {
     const created = await API.conversations.create({
         personaId: state.activePersonaId,
+        // New chats auto-attach to the active workspace (project), if any.
+        // The persona is always the currently-active one (P2-U3b model).
+        projectId: state.activeProjectId || null,
         title,
     });
     state.conversations[created.id] = {
@@ -838,6 +842,9 @@ const elements = {
     newChatBtn: document.getElementById('newChatBtn'),
     conversationList: document.getElementById('conversationList'),
     noConversationsMessage: document.getElementById('noConversationsMessage'),
+    workspaceScopeBanner: document.getElementById('workspaceScopeBanner'),
+    workspaceScopeName: document.getElementById('workspaceScopeName'),
+    workspaceLeaveBtn: document.getElementById('workspaceLeaveBtn'),
 
     // Personas tab elements
     newPersonaBtn: document.getElementById('newPersonaBtn'),
@@ -861,8 +868,9 @@ const elements = {
     projectFileInput: document.getElementById('projectFileInput'),
     projectFileUploadBtn: document.getElementById('projectFileUploadBtn'),
 
-    // Project selector (status bar)
-    projectSelect: document.getElementById('projectSelect'),
+    // Workspace chip (status bar)
+    projectChip: document.getElementById('projectChip'),
+    projectChipName: document.getElementById('projectChipName'),
 
     // Settings inputs
     providerSelect: document.getElementById('providerSelect'),
@@ -1014,6 +1022,20 @@ async function init() {
     // Pick the most recently updated persona/conversation as active.
     pickActivePersona();
     pickActiveConversation();
+
+    // Restore the entered workspace (device-local). If it no longer exists, clear
+    // the stored value. If the picked conversation isn't in that workspace, drop
+    // it so the workspace home shows on load instead of an unrelated chat.
+    const savedProject = UiPrefs.get('activeProject');
+    if (savedProject && state.projects[savedProject]) {
+        state.activeProjectId = savedProject;
+        const convo = getActiveConversation();
+        if (!convo || convo.projectId !== savedProject) {
+            state.activeConversationId = null;
+        }
+    } else if (savedProject) {
+        UiPrefs.set('activeProject', null);
+    }
 
     // Fetch messages for the active conversation eagerly so the first
     // render isn't empty. Other conversations are lazy-loaded on switch.
@@ -1486,8 +1508,8 @@ async function updateUI() {
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
 
-    // Reflect the active conversation's project in the header selector.
-    populateProjectSelect();
+    // Reflect the active workspace in the top-bar chip + sidebar scope.
+    updateWorkspaceUI();
 
     // Update avatar preview in settings (async - loads from IndexedDB)
     await updateAvatarPreview();
@@ -2625,13 +2647,19 @@ function renderConversationList() {
     // Determine which conversations to show
     let conversations = Object.values(state.conversations);
 
-    // Filter by persona if not "all"
-    const filterPersonaId = state.ui.conversationFilter === 'active'
-        ? state.activePersonaId
-        : state.ui.conversationFilter;
+    if (state.activeProjectId) {
+        // Inside a workspace: show that workspace's chats (flat, any persona).
+        // The persona filter does not apply here — the workspace is the scope.
+        conversations = conversations.filter(c => c.projectId === state.activeProjectId);
+    } else {
+        // Home (no workspace): filter by persona unless "all".
+        const filterPersonaId = state.ui.conversationFilter === 'active'
+            ? state.activePersonaId
+            : state.ui.conversationFilter;
 
-    if (filterPersonaId && filterPersonaId !== 'all') {
-        conversations = conversations.filter(c => c.personaId === filterPersonaId);
+        if (filterPersonaId && filterPersonaId !== 'all') {
+            conversations = conversations.filter(c => c.personaId === filterPersonaId);
+        }
     }
 
     // Sort by updatedAt descending (most recent first)
@@ -3246,9 +3274,10 @@ function renderProjectList() {
         container.appendChild(item);
     });
 
-    // Clicking a project opens it for editing (file management arrives in P1-09).
+    // Clicking a project ENTERS it as the active workspace (P2-U3b). Editing
+    // (instructions/files) is via the ⋯ menu or the top-bar chip / project home.
     container.querySelectorAll('.project-info').forEach(info => {
-        info.addEventListener('click', () => editProject(info.dataset.projectId));
+        info.addEventListener('click', () => enterProject(info.dataset.projectId));
     });
 
     container.querySelectorAll('.project-menu-btn').forEach(btn => {
@@ -3314,7 +3343,7 @@ function openProjectModal(projectId = null) {
     state.ui.editingProjectId = projectId;
     const project = projectId ? state.projects[projectId] : null;
 
-    elements.projectModalTitle.textContent = project ? 'Edit Project' : 'New Project';
+    elements.projectModalTitle.textContent = project ? 'Edit Workspace' : 'New Workspace';
     elements.projectNameInput.value = project ? (project.name || '') : '';
     elements.projectInstructionsInput.value = project ? (project.instructions || '') : '';
 
@@ -3353,7 +3382,7 @@ async function saveProject() {
     const instructions = elements.projectInstructionsInput.value;
 
     if (!name) {
-        showToast('Project name is required.', { type: 'error' });
+        showToast('Workspace name is required.', { type: 'error' });
         elements.projectNameInput.focus();
         return;
     }
@@ -3391,15 +3420,15 @@ async function saveProject() {
     }
 
     renderProjectList();
-    populateProjectSelect(); // keep the status-bar selector options in sync
+    updateWorkspaceUI(); // keep the chip name in sync if the active workspace was renamed
 
     if (createdId) {
         // Stay open and switch into edit mode so the user can add files right away.
         state.ui.editingProjectId = createdId;
-        elements.projectModalTitle.textContent = 'Edit Project';
+        elements.projectModalTitle.textContent = 'Edit Workspace';
         showProjectFilesSection(true);
         renderProjectFiles(createdId);
-        showToast('Project created. You can now add files.', { type: 'success' });
+        showToast('Workspace created. You can now add files.', { type: 'success' });
     } else {
         closeProjectModal();
     }
@@ -3432,11 +3461,11 @@ async function deleteProjectPrompt(projectId) {
     if (!project) return;
 
     const count = project.fileCount || 0;
-    let message = `Delete project "${project.name}"?`;
+    let message = `Delete workspace "${project.name}"?`;
     if (count > 0) {
         message += `\n\nIts ${count} file${count !== 1 ? 's' : ''} will be moved to your Google Drive trash.`;
     }
-    message += '\n\nConversations using this project will keep working without its context.';
+    message += '\n\nChats in this workspace will keep working without its context.';
 
     if (!confirm(message)) return;
 
@@ -3450,63 +3479,131 @@ async function deleteProjectPrompt(projectId) {
 
     delete state.projects[projectId];
     if (state.activeProjectId === projectId) {
+        // The active workspace was deleted — fall back to the home view.
         state.activeProjectId = null;
+        UiPrefs.set('activeProject', null);
+        renderConversationList();
+        renderConversation();
     }
     renderProjectList();
-    populateProjectSelect(); // drop the deleted project from the selector
+    updateWorkspaceUI(); // drop the deleted workspace from the chip
+}
+
+// ===== Workspace (active project) =====
+// A "workspace" is a project you ENTER (P2-U3b). Entering one scopes the chat
+// list to it, reflects it in the top-bar chip, and auto-attaches new chats. The
+// active workspace is device-local (UiPrefs.activeProject), not synced.
+
+/**
+ * Reflect the active workspace across the UI: the top-bar chip, the sidebar
+ * scope banner, and the persona filter (home-only). Replaces the old per-
+ * conversation project selector.
+ */
+function updateWorkspaceUI() {
+    const project = state.activeProjectId ? state.projects[state.activeProjectId] : null;
+    const name = project ? (project.name || 'Untitled workspace') : 'No workspace';
+
+    if (elements.projectChipName) elements.projectChipName.textContent = name;
+    if (elements.projectChip) elements.projectChip.classList.toggle('active', !!project);
+
+    // Sidebar: show the scope banner (with a "leave" affordance) and hide the
+    // persona filter while inside a workspace; the workspace is the scope there.
+    if (elements.workspaceScopeBanner) elements.workspaceScopeBanner.hidden = !project;
+    if (elements.workspaceScopeName && project) elements.workspaceScopeName.textContent = name;
+    if (elements.personaFilter) elements.personaFilter.hidden = !!project;
 }
 
 /**
- * Populate the status-bar project selector and reflect the active
- * conversation's project. Disabled when there's no active conversation.
+ * Enter a workspace: scope the chat list to it, reflect it in the chip, and show
+ * its home panel. The open chat is cleared if it doesn't belong to this
+ * workspace, so the main area shows the workspace home rather than a stray chat.
+ * @param {string} projectId
  */
-function populateProjectSelect() {
-    const select = elements.projectSelect;
-    if (!select) return;
+async function enterProject(projectId) {
+    if (!state.projects[projectId]) return;
+    state.activeProjectId = projectId;
+    UiPrefs.set('activeProject', projectId);
 
-    const activeConvo = getActiveConversation();
-    const currentProjectId = activeConvo ? (activeConvo.projectId || '') : '';
+    const convo = getActiveConversation();
+    if (!convo || convo.projectId !== projectId) {
+        state.activeConversationId = null;
+    }
+
+    updateWorkspaceUI();
+    renderProjectList();
+    renderConversationList();
+    renderConversation();
+    await switchTab('chats');
+    closeSidebar();
+}
+
+/**
+ * Leave the active workspace, returning to the home view (all chats, persona-
+ * filtered). The active conversation is left as-is.
+ */
+function leaveProject() {
+    if (!state.activeProjectId) return;
+    state.activeProjectId = null;
+    UiPrefs.set('activeProject', null);
+
+    updateWorkspaceUI();
+    renderProjectList();
+    renderConversationList();
+    renderConversation();
+}
+
+/**
+ * Top-bar workspace chip popover: switch workspace, leave, open settings, or
+ * create a new one.
+ * @param {HTMLElement} anchorEl
+ */
+function showWorkspaceMenu(anchorEl) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu context-menu-wide';
 
     const projects = Object.values(state.projects)
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-    select.innerHTML = '';
-    const none = document.createElement('option');
-    none.value = '';
-    none.textContent = 'No project';
-    select.appendChild(none);
-    for (const p of projects) {
-        const opt = document.createElement('option');
-        opt.value = p.id;
-        opt.textContent = p.name || 'Untitled Project';
-        select.appendChild(opt);
+    let html = '';
+    html += `<button class="context-menu-item${!state.activeProjectId ? ' active' : ''}" data-action="leave">No workspace</button>`;
+    if (projects.length > 0) {
+        html += `<div class="context-menu-separator"></div>`;
+        html += `<div class="context-menu-label">Workspaces</div>`;
+        projects.forEach(p => {
+            const active = p.id === state.activeProjectId ? ' active' : '';
+            html += `<button class="context-menu-item${active}" data-project-id="${escapeHtml(p.id)}">${escapeHtml(p.name || 'Untitled workspace')}</button>`;
+        });
     }
-
-    // Select the conversation's project if it still exists, else "No project".
-    select.value = state.projects[currentProjectId] ? currentProjectId : '';
-    select.disabled = !activeConvo;
-}
-
-/**
- * Assign (or clear) the active conversation's project from the selector.
- */
-async function onProjectSelectChange() {
-    const activeConvo = getActiveConversation();
-    if (!activeConvo) return;
-
-    const newProjectId = elements.projectSelect.value || null;
-    const prev = activeConvo.projectId || null;
-    if (newProjectId === prev) return;
-
-    try {
-        await API.conversations.update(activeConvo.id, { projectId: newProjectId });
-    } catch (err) {
-        console.error('Failed to set conversation project:', err);
-        displayError(err, { action: 'set project' });
-        populateProjectSelect(); // revert the control to the real state
-        return;
+    html += `<div class="context-menu-separator"></div>`;
+    if (state.activeProjectId) {
+        html += `<button class="context-menu-item" data-action="settings">Workspace settings…</button>`;
     }
-    activeConvo.projectId = newProjectId;
+    html += `<button class="context-menu-item" data-action="new">+ New workspace</button>`;
+    menu.innerHTML = html;
+
+    positionPopover(menu, anchorEl, 'left');
+    document.body.appendChild(menu);
+
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            menu.remove();
+            const action = item.dataset.action;
+            if (action === 'leave') {
+                leaveProject();
+            } else if (action === 'settings') {
+                if (state.activeProjectId) editProject(state.activeProjectId);
+            } else if (action === 'new') {
+                startNewProject();
+            } else if (item.dataset.projectId) {
+                enterProject(item.dataset.projectId);
+            }
+        });
+    });
+
+    attachPopoverOutsideClose(menu, anchorEl);
 }
 
 /**
@@ -3593,7 +3690,7 @@ async function uploadProjectFiles(projectId, fileList) {
  * @param {string} filename
  */
 async function deleteProjectFilePrompt(projectId, fileId, filename) {
-    if (!confirm(`Delete file "${filename}"? This removes it from the project and your Google Drive.`)) return;
+    if (!confirm(`Delete file "${filename}"? This removes it from the workspace and your Google Drive.`)) return;
     try {
         await API.projects.files.delete(projectId, fileId);
     } catch (err) {
@@ -3718,12 +3815,20 @@ async function setExpression(exprName) {
 function renderConversation() {
     elements.messagesContainer.innerHTML = '';
 
-    // Keep the header project selector in sync with the active conversation.
-    // renderConversation is the chokepoint every active-conversation change hits
-    // (switch / new / delete), including paths that don't call updateUI.
-    populateProjectSelect();
+    // Keep the workspace chip + sidebar scope in sync. renderConversation is the
+    // chokepoint every active-conversation change hits (switch / new / delete),
+    // including paths that don't call updateUI.
+    updateWorkspaceUI();
 
     const activeConvo = getActiveConversation();
+
+    // Workspace home: inside a workspace with no chat open, show the workspace
+    // landing panel instead of the generic welcome.
+    if (!activeConvo && state.activeProjectId && state.projects[state.activeProjectId]) {
+        renderProjectHome(state.projects[state.activeProjectId]);
+        return;
+    }
+
     const messages = activeConvo ? activeConvo.messages : [];
     const persona = getActivePersona();
     const assistantName = persona ? persona.name : CONFIG.defaults.assistantName;
@@ -3746,6 +3851,40 @@ function renderConversation() {
     });
 
     scrollToBottom();
+}
+
+/**
+ * Render the workspace "home" panel in the main area: name, instructions
+ * preview, file count, and quick actions. Shown when a workspace is entered but
+ * no chat is open. (As Tool Use lands, this is where created files will surface.)
+ * @param {Object} project
+ */
+function renderProjectHome(project) {
+    const count = project.fileCount || 0;
+    const instr = (project.instructions || '').trim();
+    const instrPreview = instr
+        ? escapeHtml(instr.length > 240 ? instr.slice(0, 240) + '…' : instr)
+        : 'No instructions yet.';
+
+    elements.messagesContainer.innerHTML = `
+        <div class="project-home">
+            <div class="project-home-header">
+                <svg class="project-home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                <h1>${escapeHtml(project.name || 'Untitled workspace')}</h1>
+            </div>
+            <p class="project-home-instructions">${instrPreview}</p>
+            <p class="project-home-meta">${count} file${count !== 1 ? 's' : ''}</p>
+            <div class="project-home-actions">
+                <button class="project-home-btn primary" id="projectHomeNewChat" type="button">+ New chat</button>
+                <button class="project-home-btn" id="projectHomeSettings" type="button">Workspace settings</button>
+            </div>
+        </div>
+    `;
+
+    const newBtn = document.getElementById('projectHomeNewChat');
+    if (newBtn) newBtn.addEventListener('click', startNewConversation);
+    const setBtn = document.getElementById('projectHomeSettings');
+    if (setBtn) setBtn.addEventListener('click', () => editProject(project.id));
 }
 
 async function appendMessage(role, content, save = true, explicitIndex = null, attachments = null) {
@@ -5357,8 +5496,17 @@ function setupEventListeners() {
         if (projectId) uploadProjectFiles(projectId, elements.projectFileInput.files);
     });
 
-    // Project selector (status bar) — assign a project to the active conversation
-    elements.projectSelect.addEventListener('change', onProjectSelectChange);
+    // Workspace chip (status bar) — switch/leave/settings/new workspace
+    if (elements.projectChip) {
+        elements.projectChip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showWorkspaceMenu(elements.projectChip);
+        });
+    }
+    // Sidebar scope banner "‹ All chats" — leave the active workspace
+    if (elements.workspaceLeaveBtn) {
+        elements.workspaceLeaveBtn.addEventListener('click', leaveProject);
+    }
 
     // Close any open context menus when clicking elsewhere
     document.addEventListener('click', (e) => {

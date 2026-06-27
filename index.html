@@ -32,7 +32,7 @@
             <p class="login-subtitle">Your personal AI chat interface.</p>
             <p class="login-description">
                 Sign in with Google to access your conversations across devices.
-                Your Google account also connects to Drive for project file storage.
+                Your Google account also connects to Drive for workspace file storage.
             </p>
             <button class="google-signin-btn" id="googleSignInBtn" type="button">
                 <svg class="google-icon" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
@@ -55,13 +55,17 @@
             <div class="sidebar-tabs">
                 <button class="sidebar-tab active" data-tab="chats">Chats</button>
                 <button class="sidebar-tab" data-tab="personas">Personas</button>
-                <button class="sidebar-tab" data-tab="projects">Projects</button>
+                <button class="sidebar-tab" data-tab="projects">Workspaces</button>
                 <button class="close-sidebar" id="closeSidebar">×</button>
             </div>
 
             <!-- Chats Tab Content -->
             <div class="tab-content active" id="chatsTab" data-tab="chats">
                 <div class="tab-header">
+                    <div class="workspace-scope-banner" id="workspaceScopeBanner" hidden>
+                        <button class="workspace-leave-btn" id="workspaceLeaveBtn" type="button" title="Back to all chats">‹ All chats</button>
+                        <span class="workspace-scope-name" id="workspaceScopeName"></span>
+                    </div>
                     <select id="personaFilter" class="persona-filter">
                         <!-- Populated dynamically -->
                     </select>
@@ -410,11 +414,11 @@ When responding, you may optionally include an expression tag like [expression: 
 
             <!-- Projects Tab Content -->
             <div class="tab-content" id="projectsTab" data-tab="projects">
-                <button class="new-project-btn" id="newProjectBtn">+ New Project</button>
+                <button class="new-project-btn" id="newProjectBtn">+ New Workspace</button>
                 <div class="project-list" id="projectList">
                     <!-- Populated dynamically -->
                 </div>
-                <p class="empty-state" id="noProjectsMessage">No projects yet. Create one to give conversations shared instructions and files.</p>
+                <p class="empty-state" id="noProjectsMessage">No workspaces yet. Create one to give chats shared instructions and files.</p>
             </div>
         </aside>
 
@@ -437,9 +441,11 @@ When responding, you may optionally include an expression tag like [expression: 
                         <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
                         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </button>
-                    <select class="project-select" id="projectSelect" title="Project context for this conversation" aria-label="Project for this conversation">
-                        <option value="">No project</option>
-                    </select>
+                    <button class="project-chip" id="projectChip" aria-haspopup="true" title="Workspace" aria-label="Workspace">
+                        <svg class="project-chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                        <span class="project-chip-name" id="projectChipName">No workspace</span>
+                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
                 
                 <div class="status-center">
@@ -642,7 +648,7 @@ When responding, you may optionally include an expression tag like [expression: 
     <div class="modal-overlay" id="projectModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="projectModalTitle">New Project</h3>
+                <h3 id="projectModalTitle">New Workspace</h3>
                 <button class="modal-close" id="closeProjectModal" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
@@ -651,10 +657,10 @@ When responding, you may optionally include an expression tag like [expression: 
 
                 <label for="projectInstructionsInput">Instructions</label>
                 <div class="textarea-resizable">
-                    <textarea id="projectInstructionsInput" rows="6" placeholder="Background context or instructions injected into every conversation in this project (optional)."></textarea>
+                    <textarea id="projectInstructionsInput" rows="6" placeholder="Background context or instructions injected into every chat in this workspace (optional)."></textarea>
                     <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
                 </div>
-                <p class="help-text">These instructions and the project's files are added to the model's context for any conversation assigned to this project.</p>
+                <p class="help-text">These instructions and the workspace's files are added to the model's context for any chat in this workspace.</p>
 
                 <div class="project-files-section" id="projectFilesSection" hidden>
                     <label>Files</label>
