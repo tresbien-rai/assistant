@@ -2222,14 +2222,14 @@ body {
 /* Typing indicator */
 .typing-indicator {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     padding: 16px;
 }
 
 .typing-indicator span {
-    width: 8px;
-    height: 8px;
-    background-color: var(--text-secondary);
+    width: 11px;
+    height: 11px;
+    background-color: var(--accent);
     border-radius: 50%;
     animation: bounce 1.4s infinite ease-in-out;
 }
@@ -2273,6 +2273,24 @@ body {
 
 .floating-avatar.dragging .avatar-frame {
     cursor: grabbing;
+}
+
+/* "Thinking" state (P2-U2): a gentle bob + accent glow while the model
+   generates. Plays regardless of whether the persona has a custom thinking
+   image. Skip the bob when the avatar is being dragged. */
+.floating-avatar.thinking:not(.dragging) .avatar-frame {
+    animation: avatar-thinking 1.6s ease-in-out infinite;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-subtle), var(--shadow-lg);
+}
+
+@keyframes avatar-thinking {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .floating-avatar.thinking .avatar-frame { animation: none; }
 }
 
 /* Position classes */

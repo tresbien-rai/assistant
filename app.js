@@ -1955,6 +1955,11 @@ async function updateFloatingAvatar() {
     applyAvatarPosition(avatar, state.settings.avatarPosition);
     avatar.classList.toggle('hidden', !state.settings.showAvatar);
 
+    // Built-in "thinking" animation while the model generates (P2-U2). Plays
+    // over a custom thinking image/gif too, and is cleared automatically when
+    // the expression changes, since this runs on every setExpression().
+    avatar.classList.toggle('thinking', state.currentExpression === 'thinking');
+
     // Update image or emoji.
     // Priority: expression image > default avatar > emoji.
     const currentExpr = expressions[state.currentExpression] || expressions.neutral;
@@ -3721,11 +3726,13 @@ function detectExpression(text) {
     const persona = getActivePersona();
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
-    // First, check for explicit expression tag
+    // First, check for explicit expression tag. 'thinking' is reserved as the
+    // transient generation-phase state (P2-U2) — it's never a "detected" settled
+    // expression, so ignore it here even if tagged/keyworded.
     const tagMatch = text.match(/\[expression:\s*(\w+)\]/i);
     if (tagMatch) {
         const exprName = tagMatch[1].toLowerCase();
-        if (expressions[exprName]) {
+        if (expressions[exprName] && exprName !== 'thinking') {
             return exprName;
         }
     }
@@ -3734,7 +3741,7 @@ function detectExpression(text) {
     const lowerText = text.toLowerCase();
 
     for (const [name, expr] of Object.entries(expressions)) {
-        if (name === 'neutral') continue; // Skip neutral for keyword matching
+        if (name === 'neutral' || name === 'thinking') continue; // not keyword-detectable
 
         for (const keyword of expr.keywords) {
             if (lowerText.includes(keyword)) {
@@ -3743,8 +3750,9 @@ function detectExpression(text) {
         }
     }
 
-    // Default to current expression (don't change if nothing detected)
-    return state.currentExpression;
+    // Default to the current expression (don't change if nothing detected),
+    // except settle the transient "thinking" generation state to neutral.
+    return state.currentExpression === 'thinking' ? 'neutral' : state.currentExpression;
 }
 
 function stripExpressionTag(text) {
@@ -4517,6 +4525,7 @@ async function sendMessageFromText(text, attachments = []) {
 
     await appendMessage('user', text, true, null, attachments.length > 0 ? attachments : null);
     showTypingIndicator();
+    setExpression('thinking'); // restored when the (re)generated response completes
 
     try {
         let response;
@@ -4721,6 +4730,9 @@ async function sendMessage() {
         try {
             hideTypingIndicator();
             startStreamingMessage();
+            // Show the persona's "thinking" expression for the whole generation;
+            // finalizeStreamingMessage restores the detected expression on end.
+            setExpression('thinking');
             // Pin the conversation id at send-time so a mid-stream switch
             // doesn't redirect the assistant reply.
             const targetConvoId = state.activeConversationId;
@@ -4748,6 +4760,7 @@ async function sendMessage() {
     } else {
         // Non-streaming path
         showTypingIndicator();
+        setExpression('thinking'); // restored from the response below
 
         try {
             const response = await callAPI(userMessage, attachmentMeta);
