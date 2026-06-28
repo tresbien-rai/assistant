@@ -456,6 +456,16 @@
       },
 
       /**
+       * Request inspector (P2-U4): returns the exact provider request body that
+       * WOULD be sent (incl. assembled workspace context), without calling the
+       * provider. Returns { provider, model, body, apiKeyLocation, contextWarning? }.
+       * @param {Object} params - Same shape as send()
+       */
+      preview(params) {
+        return request('POST', '/api/chat/preview', { body: params });
+      },
+
+      /**
        * Streaming chat. Invokes onEvent for each parsed SSE event with shape
        * { event?, data?, id?, retry? }. The data field is the raw string —
        * callers parse it as JSON if appropriate (provider-specific format).

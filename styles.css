@@ -2606,6 +2606,36 @@ body {
     max-width: 600px;
 }
 
+/* Settings checkbox row (e.g. developer-mode toggle) */
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    margin-top: 12px;
+}
+
+.checkbox-row input {
+    width: auto;
+    margin: 0;
+}
+
+/* Request inspector: scrollable, monospaced JSON dump */
+.request-inspector-pre {
+    max-height: 60vh;
+    overflow: auto;
+    margin: 8px 0 0;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    white-space: pre;
+    color: var(--text-primary);
+}
+
 /* Settings modal: roomy, with a fixed header and a scrolling body. */
 .modal-content.modal-settings {
     max-width: 680px;

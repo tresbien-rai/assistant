@@ -281,6 +281,65 @@ router.post('/stream', asyncHandler(async (req, res) => {
   }, res, abortController.signal);
 }));
 
+/**
+ * POST /api/chat/preview
+ * Request inspector (P2-U4). Runs the SAME assembly as /api/chat — workspace
+ * (project) context prepend + the provider-specific buildRequestBody — and
+ * returns the EXACT provider request body WITHOUT calling the provider.
+ *
+ * The API key is sent as a request HEADER at call time, never in the body, so
+ * this preview exposes nothing secret. The body does contain the assembled
+ * system prompt + the user's own workspace file text, which is fine to show
+ * the owner. No API key is fetched/decrypted here.
+ *
+ * Validation is intentionally lighter than the real chat path: an empty
+ * messages array is allowed so the user can inspect the system prompt/params
+ * of a fresh conversation.
+ */
+router.post('/preview', asyncHandler(async (req, res) => {
+  const { provider, model, messages = [], systemPrompt, modelParams, prefill, attachments } = req.body;
+
+  validateProvider(provider);
+  if (!model || typeof model !== 'string') {
+    throw AppError.validation('Model is required');
+  }
+  if (!Array.isArray(messages)) {
+    throw AppError.validation('Messages must be an array');
+  }
+
+  const providerModule = getProvider(provider);
+  if (typeof providerModule.buildRequestBody !== 'function') {
+    throw AppError.validation(`Request preview not supported for provider: ${provider}`);
+  }
+
+  // Identical context assembly to the real chat path.
+  const projectContext = await resolveProjectContext(req);
+  const effectiveSystemPrompt = applyProjectContext(projectContext, systemPrompt);
+
+  const body = providerModule.buildRequestBody({
+    model,
+    messages,
+    systemPrompt: effectiveSystemPrompt,
+    modelParams,
+    prefill,
+    attachments,
+    stream: false,
+  });
+
+  logger.info({ userId: req.user.userId, provider, model }, 'Chat request preview');
+
+  res.json({
+    provider,
+    model,
+    // Exact JSON body that would be POSTed to the provider.
+    body,
+    // Surfaced so the UI can make clear the key isn't missing — it's just not
+    // part of the body.
+    apiKeyLocation: 'sent as a request header (never in the body)',
+    ...(projectContext?.warning ? { contextWarning: projectContext.warning } : {}),
+  });
+}));
+
 // =============================================================================
 // Models Router (mounted separately at /api/models)
 // =============================================================================
