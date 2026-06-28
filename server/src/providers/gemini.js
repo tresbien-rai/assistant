@@ -409,4 +409,7 @@ module.exports = {
   chat,
   stream,
   listModels,
+  // Exposed for the request inspector (P2-U4): builds the exact provider body
+  // without sending it. The API key is never part of the body (it's a header).
+  buildRequestBody,
 };

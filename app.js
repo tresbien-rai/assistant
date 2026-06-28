@@ -141,6 +141,7 @@ const UiPrefs = {
         accent: '',               // '' = use the theme's default accent
         chatWidth: 'comfortable', // narrow | comfortable | wide
         activeProject: null,      // id of the entered workspace, or null (home)
+        devMode: false,           // show developer tools (e.g. request inspector)
     },
     _data: null,
     load() {
@@ -837,6 +838,15 @@ const elements = {
     // Appearance controls
     accentPicker: document.getElementById('accentPicker'),
     accentResetBtn: document.getElementById('accentResetBtn'),
+    devModeToggle: document.getElementById('devModeToggle'),
+
+    // Request inspector (developer mode)
+    viewRequestBtn: document.getElementById('viewRequestBtn'),
+    requestInspectorModal: document.getElementById('requestInspectorModal'),
+    closeRequestInspector: document.getElementById('closeRequestInspector'),
+    requestInspectorJson: document.getElementById('requestInspectorJson'),
+    requestInspectorMeta: document.getElementById('requestInspectorMeta'),
+    copyRequestBtn: document.getElementById('copyRequestBtn'),
 
     // Chats tab elements
     chatsTabHeader: document.getElementById('chatsTabHeader'),
@@ -1045,6 +1055,7 @@ async function init() {
 
     // Wire UI after state is populated so listeners read coherent state.
     setupEventListeners();
+    applyDevMode(); // reflect the device-local developer-mode pref
     await updateUI();
     createSidebarOverlay();
     startSessionTimer();
@@ -4806,7 +4817,70 @@ function buildChatRequest() {
         // Lets the server resolve this conversation's project and inject its
         // instructions + file context (P1-05). Harmless when there's no project.
         ...(state.activeConversationId ? { conversationId: state.activeConversationId } : {}),
+        // When there's no conversation yet, still let the server resolve the
+        // active workspace so the preview shows its injected context.
+        ...(!state.activeConversationId && state.activeProjectId ? { projectId: state.activeProjectId } : {}),
     };
+}
+
+// ===== Request Inspector (P2-U4, developer mode) =====
+
+/**
+ * Reflect the device-local devMode pref: show/hide the top-bar "view request"
+ * button and sync the settings toggle.
+ */
+function applyDevMode() {
+    const on = !!UiPrefs.get('devMode');
+    if (elements.viewRequestBtn) elements.viewRequestBtn.hidden = !on;
+    if (elements.devModeToggle) elements.devModeToggle.checked = on;
+}
+
+/**
+ * Build the same request params a send would, plus the current composer draft
+ * as a trailing user message (so the preview reflects what the NEXT turn sends).
+ * Note: delegates to buildChatRequest(), which sets state.currentPrefill as a
+ * side effect — benign, since it's recomputed on every real send.
+ */
+function buildPreviewParams() {
+    const params = buildChatRequest();
+    const draft = elements.messageInput?.value.trim();
+    if (draft) {
+        params.messages = [...params.messages, { role: 'user', content: draft }];
+    }
+    return params;
+}
+
+/**
+ * Open the request inspector: ask the server to assemble (but not send) the
+ * exact provider request body, then show it as pretty-printed JSON.
+ */
+async function previewCurrentRequest() {
+    let result;
+    try {
+        result = await API.chat.preview(buildPreviewParams());
+    } catch (err) {
+        console.error('Failed to preview request:', err);
+        displayError(err, { action: 'preview the request' });
+        return;
+    }
+
+    if (elements.requestInspectorMeta) {
+        const warn = result.contextWarning ? ` · ⚠ ${result.contextWarning}` : '';
+        elements.requestInspectorMeta.textContent =
+            `POST to ${result.provider} · model ${result.model} · key ${result.apiKeyLocation}${warn}`;
+    }
+    if (elements.requestInspectorJson) {
+        elements.requestInspectorJson.textContent = JSON.stringify(result.body, null, 2);
+    }
+    if (elements.requestInspectorModal) {
+        elements.requestInspectorModal.classList.add('visible');
+    }
+}
+
+function closeRequestInspectorModal() {
+    if (elements.requestInspectorModal) {
+        elements.requestInspectorModal.classList.remove('visible');
+    }
 }
 
 /**
@@ -5419,6 +5493,34 @@ function setupEventListeners() {
             UiPrefs.set('accent', '');
             withThemeTransition(() => applyAccent(''));
             syncAppearanceControls();
+        });
+    }
+
+    // Developer mode + request inspector (P2-U4)
+    if (elements.devModeToggle) {
+        elements.devModeToggle.addEventListener('change', () => {
+            UiPrefs.set('devMode', elements.devModeToggle.checked);
+            applyDevMode();
+        });
+    }
+    if (elements.viewRequestBtn) {
+        elements.viewRequestBtn.addEventListener('click', previewCurrentRequest);
+    }
+    if (elements.closeRequestInspector) {
+        elements.closeRequestInspector.addEventListener('click', closeRequestInspectorModal);
+    }
+    if (elements.requestInspectorModal) {
+        elements.requestInspectorModal.addEventListener('click', (e) => {
+            if (e.target === elements.requestInspectorModal) closeRequestInspectorModal();
+        });
+    }
+    if (elements.copyRequestBtn) {
+        elements.copyRequestBtn.addEventListener('click', () => {
+            const text = elements.requestInspectorJson?.textContent || '';
+            navigator.clipboard?.writeText(text).then(
+                () => showToast('Request JSON copied.', { type: 'success' }),
+                () => showToast('Copy failed.', { type: 'error' })
+            );
         });
     }
 
