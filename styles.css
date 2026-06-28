@@ -1078,6 +1078,28 @@ body {
     margin-right: 6px;
 }
 
+.file-upload-btn:disabled {
+    cursor: progress;
+    opacity: 0.8;
+}
+
+/* Indeterminate spinner shown inside buttons during an in-flight upload */
+.btn-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    vertical-align: -2px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 .file-clear-btn {
     padding: 10px 14px;
     background-color: var(--bg-tertiary);

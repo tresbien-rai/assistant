@@ -3607,7 +3607,15 @@ async function uploadProjectFiles(projectId, fileList) {
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
 
-    elements.projectFileUploadBtn.disabled = true;
+    // Show an indeterminate "uploading" state on the button while the (real,
+    // server-side) Drive upload is in flight. fetch can't report byte progress,
+    // so this is a spinner rather than a percentage bar (P2-U1 decision).
+    const btn = elements.projectFileUploadBtn;
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('is-uploading');
+    btn.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span> Uploading…`;
+
     let failures = 0;
     for (const file of files) {
         try {
@@ -3618,7 +3626,10 @@ async function uploadProjectFiles(projectId, fileList) {
             displayError(err, { action: 'upload file' });
         }
     }
-    elements.projectFileUploadBtn.disabled = false;
+
+    btn.classList.remove('is-uploading');
+    btn.innerHTML = originalHTML;
+    btn.disabled = false;
     elements.projectFileInput.value = ''; // allow re-selecting the same file
     await renderProjectFiles(projectId);
 
