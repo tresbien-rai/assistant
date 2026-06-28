@@ -39,7 +39,12 @@ CREATE TABLE IF NOT EXISTS personas (
 CREATE INDEX IF NOT EXISTS idx_personas_user_id ON personas(user_id);
 
 -- Conversations table
--- Chat sessions linked to a user and optionally a persona/project
+-- Chat sessions linked to a user and optionally a persona/project/workspace.
+-- A chat lives in exactly one home: unfiled (neither workspace_id nor
+-- project_id), workspace-level (workspace_id only), or project-level (both, with
+-- workspace_id = the project's workspace).
+-- NOTE: the `workspace_id` column is added by migration 001 (nullable); the
+-- migration backfills it from each conversation's project.
 CREATE TABLE IF NOT EXISTS conversations (
     id              TEXT PRIMARY KEY,
     user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -68,8 +73,27 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
 
--- Projects table (Phase 1)
--- Collections of files that provide context for conversations
+-- Workspaces table (Workspace Restructure)
+-- Outer container above projects: shared/general instructions + reference files.
+-- Holds projects and can hold workspace-level chats directly.
+-- Hierarchy: workspace ⊃ project ⊃ chat (plus unfiled chats with neither).
+CREATE TABLE IF NOT EXISTS workspaces (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    instructions    TEXT DEFAULT '',
+    drive_folder_id TEXT DEFAULT '',
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspaces_user_id ON workspaces(user_id);
+
+-- Projects table (Phase 1; nested under a workspace by the Workspace Restructure)
+-- Collections of files that provide context for conversations.
+-- NOTE: the `workspace_id` column is added by migration 001 (ADD COLUMN can't be
+-- expressed idempotently here). It is required going forward; the migration
+-- backfills existing rows onto a per-user default "General" workspace.
 CREATE TABLE IF NOT EXISTS projects (
     id              TEXT PRIMARY KEY,
     user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

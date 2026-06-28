@@ -132,6 +132,58 @@ try {
   const deleteResult = dal.deletePersona(persona.id, user.id);
   console.log(`   ✓ Deleted persona when not last: ${deleteResult}`);
 
+  // Test workspace / project / chat hierarchy
+  console.log('\n11b. Testing workspace hierarchy...');
+  const workspace = dal.createWorkspace(user.id, { name: 'Vibe Coding', instructions: 'House style.' });
+  console.log(`   ✓ Created workspace: ${workspace.id} (${workspace.name})`);
+
+  const nestedProject = dal.createProject(user.id, { workspaceId: workspace.id, name: 'Tessera' });
+  if (nestedProject.workspace_id !== workspace.id) throw new Error('project not attached to workspace');
+  console.log(`   ✓ Created nested project (workspace_id matches)`);
+
+  const nested = dal.listProjectsByWorkspace(workspace.id, user.id);
+  if (nested.length !== 1) throw new Error(`expected 1 nested project, got ${nested.length}`);
+  console.log(`   ✓ listProjectsByWorkspace → ${nested.length}`);
+
+  const wsList = dal.listWorkspacesByUser(user.id);
+  if (wsList[0].project_count !== 1) throw new Error('workspace project_count wrong');
+  console.log(`   ✓ listWorkspacesByUser project_count=${wsList[0].project_count}`);
+
+  const renamedWs = dal.updateWorkspace(workspace.id, user.id, { name: 'Vibe Coding ✦' });
+  console.log(`   ✓ Updated workspace name to: ${renamedWs.name}`);
+
+  // A chat in each of the three homes.
+  const unfiledChat = dal.createConversation(user.id, { personaId: persona2.id, title: 'Unfiled' });
+  const wsChat = dal.createConversation(user.id, { personaId: persona2.id, title: 'WS-level', workspaceId: workspace.id });
+  const projChat = dal.createConversation(user.id, { personaId: persona2.id, title: 'Project', workspaceId: workspace.id, projectId: nestedProject.id });
+  console.log('   ✓ Created unfiled, workspace-level, and project-level chats');
+
+  const onlyUnfiled = dal.getConversationsByUser(user.id, { unfiled: true });
+  if (!(onlyUnfiled.length === 1 && onlyUnfiled[0].id === unfiledChat.id)) throw new Error('unfiled filter wrong');
+  console.log(`   ✓ unfiled filter → ${onlyUnfiled.length}`);
+
+  const byProject = dal.getConversationsByUser(user.id, { projectId: nestedProject.id });
+  if (!(byProject.length === 1 && byProject[0].id === projChat.id)) throw new Error('projectId filter wrong');
+  console.log(`   ✓ projectId filter → ${byProject.length}`);
+
+  const byWorkspace = dal.getConversationsByUser(user.id, { workspaceId: workspace.id });
+  if (byWorkspace.length !== 2) throw new Error(`workspaceId filter wrong (got ${byWorkspace.length}, expect 2)`);
+  console.log(`   ✓ workspaceId filter → ${byWorkspace.length} (ws-level + project)`);
+
+  const wsLevelOnly = dal.getConversationsByUser(user.id, { workspaceId: workspace.id, workspaceLevelOnly: true });
+  if (!(wsLevelOnly.length === 1 && wsLevelOnly[0].id === wsChat.id)) throw new Error('workspaceLevelOnly filter wrong');
+  console.log(`   ✓ workspaceLevelOnly filter → ${wsLevelOnly.length}`);
+
+  // Deleting a workspace removes its projects but reparents chats to unfiled.
+  dal.deleteWorkspace(workspace.id, user.id);
+  if (dal.getWorkspaceById(workspace.id, user.id)) throw new Error('workspace not deleted');
+  if (dal.getProjectById(nestedProject.id, user.id)) throw new Error('nested project not deleted');
+  const survivedWs = dal.getConversationMeta(wsChat.id, user.id);
+  const survivedProj = dal.getConversationMeta(projChat.id, user.id);
+  if (!survivedWs || survivedWs.workspace_id !== null) throw new Error('ws-level chat not reparented to unfiled');
+  if (!survivedProj || survivedProj.workspace_id !== null || survivedProj.project_id !== null) throw new Error('project chat not reparented to unfiled');
+  console.log('   ✓ deleteWorkspace cascaded projects; chats survived as unfiled');
+
   // Cleanup
   console.log('\n12. Cleanup...');
   db.prepare('DELETE FROM users WHERE id = ?').run(user.id);

@@ -263,13 +263,26 @@ function parsePersonaJson(persona) {
 /**
  * Get all conversations for a user
  * @param {string} userId - The user's UUID
+ * Container scoping (a chat lives in exactly one home):
+ *   - `unfiled: true`     → only chats with no workspace and no project.
+ *   - `projectId`         → only that project's chats.
+ *   - `workspaceId`       → that workspace's chats. Combine with
+ *                           `workspaceLevelOnly: true` to exclude project-level
+ *                           chats (workspace_id set but project_id NULL).
+ * Omit all three to list every chat (legacy/cross-container behaviour).
+ *
+ * @param {string} userId - The user's UUID
  * @param {Object} [options] - Query options
  * @param {string} [options.personaId] - Filter by persona ID
+ * @param {boolean} [options.unfiled] - Only unfiled chats (no workspace/project)
+ * @param {string} [options.workspaceId] - Only chats in this workspace
+ * @param {boolean} [options.workspaceLevelOnly] - With workspaceId, exclude project-level chats
+ * @param {string} [options.projectId] - Only chats in this project
  * @param {number} [options.limit] - Limit results
  * @param {number} [options.offset] - Offset for pagination
  * @returns {Array} Array of conversation records with message counts
  */
-function getConversationsByUser(userId, { personaId, limit, offset } = {}) {
+function getConversationsByUser(userId, { personaId, unfiled, workspaceId, workspaceLevelOnly, projectId, limit, offset } = {}) {
   const db = getDb();
 
   let query = `
@@ -283,6 +296,19 @@ function getConversationsByUser(userId, { personaId, limit, offset } = {}) {
   if (personaId) {
     query += ' AND c.persona_id = ?';
     params.push(personaId);
+  }
+
+  if (unfiled) {
+    query += ' AND c.workspace_id IS NULL AND c.project_id IS NULL';
+  } else if (projectId) {
+    query += ' AND c.project_id = ?';
+    params.push(projectId);
+  } else if (workspaceId) {
+    query += ' AND c.workspace_id = ?';
+    params.push(workspaceId);
+    if (workspaceLevelOnly) {
+      query += ' AND c.project_id IS NULL';
+    }
   }
 
   query += ' ORDER BY c.updated_at DESC';
@@ -344,17 +370,17 @@ function getConversationById(conversationId, userId) {
  * @param {Object} data - Conversation data
  * @returns {Object} The created conversation record
  */
-function createConversation(userId, { personaId, title, projectId }) {
+function createConversation(userId, { personaId, title, projectId, workspaceId }) {
   const db = getDb();
   const id = generateId();
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO conversations (id, user_id, persona_id, project_id, title, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO conversations (id, user_id, persona_id, project_id, workspace_id, title, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  stmt.run(id, userId, personaId || null, projectId || null, title || 'New Chat', timestamp, timestamp);
+  stmt.run(id, userId, personaId || null, projectId || null, workspaceId || null, title || 'New Chat', timestamp, timestamp);
 
   return getConversationById(id, userId);
 }
@@ -388,6 +414,10 @@ function updateConversation(conversationId, userId, data) {
   if (data.projectId !== undefined) {
     updates.push('project_id = ?');
     values.push(data.projectId);
+  }
+  if (data.workspaceId !== undefined) {
+    updates.push('workspace_id = ?');
+    values.push(data.workspaceId);
   }
 
   if (updates.length === 0) {
@@ -707,31 +737,182 @@ function getApiKeyProviders(userId) {
 }
 
 // =============================================================================
+// WORKSPACES
+// =============================================================================
+//
+// A workspace is the outer container in the hierarchy (workspace ⊃ project ⊃
+// chat). It carries shared instructions + reference files and owns the projects
+// nested under it.
+
+/**
+ * Create a new workspace.
+ * @param {string} userId - The user's UUID
+ * @param {Object} data - Workspace data
+ * @param {string} data.name - Workspace name
+ * @param {string} [data.instructions] - Shared workspace instructions
+ * @param {string} [data.driveFolderId] - Drive folder id backing this workspace
+ * @returns {Object} The created workspace record
+ */
+function createWorkspace(userId, { name, instructions, driveFolderId }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+
+  db.prepare(`
+    INSERT INTO workspaces (id, user_id, name, instructions, drive_folder_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, userId, name || 'New Workspace', instructions || '', driveFolderId || '', timestamp, timestamp);
+
+  return getWorkspaceById(id, userId);
+}
+
+/**
+ * List a user's workspaces, each with its project count.
+ * @param {string} userId - The user's UUID
+ * @returns {Array} Array of workspace records (with project_count)
+ */
+function listWorkspacesByUser(userId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT w.*,
+           (SELECT COUNT(*) FROM projects p WHERE p.workspace_id = w.id) as project_count
+    FROM workspaces w
+    WHERE w.user_id = ?
+    ORDER BY w.updated_at DESC
+  `).all(userId);
+}
+
+/**
+ * Get a single workspace by ID (only if owned by the user).
+ * @param {string} workspaceId - The workspace's UUID
+ * @param {string} userId - The user's UUID
+ * @returns {Object|undefined} The workspace record or undefined
+ */
+function getWorkspaceById(workspaceId, userId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM workspaces WHERE id = ? AND user_id = ?
+  `).get(workspaceId, userId);
+}
+
+/**
+ * Update a workspace.
+ * @param {string} workspaceId - The workspace's UUID
+ * @param {string} userId - The user's UUID
+ * @param {Object} data - Fields to update (name, instructions, driveFolderId)
+ * @returns {Object|undefined} The updated workspace or undefined if not found
+ */
+function updateWorkspace(workspaceId, userId, data) {
+  const db = getDb();
+  const existing = getWorkspaceById(workspaceId, userId);
+  if (!existing) return undefined;
+
+  const timestamp = now();
+  const updates = [];
+  const values = [];
+
+  if (data.name !== undefined) {
+    updates.push('name = ?');
+    values.push(data.name);
+  }
+  if (data.instructions !== undefined) {
+    updates.push('instructions = ?');
+    values.push(data.instructions);
+  }
+  if (data.driveFolderId !== undefined) {
+    updates.push('drive_folder_id = ?');
+    values.push(data.driveFolderId);
+  }
+
+  if (updates.length === 0) {
+    return existing;
+  }
+
+  updates.push('updated_at = ?');
+  values.push(timestamp);
+  values.push(workspaceId);
+  values.push(userId);
+
+  db.prepare(`
+    UPDATE workspaces SET ${updates.join(', ')} WHERE id = ? AND user_id = ?
+  `).run(...values);
+
+  return getWorkspaceById(workspaceId, userId);
+}
+
+/**
+ * Delete a workspace. Its projects (and their files, via FK cascade) are
+ * deleted; any chats that lived in this workspace or its projects become
+ * unfiled (workspace_id + project_id cleared) rather than being destroyed.
+ * Trashing the backing Drive folders is the route's responsibility.
+ * @param {string} workspaceId - The workspace's UUID
+ * @param {string} userId - The user's UUID
+ * @returns {boolean} True if deleted, false if not found
+ */
+function deleteWorkspace(workspaceId, userId) {
+  const db = getDb();
+  const existing = getWorkspaceById(workspaceId, userId);
+  if (!existing) return false;
+
+  const tx = db.transaction(() => {
+    // Detach chats first so they survive as unfiled.
+    db.prepare(`
+      UPDATE conversations SET project_id = NULL, workspace_id = NULL, updated_at = ?
+      WHERE user_id = ? AND workspace_id = ?
+    `).run(now(), userId, workspaceId);
+
+    db.prepare('DELETE FROM projects WHERE user_id = ? AND workspace_id = ?').run(userId, workspaceId);
+    db.prepare('DELETE FROM workspaces WHERE id = ? AND user_id = ?').run(workspaceId, userId);
+  });
+  tx();
+
+  return true;
+}
+
+// =============================================================================
 // PROJECTS
 // =============================================================================
 
 /**
- * Create a new project
+ * Create a new project nested under a workspace.
  * @param {string} userId - The user's UUID
  * @param {Object} data - Project data
+ * @param {string} data.workspaceId - The owning workspace's UUID (required)
  * @param {string} data.name - Project name
  * @param {string} [data.instructions] - Project instructions
  * @param {string} [data.driveFolderId] - Drive folder id backing this project
  * @returns {Object} The created project record
  */
-function createProject(userId, { name, instructions, driveFolderId }) {
+function createProject(userId, { workspaceId, name, instructions, driveFolderId }) {
   const db = getDb();
   const id = generateId();
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO projects (id, user_id, name, instructions, drive_folder_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO projects (id, user_id, workspace_id, name, instructions, drive_folder_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  stmt.run(id, userId, name || 'New Project', instructions || '', driveFolderId || '', timestamp, timestamp);
+  stmt.run(id, userId, workspaceId || null, name || 'New Project', instructions || '', driveFolderId || '', timestamp, timestamp);
 
   return getProjectById(id, userId);
+}
+
+/**
+ * List the projects nested under a workspace (user-scoped), each with file count.
+ * @param {string} workspaceId - The workspace's UUID
+ * @param {string} userId - The user's UUID
+ * @returns {Array} Array of project records (with file_count)
+ */
+function listProjectsByWorkspace(workspaceId, userId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT p.*,
+           (SELECT COUNT(*) FROM project_files f WHERE f.project_id = p.id) as file_count
+    FROM projects p
+    WHERE p.workspace_id = ? AND p.user_id = ?
+    ORDER BY p.updated_at DESC
+  `).all(workspaceId, userId);
 }
 
 /**
@@ -767,7 +948,7 @@ function getProjectById(projectId, userId) {
  * Update a project
  * @param {string} projectId - The project's UUID
  * @param {string} userId - The user's UUID
- * @param {Object} data - Fields to update (name, instructions, driveFolderId)
+ * @param {Object} data - Fields to update (name, instructions, driveFolderId, workspaceId)
  * @returns {Object|undefined} The updated project or undefined if not found
  */
 function updateProject(projectId, userId, data) {
@@ -782,6 +963,10 @@ function updateProject(projectId, userId, data) {
   if (data.name !== undefined) {
     updates.push('name = ?');
     values.push(data.name);
+  }
+  if (data.workspaceId !== undefined) {
+    updates.push('workspace_id = ?');
+    values.push(data.workspaceId);
   }
   if (data.instructions !== undefined) {
     updates.push('instructions = ?');
@@ -932,9 +1117,17 @@ module.exports = {
   deleteApiKey,
   getApiKeyProviders,
 
+  // Workspaces
+  createWorkspace,
+  listWorkspacesByUser,
+  getWorkspaceById,
+  updateWorkspace,
+  deleteWorkspace,
+
   // Projects
   createProject,
   listProjectsByUser,
+  listProjectsByWorkspace,
   getProjectById,
   updateProject,
   deleteProject,
