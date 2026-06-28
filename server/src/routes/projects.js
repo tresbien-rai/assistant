@@ -85,6 +85,7 @@ function formatProject(p) {
   const formatted = {
     id: p.id,
     userId: p.user_id,
+    workspaceId: p.workspace_id,
     name: p.name,
     instructions: p.instructions,
     createdAt: p.created_at,
@@ -119,6 +120,94 @@ function requireProject(projectId, userId) {
     throw AppError.notFound('Project');
   }
   return project;
+}
+
+// Name of the per-user fallback workspace a project lands in when none is given
+// (matches the backfill migration). Lets the legacy flat "create project" call
+// keep working until the frontend passes an explicit workspaceId (WR-03).
+const DEFAULT_WORKSPACE_NAME = 'General';
+
+/**
+ * Load a workspace owned by the user, or throw NOT_FOUND. (A project's workspace
+ * must be one the caller owns — closes the WR-01 ownership gap on createProject.)
+ * @param {string} workspaceId
+ * @param {string} userId
+ * @returns {Object} The workspace row
+ */
+function requireWorkspace(workspaceId, userId) {
+  const workspace = dal.getWorkspaceById(workspaceId, userId);
+  if (!workspace) {
+    throw AppError.notFound('Workspace');
+  }
+  return workspace;
+}
+
+/**
+ * Resolve the user's default "General" workspace, creating it (and best-effort
+ * its Drive folder) if absent. Used when a project is created without an
+ * explicit workspace.
+ * @param {string} userId
+ * @param {import('google-auth-library').OAuth2Client|null} auth - or null if Drive is unavailable
+ * @returns {Promise<Object>} The default workspace row
+ */
+async function getOrCreateDefaultWorkspace(userId, auth) {
+  const existing = dal.listWorkspacesByUser(userId).find((w) => w.name === DEFAULT_WORKSPACE_NAME);
+  if (existing) return existing;
+
+  let driveFolderId = '';
+  if (auth) {
+    try {
+      driveFolderId = await drive.ensureWorkspaceFolder(auth, DEFAULT_WORKSPACE_NAME);
+    } catch (err) {
+      logger.warn({ userId, code: err.code }, 'Drive unavailable creating default workspace folder');
+    }
+  }
+  return dal.createWorkspace(userId, { name: DEFAULT_WORKSPACE_NAME, instructions: '', driveFolderId });
+}
+
+/**
+ * Ensure a workspace has a backing Drive folder, persisting its id if just
+ * created. Returns the folder id.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} userId
+ * @param {Object} workspace - workspaces row
+ * @returns {Promise<string>} The workspace folder id
+ */
+async function ensureWorkspaceFolderId(auth, userId, workspace) {
+  if (workspace.drive_folder_id) return workspace.drive_folder_id;
+  const folderId = await drive.ensureWorkspaceFolder(auth, workspace.name);
+  dal.updateWorkspace(workspace.id, userId, { driveFolderId: folderId });
+  return folderId;
+}
+
+/**
+ * Ensure a project has a backing Drive folder under its workspace
+ * (`Tessera/<Workspace>/<Project>/`), persisting its id if just created. Falls
+ * back to the legacy `Tessera/projects/` folder for an orphan project that has
+ * no workspace. Returns the folder id. Requires a working Drive auth.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} userId
+ * @param {Object} project - projects row
+ * @returns {Promise<string>} The project folder id
+ */
+async function ensureProjectFolderId(auth, userId, project) {
+  if (project.drive_folder_id) return project.drive_folder_id;
+
+  let parentId = null;
+  if (project.workspace_id) {
+    const workspace = dal.getWorkspaceById(project.workspace_id, userId);
+    if (workspace) {
+      parentId = await ensureWorkspaceFolderId(auth, userId, workspace);
+    }
+  }
+  if (!parentId) {
+    const { projectsId } = await drive.ensureAppFolders(auth);
+    parentId = projectsId;
+  }
+
+  const folderId = await drive.createFolder(auth, project.name, parentId);
+  dal.updateProject(project.id, userId, { driveFolderId: folderId });
+  return folderId;
 }
 
 /**
@@ -167,24 +256,63 @@ router.get('/', asyncHandler(async (req, res) => {
 
 /**
  * POST /api/projects
- * Create a project and its backing Drive folder.
- * Body: { name, instructions? }
+ * Create a project nested under a workspace, plus (best-effort) its Drive folder
+ * at `Tessera/<Workspace>/<Project>/`.
+ * Body: { name, instructions?, workspaceId? }
+ *
+ * `workspaceId` is optional for back-compat: an explicit id must be one the user
+ * owns; if omitted, the project lands in the user's default "General" workspace
+ * (created on demand). Drive folder creation is best-effort — a project is a
+ * useful DB container without Drive and self-heals its folder on first upload.
  */
 router.post('/', asyncHandler(async (req, res) => {
   const name = validateName(req.body.name);
   const instructions = req.body.instructions !== undefined
     ? validateInstructions(req.body.instructions)
     : '';
+  const workspaceId = typeof req.body.workspaceId === 'string' ? req.body.workspaceId : null;
 
-  // Create the Drive folder first so we can persist its id atomically with the
-  // project row. getAuthForUser throws DRIVE_ERROR if Drive isn't connected.
-  const auth = drive.getAuthForUser(req.user.userId);
-  const { projectsId } = await drive.ensureAppFolders(auth);
-  const driveFolderId = await drive.createFolder(auth, name, projectsId);
+  // Drive is optional here (dev-login has none); resolve auth best-effort.
+  let auth = null;
+  try {
+    auth = drive.getAuthForUser(req.user.userId);
+  } catch (err) {
+    logger.warn(
+      { userId: req.user.userId, code: err.code },
+      'Drive unavailable creating project; folder will self-heal on first upload'
+    );
+  }
 
-  const project = dal.createProject(req.user.userId, { name, instructions, driveFolderId });
+  // Own/resolve the workspace before creating the project (closes the WR-01
+  // createProject ownership gap).
+  const workspace = workspaceId
+    ? requireWorkspace(workspaceId, req.user.userId)
+    : await getOrCreateDefaultWorkspace(req.user.userId, auth);
 
-  logger.info({ userId: req.user.userId, projectId: project.id }, 'Project created');
+  let driveFolderId = '';
+  if (auth) {
+    try {
+      const workspaceFolderId = await ensureWorkspaceFolderId(auth, req.user.userId, workspace);
+      driveFolderId = await drive.createFolder(auth, name, workspaceFolderId);
+    } catch (err) {
+      logger.warn(
+        { userId: req.user.userId, workspaceId: workspace.id, code: err.code },
+        'Could not create project Drive folder; will self-heal on first upload'
+      );
+    }
+  }
+
+  const project = dal.createProject(req.user.userId, {
+    workspaceId: workspace.id,
+    name,
+    instructions,
+    driveFolderId,
+  });
+
+  logger.info(
+    { userId: req.user.userId, projectId: project.id, workspaceId: workspace.id },
+    'Project created'
+  );
   res.status(201).json(formatProject(project));
 }));
 
@@ -295,14 +423,10 @@ router.post('/:id/files', upload.single('file'), handleUploadError, asyncHandler
 
   const auth = drive.getAuthForUser(req.user.userId);
 
-  // Self-heal: a project should always have a folder, but recreate it if the id
-  // is missing (e.g. an earlier create that failed after the DB insert).
-  let folderId = project.drive_folder_id;
-  if (!folderId) {
-    const { projectsId } = await drive.ensureAppFolders(auth);
-    folderId = await drive.createFolder(auth, project.name, projectsId);
-    dal.updateProject(project.id, req.user.userId, { driveFolderId: folderId });
-  }
+  // Self-heal: a project should always have a folder, but create it on demand if
+  // the id is missing (best-effort create deferred it, or an earlier create
+  // failed after the DB insert). Uses the workspace layout Tessera/<WS>/<Proj>/.
+  const folderId = await ensureProjectFolderId(auth, req.user.userId, project);
 
   const uploaded = await drive.uploadFile(auth, {
     name: req.file.originalname,

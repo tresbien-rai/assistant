@@ -216,8 +216,48 @@ async function assembleProjectContext(userId, project) {
   return { text, warning };
 }
 
+/**
+ * Wrap workspace instruction sections in a delimited context block. Mirrors
+ * wrapBlock (project) but labels the material as workspace-level shared context.
+ */
+function wrapWorkspaceBlock(workspace, sections) {
+  return [
+    '<workspace_context>',
+    `The following is shared reference material for this conversation from the ` +
+      `user's workspace "${workspace.name}". Treat it as authoritative background ` +
+      `knowledge provided by the user.`,
+    '',
+    sections.join('\n\n'),
+    '</workspace_context>',
+  ].join('\n');
+}
+
+/**
+ * Assemble the workspace-context block. Layered BEFORE the project block (and
+ * the persona prompt) so workspace-wide instructions frame everything below.
+ *
+ * WR-02a includes workspace INSTRUCTIONS only; workspace reference files arrive
+ * in WR-02b, at which point this gains a gatherFileTexts step like the project
+ * assembler. Kept as a sibling of assembleProjectContext for that symmetry.
+ *
+ * @param {string} userId
+ * @param {Object} workspace - workspaces row (must include id, name, instructions)
+ * @returns {Promise<{ text: string, warning: string|null }|null>} null when there
+ *   is nothing to inject (no instructions).
+ */
+async function assembleWorkspaceContext(userId, workspace) {
+  const instructions = (workspace.instructions || '').trim();
+  if (!instructions) {
+    return null;
+  }
+
+  const sections = [`## Workspace Instructions\n${instructions}`];
+  return { text: wrapWorkspaceBlock(workspace, sections), warning: null };
+}
+
 module.exports = {
   assembleProjectContext,
+  assembleWorkspaceContext,
   // exported for tests
   _isPdf: isPdf,
   _textCache: textCache,
