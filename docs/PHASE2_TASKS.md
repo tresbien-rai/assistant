@@ -4,6 +4,15 @@ Detailed task breakdown for Phase 2. Companion to `docs/PHASE2_HANDOFF.md`
 (orientation) and the **Phase 2: Tool Use** section of `PLANNING.txt` (the
 original spec). Phase 4 in `PLANNING.txt` lists related QoL items.
 
+> **Status (2026-06-28):** Track B (UI polish) is **DONE** (PRs #37–#43:
+> top-bar controls, Projects→Workspaces, persona grouping, upload spinner,
+> request inspector, thinking indicator). Before Track A, a **Workspace
+> Restructure** lands (two-level Workspace ⊃ Project hierarchy, chat separation,
+> inline container pages) — see `docs/WORKSPACE_RESTRUCTURE.md`. **Build order
+> now: Workspace Restructure (WR-01…06) → Track A (P2-01…06).** Track A file
+> destinations become: active project folder → active workspace folder →
+> `Tessera/Downloads/` (unfiled).
+
 Two tracks — they can interleave; agree ordering with the human:
 - **Track A — Tool Use (File Creation):** the planned Phase 2 feature.
 - **Track B — UI Polish:** three human-requested goals from Phase 1 review.

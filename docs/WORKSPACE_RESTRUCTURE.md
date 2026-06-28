@@ -1,0 +1,121 @@
+# Workspace Restructure — design + tasks
+
+Agreed plan (2026-06-28) to rework the workspace model **before Track A (Tool
+Use)**. Supersedes the workspace/sidebar parts of `docs/PHASE2_UX_DESIGN.md`
+(the flat "Projects → Workspaces" model shipped in PRs #39/#40). Decided with
+the human; this is the source of truth for the restructure.
+
+## Why (three problems with the current flat model)
+1. **Chat separation.** Today the home list shows *all* chats grouped by persona
+   regardless of workspace, so a workspace chat opened from the Chats tab is
+   viewed while the top-bar chip says "No workspace" — the `projectId` context
+   still applies server-side, but the UI misrepresents where you are. Chats must
+   live in exactly one container and not leak across it.
+2. **Settings in a modal.** Editing instructions/files happens in a modal; it
+   should live inline in the main area (Claude.ai-style), so a workspace/project
+   is a *place* you open, not a dialog.
+3. **No grouping of related projects.** A flat list can't express "a Vibe Coding
+   space with shared house-style instructions + several coding projects under
+   it." Need a container above projects.
+
+## Target model (two levels + unfiled)
+
+Hierarchy: **Workspace ⊃ Project ⊃ Chat**, plus **unfiled** chats at home.
+
+- **Workspace** (NEW outer container): general/shared instructions + reference
+  files. Contains Projects. Can also hold **workspace-level chats** directly.
+- **Project** (the existing entity, now nested): specific instructions + files +
+  its own chats. A project belongs to exactly one workspace.
+- **Chat** lives in one of three homes:
+  - **Unfiled** → the home **"Chats"** area (persona-grouped, as today). Indicator: **"No workspace"**.
+  - **Workspace-level** (workspace, no project) → inherits the workspace's instructions + files only. Indicator: **"<Workspace>"**.
+  - **Project-level** (project, within a workspace) → inherits **workspace + project** instructions + files. Indicator: **"<Workspace> › <Project>"**.
+- **Context inheritance**: workspace context is layered **first**, then project,
+  then the persona system prompt (extends the current `resolveProjectContext` /
+  `applyProjectContext` ordering).
+- **Naming**: outer = **Workspace**, inner = **Project** (reclaims the "Project"
+  label; the UI "Workspaces" label from #39/#40 now refers to the new outer
+  containers). Unfiled stays **"Chats" / "No workspace"**.
+
+## UX
+
+- **Chat separation (Issue 1):** the home **Chats** tab shows *only* unfiled
+  chats (still persona-grouped). A workspace/project shows *only* its own chats.
+  No cross-container leakage.
+- **Top bar = breadcrumb indicator, NOT a switcher (Issue 1):** shows
+  `No workspace` / `<Workspace>` / `<Workspace> › <Project>`. Clicking it opens
+  that container's inline page. You change context by navigating the sidebar, not
+  a dropdown. (Replaces the `showWorkspaceMenu` switcher chip.)
+- **Inline container pages (Issue 2):** the main area is **container-aware** with
+  two modes:
+  - **Container page** (when a workspace/project is open with no chat selected):
+    editable name + instructions + files inline; a workspace page also lists its
+    **projects** and **workspace-level chats** with "New project" / "New chat
+    here"; a project page shows its chats + "New chat" and notes inherited
+    workspace context. Replaces the edit **modal**.
+  - **Chat** (when a chat is open): the conversation, as today. Get back to the
+    page via the breadcrumb or sidebar.
+  - **Tiny create step:** creating a workspace/project asks only for a name, then
+    lands on its inline page to fill in instructions/files. (Only remaining
+    dialog; the full edit modal goes away.)
+- **Sidebar:** two tabs — **Chats** (unfiled, persona-grouped) and
+  **Workspaces** (drill-in nav: workspaces list → enter a workspace → its
+  projects + workspace-level chats → enter a project → its chats; with back
+  affordances mirroring the breadcrumb).
+- See the in-session mockup for the inline workspace/project pages + create step.
+
+## Data model + migration
+
+- **`workspaces`** (NEW): `id, user_id, name, instructions, drive_folder_id,
+  created_at, updated_at`.
+- **`projects`**: ADD `workspace_id` (FK → workspaces.id, required going
+  forward). Keeps its own `name, instructions, drive_folder_id`, files.
+- **`conversations`**: ADD `workspace_id` (nullable). Keep `project_id`
+  (nullable). Invariant: project-level chats set **both** (`workspace_id` = the
+  project's workspace); workspace-level set only `workspace_id`; unfiled set
+  neither. (Storing `workspace_id` on the row keeps scoping queries simple.)
+- **Drive layout:** `Tessera/<Workspace>/` for workspace reference files, with a
+  subfolder `Tessera/<Workspace>/<Project>/` per project. (Plus `Tessera/Downloads/`
+  for unfiled tool-created files — added in Track A.) Current Phase-1 projects live
+  under `Tessera/projects/<project>` — migration must re-map or move.
+- **Migration (small dataset — experiment):** backfill a per-user default
+  workspace (e.g. "General") and attach all existing `projects` to it; backfill
+  each existing conversation's `workspace_id` from its project's new workspace.
+  Unfiled conversations stay unfiled. Move/relink Drive folders accordingly.
+  Finalize the exact strategy at implementation time. Use a real migration
+  (better-sqlite3; the DAL is abstracted for a future Postgres move).
+
+## Task breakdown (one branch/PR each, verify via dev-login)
+
+- **WR-01 — schema + DAL + migration.** `workspaces` table; `projects.workspace_id`;
+  `conversations.workspace_id`; DAL CRUD for workspaces + nested projects; the
+  backfill migration. Headless tests.
+- **WR-02 — backend routes + context layering + Drive.** Workspaces CRUD;
+  projects nested under a workspace; extend context assembly to layer
+  workspace→project→persona; workspace/project Drive folder creation + the new
+  layout. Update `/api/chat` + `/api/chat/preview` resolution.
+- **WR-03 — chat separation + creation context (frontend).** Chats tab = unfiled
+  only; conversation create sets `workspace_id`/`project_id` from the open
+  container; remove cross-container leakage. (Builds on the persona grouping.)
+- **WR-04 — sidebar drill-in nav + breadcrumb indicator.** Workspaces tab
+  drill-in (workspace → projects + workspace chats → project → chats);
+  replace the top-bar switcher chip with the breadcrumb indicator.
+- **WR-05 — inline container pages + tiny create step.** Main-area
+  container-aware pages (workspace + project) replacing the edit modal; inline
+  instructions/files editing; minimal name-only create dialog.
+- **WR-06 — verify + review + migration test.** End-to-end via dev-login (the
+  stub user has no Drive, so file bits need the human on the live deploy);
+  migration tested against a copy of real data; `/code-review`; merge.
+
+## Sequencing
+**Restructure first, then Track A (Tool Use).** Tool-created files must target
+the right workspace/project Drive folders, so the hierarchy lands before tool
+executors are built. After WR-06, resume Track A (`docs/PHASE2_TASKS.md`) on the
+new model — tool file destinations = active project folder → active workspace
+folder → `Tessera/Downloads/` (unfiled).
+
+## Carryover decisions (already settled)
+- Chats live in **both** workspace-level and project-level (plus unfiled).
+- Inline pages **replace** the modal; keep only a name-only create step.
+- Indicator is a **breadcrumb**, not a switcher.
+- Unfiled area named **"Chats" / "No workspace"**.
