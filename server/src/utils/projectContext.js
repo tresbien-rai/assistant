@@ -92,17 +92,18 @@ async function extractFileText(auth, file) {
 }
 
 /**
- * Gather the per-file text sections for a project, honoring the character
- * budget. This is the swappable "include everything" step — replace its body
- * with retrieval later without changing the assembled-block format.
+ * Gather the per-file text sections for a container (project or workspace),
+ * honoring the character budget. This is the swappable "include everything"
+ * step — replace its body with retrieval later without changing the
+ * assembled-block format.
  *
  * @param {string} userId
- * @param {Object} project - projects row (id, name, ...)
- * @param {Array} files - project_files rows
+ * @param {Object} container - projects/workspaces row (id, name, ...)
+ * @param {Array} files - file rows (project_files or workspace_files)
  * @param {number} budgetRemaining - chars still available
  * @returns {Promise<{ sections: string[], usedChars: number, skipped: string[], driveFailed: boolean }>}
  */
-async function gatherFileTexts(userId, project, files, budgetRemaining) {
+async function gatherFileTexts(userId, container, files, budgetRemaining) {
   const sections = [];
   const skipped = [];
   let used = 0;
@@ -112,8 +113,8 @@ async function gatherFileTexts(userId, project, files, budgetRemaining) {
     auth = drive.getAuthForUser(userId);
   } catch (err) {
     logger.warn(
-      { userId, projectId: project.id, code: err.code },
-      'Drive unavailable while assembling project context; including instructions only'
+      { userId, containerId: container.id, code: err.code },
+      'Drive unavailable while assembling context; including instructions only'
     );
     return { sections, usedChars: 0, skipped: files.map(f => f.filename), driveFailed: true };
   }
@@ -130,8 +131,8 @@ async function gatherFileTexts(userId, project, files, budgetRemaining) {
       fileText = await extractFileText(auth, file);
     } catch (err) {
       logger.warn(
-        { userId, projectId: project.id, fileId: file.id, code: err.code, msg: err.message },
-        'Failed to load project file; skipping'
+        { userId, containerId: container.id, fileId: file.id, code: err.code, msg: err.message },
+        'Failed to load context file; skipping'
       );
       skipped.push(file.filename);
       continue;
@@ -153,9 +154,9 @@ async function gatherFileTexts(userId, project, files, budgetRemaining) {
 }
 
 /**
- * Wrap the instruction + file sections in a delimited context block.
+ * Wrap a project's instruction + file sections in a delimited context block.
  */
-function wrapBlock(project, sections) {
+function wrapProjectBlock(project, sections) {
   return [
     '<project_context>',
     `The following is reference material for this conversation from the user's ` +
@@ -168,57 +169,9 @@ function wrapBlock(project, sections) {
 }
 
 /**
- * Assemble the full project-context block for a project.
- *
- * @param {string} userId
- * @param {Object} project - projects row (must include id, name, instructions)
- * @returns {Promise<{ text: string, warning: string|null }|null>} null when
- *   there is nothing to inject (no instructions and no files).
- */
-async function assembleProjectContext(userId, project) {
-  const files = dal.listProjectFiles(project.id);
-  const instructions = (project.instructions || '').trim();
-
-  if (!instructions && files.length === 0) {
-    return null;
-  }
-
-  const budget = config.projectFiles.contextBudgetChars;
-  const sections = [];
-  let used = 0;
-
-  if (instructions) {
-    const section = `## Project Instructions\n${instructions}`;
-    sections.push(section);
-    used += section.length;
-  }
-
-  let skipped = [];
-  let driveFailed = false;
-
-  if (files.length > 0) {
-    const result = await gatherFileTexts(userId, project, files, budget - used);
-    sections.push(...result.sections);
-    used += result.usedChars;
-    skipped = result.skipped;
-    driveFailed = result.driveFailed;
-  }
-
-  const text = wrapBlock(project, sections);
-
-  let warning = null;
-  if (driveFailed) {
-    warning = 'Project files could not be loaded (Google Drive was not accessible). Only the project instructions were included.';
-  } else if (skipped.length > 0) {
-    warning = `Project context exceeded the size budget; some files were truncated or omitted: ${skipped.join(', ')}.`;
-  }
-
-  return { text, warning };
-}
-
-/**
- * Wrap workspace instruction sections in a delimited context block. Mirrors
- * wrapBlock (project) but labels the material as workspace-level shared context.
+ * Wrap a workspace's instruction + file sections in a delimited context block.
+ * Mirrors wrapProjectBlock but labels the material as workspace-level shared
+ * context (layered BEFORE the project block so it frames everything below).
  */
 function wrapWorkspaceBlock(workspace, sections) {
   return [
@@ -233,26 +186,90 @@ function wrapWorkspaceBlock(workspace, sections) {
 }
 
 /**
- * Assemble the workspace-context block. Layered BEFORE the project block (and
- * the persona prompt) so workspace-wide instructions frame everything below.
- *
- * WR-02a includes workspace INSTRUCTIONS only; workspace reference files arrive
- * in WR-02b, at which point this gains a gatherFileTexts step like the project
- * assembler. Kept as a sibling of assembleProjectContext for that symmetry.
+ * Assemble a container's full context block (instructions + Drive-backed files),
+ * shared by projects and workspaces — they differ only in which files to list,
+ * the section/wrapper labels, and the warning noun.
  *
  * @param {string} userId
- * @param {Object} workspace - workspaces row (must include id, name, instructions)
+ * @param {Object} container - projects/workspaces row (must include id, name, instructions)
+ * @param {Object} opts
+ * @param {(id: string) => Array} opts.listFiles - DAL file lister for this container
+ * @param {string} opts.heading - instructions section heading ("Project Instructions")
+ * @param {(container, sections: string[]) => string} opts.wrap - block wrapper
+ * @param {string} opts.noun - capitalized container noun for warnings ("Project")
  * @returns {Promise<{ text: string, warning: string|null }|null>} null when there
- *   is nothing to inject (no instructions).
+ *   is nothing to inject (no instructions and no files).
  */
-async function assembleWorkspaceContext(userId, workspace) {
-  const instructions = (workspace.instructions || '').trim();
-  if (!instructions) {
+async function assembleContextBlock(userId, container, { listFiles, heading, wrap, noun }) {
+  const files = listFiles(container.id);
+  const instructions = (container.instructions || '').trim();
+
+  if (!instructions && files.length === 0) {
     return null;
   }
 
-  const sections = [`## Workspace Instructions\n${instructions}`];
-  return { text: wrapWorkspaceBlock(workspace, sections), warning: null };
+  const budget = config.projectFiles.contextBudgetChars;
+  const sections = [];
+  let used = 0;
+
+  if (instructions) {
+    const section = `## ${heading}\n${instructions}`;
+    sections.push(section);
+    used += section.length;
+  }
+
+  let skipped = [];
+  let driveFailed = false;
+
+  if (files.length > 0) {
+    const result = await gatherFileTexts(userId, container, files, budget - used);
+    sections.push(...result.sections);
+    used += result.usedChars;
+    skipped = result.skipped;
+    driveFailed = result.driveFailed;
+  }
+
+  const text = wrap(container, sections);
+
+  let warning = null;
+  if (driveFailed) {
+    warning = `${noun} files could not be loaded (Google Drive was not accessible). Only the ${noun.toLowerCase()} instructions were included.`;
+  } else if (skipped.length > 0) {
+    warning = `${noun} context exceeded the size budget; some files were truncated or omitted: ${skipped.join(', ')}.`;
+  }
+
+  return { text, warning };
+}
+
+/**
+ * Assemble the full project-context block (instructions + project files).
+ * @param {string} userId
+ * @param {Object} project - projects row (must include id, name, instructions)
+ * @returns {Promise<{ text: string, warning: string|null }|null>}
+ */
+function assembleProjectContext(userId, project) {
+  return assembleContextBlock(userId, project, {
+    listFiles: dal.listProjectFiles,
+    heading: 'Project Instructions',
+    wrap: wrapProjectBlock,
+    noun: 'Project',
+  });
+}
+
+/**
+ * Assemble the full workspace-context block (instructions + workspace files).
+ * Layered BEFORE the project block and the persona prompt.
+ * @param {string} userId
+ * @param {Object} workspace - workspaces row (must include id, name, instructions)
+ * @returns {Promise<{ text: string, warning: string|null }|null>}
+ */
+function assembleWorkspaceContext(userId, workspace) {
+  return assembleContextBlock(userId, workspace, {
+    listFiles: dal.listWorkspaceFiles,
+    heading: 'Workspace Instructions',
+    wrap: wrapWorkspaceBlock,
+    noun: 'Workspace',
+  });
 }
 
 module.exports = {

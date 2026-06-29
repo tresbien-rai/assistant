@@ -366,6 +366,32 @@
       projects(id) {
         return request('GET', `/api/workspaces/${encodeURIComponent(id)}/projects`);
       },
+
+      // Workspace reference files (stored on the user's Google Drive).
+      files: {
+        /** Returns [{ id, workspaceId, filename, mimeType, sizeBytes, createdAt }]. */
+        list(workspaceId) {
+          return request('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/files`);
+        },
+        /** Uploads a single file (multipart). @param {File|Blob} file */
+        upload(workspaceId, file) {
+          const fd = new FormData();
+          fd.append('file', file);
+          return request('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/files`, {
+            body: fd,
+          });
+        },
+        delete(workspaceId, fileId) {
+          return request(
+            'DELETE',
+            `/api/workspaces/${encodeURIComponent(workspaceId)}/files/${encodeURIComponent(fileId)}`
+          );
+        },
+        /** URL for downloading a file's content (auth via cookie; use in <a download>). */
+        contentUrl(workspaceId, fileId) {
+          return `/api/workspaces/${encodeURIComponent(workspaceId)}/files/${encodeURIComponent(fileId)}/content`;
+        },
+      },
     },
 
     projects: {

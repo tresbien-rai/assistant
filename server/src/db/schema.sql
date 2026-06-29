@@ -89,6 +89,21 @@ CREATE TABLE IF NOT EXISTS workspaces (
 
 CREATE INDEX IF NOT EXISTS idx_workspaces_user_id ON workspaces(user_id);
 
+-- Workspace files table (Workspace Restructure, WR-02b)
+-- Metadata for a workspace's shared reference files (bytes live in Drive under
+-- `Tessera/<Workspace>/`). Mirrors project_files but scoped to a workspace.
+CREATE TABLE IF NOT EXISTS workspace_files (
+    id              TEXT PRIMARY KEY,
+    workspace_id    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    filename        TEXT NOT NULL,
+    mime_type       TEXT DEFAULT '',
+    size_bytes      INTEGER DEFAULT 0,
+    drive_file_id   TEXT DEFAULT '',
+    created_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_files_workspace_id ON workspace_files(workspace_id);
+
 -- Projects table (Phase 1; nested under a workspace by the Workspace Restructure)
 -- Collections of files that provide context for conversations.
 -- NOTE: the `workspace_id` column is added by migration 001 (ADD COLUMN can't be

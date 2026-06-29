@@ -767,15 +767,16 @@ function createWorkspace(userId, { name, instructions, driveFolderId }) {
 }
 
 /**
- * List a user's workspaces, each with its project count.
+ * List a user's workspaces, each with its project + file counts.
  * @param {string} userId - The user's UUID
- * @returns {Array} Array of workspace records (with project_count)
+ * @returns {Array} Array of workspace records (with project_count, file_count)
  */
 function listWorkspacesByUser(userId) {
   const db = getDb();
   return db.prepare(`
     SELECT w.*,
-           (SELECT COUNT(*) FROM projects p WHERE p.workspace_id = w.id) as project_count
+           (SELECT COUNT(*) FROM projects p WHERE p.workspace_id = w.id) as project_count,
+           (SELECT COUNT(*) FROM workspace_files f WHERE f.workspace_id = w.id) as file_count
     FROM workspaces w
     WHERE w.user_id = ?
     ORDER BY w.updated_at DESC
@@ -1075,6 +1076,75 @@ function deleteProjectFile(fileId, projectId) {
 }
 
 // =============================================================================
+// WORKSPACE FILES
+// =============================================================================
+//
+// Scoped by workspaceId. Callers MUST first verify the workspace belongs to the
+// user (via getWorkspaceById(workspaceId, userId)) before using these. Mirrors
+// the PROJECT FILES functions above.
+
+/**
+ * Record a workspace file's metadata (the bytes live on Drive).
+ * @param {string} workspaceId - The workspace's UUID
+ * @param {Object} data - File metadata
+ * @param {string} data.filename - Original filename
+ * @param {string} [data.mimeType] - MIME type
+ * @param {number} [data.sizeBytes] - File size in bytes
+ * @param {string} [data.driveFileId] - Drive file id
+ * @returns {Object} The created workspace_files record
+ */
+function addWorkspaceFile(workspaceId, { filename, mimeType, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+
+  db.prepare(`
+    INSERT INTO workspace_files (id, workspace_id, filename, mime_type, size_bytes, drive_file_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, workspaceId, filename, mimeType || '', sizeBytes || 0, driveFileId || '', timestamp);
+
+  return db.prepare('SELECT * FROM workspace_files WHERE id = ?').get(id);
+}
+
+/**
+ * List a workspace's files (metadata only, from SQLite — no Drive calls).
+ * @param {string} workspaceId - The workspace's UUID
+ * @returns {Array} Array of workspace_files records
+ */
+function listWorkspaceFiles(workspaceId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM workspace_files WHERE workspace_id = ? ORDER BY created_at ASC
+  `).all(workspaceId);
+}
+
+/**
+ * Get a single workspace file (scoped to its workspace).
+ * @param {string} fileId - The file's UUID
+ * @param {string} workspaceId - The workspace's UUID
+ * @returns {Object|undefined} The workspace_files record or undefined
+ */
+function getWorkspaceFile(fileId, workspaceId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM workspace_files WHERE id = ? AND workspace_id = ?
+  `).get(fileId, workspaceId);
+}
+
+/**
+ * Delete a workspace file's metadata row (scoped to its workspace).
+ * Removing the file from Drive is the route's responsibility.
+ * @param {string} fileId - The file's UUID
+ * @param {string} workspaceId - The workspace's UUID
+ * @returns {boolean} True if deleted, false if not found
+ */
+function deleteWorkspaceFile(fileId, workspaceId) {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM workspace_files WHERE id = ? AND workspace_id = ?').run(fileId, workspaceId);
+  return result.changes > 0;
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
@@ -1137,4 +1207,10 @@ module.exports = {
   listProjectFiles,
   getProjectFile,
   deleteProjectFile,
+
+  // Workspace Files
+  addWorkspaceFile,
+  listWorkspaceFiles,
+  getWorkspaceFile,
+  deleteWorkspaceFile,
 };

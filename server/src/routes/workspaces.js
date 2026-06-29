@@ -20,6 +20,13 @@
  * Projects are created/updated via /api/projects (a project references its
  * workspace by id); listing them per-workspace lives here for the drill-in nav.
  *
+ * Workspace files (shared reference material, layered into every chat under the
+ * workspace — same model as project files):
+ * - GET    /api/workspaces/:id/files                  - List files (from SQLite)
+ * - POST   /api/workspaces/:id/files                  - Upload a file to Drive (+ record)
+ * - GET    /api/workspaces/:id/files/:fileId/content  - Stream a file's bytes
+ * - DELETE /api/workspaces/:id/files/:fileId          - Delete from Drive + DB
+ *
  * Drive folder creation is BEST-EFFORT: if Drive isn't connected (e.g. the
  * dev-login stub user), the workspace is still created as a DB container and its
  * folder is self-healed later when a project/file first needs it. This keeps the
@@ -30,6 +37,7 @@ const express = require('express');
 
 const dal = require('../db/dal');
 const drive = require('../utils/drive');
+const { upload, handleUploadError } = require('../utils/fileUploads');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
@@ -59,7 +67,21 @@ function formatWorkspace(w) {
   if (w.project_count !== undefined) {
     formatted.projectCount = w.project_count;
   }
+  if (w.file_count !== undefined) {
+    formatted.fileCount = w.file_count;
+  }
   return formatted;
+}
+
+function formatWorkspaceFile(f) {
+  return {
+    id: f.id,
+    workspaceId: f.workspace_id,
+    filename: f.filename,
+    mimeType: f.mime_type,
+    sizeBytes: f.size_bytes,
+    createdAt: f.created_at,
+  };
 }
 
 // Re-export the project formatter shape for the nested-list endpoint without
@@ -234,6 +256,114 @@ router.get('/:id/projects', asyncHandler(async (req, res) => {
   requireWorkspace(req.params.id, req.user.userId);
   const projects = dal.listProjectsByWorkspace(req.params.id, req.user.userId);
   res.json(projects.map(formatProject));
+}));
+
+// =============================================================================
+// WORKSPACE FILES (shared reference material; mirrors /api/projects/:id/files)
+// =============================================================================
+
+/**
+ * GET /api/workspaces/:id/files
+ * List a workspace's files from SQLite (no Drive calls).
+ */
+router.get('/:id/files', asyncHandler(async (req, res) => {
+  requireWorkspace(req.params.id, req.user.userId);
+  const files = dal.listWorkspaceFiles(req.params.id);
+  res.json(files.map(formatWorkspaceFile));
+}));
+
+/**
+ * GET /api/workspaces/:id/files/:fileId/content
+ * Stream a file's bytes from Drive (for download). Auth via cookie, so it can be
+ * used directly as an <a href download>.
+ */
+router.get('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
+  requireWorkspace(req.params.id, req.user.userId);
+
+  const file = dal.getWorkspaceFile(req.params.fileId, req.params.id);
+  if (!file || !file.drive_file_id) {
+    throw AppError.notFound('File');
+  }
+
+  const auth = drive.getAuthForUser(req.user.userId);
+  const bytes = await drive.downloadFileBytes(auth, file.drive_file_id);
+
+  res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`);
+  res.send(bytes);
+}));
+
+/**
+ * POST /api/workspaces/:id/files
+ * Upload a file (multipart field "file") to the workspace's Drive folder and
+ * record its metadata. Self-heals the workspace folder if it doesn't exist yet
+ * (best-effort create at workspace creation may have deferred it).
+ */
+router.post('/:id/files', upload.single('file'), handleUploadError, asyncHandler(async (req, res) => {
+  const workspace = requireWorkspace(req.params.id, req.user.userId);
+
+  if (!req.file) {
+    throw AppError.validation('No file provided. Send a file in the "file" field.');
+  }
+
+  const auth = drive.getAuthForUser(req.user.userId);
+
+  let folderId = workspace.drive_folder_id;
+  if (!folderId) {
+    folderId = await drive.ensureWorkspaceFolder(auth, workspace.name);
+    dal.updateWorkspace(workspace.id, req.user.userId, { driveFolderId: folderId });
+  }
+
+  const uploaded = await drive.uploadFile(auth, {
+    name: req.file.originalname,
+    mimeType: req.file.mimetype,
+    parentId: folderId,
+    data: req.file.buffer,
+  });
+
+  const fileRecord = dal.addWorkspaceFile(workspace.id, {
+    filename: req.file.originalname,
+    mimeType: req.file.mimetype,
+    sizeBytes: req.file.size,
+    driveFileId: uploaded.id,
+  });
+
+  logger.info(
+    { userId: req.user.userId, workspaceId: workspace.id, fileId: fileRecord.id },
+    'Workspace file uploaded'
+  );
+  res.status(201).json(formatWorkspaceFile(fileRecord));
+}));
+
+/**
+ * DELETE /api/workspaces/:id/files/:fileId
+ * Delete a file from Drive and remove its metadata row. Drive deletion is
+ * best-effort so a Drive failure does not strand an undeletable file.
+ */
+router.delete('/:id/files/:fileId', asyncHandler(async (req, res) => {
+  requireWorkspace(req.params.id, req.user.userId);
+
+  const file = dal.getWorkspaceFile(req.params.fileId, req.params.id);
+  if (!file) {
+    throw AppError.notFound('File');
+  }
+
+  if (file.drive_file_id) {
+    try {
+      const auth = drive.getAuthForUser(req.user.userId);
+      await drive.deleteFile(auth, file.drive_file_id);
+    } catch (err) {
+      logger.warn(
+        { userId: req.user.userId, fileId: file.id, code: err.code },
+        'Could not delete file from Drive; removing DB row anyway'
+      );
+    }
+  }
+
+  dal.deleteWorkspaceFile(req.params.fileId, req.params.id);
+
+  logger.info({ userId: req.user.userId, workspaceId: req.params.id, fileId: file.id }, 'Workspace file deleted');
+  res.json({ deleted: true });
 }));
 
 module.exports = router;
