@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const { runMigrations } = require('./migrate');
 
 let db = null;
 
@@ -42,8 +43,11 @@ function getDb() {
 
   console.log(`[Database] Connected to: ${dbPath}`);
 
-  // Run schema initialization
+  // Run schema initialization, then apply any pending migrations. Schema setup
+  // is idempotent (CREATE TABLE IF NOT EXISTS); migrations handle changes that
+  // can't be — ADD COLUMN and data backfills — on pre-existing databases.
   initializeSchema();
+  runMigrations(db);
 
   return db;
 }
