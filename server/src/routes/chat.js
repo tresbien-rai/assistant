@@ -15,7 +15,7 @@ const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { getDecryptedApiKey } = require('./apiKeys');
 const dal = require('../db/dal');
-const { assembleProjectContext } = require('../utils/projectContext');
+const { assembleProjectContext, assembleWorkspaceContext } = require('../utils/projectContext');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
 
@@ -106,49 +106,81 @@ function getProvider(provider) {
 // so req.user is already available when requests reach this router.
 
 /**
- * Resolve the project for a chat request and assemble its context block.
+ * Resolve the workspace + project for a chat request and assemble their layered
+ * context block (workspace first, then project — see WORKSPACE_RESTRUCTURE.md).
  *
  * The chat route is otherwise stateless about conversations, so the client
- * passes either a `conversationId` (preferred — the project is resolved from the
- * conversation) or an explicit `projectId` (e.g. a new chat not yet persisted).
- * The project is always re-loaded user-scoped, so the client can never inject
- * another user's project or arbitrary file contents.
+ * passes either a `conversationId` (preferred — the container is resolved from
+ * the conversation row) or explicit `workspaceId`/`projectId` (e.g. a new chat
+ * not yet persisted). Both are always re-loaded user-scoped, so the client can
+ * never inject another user's container or arbitrary file contents.
+ *
+ * Layering: workspace context frames everything, then project context, then the
+ * persona system prompt (added by applyRequestContext). A project-level chat
+ * inherits both; a workspace-level chat only the workspace; an unfiled chat
+ * neither. When a project is known but its workspace wasn't passed explicitly,
+ * the workspace is derived from the project so inheritance always holds.
  *
  * @param {Object} req - Express request (req.user, req.body)
  * @returns {Promise<{ text: string, warning: string|null }|null>}
  */
-async function resolveProjectContext(req) {
+async function resolveRequestContext(req) {
   const userId = req.user.userId;
   // Guard the types: these come straight from the request body, and passing a
   // non-string to better-sqlite3 throws (TypeError) rather than simply missing.
   const conversationId = typeof req.body.conversationId === 'string' ? req.body.conversationId : null;
   const projectId = typeof req.body.projectId === 'string' ? req.body.projectId : null;
+  const workspaceId = typeof req.body.workspaceId === 'string' ? req.body.workspaceId : null;
 
+  let workspace = null;
   let project = null;
+
   if (conversationId) {
-    // Metadata-only lookup — we just need project_id, not the message history.
+    // Metadata-only lookup — we just need the container ids, not the messages.
     const conversation = dal.getConversationMeta(conversationId, userId);
-    if (conversation && conversation.project_id) {
-      project = dal.getProjectById(conversation.project_id, userId);
+    if (conversation) {
+      if (conversation.project_id) project = dal.getProjectById(conversation.project_id, userId);
+      if (conversation.workspace_id) workspace = dal.getWorkspaceById(conversation.workspace_id, userId);
     }
-  } else if (projectId) {
-    project = dal.getProjectById(projectId, userId);
+  } else {
+    if (projectId) project = dal.getProjectById(projectId, userId);
+    if (workspaceId) workspace = dal.getWorkspaceById(workspaceId, userId);
   }
 
-  if (!project) return null;
-  return assembleProjectContext(userId, project);
+  // Inheritance safety net: a project always carries its workspace context even
+  // if the caller didn't name the workspace.
+  if (project && !workspace && project.workspace_id) {
+    workspace = dal.getWorkspaceById(project.workspace_id, userId);
+  }
+
+  const blocks = [];
+  const warnings = [];
+
+  if (workspace) {
+    const wc = await assembleWorkspaceContext(userId, workspace);
+    if (wc?.text) blocks.push(wc.text);
+    if (wc?.warning) warnings.push(wc.warning);
+  }
+  if (project) {
+    const pc = await assembleProjectContext(userId, project);
+    if (pc?.text) blocks.push(pc.text);
+    if (pc?.warning) warnings.push(pc.warning);
+  }
+
+  if (blocks.length === 0) return null;
+  return { text: blocks.join('\n\n'), warning: warnings.length > 0 ? warnings.join(' ') : null };
 }
 
 /**
- * Combine the assembled project context (if any) with the persona's system
- * prompt. Project context goes FIRST so it frames the persona instructions.
- * @param {{text: string}|null} projectContext
+ * Combine the assembled workspace+project context (if any) with the persona's
+ * system prompt. Container context goes FIRST so it frames the persona.
+ * @param {{text: string}|null} requestContext
  * @param {string} [systemPrompt]
  * @returns {string|undefined}
  */
-function applyProjectContext(projectContext, systemPrompt) {
-  if (!projectContext?.text) return systemPrompt;
-  return `${projectContext.text}\n\n${systemPrompt || ''}`.trim();
+function applyRequestContext(requestContext, systemPrompt) {
+  if (!requestContext?.text) return systemPrompt;
+  return `${requestContext.text}\n\n${systemPrompt || ''}`.trim();
 }
 
 /**
@@ -193,16 +225,16 @@ router.post('/', asyncHandler(async (req, res) => {
   // Get provider module
   const providerModule = getProvider(provider);
 
-  // Inject project context (instructions + files) before the persona prompt.
-  const projectContext = await resolveProjectContext(req);
-  const effectiveSystemPrompt = applyProjectContext(projectContext, systemPrompt);
+  // Inject workspace + project context (instructions + files) before the persona prompt.
+  const requestContext = await resolveRequestContext(req);
+  const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
 
   logger.info({
     userId: req.user.userId,
     provider,
     model,
     messageCount: messages.length,
-    projectContext: Boolean(projectContext?.text),
+    projectContext: Boolean(requestContext?.text),
   }, 'Chat request');
 
   // Call provider's chat method
@@ -215,9 +247,9 @@ router.post('/', asyncHandler(async (req, res) => {
     attachments,
   });
 
-  if (projectContext?.warning) {
-    result.contextWarning = projectContext.warning;
-    res.setHeader('X-Project-Context-Warning', encodeURIComponent(projectContext.warning));
+  if (requestContext?.warning) {
+    result.contextWarning = requestContext.warning;
+    res.setHeader('X-Project-Context-Warning', encodeURIComponent(requestContext.warning));
   }
 
   res.json(result);
@@ -245,13 +277,13 @@ router.post('/stream', asyncHandler(async (req, res) => {
     throw AppError.validation(`Streaming not supported for provider: ${provider}`);
   }
 
-  // Inject project context (instructions + files) before the persona prompt.
+  // Inject workspace + project context before the persona prompt.
   // Resolved before any SSE headers are sent so the warning header is valid.
-  const projectContext = await resolveProjectContext(req);
-  const effectiveSystemPrompt = applyProjectContext(projectContext, systemPrompt);
+  const requestContext = await resolveRequestContext(req);
+  const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
 
-  if (projectContext?.warning) {
-    res.setHeader('X-Project-Context-Warning', encodeURIComponent(projectContext.warning));
+  if (requestContext?.warning) {
+    res.setHeader('X-Project-Context-Warning', encodeURIComponent(requestContext.warning));
   }
 
   logger.info({
@@ -259,7 +291,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
     provider,
     model,
     messageCount: messages.length,
-    projectContext: Boolean(projectContext?.text),
+    projectContext: Boolean(requestContext?.text),
   }, 'Stream request');
 
   // Set up abort handling for client disconnect
@@ -313,8 +345,8 @@ router.post('/preview', asyncHandler(async (req, res) => {
   }
 
   // Identical context assembly to the real chat path.
-  const projectContext = await resolveProjectContext(req);
-  const effectiveSystemPrompt = applyProjectContext(projectContext, systemPrompt);
+  const requestContext = await resolveRequestContext(req);
+  const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
 
   const body = providerModule.buildRequestBody({
     model,
@@ -336,7 +368,7 @@ router.post('/preview', asyncHandler(async (req, res) => {
     // Surfaced so the UI can make clear the key isn't missing — it's just not
     // part of the body.
     apiKeyLocation: 'sent as a request header (never in the body)',
-    ...(projectContext?.warning ? { contextWarning: projectContext.warning } : {}),
+    ...(requestContext?.warning ? { contextWarning: requestContext.warning } : {}),
   });
 }));
 
@@ -378,4 +410,7 @@ modelsRouter.get('/:provider', asyncHandler(async (req, res) => {
 module.exports = {
   chatRouter: router,
   modelsRouter,
+  // Exported for headless context-layering tests.
+  resolveRequestContext,
+  applyRequestContext,
 };

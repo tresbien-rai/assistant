@@ -339,15 +339,48 @@
     // -------------------------------------------------------------------------
     // PROJECTS
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // WORKSPACES (outer container: shared instructions + nested projects)
+    // -------------------------------------------------------------------------
+    workspaces: {
+      /** Returns [{ id, name, instructions, projectCount, createdAt, updatedAt }]. */
+      list() {
+        return request('GET', '/api/workspaces');
+      },
+      get(id) {
+        return request('GET', `/api/workspaces/${encodeURIComponent(id)}`);
+      },
+      /** data = { name, instructions? }. Best-effort creates the Drive folder. */
+      create(data) {
+        return request('POST', '/api/workspaces', { body: data });
+      },
+      /** data = { name?, instructions? }. */
+      update(id, data) {
+        return request('PUT', `/api/workspaces/${encodeURIComponent(id)}`, { body: data });
+      },
+      /** Deletes the workspace; its chats survive as unfiled, its projects are removed. */
+      delete(id) {
+        return request('DELETE', `/api/workspaces/${encodeURIComponent(id)}`);
+      },
+      /** Projects nested under this workspace: [{ id, workspaceId, name, fileCount, ... }]. */
+      projects(id) {
+        return request('GET', `/api/workspaces/${encodeURIComponent(id)}/projects`);
+      },
+    },
+
     projects: {
-      /** Returns [{ id, name, instructions, fileCount, createdAt, updatedAt }]. */
+      /** Returns [{ id, workspaceId, name, instructions, fileCount, createdAt, updatedAt }]. */
       list() {
         return request('GET', '/api/projects');
       },
       get(id) {
         return request('GET', `/api/projects/${encodeURIComponent(id)}`);
       },
-      /** data = { name, instructions? }. Creates the backing Drive folder. */
+      /**
+       * data = { name, instructions?, workspaceId? }. Creates the backing Drive
+       * folder under the workspace. Omitting workspaceId lands the project in the
+       * user's default "General" workspace.
+       */
       create(data) {
         return request('POST', '/api/projects', { body: data });
       },

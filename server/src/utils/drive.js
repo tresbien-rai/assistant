@@ -230,8 +230,10 @@ async function ensureFolder(auth, name, parentId) {
 }
 
 /**
- * Ensure the app's folder tree exists: `{driveRootFolder}/projects/`.
- * Idempotent — safe to call on every project create.
+ * Ensure the app's legacy folder tree exists: `{driveRootFolder}/projects/`.
+ * Retained for back-compat with Phase-1 projects created before the Workspace
+ * Restructure (and as a fallback parent for a project with no workspace).
+ * Idempotent.
  * @param {import('google-auth-library').OAuth2Client} auth
  * @returns {Promise<{rootId: string, projectsId: string}>}
  */
@@ -239,6 +241,19 @@ async function ensureAppFolders(auth) {
   const rootId = await ensureFolder(auth, APP_ROOT_FOLDER, null);
   const projectsId = await ensureFolder(auth, PROJECTS_FOLDER, rootId);
   return { rootId, projectsId };
+}
+
+/**
+ * Ensure a workspace's folder exists at `{driveRootFolder}/{name}/` and return
+ * its id (Workspace Restructure layout: `Tessera/<Workspace>/<Project>/`).
+ * Idempotent — safe to call whenever a workspace's folder id is needed.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} name - The workspace name
+ * @returns {Promise<string>} The workspace folder's id
+ */
+async function ensureWorkspaceFolder(auth, name) {
+  const rootId = await ensureFolder(auth, APP_ROOT_FOLDER, null);
+  return ensureFolder(auth, name, rootId);
 }
 
 // =============================================================================
@@ -356,6 +371,7 @@ function listFiles(auth, parentId) {
 module.exports = {
   getAuthForUser,
   ensureAppFolders,
+  ensureWorkspaceFolder,
   createFolder,
   uploadFile,
   downloadFileText,
