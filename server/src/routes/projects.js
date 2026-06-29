@@ -19,13 +19,11 @@
  * - DELETE /api/projects/:id/files/:fileId    - Delete from Drive + DB
  */
 
-const path = require('node:path');
 const express = require('express');
-const multer = require('multer');
 
-const config = require('../config');
 const dal = require('../db/dal');
 const drive = require('../utils/drive');
+const { upload, handleUploadError } = require('../utils/fileUploads');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
@@ -39,43 +37,6 @@ router.use(authenticate);
 // Field length caps (DB columns are TEXT; these keep input sane)
 const MAX_NAME_LENGTH = 100;
 const MAX_INSTRUCTIONS_LENGTH = 16000;
-
-// Accepted upload extensions as a lowercase Set for O(1) lookup.
-const ACCEPTED_EXTENSIONS = new Set(config.projectFiles.acceptedExtensions);
-
-// =============================================================================
-// MULTER (in-memory — file bytes are forwarded straight to Drive, not to disk)
-// =============================================================================
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: config.projectFiles.maxFileBytes },
-  fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (ACCEPTED_EXTENSIONS.has(ext)) {
-      cb(null, true);
-    } else {
-      cb(AppError.validation(
-        `Unsupported file type "${ext || file.originalname}". Allowed: text, code, and PDF files.`
-      ));
-    }
-  },
-});
-
-/**
- * Translate multer errors (file too large, etc.) into AppErrors.
- */
-function handleUploadError(err, req, res, next) {
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      const mb = config.projectFiles.maxFileBytes / (1024 * 1024);
-      return next(AppError.validation(`File too large. Maximum size is ${mb}MB.`));
-    }
-    return next(AppError.validation(`Upload error: ${err.message}`));
-  }
-  // AppError (from fileFilter) or anything else: pass through.
-  return next(err);
-}
 
 // =============================================================================
 // FORMATTERS (snake_case DB rows -> camelCase API; hide internal Drive IDs)

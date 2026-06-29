@@ -82,6 +82,16 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
     check('workspace derived from project', eCtx?.text.includes('WS_INSTRUCTIONS'));
     check('project present too', eCtx.text.includes('PROJ_INSTRUCTIONS'));
 
+    // --- Workspace files fold in (no Drive here → graceful warning) ----------
+    // The test user has no Drive tokens, so file bytes can't load; the assembler
+    // must still include instructions and surface a workspace-noun warning
+    // (exercises the WR-02b file-gathering path + the generalized warning).
+    console.log('\n5. Workspace files fold into context (Drive-less degrade)...');
+    dal.addWorkspaceFile(workspace.id, { filename: 'ref.md', driveFileId: 'no-drive' });
+    const fCtx = await resolveRequestContext(reqFor(userId, { conversationId: workspaceChat.id }));
+    check('instructions still present', fCtx?.text.includes('WS_INSTRUCTIONS'));
+    check('workspace-noun degrade warning', !!fCtx?.warning && fCtx.warning.startsWith('Workspace files could not be loaded'));
+
     console.log('\n' + '='.repeat(60));
     if (failures === 0) {
       console.log('All context layering tests passed!');

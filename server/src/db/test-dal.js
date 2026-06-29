@@ -174,9 +174,24 @@ try {
   if (!(wsLevelOnly.length === 1 && wsLevelOnly[0].id === wsChat.id)) throw new Error('workspaceLevelOnly filter wrong');
   console.log(`   ✓ workspaceLevelOnly filter → ${wsLevelOnly.length}`);
 
+  // Workspace files (metadata only; bytes would live on Drive).
+  const wsFile = dal.addWorkspaceFile(workspace.id, { filename: 'house-style.md', mimeType: 'text/markdown', sizeBytes: 42, driveFileId: 'drive-abc' });
+  console.log(`   ✓ Added workspace file: ${wsFile.filename}`);
+  const wsFiles = dal.listWorkspaceFiles(workspace.id);
+  if (wsFiles.length !== 1) throw new Error(`expected 1 workspace file, got ${wsFiles.length}`);
+  const gotFile = dal.getWorkspaceFile(wsFile.id, workspace.id);
+  if (!gotFile || gotFile.id !== wsFile.id) throw new Error('getWorkspaceFile failed');
+  if (dal.listWorkspacesByUser(user.id).find(w => w.id === workspace.id).file_count !== 1) throw new Error('workspace file_count wrong');
+  console.log(`   ✓ list/get workspace file + file_count`);
+  if (!dal.deleteWorkspaceFile(wsFile.id, workspace.id)) throw new Error('deleteWorkspaceFile failed');
+  console.log(`   ✓ Deleted workspace file`);
+  // Re-add one to prove deleteWorkspace cascades file rows too.
+  const cascadeFile = dal.addWorkspaceFile(workspace.id, { filename: 'ref.txt', driveFileId: 'drive-xyz' });
+
   // Deleting a workspace removes its projects but reparents chats to unfiled.
   dal.deleteWorkspace(workspace.id, user.id);
   if (dal.getWorkspaceById(workspace.id, user.id)) throw new Error('workspace not deleted');
+  if (dal.getWorkspaceFile(cascadeFile.id, workspace.id)) throw new Error('workspace_files not cascaded on workspace delete');
   if (dal.getProjectById(nestedProject.id, user.id)) throw new Error('nested project not deleted');
   const survivedWs = dal.getConversationMeta(wsChat.id, user.id);
   const survivedProj = dal.getConversationMeta(projChat.id, user.id);
