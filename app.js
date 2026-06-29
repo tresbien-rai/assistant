@@ -605,6 +605,7 @@ async function createConversation(title = 'New Chat') {
         title: created.title,
         personaId: created.personaId,
         projectId: created.projectId,
+        workspaceId: created.workspaceId,
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
         messageCount: 0,
@@ -1167,6 +1168,7 @@ function hydrateConversations(conversations) {
             title: c.title,
             personaId: c.personaId,
             projectId: c.projectId,
+            workspaceId: c.workspaceId,
             createdAt: c.createdAt,
             updatedAt: c.updatedAt,
             messageCount: c.messageCount || 0,
@@ -2712,13 +2714,16 @@ function renderWorkspaceChatList(container) {
 }
 
 /**
- * Home view: chats grouped by persona under collapsible headers ("chats with
- * X"). Only personas with at least one chat get a group; the active persona's
- * group sorts first, the rest by most-recent activity.
+ * Home ("Chats") view: only UNFILED chats — those not in any workspace or
+ * project — grouped by persona under collapsible headers ("chats with X").
+ * Workspace/project chats live in their own container, never here (Workspace
+ * Restructure: a chat appears in exactly one home, no cross-container leakage).
+ * The active persona's group sorts first, the rest by most-recent activity.
  * @param {HTMLElement} container
  */
 function renderGroupedChatList(container) {
-    const all = Object.values(state.conversations);
+    const all = Object.values(state.conversations)
+        .filter(c => !c.projectId && !c.workspaceId);
 
     if (all.length === 0) {
         elements.noConversationsMessage.style.display = 'block';

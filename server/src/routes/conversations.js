@@ -41,6 +41,7 @@ function formatConversation(conversation) {
     userId: conversation.user_id,
     personaId: conversation.persona_id,
     projectId: conversation.project_id,
+    workspaceId: conversation.workspace_id,
     title: conversation.title,
     createdAt: conversation.created_at,
     updatedAt: conversation.updated_at,
@@ -82,17 +83,32 @@ function formatMessage(message) {
 
 /**
  * GET /api/conversations
- * Returns all conversations for the authenticated user
- * Query params: ?personaId=xxx (optional filter)
- * Ordered by updatedAt descending
- * Includes message count per conversation
+ * Returns the user's conversations, ordered by updatedAt descending, with a
+ * message count each.
+ *
+ * Container scoping (a chat lives in exactly one home — see WORKSPACE_RESTRUCTURE):
+ *   ?unfiled=true            only unfiled chats (no workspace/project)
+ *   ?projectId=xxx           only that project's chats
+ *   ?workspaceId=xxx         that workspace's chats
+ *     &workspaceLevelOnly=true   ...excluding project-level chats
+ * Optional ?personaId=xxx filter combines with the above. Omit all for every chat.
  */
 router.get('/', asyncHandler(async (req, res) => {
-  const { personaId, limit, offset } = req.query;
+  const { personaId, unfiled, workspaceId, workspaceLevelOnly, projectId, limit, offset } = req.query;
 
   const options = {};
   if (personaId) {
     options.personaId = personaId;
+  }
+  if (unfiled === 'true') {
+    options.unfiled = true;
+  } else if (projectId) {
+    options.projectId = projectId;
+  } else if (workspaceId) {
+    options.workspaceId = workspaceId;
+    if (workspaceLevelOnly === 'true') {
+      options.workspaceLevelOnly = true;
+    }
   }
   if (limit) {
     const parsedLimit = parseInt(limit, 10);
@@ -127,12 +143,43 @@ router.get('/:id', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * Resolve a conversation's container ids from the requested project/workspace,
+ * enforcing the hierarchy invariant: a project-level chat sets BOTH ids
+ * (workspace_id = the project's workspace, derived server-side and never trusted
+ * from the client); a workspace-level chat sets only workspace_id; an unfiled
+ * chat sets neither. Verifies ownership and throws VALIDATION_ERROR otherwise.
+ *
+ * @param {string} userId
+ * @param {{ projectId?: string|null, workspaceId?: string|null }} input
+ * @returns {{ projectId: string|null, workspaceId: string|null }}
+ */
+function resolveContainerIds(userId, { projectId, workspaceId }) {
+  if (projectId) {
+    const project = dal.getProjectById(projectId, userId);
+    if (!project) {
+      throw AppError.validation('Invalid projectId: project not found');
+    }
+    return { projectId: project.id, workspaceId: project.workspace_id || null };
+  }
+  if (workspaceId) {
+    const workspace = dal.getWorkspaceById(workspaceId, userId);
+    if (!workspace) {
+      throw AppError.validation('Invalid workspaceId: workspace not found');
+    }
+    return { projectId: null, workspaceId: workspace.id };
+  }
+  return { projectId: null, workspaceId: null };
+}
+
+/**
  * POST /api/conversations
- * Creates a new conversation linked to the authenticated user
- * Body: { personaId, title?, projectId? }
+ * Creates a new conversation linked to the authenticated user.
+ * Body: { personaId, title?, projectId?, workspaceId? }
+ * The chat's container is resolved with the hierarchy invariant (workspace
+ * derived from the project when a project is given).
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { personaId, title, projectId } = req.body;
+  const { personaId, title, projectId, workspaceId } = req.body;
 
   // Validate personaId is provided
   if (!personaId) {
@@ -145,10 +192,13 @@ router.post('/', asyncHandler(async (req, res) => {
     throw AppError.validation('Invalid personaId: persona not found');
   }
 
+  const container = resolveContainerIds(req.user.userId, { projectId, workspaceId });
+
   const conversation = dal.createConversation(req.user.userId, {
     personaId,
     title: title || 'New Chat',
-    projectId: projectId || null,
+    projectId: container.projectId,
+    workspaceId: container.workspaceId,
   });
 
   res.status(201).json(formatConversation(conversation));
@@ -157,10 +207,12 @@ router.post('/', asyncHandler(async (req, res) => {
 /**
  * PUT /api/conversations/:id
  * Updates conversation metadata (only if owned by user)
- * Body: { title?, personaId?, projectId? }
+ * Body: { title?, personaId?, projectId?, workspaceId? }
+ * Moving a chat's container re-applies the hierarchy invariant (workspace_id is
+ * derived from the project; clearing both unfiles the chat).
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { title, personaId, projectId } = req.body;
+  const { title, personaId, projectId, workspaceId } = req.body;
   const updateData = {};
 
   // Validate and collect fields to update
@@ -180,17 +232,15 @@ router.put('/:id', asyncHandler(async (req, res) => {
     updateData.personaId = personaId;
   }
 
-  if (projectId !== undefined) {
-    // null/empty clears the project; otherwise it must belong to the user.
-    if (projectId === null || projectId === '') {
-      updateData.projectId = null;
-    } else {
-      const project = dal.getProjectById(projectId, req.user.userId);
-      if (!project) {
-        throw AppError.validation('Invalid projectId: project not found');
-      }
-      updateData.projectId = projectId;
-    }
+  // Re-home the chat only if a container field was supplied. Both ids are set
+  // together so the invariant can never be left half-applied.
+  if (projectId !== undefined || workspaceId !== undefined) {
+    const container = resolveContainerIds(req.user.userId, {
+      projectId: projectId || null,
+      workspaceId: workspaceId || null,
+    });
+    updateData.projectId = container.projectId;
+    updateData.workspaceId = container.workspaceId;
   }
 
   const conversation = dal.updateConversation(req.params.id, req.user.userId, updateData);
