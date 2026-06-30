@@ -59,14 +59,9 @@
                 <button class="close-sidebar" id="closeSidebar">×</button>
             </div>
 
-            <!-- Chats Tab Content -->
+            <!-- Chats Tab Content (unfiled chats only; workspace/project chats
+                 live in the Workspaces drill-in) -->
             <div class="tab-content active" id="chatsTab" data-tab="chats">
-                <div class="tab-header" id="chatsTabHeader" hidden>
-                    <div class="workspace-scope-banner" id="workspaceScopeBanner" hidden>
-                        <button class="workspace-leave-btn" id="workspaceLeaveBtn" type="button" title="Back to all chats">‹ All chats</button>
-                        <span class="workspace-scope-name" id="workspaceScopeName"></span>
-                    </div>
-                </div>
                 <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
                 <div class="conversation-list" id="conversationList">
                     <!-- Populated dynamically -->
@@ -407,13 +402,12 @@ When responding, you may optionally include an expression tag like [expression: 
               </div><!-- /.modal-content -->
             </div><!-- /#settingsModal -->
 
-            <!-- Workspaces Tab Content -->
+            <!-- Workspaces Tab Content (two-level drill-in: workspaces →
+                 projects + workspace chats → project chats) -->
             <div class="tab-content" id="projectsTab" data-tab="projects">
-                <button class="new-project-btn" id="newProjectBtn">+ New Workspace</button>
-                <div class="project-list" id="projectList">
-                    <!-- Populated dynamically -->
+                <div class="workspaces-panel" id="workspacesPanel">
+                    <!-- Drill-in nav rendered dynamically (renderWorkspacesTab) -->
                 </div>
-                <p class="empty-state" id="noProjectsMessage">No workspaces yet. Create one to give chats shared instructions and files.</p>
             </div>
         </aside>
 
@@ -436,11 +430,9 @@ When responding, you may optionally include an expression tag like [expression: 
                         <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
                         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </button>
-                    <button class="project-chip" id="projectChip" aria-haspopup="true" title="Workspace" aria-label="Workspace">
-                        <svg class="project-chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
-                        <span class="project-chip-name" id="projectChipName">No workspace</span>
-                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </button>
+                    <div class="workspace-breadcrumb" id="workspaceBreadcrumb" title="Current workspace / project — click a segment to open it">
+                        <!-- Breadcrumb segments rendered dynamically (renderBreadcrumb) -->
+                    </div>
                 </div>
                 
                 <div class="status-center">
@@ -649,19 +641,19 @@ When responding, you may optionally include an expression tag like [expression: 
     <div class="modal-overlay" id="projectModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="projectModalTitle">New Workspace</h3>
+                <h3 id="projectModalTitle">New Project</h3>
                 <button class="modal-close" id="closeProjectModal" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
                 <label for="projectNameInput">Name</label>
-                <input type="text" id="projectNameInput" placeholder="e.g., Research Notes" maxlength="100">
+                <input type="text" id="projectNameInput" placeholder="e.g., Q3 launch" maxlength="100">
 
                 <label for="projectInstructionsInput">Instructions</label>
                 <div class="textarea-resizable">
-                    <textarea id="projectInstructionsInput" rows="6" placeholder="Background context or instructions injected into every chat in this workspace (optional)."></textarea>
+                    <textarea id="projectInstructionsInput" rows="6" placeholder="Background context or instructions injected into every chat in this project (optional)."></textarea>
                     <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
                 </div>
-                <p class="help-text">These instructions and the workspace's files are added to the model's context for any chat in this workspace.</p>
+                <p class="help-text">These instructions and the project's files are added to the model's context for any chat in this project — on top of its workspace's context.</p>
 
                 <div class="project-files-section" id="projectFilesSection" hidden>
                     <label>Files</label>
@@ -683,6 +675,30 @@ When responding, you may optionally include an expression tag like [expression: 
             </div>
             <div class="modal-footer">
                 <button class="modal-btn primary" id="saveProjectBtn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workspace Modal (create / edit name + shared instructions) -->
+    <div class="modal-overlay" id="workspaceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="workspaceModalTitle">New Workspace</h3>
+                <button class="modal-close" id="closeWorkspaceModal" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <label for="workspaceNameInput">Name</label>
+                <input type="text" id="workspaceNameInput" placeholder="e.g., Vibe Coding" maxlength="100">
+
+                <label for="workspaceInstructionsInput">Instructions</label>
+                <div class="textarea-resizable">
+                    <textarea id="workspaceInstructionsInput" rows="6" placeholder="Shared context or instructions injected into every chat in this workspace and its projects (optional)."></textarea>
+                    <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+                </div>
+                <p class="help-text">A workspace groups related projects and shares its instructions (and reference files) with every chat inside it.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn primary" id="saveWorkspaceBtn">Save</button>
             </div>
         </div>
     </div>

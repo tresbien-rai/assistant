@@ -554,8 +554,12 @@ const state = {
     // API.conversations.get(id) when the conversation becomes active.
     conversations: {},
     activeConversationId: null,
+    // Workspaces stored by ID (from API.workspaces.list). Outer container in the
+    // hierarchy workspace ⊃ project ⊃ chat. Metadata only.
+    workspaces: {},
+    activeWorkspaceId: null,
     // Projects stored by ID (from API.projects.list). Metadata only — file lists
-    // are fetched on demand via API.projects.files.list(id).
+    // are fetched on demand via API.projects.files.list(id). Each has a workspaceId.
     projects: {},
     activeProjectId: null,
     // UI state (session-local, no server source)
@@ -564,7 +568,11 @@ const state = {
         // Persona group ids collapsed in the home chat list (session-only).
         collapsedPersonaGroups: new Set(),
         // Project modal mode: holds the id being edited, or null when creating.
-        editingProjectId: null
+        editingProjectId: null,
+        // When creating a project, the workspace it should be created under.
+        newProjectWorkspaceId: null,
+        // Workspace modal mode: holds the id being edited, or null when creating.
+        editingWorkspaceId: null
     },
     currentExpression: 'neutral',
     isLoading: false,
@@ -592,12 +600,16 @@ const state = {
  * @param {string} [title] - Optional title, defaults to "New Chat"
  * @returns {Promise<string>} The server-generated conversation ID
  */
-async function createConversation(title = 'New Chat') {
+async function createConversation(title = 'New Chat', container = null) {
+    // Container is explicit (caller decides the home): the Chats tab creates
+    // unfiled chats; the Workspaces drill-in creates workspace-/project-level
+    // ones. The server derives workspace_id from a project. Persona is always
+    // the currently-active one (P2-U3b model).
+    const target = container || {};
     const created = await API.conversations.create({
         personaId: state.activePersonaId,
-        // New chats auto-attach to the active workspace (project), if any.
-        // The persona is always the currently-active one (P2-U3b model).
-        projectId: state.activeProjectId || null,
+        projectId: target.projectId || null,
+        workspaceId: target.workspaceId || null,
         title,
     });
     state.conversations[created.id] = {
@@ -850,18 +862,12 @@ const elements = {
     copyRequestBtn: document.getElementById('copyRequestBtn'),
 
     // Chats tab elements
-    chatsTabHeader: document.getElementById('chatsTabHeader'),
     newChatBtn: document.getElementById('newChatBtn'),
     conversationList: document.getElementById('conversationList'),
     noConversationsMessage: document.getElementById('noConversationsMessage'),
-    workspaceScopeBanner: document.getElementById('workspaceScopeBanner'),
-    workspaceScopeName: document.getElementById('workspaceScopeName'),
-    workspaceLeaveBtn: document.getElementById('workspaceLeaveBtn'),
 
-    // Projects tab elements
-    newProjectBtn: document.getElementById('newProjectBtn'),
-    projectList: document.getElementById('projectList'),
-    noProjectsMessage: document.getElementById('noProjectsMessage'),
+    // Workspaces tab (two-level drill-in panel)
+    workspacesPanel: document.getElementById('workspacesPanel'),
 
     // Project create/edit modal
     projectModal: document.getElementById('projectModal'),
@@ -876,9 +882,16 @@ const elements = {
     projectFileInput: document.getElementById('projectFileInput'),
     projectFileUploadBtn: document.getElementById('projectFileUploadBtn'),
 
-    // Workspace chip (status bar)
-    projectChip: document.getElementById('projectChip'),
-    projectChipName: document.getElementById('projectChipName'),
+    // Workspace create/edit modal
+    workspaceModal: document.getElementById('workspaceModal'),
+    workspaceModalTitle: document.getElementById('workspaceModalTitle'),
+    closeWorkspaceModal: document.getElementById('closeWorkspaceModal'),
+    workspaceNameInput: document.getElementById('workspaceNameInput'),
+    workspaceInstructionsInput: document.getElementById('workspaceInstructionsInput'),
+    saveWorkspaceBtn: document.getElementById('saveWorkspaceBtn'),
+
+    // Top-bar breadcrumb indicator (No workspace / WS / WS › Project)
+    workspaceBreadcrumb: document.getElementById('workspaceBreadcrumb'),
 
     // Settings inputs
     providerSelect: document.getElementById('providerSelect'),
@@ -1007,14 +1020,18 @@ const elements = {
 // hydrates the in-memory `state` object, then wires the UI.
 async function init() {
     // Parallel fetch — these are independent endpoints.
-    const [settings, personas, conversations, apiKeyStatus, projects] = await Promise.all([
+    const [settings, personas, conversations, apiKeyStatus, workspaces, projects] = await Promise.all([
         API.settings.get(),
         API.personas.list(),
         API.conversations.list(),
         API.apiKeys.list(),
-        // Projects are non-essential to core chat — degrade to empty on failure
-        // rather than blocking the whole app load (the others are essential and
-        // intentionally fail-fast).
+        // Workspaces + projects are non-essential to core chat — degrade to empty
+        // on failure rather than blocking the whole app load (the others are
+        // essential and intentionally fail-fast).
+        API.workspaces.list().catch(err => {
+            console.warn('Failed to load workspaces; continuing without them:', err);
+            return [];
+        }),
         API.projects.list().catch(err => {
             console.warn('Failed to load projects; continuing without them:', err);
             return [];
@@ -1025,25 +1042,18 @@ async function init() {
     hydratePersonas(personas);
     hydrateConversations(conversations);
     hydrateApiKeyStatus(apiKeyStatus);
+    hydrateWorkspaces(workspaces);
     hydrateProjects(projects);
 
     // Pick the most recently updated persona/conversation as active.
     pickActivePersona();
     pickActiveConversation();
 
-    // Restore the entered workspace (device-local). If it no longer exists, clear
-    // the stored value. If the picked conversation isn't in that workspace, drop
-    // it so the workspace home shows on load instead of an unrelated chat.
-    const savedProject = UiPrefs.get('activeProject');
-    if (savedProject && state.projects[savedProject]) {
-        state.activeProjectId = savedProject;
-        const convo = getActiveConversation();
-        if (!convo || convo.projectId !== savedProject) {
-            state.activeConversationId = null;
-        }
-    } else if (savedProject) {
-        UiPrefs.set('activeProject', null);
-    }
+    // Restore the entered container (device-local). A project implies its
+    // workspace; otherwise restore a bare workspace. Stale ids are cleared. If
+    // the picked conversation isn't in the restored container, drop it so the
+    // container's view shows on load instead of an unrelated chat.
+    restoreActiveContainer();
 
     // Fetch messages for the active conversation eagerly so the first
     // render isn't empty. Other conversations are lazy-loaded on switch.
@@ -1182,12 +1192,64 @@ function hydrateProjects(projects) {
     for (const p of (projects || [])) {
         state.projects[p.id] = {
             id: p.id,
+            workspaceId: p.workspaceId || null,
             name: p.name,
             instructions: p.instructions || '',
             fileCount: p.fileCount || 0,
             createdAt: p.createdAt,
             updatedAt: p.updatedAt,
         };
+    }
+}
+
+function hydrateWorkspaces(workspaces) {
+    state.workspaces = {};
+    for (const w of (workspaces || [])) {
+        state.workspaces[w.id] = {
+            id: w.id,
+            name: w.name,
+            instructions: w.instructions || '',
+            projectCount: w.projectCount || 0,
+            fileCount: w.fileCount || 0,
+            createdAt: w.createdAt,
+            updatedAt: w.updatedAt,
+        };
+    }
+}
+
+/**
+ * Restore the device-local "entered container" on load. A saved project implies
+ * its workspace; a bare saved workspace restores just that. Stale ids (deleted
+ * since) are dropped. If the active conversation doesn't belong to the restored
+ * container, it's cleared so the container's view shows instead of a stray chat.
+ */
+function restoreActiveContainer() {
+    const savedProject = UiPrefs.get('activeProject');
+    const savedWorkspace = UiPrefs.get('activeWorkspace');
+
+    if (savedProject && state.projects[savedProject]) {
+        state.activeProjectId = savedProject;
+        state.activeWorkspaceId = state.projects[savedProject].workspaceId || null;
+    } else if (savedWorkspace && state.workspaces[savedWorkspace]) {
+        state.activeWorkspaceId = savedWorkspace;
+        state.activeProjectId = null;
+    } else {
+        state.activeProjectId = null;
+        state.activeWorkspaceId = null;
+    }
+
+    // Persist the reconciled state (clears any stale stored ids).
+    UiPrefs.set('activeProject', state.activeProjectId);
+    UiPrefs.set('activeWorkspace', state.activeWorkspaceId);
+
+    const convo = getActiveConversation();
+    if (convo) {
+        const inContainer = state.activeProjectId
+            ? convo.projectId === state.activeProjectId
+            : (state.activeWorkspaceId ? convo.workspaceId === state.activeWorkspaceId : false);
+        if (!inContainer && (state.activeProjectId || state.activeWorkspaceId)) {
+            state.activeConversationId = null;
+        }
     }
 }
 
@@ -2613,7 +2675,7 @@ async function switchTab(tabName) {
     if (tabName === 'chats') {
         renderConversationList();
     } else if (tabName === 'projects') {
-        renderProjectList();
+        renderWorkspacesTab();
     }
 }
 
@@ -2679,38 +2741,14 @@ function wireConversationRows(container) {
 }
 
 /**
- * Render the chat list in the sidebar. Dispatches by context:
- * - inside a workspace → flat list scoped to that workspace (persona avatars).
- * - home → chats grouped by persona under collapsible headers.
+ * Render the home "Chats" tab — always UNFILED chats only, grouped by persona.
+ * Workspace- and project-scoped chats live in the Workspaces tab drill-in, never
+ * here (Workspace Restructure: a chat appears in exactly one home).
  */
 function renderConversationList() {
     const container = elements.conversationList;
     container.innerHTML = '';
-
-    if (state.activeProjectId) {
-        renderWorkspaceChatList(container);
-    } else {
-        renderGroupedChatList(container);
-    }
-}
-
-/**
- * Flat list of the active workspace's chats (any persona), most-recent first.
- * @param {HTMLElement} container
- */
-function renderWorkspaceChatList(container) {
-    const conversations = Object.values(state.conversations)
-        .filter(c => c.projectId === state.activeProjectId)
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-    if (conversations.length === 0) {
-        elements.noConversationsMessage.style.display = 'block';
-        return;
-    }
-    elements.noConversationsMessage.style.display = 'none';
-
-    container.innerHTML = conversations.map(c => conversationRowHTML(c, true)).join('');
-    wireConversationRows(container);
+    renderGroupedChatList(container);
 }
 
 /**
@@ -3203,55 +3241,159 @@ async function startNewPersona() {
     editPersona(id);
 }
 
-// ===== Projects =====
+// ===== Workspaces tab (two-level drill-in: workspaces → projects + chats) =====
+
+const byUpdatedDesc = (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0);
 
 /**
- * Render the project list in the projects tab.
+ * Render the Workspaces tab. Dispatches by the active container (drill-in):
+ *   project open → that project's chats; workspace open → its projects +
+ *   workspace-level chats; otherwise the list of all workspaces.
  */
-function renderProjectList() {
-    const container = elements.projectList;
-    container.innerHTML = '';
+function renderWorkspacesTab() {
+    const panel = elements.workspacesPanel;
+    if (!panel) return;
 
-    const projects = Object.values(state.projects);
-    projects.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-    if (projects.length === 0) {
-        elements.noProjectsMessage.style.display = 'block';
-        return;
+    if (state.activeProjectId && state.projects[state.activeProjectId]) {
+        renderProjectDrillView(panel, state.projects[state.activeProjectId]);
+    } else if (state.activeWorkspaceId && state.workspaces[state.activeWorkspaceId]) {
+        renderWorkspaceDrillView(panel, state.workspaces[state.activeWorkspaceId]);
+    } else {
+        renderWorkspacesListView(panel);
     }
-    elements.noProjectsMessage.style.display = 'none';
 
-    projects.forEach(project => {
-        const item = document.createElement('div');
-        item.className = `project-item ${project.id === state.activeProjectId ? 'active' : ''}`;
-        item.dataset.projectId = project.id;
+    wireWorkspacesPanel(panel);
+}
 
-        const count = project.fileCount || 0;
-        const meta = `${count} file${count !== 1 ? 's' : ''}`;
+/** Level 0 — the list of all workspaces. */
+function renderWorkspacesListView(panel) {
+    const workspaces = Object.values(state.workspaces).sort(byUpdatedDesc);
 
-        item.innerHTML = `
-            <div class="project-info" data-project-id="${project.id}">
-                <span class="project-name">${escapeHtml(project.name || 'Untitled Project')}</span>
+    let html = `<button class="new-project-btn" data-action="new-workspace">+ New workspace</button>`;
+    if (workspaces.length === 0) {
+        html += `<p class="empty-state">No workspaces yet. Create one to group projects and share instructions and files.</p>`;
+    } else {
+        html += `<div class="drill-list">${workspaces.map(workspaceRowHTML).join('')}</div>`;
+    }
+    panel.innerHTML = html;
+}
+
+/** Level 1 — inside a workspace: its projects + its workspace-level chats. */
+function renderWorkspaceDrillView(panel, workspace) {
+    const projects = Object.values(state.projects)
+        .filter(p => p.workspaceId === workspace.id)
+        .sort(byUpdatedDesc);
+    const chats = Object.values(state.conversations)
+        .filter(c => c.workspaceId === workspace.id && !c.projectId)
+        .sort(byUpdatedDesc);
+
+    let html = '';
+    html += drillBackHTML('Workspaces', 'back-workspaces');
+    html += `<div class="drill-title">${escapeHtml(workspace.name || 'Untitled workspace')}</div>`;
+
+    html += `<div class="drill-section-label">Projects</div>`;
+    if (projects.length > 0) {
+        html += `<div class="drill-list">${projects.map(projectRowHTML).join('')}</div>`;
+    } else {
+        html += `<p class="empty-state small">No projects yet.</p>`;
+    }
+    html += `<button class="drill-add-btn" data-action="new-project">+ New project</button>`;
+
+    html += `<div class="drill-section-label">Chats here</div>`;
+    if (chats.length > 0) {
+        html += chats.map(c => conversationRowHTML(c, true)).join('');
+    } else {
+        html += `<p class="empty-state small">No workspace chats yet.</p>`;
+    }
+    html += `<button class="drill-add-btn" data-action="new-chat">+ New chat here</button>`;
+
+    panel.innerHTML = html;
+}
+
+/** Level 2 — inside a project: its chats (inherits the workspace context). */
+function renderProjectDrillView(panel, project) {
+    const workspace = state.workspaces[project.workspaceId];
+    const chats = Object.values(state.conversations)
+        .filter(c => c.projectId === project.id)
+        .sort(byUpdatedDesc);
+
+    let html = '';
+    html += drillBackHTML(workspace ? (workspace.name || 'Workspace') : 'Workspaces', 'back-workspace');
+    html += `<div class="drill-title">${escapeHtml(project.name || 'Untitled project')}</div>`;
+    if (workspace) {
+        html += `<div class="drill-subnote">inherits ${escapeHtml(workspace.name || 'workspace')} context</div>`;
+    }
+    html += `<button class="drill-edit-btn" data-action="edit-project">Edit instructions &amp; files</button>`;
+
+    if (chats.length > 0) {
+        html += chats.map(c => conversationRowHTML(c, true)).join('');
+    } else {
+        html += `<p class="empty-state small">No chats yet.</p>`;
+    }
+    html += `<button class="drill-add-btn" data-action="new-chat">+ New chat</button>`;
+
+    panel.innerHTML = html;
+}
+
+/** A back row ("‹ <label>") that climbs one drill level. */
+function drillBackHTML(label, action) {
+    return `<button class="drill-back" data-action="${action}" type="button">‹ ${escapeHtml(label)}</button>`;
+}
+
+function workspaceRowHTML(w) {
+    const pc = w.projectCount || 0;
+    const fc = w.fileCount || 0;
+    const meta = `${pc} project${pc !== 1 ? 's' : ''} · ${fc} file${fc !== 1 ? 's' : ''}`;
+    return `
+        <div class="project-item" data-workspace-id="${w.id}">
+            <div class="project-info ws-info" data-workspace-id="${w.id}">
+                <span class="project-name">${escapeHtml(w.name || 'Untitled workspace')}</span>
                 <span class="project-meta">${meta}</span>
             </div>
-            <button class="project-menu-btn" data-project-id="${project.id}" title="Options">⋯</button>
-        `;
+            <button class="project-menu-btn ws-menu-btn" data-workspace-id="${w.id}" title="Options">⋯</button>
+        </div>
+    `;
+}
 
-        container.appendChild(item);
+function projectRowHTML(p) {
+    const count = p.fileCount || 0;
+    const meta = `${count} file${count !== 1 ? 's' : ''}`;
+    return `
+        <div class="project-item" data-project-id="${p.id}">
+            <div class="project-info" data-project-id="${p.id}">
+                <span class="project-name">${escapeHtml(p.name || 'Untitled project')}</span>
+                <span class="project-meta">${meta}</span>
+            </div>
+            <button class="project-menu-btn" data-project-id="${p.id}" title="Options">⋯</button>
+        </div>
+    `;
+}
+
+/** Wire all interactive elements currently rendered in the Workspaces panel. */
+function wireWorkspacesPanel(panel) {
+    const on = (sel, fn) => panel.querySelectorAll(sel).forEach(el => el.addEventListener('click', fn));
+
+    on('[data-action="back-workspaces"]', backToWorkspaces);
+    on('[data-action="back-workspace"]', backToWorkspace);
+    on('[data-action="new-workspace"]', startNewWorkspace);
+    on('[data-action="new-project"]', () => startNewProjectIn(state.activeWorkspaceId));
+    on('[data-action="new-chat"]', startNewChatInContainer);
+    on('[data-action="edit-project"]', () => { if (state.activeProjectId) editProject(state.activeProjectId); });
+
+    panel.querySelectorAll('.ws-info[data-workspace-id]').forEach(el => {
+        el.addEventListener('click', () => enterWorkspace(el.dataset.workspaceId));
+    });
+    panel.querySelectorAll('.ws-menu-btn[data-workspace-id]').forEach(btn => {
+        btn.addEventListener('click', (e) => { e.stopPropagation(); showWorkspaceContextMenu(btn, btn.dataset.workspaceId); });
+    });
+    panel.querySelectorAll('.project-info[data-project-id]').forEach(el => {
+        el.addEventListener('click', () => enterProject(el.dataset.projectId));
+    });
+    panel.querySelectorAll('.project-menu-btn[data-project-id]').forEach(btn => {
+        btn.addEventListener('click', (e) => { e.stopPropagation(); showProjectMenu(btn, btn.dataset.projectId); });
     });
 
-    // Clicking a project ENTERS it as the active workspace (P2-U3b). Editing
-    // (instructions/files) is via the ⋯ menu or the top-bar chip / project home.
-    container.querySelectorAll('.project-info').forEach(info => {
-        info.addEventListener('click', () => enterProject(info.dataset.projectId));
-    });
-
-    container.querySelectorAll('.project-menu-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showProjectMenu(btn, btn.dataset.projectId);
-        });
-    });
+    wireConversationRows(panel);
 }
 
 /**
@@ -3309,7 +3451,7 @@ function openProjectModal(projectId = null) {
     state.ui.editingProjectId = projectId;
     const project = projectId ? state.projects[projectId] : null;
 
-    elements.projectModalTitle.textContent = project ? 'Edit Workspace' : 'New Workspace';
+    elements.projectModalTitle.textContent = project ? 'Edit Project' : 'New Project';
     elements.projectNameInput.value = project ? (project.name || '') : '';
     elements.projectInstructionsInput.value = project ? (project.instructions || '') : '';
 
@@ -3338,6 +3480,7 @@ function showProjectFilesSection(visible) {
 function closeProjectModal() {
     elements.projectModal.classList.remove('visible');
     state.ui.editingProjectId = null;
+    state.ui.newProjectWorkspaceId = null;
 }
 
 /**
@@ -3348,7 +3491,7 @@ async function saveProject() {
     const instructions = elements.projectInstructionsInput.value;
 
     if (!name) {
-        showToast('Workspace name is required.', { type: 'error' });
+        showToast('Project name is required.', { type: 'error' });
         elements.projectNameInput.focus();
         return;
     }
@@ -3366,9 +3509,15 @@ async function saveProject() {
                 updatedAt: updated.updatedAt,
             };
         } else {
-            const created = await API.projects.create({ name, instructions });
+            // New projects nest under the workspace they were created from.
+            const created = await API.projects.create({
+                name,
+                instructions,
+                workspaceId: state.ui.newProjectWorkspaceId || undefined,
+            });
             state.projects[created.id] = {
                 id: created.id,
+                workspaceId: created.workspaceId || null,
                 name: created.name,
                 instructions: created.instructions || '',
                 fileCount: created.fileCount || 0,
@@ -3385,25 +3534,27 @@ async function saveProject() {
         elements.saveProjectBtn.disabled = false;
     }
 
-    renderProjectList();
-    updateWorkspaceUI(); // keep the chip name in sync if the active workspace was renamed
+    updateWorkspaceUI(); // refresh the drill-in (and breadcrumb name if renamed)
 
     if (createdId) {
         // Stay open and switch into edit mode so the user can add files right away.
         state.ui.editingProjectId = createdId;
-        elements.projectModalTitle.textContent = 'Edit Workspace';
+        state.ui.newProjectWorkspaceId = null;
+        elements.projectModalTitle.textContent = 'Edit Project';
         showProjectFilesSection(true);
         renderProjectFiles(createdId);
-        showToast('Workspace created. You can now add files.', { type: 'success' });
+        showToast('Project created. You can now add files.', { type: 'success' });
     } else {
         closeProjectModal();
     }
 }
 
 /**
- * Open the modal to create a new project.
+ * Open the modal to create a new project nested under the given workspace.
+ * @param {string} workspaceId - The owning workspace (defaults to the active one)
  */
-function startNewProject() {
+function startNewProjectIn(workspaceId) {
+    state.ui.newProjectWorkspaceId = workspaceId || state.activeWorkspaceId || null;
     openProjectModal(null);
 }
 
@@ -3427,11 +3578,11 @@ async function deleteProjectPrompt(projectId) {
     if (!project) return;
 
     const count = project.fileCount || 0;
-    let message = `Delete workspace "${project.name}"?`;
+    let message = `Delete project "${project.name}"?`;
     if (count > 0) {
         message += `\n\nIts ${count} file${count !== 1 ? 's' : ''} will be moved to your Google Drive trash.`;
     }
-    message += '\n\nChats in this workspace will keep working without its context.';
+    message += '\n\nChats in this project will keep working without its context.';
 
     if (!confirm(message)) return;
 
@@ -3445,110 +3596,275 @@ async function deleteProjectPrompt(projectId) {
 
     delete state.projects[projectId];
     if (state.activeProjectId === projectId) {
-        // The active workspace was deleted — fall back to the home view.
-        state.activeProjectId = null;
-        UiPrefs.set('activeProject', null);
-        renderConversationList();
-        renderConversation();
+        // The active project was deleted — drop back to its workspace view.
+        backToWorkspace();
+    } else {
+        updateWorkspaceUI();
     }
-    renderProjectList();
-    updateWorkspaceUI(); // drop the deleted workspace from the chip
 }
 
-// ===== Workspace (active project) =====
-// A "workspace" is a project you ENTER (P2-U3b). Entering one scopes the chat
-// list to it, reflects it in the top-bar chip, and auto-attaches new chats. The
-// active workspace is device-local (UiPrefs.activeProject), not synced.
+// ===== Workspace modal (create / edit name + instructions) =====
+// Workspace reference-file editing lives in the inline workspace page (WR-05);
+// for now this modal covers name + shared instructions.
+
+function openWorkspaceModal(workspaceId = null) {
+    state.ui.editingWorkspaceId = workspaceId;
+    const ws = workspaceId ? state.workspaces[workspaceId] : null;
+
+    elements.workspaceModalTitle.textContent = ws ? 'Edit Workspace' : 'New Workspace';
+    elements.workspaceNameInput.value = ws ? (ws.name || '') : '';
+    elements.workspaceInstructionsInput.value = ws ? (ws.instructions || '') : '';
+
+    closeSidebar();
+    elements.workspaceModal.classList.add('visible');
+    elements.workspaceNameInput.focus();
+}
+
+function closeWorkspaceModal() {
+    elements.workspaceModal.classList.remove('visible');
+    state.ui.editingWorkspaceId = null;
+}
+
+async function saveWorkspace() {
+    const name = elements.workspaceNameInput.value.trim();
+    const instructions = elements.workspaceInstructionsInput.value;
+
+    if (!name) {
+        showToast('Workspace name is required.', { type: 'error' });
+        elements.workspaceNameInput.focus();
+        return;
+    }
+
+    const editingId = state.ui.editingWorkspaceId;
+    elements.saveWorkspaceBtn.disabled = true;
+    let created = null;
+    try {
+        if (editingId) {
+            const updated = await API.workspaces.update(editingId, { name, instructions });
+            state.workspaces[editingId] = {
+                ...state.workspaces[editingId],
+                name: updated.name,
+                instructions: updated.instructions,
+                updatedAt: updated.updatedAt,
+            };
+        } else {
+            const c = await API.workspaces.create({ name, instructions });
+            state.workspaces[c.id] = {
+                id: c.id,
+                name: c.name,
+                instructions: c.instructions || '',
+                projectCount: c.projectCount || 0,
+                fileCount: c.fileCount || 0,
+                createdAt: c.createdAt,
+                updatedAt: c.updatedAt,
+            };
+            created = c;
+        }
+    } catch (err) {
+        console.error('Failed to save workspace:', err);
+        displayError(err, { action: 'save workspace' });
+        return;
+    } finally {
+        elements.saveWorkspaceBtn.disabled = false;
+    }
+
+    closeWorkspaceModal();
+    if (created) {
+        enterWorkspace(created.id); // drop straight into the new workspace
+    } else {
+        updateWorkspaceUI();
+    }
+}
+
+function startNewWorkspace() {
+    openWorkspaceModal(null);
+}
+
+function editWorkspace(workspaceId) {
+    if (!state.workspaces[workspaceId]) return;
+    openWorkspaceModal(workspaceId);
+}
 
 /**
- * Reflect the active workspace across the UI: the top-bar chip, the sidebar
- * scope banner, and the persona filter (home-only). Replaces the old per-
- * conversation project selector.
+ * Confirm and delete a workspace. The backend trashes its Drive folder (and
+ * nested projects/files) and reparents its chats to unfiled (kept).
+ * @param {string} workspaceId
+ */
+async function deleteWorkspacePrompt(workspaceId) {
+    const ws = state.workspaces[workspaceId];
+    if (!ws) return;
+
+    const pc = ws.projectCount || 0;
+    const fc = ws.fileCount || 0;
+    let message = `Delete workspace "${ws.name}"?`;
+    if (pc > 0 || fc > 0) {
+        message += `\n\nIts ${pc} project${pc !== 1 ? 's' : ''} and ${fc} file${fc !== 1 ? 's' : ''} will be moved to your Google Drive trash.`;
+    }
+    message += '\n\nChats in this workspace become unfiled — kept, but without its context.';
+
+    if (!confirm(message)) return;
+
+    try {
+        await API.workspaces.delete(workspaceId);
+    } catch (err) {
+        console.error('Failed to delete workspace:', err);
+        displayError(err, { action: 'delete workspace' });
+        return;
+    }
+
+    // Mirror the server-side cascade locally: projects gone, chats unfiled.
+    delete state.workspaces[workspaceId];
+    for (const pid of Object.keys(state.projects)) {
+        if (state.projects[pid].workspaceId === workspaceId) delete state.projects[pid];
+    }
+    for (const c of Object.values(state.conversations)) {
+        if (c.workspaceId === workspaceId) {
+            c.workspaceId = null;
+            c.projectId = null;
+        }
+    }
+
+    if (state.activeWorkspaceId === workspaceId) {
+        backToWorkspaces();
+    } else {
+        updateWorkspaceUI();
+    }
+    renderConversationList(); // the reparented chats now show at home
+}
+
+// ===== Active container (workspace / project) + breadcrumb =====
+// The hierarchy is workspace ⊃ project ⊃ chat. The "active container" is the
+// navigation context: it drives the top-bar breadcrumb, the Workspaces-tab
+// drill-in level, and where the drill-in's "New chat/project" land. It is
+// device-local (UiPrefs activeWorkspace/activeProject), not synced, and is
+// independent of the open chat (navigating doesn't disturb the main area).
+
+const BREADCRUMB_FOLDER_SVG = '<svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>';
+
+/**
+ * Reflect the active container across the UI: the top-bar breadcrumb and the
+ * Workspaces-tab drill-in. Called whenever the active container changes.
  */
 function updateWorkspaceUI() {
-    const project = state.activeProjectId ? state.projects[state.activeProjectId] : null;
-    const name = project ? (project.name || 'Untitled workspace') : 'No workspace';
-
-    if (elements.projectChipName) elements.projectChipName.textContent = name;
-    if (elements.projectChip) elements.projectChip.classList.toggle('active', !!project);
-
-    // Sidebar chats-tab header holds the workspace scope banner; show it only
-    // while inside a workspace (it's empty otherwise).
-    if (elements.workspaceScopeBanner) elements.workspaceScopeBanner.hidden = !project;
-    if (elements.workspaceScopeName && project) elements.workspaceScopeName.textContent = name;
-    if (elements.chatsTabHeader) elements.chatsTabHeader.hidden = !project;
+    renderBreadcrumb();
+    renderWorkspacesTab();
 }
 
 /**
- * Enter a workspace: scope the chat list to it, reflect it in the chip, and show
- * its home panel. The open chat is cleared if it doesn't belong to this
- * workspace, so the main area shows the workspace home rather than a stray chat.
- * @param {string} projectId
+ * Render the top-bar breadcrumb indicator: "No workspace" / "<Workspace>" /
+ * "<Workspace> › <Project>". Each segment, when clicked, navigates the sidebar
+ * drill-in to that level (the main area is left untouched).
  */
-async function enterProject(projectId) {
-    if (!state.projects[projectId]) return;
-    state.activeProjectId = projectId;
-    UiPrefs.set('activeProject', projectId);
+function renderBreadcrumb() {
+    const el = elements.workspaceBreadcrumb;
+    if (!el) return;
 
-    const convo = getActiveConversation();
-    if (!convo || convo.projectId !== projectId) {
-        state.activeConversationId = null;
+    const workspace = state.activeWorkspaceId ? state.workspaces[state.activeWorkspaceId] : null;
+    const project = state.activeProjectId ? state.projects[state.activeProjectId] : null;
+
+    let html = '';
+    if (!workspace) {
+        html = `<span class="breadcrumb-seg muted" data-nav="home">${BREADCRUMB_FOLDER_SVG}<span>No workspace</span></span>`;
+    } else {
+        html = `<span class="breadcrumb-seg" data-nav="workspace">${BREADCRUMB_FOLDER_SVG}<span>${escapeHtml(workspace.name || 'Untitled workspace')}</span></span>`;
+        if (project) {
+            html += `<span class="breadcrumb-sep" aria-hidden="true">›</span>`;
+            html += `<span class="breadcrumb-seg" data-nav="project"><span>${escapeHtml(project.name || 'Untitled project')}</span></span>`;
+        }
     }
+    el.innerHTML = html;
+    el.classList.toggle('active', !!workspace);
 
+    el.querySelectorAll('[data-nav]').forEach(seg => {
+        seg.addEventListener('click', () => {
+            const nav = seg.dataset.nav;
+            if (nav === 'project' && state.activeProjectId) {
+                enterProject(state.activeProjectId);
+            } else if (nav === 'workspace' && state.activeWorkspaceId) {
+                enterWorkspace(state.activeWorkspaceId);
+            } else {
+                // "No workspace" → open the workspaces list to pick one.
+                switchTab('projects');
+            }
+            openSidebar();
+        });
+    });
+}
+
+/** Enter a workspace (drill level 1): its projects + workspace-level chats. */
+function enterWorkspace(workspaceId) {
+    if (!state.workspaces[workspaceId]) return;
+    state.activeWorkspaceId = workspaceId;
+    state.activeProjectId = null;
+    UiPrefs.set('activeWorkspace', workspaceId);
+    UiPrefs.set('activeProject', null);
     updateWorkspaceUI();
-    renderProjectList();
-    renderConversationList();
-    renderConversation();
-    await switchTab('chats');
+    switchTab('projects');
+}
+
+/** Enter a project (drill level 2): its chats. Implies its workspace. */
+function enterProject(projectId) {
+    const project = state.projects[projectId];
+    if (!project) return;
+    state.activeProjectId = projectId;
+    state.activeWorkspaceId = project.workspaceId || null;
+    UiPrefs.set('activeProject', projectId);
+    UiPrefs.set('activeWorkspace', state.activeWorkspaceId);
+    updateWorkspaceUI();
+    switchTab('projects');
+}
+
+/** Back from a project up to its workspace (drill level 2 → 1). */
+function backToWorkspace() {
+    state.activeProjectId = null;
+    UiPrefs.set('activeProject', null);
+    updateWorkspaceUI();
+}
+
+/** Back up to the workspaces list (drill level → 0). */
+function backToWorkspaces() {
+    state.activeProjectId = null;
+    state.activeWorkspaceId = null;
+    UiPrefs.set('activeProject', null);
+    UiPrefs.set('activeWorkspace', null);
+    updateWorkspaceUI();
+}
+
+/**
+ * Create a chat in the active container (workspace- or project-level) from the
+ * drill-in "New chat" buttons, then open it.
+ */
+async function startNewChatInContainer() {
+    const container = state.activeProjectId
+        ? { projectId: state.activeProjectId }
+        : (state.activeWorkspaceId ? { workspaceId: state.activeWorkspaceId } : null);
+    try {
+        await createConversation('New Chat', container);
+    } catch (err) {
+        console.error('Failed to create conversation:', err);
+        displayError(err, { action: 'create chat' });
+        return;
+    }
+    updateWorkspaceUI();   // the new chat appears in the drill-in
+    renderConversation();  // and opens in the main area
     closeSidebar();
 }
 
 /**
- * Leave the active workspace, returning to the home view (all chats, persona-
- * filtered). The active conversation is left as-is.
- */
-function leaveProject() {
-    if (!state.activeProjectId) return;
-    state.activeProjectId = null;
-    UiPrefs.set('activeProject', null);
-
-    updateWorkspaceUI();
-    renderProjectList();
-    renderConversationList();
-    renderConversation();
-}
-
-/**
- * Top-bar workspace chip popover: switch workspace, leave, open settings, or
- * create a new one.
+ * Context menu for a workspace row (Edit / Delete).
  * @param {HTMLElement} anchorEl
+ * @param {string} workspaceId
  */
-function showWorkspaceMenu(anchorEl) {
+function showWorkspaceContextMenu(anchorEl, workspaceId) {
     const existing = document.querySelector('.context-menu');
     if (existing) existing.remove();
 
     const menu = document.createElement('div');
-    menu.className = 'context-menu context-menu-wide';
-
-    const projects = Object.values(state.projects)
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
-    let html = '';
-    html += `<button class="context-menu-item${!state.activeProjectId ? ' active' : ''}" data-action="leave">No workspace</button>`;
-    if (projects.length > 0) {
-        html += `<div class="context-menu-separator"></div>`;
-        html += `<div class="context-menu-label">Workspaces</div>`;
-        projects.forEach(p => {
-            const active = p.id === state.activeProjectId ? ' active' : '';
-            html += `<button class="context-menu-item${active}" data-project-id="${escapeHtml(p.id)}">${escapeHtml(p.name || 'Untitled workspace')}</button>`;
-        });
-    }
-    html += `<div class="context-menu-separator"></div>`;
-    if (state.activeProjectId) {
-        html += `<button class="context-menu-item" data-action="settings">Workspace settings…</button>`;
-    }
-    html += `<button class="context-menu-item" data-action="new">+ New workspace</button>`;
-    menu.innerHTML = html;
+    menu.className = 'context-menu';
+    menu.innerHTML = `
+        <button class="context-menu-item" data-action="edit">Edit</button>
+        <button class="context-menu-item danger" data-action="delete">Delete</button>
+    `;
 
     positionPopover(menu, anchorEl, 'left');
     document.body.appendChild(menu);
@@ -3556,15 +3872,10 @@ function showWorkspaceMenu(anchorEl) {
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
             menu.remove();
-            const action = item.dataset.action;
-            if (action === 'leave') {
-                leaveProject();
-            } else if (action === 'settings') {
-                if (state.activeProjectId) editProject(state.activeProjectId);
-            } else if (action === 'new') {
-                startNewProject();
-            } else if (item.dataset.projectId) {
-                enterProject(item.dataset.projectId);
+            if (item.dataset.action === 'edit') {
+                editWorkspace(workspaceId);
+            } else if (item.dataset.action === 'delete') {
+                deleteWorkspacePrompt(workspaceId);
             }
         });
     });
@@ -3592,7 +3903,7 @@ async function renderProjectFiles(projectId) {
 
     if (state.projects[projectId]) {
         state.projects[projectId].fileCount = files.length;
-        renderProjectList();
+        renderWorkspacesTab();
     }
 
     if (files.length === 0) {
@@ -5545,8 +5856,8 @@ function setupEventListeners() {
     // Chats tab controls
     elements.newChatBtn.addEventListener('click', startNewConversation);
 
-    // Workspaces tab controls (persona management lives in the top-bar popover)
-    elements.newProjectBtn.addEventListener('click', startNewProject);
+    // Project create/edit modal (the "New project" trigger lives in the
+    // Workspaces drill-in, wired per-render in wireWorkspacesPanel).
     elements.closeProjectModal.addEventListener('click', closeProjectModal);
     elements.saveProjectBtn.addEventListener('click', saveProject);
     elements.projectModal.addEventListener('click', (e) => {
@@ -5558,24 +5869,25 @@ function setupEventListeners() {
         }
     });
 
+    // Workspace create/edit modal
+    elements.closeWorkspaceModal.addEventListener('click', closeWorkspaceModal);
+    elements.saveWorkspaceBtn.addEventListener('click', saveWorkspace);
+    elements.workspaceModal.addEventListener('click', (e) => {
+        if (e.target === elements.workspaceModal) closeWorkspaceModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && elements.workspaceModal.classList.contains('visible')) {
+            closeWorkspaceModal();
+        }
+    });
+
     // Project file upload (modal)
     elements.projectFileUploadBtn.addEventListener('click', () => elements.projectFileInput.click());
     elements.projectFileInput.addEventListener('change', () => {
         const projectId = state.ui.editingProjectId;
         if (projectId) uploadProjectFiles(projectId, elements.projectFileInput.files);
     });
-
-    // Workspace chip (status bar) — switch/leave/settings/new workspace
-    if (elements.projectChip) {
-        elements.projectChip.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showWorkspaceMenu(elements.projectChip);
-        });
-    }
-    // Sidebar scope banner "‹ All chats" — leave the active workspace
-    if (elements.workspaceLeaveBtn) {
-        elements.workspaceLeaveBtn.addEventListener('click', leaveProject);
-    }
+    // The top-bar breadcrumb wires its own segment clicks per render (renderBreadcrumb).
 
     // Close any open context menus when clicking elsewhere
     document.addEventListener('click', (e) => {
