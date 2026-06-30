@@ -1626,78 +1626,192 @@ body {
 }
 
 /* Workspace home panel (main area when a workspace is entered, no chat open) */
-.project-home {
-    max-width: 560px;
+/* ===== Inline container page (workspace / project) — WR-05 ===== */
+/* Rendered into the main messages area in place of a chat; edits name +
+   instructions + files inline and lists the container's projects/chats. */
+.container-page {
+    max-width: 620px;
     margin: 0 auto;
-    padding: 60px 24px;
+    padding: 28px 24px 60px;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+    gap: 8px;
 }
 
-.project-home-header {
+.cp-breadcrumb {
+    margin-bottom: 4px;
+}
+
+.cp-crumb {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+.cp-crumb:hover {
+    color: var(--accent);
+}
+
+.cp-head {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
 }
 
-.project-home-icon {
-    width: 28px;
-    height: 28px;
+.cp-icon {
+    width: 26px;
+    height: 26px;
     color: var(--text-secondary);
     flex: 0 0 auto;
 }
 
-.project-home-header h1 {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0;
-}
-
-.project-home-instructions {
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-    line-height: 1.6;
-    white-space: pre-wrap;
-}
-
-.project-home-meta {
-    color: var(--text-muted);
-    font-size: var(--text-xs);
-}
-
-.project-home-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 8px;
-}
-
-.project-home-btn {
-    padding: 8px 16px;
-    border: 1px solid var(--border-color);
+.cp-name {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 6px;
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
     background: none;
     color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.cp-name:hover {
+    border-color: var(--border-color);
+}
+
+.cp-name:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--bg-secondary);
+}
+
+.cp-inherit-note {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    margin: 0 0 4px;
+}
+
+.cp-label {
+    margin-top: 10px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.cp-instructions {
+    width: 100%;
+}
+
+.cp-save-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.cp-save-btn {
+    padding: 6px 18px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--accent);
+    color: #fff;
     font-size: var(--text-sm);
     cursor: pointer;
-    transition: background-color 0.15s, border-color 0.15s;
+    transition: background-color 0.15s, opacity 0.15s;
 }
 
-.project-home-btn:hover {
-    background-color: var(--bg-tertiary);
-    border-color: var(--accent);
-}
-
-.project-home-btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-}
-
-.project-home-btn.primary:hover {
+.cp-save-btn:hover:not(:disabled) {
     background: var(--accent-hover);
+}
+
+.cp-save-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.cp-save-hint {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.cp-section {
+    margin-top: 24px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+}
+
+.cp-section-label {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.cp-row-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.cp-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 8px;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    background: none;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.15s;
+}
+
+.cp-row:hover {
+    background: var(--bg-tertiary);
+}
+
+.cp-row-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cp-row-meta {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.cp-add-btn {
+    align-self: flex-start;
+    margin-top: 6px;
+    padding: 6px 4px;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+.cp-add-btn:hover {
+    text-decoration: underline;
+}
+
+/* Small modal variant for the name-only create step. */
+.modal-content.modal-small {
+    max-width: 420px;
 }
 
 /* Messages */
