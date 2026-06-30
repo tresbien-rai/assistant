@@ -36,7 +36,7 @@
     --space-5: 24px;
     --space-6: 32px;
 
-    --sidebar-width: 320px;
+    --sidebar-width: 240px;
     --status-bar-height: 56px;
     --input-height: 80px;
     --chat-max-width: 780px; /* shared by the message column and the composer */
@@ -374,6 +374,97 @@ body {
     flex: 0;
     padding: 8px 12px;
     margin-left: 4px;
+}
+
+/* ===== Section rail (WR-07) — the sidebar is now a thin section switcher ===== */
+.rail {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 8px;
+    gap: 2px;
+}
+
+.rail-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.rail-item:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.rail-item.active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+}
+
+.rail-icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+}
+
+.rail .close-sidebar {
+    align-self: flex-end;
+    margin-top: 8px;
+}
+
+/* ===== Main-area section views (Chats / Workspaces lists) ===== */
+.section-view {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+    display: flex;
+    flex-direction: column;
+}
+
+.section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    gap: 12px;
+}
+
+.section-title {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.section-new-btn {
+    flex: 0 0 auto;
+    padding: 7px 14px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--accent);
+    color: #fff;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.section-new-btn:hover {
+    background: var(--accent-hover);
+}
+
+.section-list {
+    display: flex;
+    flex-direction: column;
 }
 
 .tab-content {
@@ -1630,7 +1721,7 @@ body {
 /* Rendered into the main messages area in place of a chat; edits name +
    instructions + files inline and lists the container's projects/chats. */
 .container-page {
-    max-width: 620px;
+    max-width: 720px;
     margin: 0 auto;
     padding: 28px 24px 60px;
     display: flex;

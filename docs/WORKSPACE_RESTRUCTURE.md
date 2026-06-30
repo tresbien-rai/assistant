@@ -133,9 +133,10 @@ folder → `Tessera/Downloads/` (unfiled).
 | WR-02a routes + context layering + Drive | ✅ merged | #46 | `/api/workspaces`, layered ctx, best-effort Drive folders |
 | WR-02b workspace files | ✅ merged | #47 | `workspace_files`, `/api/workspaces/:id/files`, shared assembler |
 | WR-03 chat separation + creation context | ✅ merged | #48 | conv `workspace_id` (derived from project), home = unfiled only |
-| WR-04 drill-in sidebar + breadcrumb | 🔄 PR open | #49 | two-level drill-in, breadcrumb indicator (frontend) |
-| WR-05 inline container pages + create step | 🔄 PR open | — | inline pages, ws file UI, name-only create; stacked on WR-04 |
-| WR-06 verify + review + migration test | ⬜ next | — | |
+| WR-04 drill-in sidebar + breadcrumb | ✅ merged | #49 | two-level drill-in, breadcrumb indicator (frontend) |
+| WR-05 inline container pages + create step | ✅ merged | #50 | inline pages, ws file UI, name-only create |
+| WR-06 verify + review + migration test | ⬜ | — | live Drive upload + migration test on real-data copy |
+| WR-07 navigation consolidation (UX) | ⬜ next | — | section rail + main-area router + contextual top bar (see below) |
 
 **WR-05 done (delivered against the WR-04 bridges):**
 - Container editing is now an **inline page in the main area** (`renderContainerPage`
@@ -166,3 +167,44 @@ data, `/code-review`, then merge the WR-04→WR-05 stack.
 tool file destinations = active project folder → active workspace folder →
 `Tessera/Downloads/` (unfiled). Drive layout helpers live in `server/src/utils/drive.js`
 (`ensureWorkspaceFolder`, plus `ensureProjectFolderId` in `routes/projects.js`).
+
+## WR-07 — navigation consolidation (UX rework)
+
+Added after live-deploy feedback (2026-06-30): WR-04/05 left **two competing
+navigation metaphors** — the sidebar's own drill-in *and* WR-05's main-area pages.
+The main area had no *list* views (lists lived only in the sidebar), so a page's
+"‹ Back" had nowhere to land and fell back to the last chat — disorienting. Fix:
+**one metaphor.**
+
+**Target model (decided with the human 2026-06-30):**
+- **Sidebar = a thin section rail**, not a content panel: **Chats · Workspaces ·
+  Personas · Settings**. Clicking a section switches the main area; the rail just
+  navigates between top-level sections.
+- **Main area = a single content router** (`state.ui.mainView`). It shows lists
+  *and* detail: chats list → a chat; workspaces list → workspace page → project
+  page → a chat; (later) personas list; settings. "Back" returns to the list in
+  the main area — a real destination. **Decision: single router** (not a
+  persistent list column) — coherent, identical on desktop + mobile; the one cost
+  (a chat-switch is list→pick, one extra click) was accepted.
+- **Contextual top bar** (de-crowds it; enforces the locked "persona is fixed per
+  conversation" rule):
+  - **model badge — always** (quick model-switch without opening Settings; the
+    human explicitly wants this on the bar).
+  - **in a chat:** + the **workspace breadcrumb** (where this chat lives → jump back).
+  - **browsing (no chat open):** + the **persona selector** (who the *next* chat
+    will be) instead of the breadcrumb. Only one of {breadcrumb, persona} shows.
+- **Container-page width:** workspace + project pages share `.container-page`
+  (was 620px) — widen to ~720px (point-2 feedback: align + use desktop real estate).
+
+**Staging (one PR each):**
+- **WR-07a — shell + the pain fix.** Sidebar tabs → section rail; main-area router
+  (`mainView`); Chats list + Workspaces list move into the main area; back-crumbs
+  land on lists (WR-05 container pages become the workspace/project detail views);
+  contextual top bar; width fix. Personas + Settings rail items keep opening the
+  current popover/modal **as an interim** so the rail is complete.
+- **WR-07b — Settings as a full main-area section** (relocate the `#settingsModal`
+  content into a router view).
+- **WR-07c — Personas as a full main-area section** (list + manage; the top-bar
+  persona popover stays for quick-switch).
+
+WR-06 (live Drive/migration verify) is independent of WR-07 and can land anytime.

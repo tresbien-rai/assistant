@@ -564,13 +564,17 @@ const state = {
     activeProjectId: null,
     // UI state (session-local, no server source)
     ui: {
-        activeTab: 'chats',
-        // Persona group ids collapsed in the home chat list (session-only).
-        collapsedPersonaGroups: new Set(),
-        // Inline container page open in the main area (replaces the edit modals):
-        // { kind: 'workspace'|'project', id } or null when a chat/welcome shows.
-        // Decoupled from the active chat — opening a chat clears it.
-        openContainer: null
+        // Main-area router (WR-07): the single content surface shows exactly one
+        // view. The sidebar is a section rail that navigates between these.
+        //   { type: 'chats' }                 unfiled chats list
+        //   { type: 'workspaces' }            all workspaces list
+        //   { type: 'workspace', id }         a workspace page (instr/files/projects/chats)
+        //   { type: 'project', id }           a project page
+        //   { type: 'chat', id }              an open conversation
+        // Settings/Personas are reached via the rail too (interim: modal/popover).
+        mainView: { type: 'chats' },
+        // Persona group ids collapsed in the chats list (session-only).
+        collapsedPersonaGroups: new Set()
     },
     currentExpression: 'neutral',
     isLoading: false,
@@ -622,7 +626,6 @@ async function createConversation(title = 'New Chat', container = null) {
         messages: [],
     };
     state.activeConversationId = created.id;
-    state.ui.openContainer = null; // a chat now owns the main area
     return created.id;
 }
 
@@ -859,14 +862,6 @@ const elements = {
     requestInspectorJson: document.getElementById('requestInspectorJson'),
     requestInspectorMeta: document.getElementById('requestInspectorMeta'),
     copyRequestBtn: document.getElementById('copyRequestBtn'),
-
-    // Chats tab elements
-    newChatBtn: document.getElementById('newChatBtn'),
-    conversationList: document.getElementById('conversationList'),
-    noConversationsMessage: document.getElementById('noConversationsMessage'),
-
-    // Workspaces tab (two-level drill-in panel)
-    workspacesPanel: document.getElementById('workspacesPanel'),
 
     // Name-only create modal (shared by workspace + project creation; the full
     // edit UI lives inline on the container page — WR-05).
@@ -1237,6 +1232,18 @@ function restoreActiveContainer() {
         if (!inContainer && (state.activeProjectId || state.activeWorkspaceId)) {
             state.activeConversationId = null;
         }
+    }
+
+    // Initial main-area view (WR-07): resume the active chat, else the active
+    // container page, else the Chats list.
+    if (state.activeConversationId) {
+        state.ui.mainView = { type: 'chat', id: state.activeConversationId };
+    } else if (state.activeProjectId) {
+        state.ui.mainView = { type: 'project', id: state.activeProjectId };
+    } else if (state.activeWorkspaceId) {
+        state.ui.mainView = { type: 'workspace', id: state.activeWorkspaceId };
+    } else {
+        state.ui.mainView = { type: 'chats' };
     }
 }
 
@@ -2642,28 +2649,12 @@ function handleAddModelManually() {
 // ===== Sidebar Tab Management =====
 
 /**
- * Switch to a specific sidebar tab
- * @param {string} tabName - 'chats', 'settings', or 'personas'
+ * Back-compat shim: the old sidebar tabs ('chats' / 'projects') map to the
+ * WR-07 main-area router sections.
+ * @param {string} tabName - 'chats' or 'projects'
  */
-async function switchTab(tabName) {
-    state.ui.activeTab = tabName;
-
-    // Update tab buttons
-    document.querySelectorAll('.sidebar-tab').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tabName);
-    });
-
-    // Update tab content visibility
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.toggle('active', content.dataset.tab === tabName);
-    });
-
-    // Refresh content when switching to certain tabs
-    if (tabName === 'chats') {
-        renderConversationList();
-    } else if (tabName === 'projects') {
-        renderWorkspacesTab();
-    }
+function switchTab(tabName) {
+    navigate({ type: tabName === 'projects' ? 'workspaces' : 'chats' });
 }
 
 /**
@@ -2728,14 +2719,13 @@ function wireConversationRows(container) {
 }
 
 /**
- * Render the home "Chats" tab — always UNFILED chats only, grouped by persona.
- * Workspace- and project-scoped chats live in the Workspaces tab drill-in, never
- * here (Workspace Restructure: a chat appears in exactly one home).
+ * Refresh the chats list if it's the view currently showing in the main area.
+ * (WR-07: the unfiled chat list lives in the main area, not the sidebar; many
+ * callers poke this after a conversation mutation, so it no-ops when a different
+ * view is open.)
  */
 function renderConversationList() {
-    const container = elements.conversationList;
-    container.innerHTML = '';
-    renderGroupedChatList(container);
+    if ((state.ui.mainView || {}).type === 'chats') renderChatsListMain();
 }
 
 /**
@@ -2751,10 +2741,9 @@ function renderGroupedChatList(container) {
         .filter(c => !c.projectId && !c.workspaceId);
 
     if (all.length === 0) {
-        elements.noConversationsMessage.style.display = 'block';
+        container.innerHTML = `<p class="empty-state small">No chats yet. Start a new one above.</p>`;
         return;
     }
-    elements.noConversationsMessage.style.display = 'none';
 
     // Group conversations by persona, tracking each group's latest activity.
     const groups = new Map(); // personaId -> { convos: [], latest }
@@ -2823,13 +2812,16 @@ async function switchConversation(conversationId) {
     if (!state.conversations[conversationId]) return;
 
     state.activeConversationId = conversationId;
-    state.ui.openContainer = null; // leaving any open container page for the chat
+
+    // Track the chat's container so breadcrumb + restore have context.
+    const convo = state.conversations[conversationId];
+    state.activeProjectId = convo.projectId || null;
+    state.activeWorkspaceId = convo.workspaceId || (convo.projectId && state.projects[convo.projectId] ? state.projects[convo.projectId].workspaceId : null) || null;
 
     // Also switch to the persona that owns this conversation. activePersonaId
     // is session state — not persisted server-side — so no savePersonas() call
     // is needed (and including one would also re-PUT every persona, wasting
     // bandwidth and risking cross-write clobbers).
-    const convo = state.conversations[conversationId];
     if (convo.personaId && convo.personaId !== state.activePersonaId) {
         state.activePersonaId = convo.personaId;
     }
@@ -2838,10 +2830,8 @@ async function switchConversation(conversationId) {
     // conversation in the session.
     await loadConversationMessages(conversationId);
 
-    renderConversation();
-    renderConversationList();
+    navigate({ type: 'chat', id: conversationId });
     updateUI();
-    closeSidebar();
 }
 
 /**
@@ -2961,9 +2951,9 @@ async function startNewConversation() {
         console.error('Failed to create conversation:', err);
         return;
     }
-    renderConversationList();
-    renderConversation();
-    closeSidebar();
+    state.activeProjectId = null;
+    state.activeWorkspaceId = null;
+    navigate({ type: 'chat', id: state.activeConversationId });
 }
 
 /**
@@ -3229,105 +3219,9 @@ async function startNewPersona() {
     editPersona(id);
 }
 
-// ===== Workspaces tab (two-level drill-in: workspaces → projects + chats) =====
+// ===== Workspace/project row helpers (shared by the main-area lists + pages) =====
 
 const byUpdatedDesc = (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0);
-
-/**
- * Render the Workspaces tab. Dispatches by the active container (drill-in):
- *   project open → that project's chats; workspace open → its projects +
- *   workspace-level chats; otherwise the list of all workspaces.
- */
-function renderWorkspacesTab() {
-    const panel = elements.workspacesPanel;
-    if (!panel) return;
-
-    if (state.activeProjectId && state.projects[state.activeProjectId]) {
-        renderProjectDrillView(panel, state.projects[state.activeProjectId]);
-    } else if (state.activeWorkspaceId && state.workspaces[state.activeWorkspaceId]) {
-        renderWorkspaceDrillView(panel, state.workspaces[state.activeWorkspaceId]);
-    } else {
-        renderWorkspacesListView(panel);
-    }
-
-    wireWorkspacesPanel(panel);
-}
-
-/** Level 0 — the list of all workspaces. */
-function renderWorkspacesListView(panel) {
-    const workspaces = Object.values(state.workspaces).sort(byUpdatedDesc);
-
-    let html = `<button class="new-project-btn" data-action="new-workspace">+ New workspace</button>`;
-    if (workspaces.length === 0) {
-        html += `<p class="empty-state">No workspaces yet. Create one to group projects and share instructions and files.</p>`;
-    } else {
-        html += `<div class="drill-list">${workspaces.map(workspaceRowHTML).join('')}</div>`;
-    }
-    panel.innerHTML = html;
-}
-
-/** Level 1 — inside a workspace: its projects + its workspace-level chats. */
-function renderWorkspaceDrillView(panel, workspace) {
-    const projects = Object.values(state.projects)
-        .filter(p => p.workspaceId === workspace.id)
-        .sort(byUpdatedDesc);
-    const chats = Object.values(state.conversations)
-        .filter(c => c.workspaceId === workspace.id && !c.projectId)
-        .sort(byUpdatedDesc);
-
-    let html = '';
-    html += drillBackHTML('Workspaces', 'back-workspaces');
-    html += `<div class="drill-title">${escapeHtml(workspace.name || 'Untitled workspace')}</div>`;
-    html += `<button class="drill-edit-btn" data-action="edit-workspace">Edit instructions &amp; files</button>`;
-
-    html += `<div class="drill-section-label">Projects</div>`;
-    if (projects.length > 0) {
-        html += `<div class="drill-list">${projects.map(projectRowHTML).join('')}</div>`;
-    } else {
-        html += `<p class="empty-state small">No projects yet.</p>`;
-    }
-    html += `<button class="drill-add-btn" data-action="new-project">+ New project</button>`;
-
-    html += `<div class="drill-section-label">Chats here</div>`;
-    if (chats.length > 0) {
-        html += chats.map(c => conversationRowHTML(c, true)).join('');
-    } else {
-        html += `<p class="empty-state small">No workspace chats yet.</p>`;
-    }
-    html += `<button class="drill-add-btn" data-action="new-chat">+ New chat here</button>`;
-
-    panel.innerHTML = html;
-}
-
-/** Level 2 — inside a project: its chats (inherits the workspace context). */
-function renderProjectDrillView(panel, project) {
-    const workspace = state.workspaces[project.workspaceId];
-    const chats = Object.values(state.conversations)
-        .filter(c => c.projectId === project.id)
-        .sort(byUpdatedDesc);
-
-    let html = '';
-    html += drillBackHTML(workspace ? (workspace.name || 'Workspace') : 'Workspaces', 'back-workspace');
-    html += `<div class="drill-title">${escapeHtml(project.name || 'Untitled project')}</div>`;
-    if (workspace) {
-        html += `<div class="drill-subnote">inherits ${escapeHtml(workspace.name || 'workspace')} context</div>`;
-    }
-    html += `<button class="drill-edit-btn" data-action="edit-project">Edit instructions &amp; files</button>`;
-
-    if (chats.length > 0) {
-        html += chats.map(c => conversationRowHTML(c, true)).join('');
-    } else {
-        html += `<p class="empty-state small">No chats yet.</p>`;
-    }
-    html += `<button class="drill-add-btn" data-action="new-chat">+ New chat</button>`;
-
-    panel.innerHTML = html;
-}
-
-/** A back row ("‹ <label>") that climbs one drill level. */
-function drillBackHTML(label, action) {
-    return `<button class="drill-back" data-action="${action}" type="button">‹ ${escapeHtml(label)}</button>`;
-}
 
 function workspaceRowHTML(w) {
     const pc = w.projectCount || 0;
@@ -3356,34 +3250,6 @@ function projectRowHTML(p) {
             <button class="project-menu-btn" data-project-id="${p.id}" title="Options">⋯</button>
         </div>
     `;
-}
-
-/** Wire all interactive elements currently rendered in the Workspaces panel. */
-function wireWorkspacesPanel(panel) {
-    const on = (sel, fn) => panel.querySelectorAll(sel).forEach(el => el.addEventListener('click', fn));
-
-    on('[data-action="back-workspaces"]', backToWorkspaces);
-    on('[data-action="back-workspace"]', backToWorkspace);
-    on('[data-action="new-workspace"]', startNewWorkspace);
-    on('[data-action="new-project"]', () => startNewProjectIn(state.activeWorkspaceId));
-    on('[data-action="new-chat"]', startNewChatInContainer);
-    on('[data-action="edit-project"]', () => { if (state.activeProjectId) editProject(state.activeProjectId); });
-    on('[data-action="edit-workspace"]', () => { if (state.activeWorkspaceId) editWorkspace(state.activeWorkspaceId); });
-
-    panel.querySelectorAll('.ws-info[data-workspace-id]').forEach(el => {
-        el.addEventListener('click', () => enterWorkspace(el.dataset.workspaceId));
-    });
-    panel.querySelectorAll('.ws-menu-btn[data-workspace-id]').forEach(btn => {
-        btn.addEventListener('click', (e) => { e.stopPropagation(); showWorkspaceContextMenu(btn, btn.dataset.workspaceId); });
-    });
-    panel.querySelectorAll('.project-info[data-project-id]').forEach(el => {
-        el.addEventListener('click', () => enterProject(el.dataset.projectId));
-    });
-    panel.querySelectorAll('.project-menu-btn[data-project-id]').forEach(btn => {
-        btn.addEventListener('click', (e) => { e.stopPropagation(); showProjectMenu(btn, btn.dataset.projectId); });
-    });
-
-    wireConversationRows(panel);
 }
 
 /**
@@ -3503,19 +3369,14 @@ async function deleteProjectPrompt(projectId) {
 
     delete state.projects[projectId];
 
-    // If this project's inline page was open, leave it for the main area.
-    const pageWasOpen = state.ui.openContainer
-        && state.ui.openContainer.kind === 'project'
-        && state.ui.openContainer.id === projectId;
-    if (pageWasOpen) closeContainerPage();
-
-    if (state.activeProjectId === projectId) {
-        // The active project was deleted — drop back to its workspace view.
+    // If we're viewing the deleted project's page, climb to its workspace.
+    const v = state.ui.mainView || {};
+    if (v.type === 'project' && v.id === projectId) {
         backToWorkspace();
     } else {
-        updateWorkspaceUI();
+        renderMainView(); // refresh any list/page that showed it
+        renderShell();
     }
-    if (pageWasOpen) renderConversation();
 }
 
 // ===== Workspace create + edit =====
@@ -3603,131 +3464,117 @@ async function deleteWorkspacePrompt(workspaceId) {
         }
     }
 
-    // If an inline page for this workspace (or one of its now-deleted projects)
-    // was open, leave it for the main area.
-    const open = state.ui.openContainer;
-    const pageWasOpen = open && (
-        (open.kind === 'workspace' && open.id === workspaceId) ||
-        (open.kind === 'project' && !state.projects[open.id])
-    );
-    if (pageWasOpen) closeContainerPage();
+    // If we're viewing this workspace's page (or one of its now-deleted
+    // projects' pages), drop back to the workspaces list.
+    const v = state.ui.mainView || {};
+    const viewingDeleted =
+        (v.type === 'workspace' && v.id === workspaceId) ||
+        (v.type === 'project' && !state.projects[v.id]);
 
     if (state.activeWorkspaceId === workspaceId) {
-        backToWorkspaces();
-    } else {
-        updateWorkspaceUI();
+        state.activeWorkspaceId = null;
+        state.activeProjectId = null;
+        UiPrefs.set('activeWorkspace', null);
+        UiPrefs.set('activeProject', null);
     }
-    if (pageWasOpen) renderConversation();
-    renderConversationList(); // the reparented chats now show at home
+
+    if (viewingDeleted) {
+        navigate({ type: 'workspaces' });
+    } else {
+        renderMainView();
+        renderShell();
+    }
 }
 
-// ===== Active container (workspace / project) + breadcrumb =====
-// The hierarchy is workspace ⊃ project ⊃ chat. The "active container" is the
-// navigation context: it drives the top-bar breadcrumb, the Workspaces-tab
-// drill-in level, and where the drill-in's "New chat/project" land. It is
-// device-local (UiPrefs activeWorkspace/activeProject), not synced, and is
-// independent of the open chat (navigating doesn't disturb the main area).
+// ===== Breadcrumb + container navigation (WR-07) =====
+// The hierarchy is workspace ⊃ project ⊃ chat. activeWorkspaceId/activeProjectId
+// track the container the current view is about (set by openContainerPage and on
+// opening a chat) — used for restore and for where "New chat/project" land.
 
 const BREADCRUMB_FOLDER_SVG = '<svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>';
 
-/**
- * Reflect the active container across the UI: the top-bar breadcrumb and the
- * Workspaces-tab drill-in. Called whenever the active container changes.
- */
+/** Shell-only refresh (rail highlight + contextual top bar + breadcrumb). */
 function updateWorkspaceUI() {
-    renderBreadcrumb();
-    renderWorkspacesTab();
+    renderShell();
 }
 
 /**
- * Render the top-bar breadcrumb indicator: "No workspace" / "<Workspace>" /
- * "<Workspace> › <Project>". Each segment, when clicked, navigates the sidebar
- * drill-in to that level (the main area is left untouched).
+ * Render the top-bar breadcrumb for the OPEN CHAT's container: "Chats" (unfiled)
+ * / "<Workspace>" / "<Workspace> › <Project>". Shown only while a chat is open
+ * (renderTopBar toggles visibility); segments navigate the main-area router.
  */
 function renderBreadcrumb() {
     const el = elements.workspaceBreadcrumb;
     if (!el) return;
 
-    const workspace = state.activeWorkspaceId ? state.workspaces[state.activeWorkspaceId] : null;
-    const project = state.activeProjectId ? state.projects[state.activeProjectId] : null;
+    const v = state.ui.mainView || {};
+    const convo = v.type === 'chat' ? state.conversations[v.id] : null;
+    if (!convo) { el.innerHTML = ''; el.classList.remove('active'); return; }
+
+    const workspace = convo.workspaceId ? state.workspaces[convo.workspaceId] : null;
+    const project = convo.projectId ? state.projects[convo.projectId] : null;
 
     let html = '';
-    if (!workspace) {
-        html = `<span class="breadcrumb-seg muted" data-nav="home">${BREADCRUMB_FOLDER_SVG}<span>No workspace</span></span>`;
+    if (!workspace && !project) {
+        html = `<span class="breadcrumb-seg" data-nav="chats">${BREADCRUMB_FOLDER_SVG}<span>Chats</span></span>`;
     } else {
-        html = `<span class="breadcrumb-seg" data-nav="workspace">${BREADCRUMB_FOLDER_SVG}<span>${escapeHtml(workspace.name || 'Untitled workspace')}</span></span>`;
+        html = `<span class="breadcrumb-seg" data-nav="workspace">${BREADCRUMB_FOLDER_SVG}<span>${escapeHtml(workspace ? (workspace.name || 'Untitled workspace') : 'Workspace')}</span></span>`;
         if (project) {
             html += `<span class="breadcrumb-sep" aria-hidden="true">›</span>`;
             html += `<span class="breadcrumb-seg" data-nav="project"><span>${escapeHtml(project.name || 'Untitled project')}</span></span>`;
         }
     }
     el.innerHTML = html;
-    el.classList.toggle('active', !!workspace);
+    el.classList.toggle('active', !!(workspace || project));
 
     el.querySelectorAll('[data-nav]').forEach(seg => {
         seg.addEventListener('click', () => {
             const nav = seg.dataset.nav;
-            if (nav === 'project' && state.activeProjectId) {
-                // Open that container's inline page in the main area (WR-05).
-                openContainerPage('project', state.activeProjectId);
-            } else if (nav === 'workspace' && state.activeWorkspaceId) {
-                openContainerPage('workspace', state.activeWorkspaceId);
-            } else {
-                // "No workspace" → open the workspaces list to pick one.
-                switchTab('projects');
-                openSidebar();
-            }
+            if (nav === 'project' && project) navigate({ type: 'project', id: project.id });
+            else if (nav === 'workspace' && workspace) navigate({ type: 'workspace', id: workspace.id });
+            else navigate({ type: 'chats' });
         });
     });
 }
 
-/** Enter a workspace (drill level 1): its projects + workspace-level chats. */
+/** Open a workspace's page (its instructions/files/projects/chats). */
 function enterWorkspace(workspaceId) {
-    if (!state.workspaces[workspaceId]) return;
-    state.activeWorkspaceId = workspaceId;
-    state.activeProjectId = null;
-    UiPrefs.set('activeWorkspace', workspaceId);
-    UiPrefs.set('activeProject', null);
-    updateWorkspaceUI();
-    switchTab('projects');
+    openContainerPage('workspace', workspaceId);
 }
 
-/** Enter a project (drill level 2): its chats. Implies its workspace. */
+/** Open a project's page (its instructions/files/chats). */
 function enterProject(projectId) {
-    const project = state.projects[projectId];
-    if (!project) return;
-    state.activeProjectId = projectId;
-    state.activeWorkspaceId = project.workspaceId || null;
-    UiPrefs.set('activeProject', projectId);
-    UiPrefs.set('activeWorkspace', state.activeWorkspaceId);
-    updateWorkspaceUI();
-    switchTab('projects');
+    openContainerPage('project', projectId);
 }
 
-/** Back from a project up to its workspace (drill level 2 → 1). */
+/** From a project, go up to its workspace page (or the workspaces list). */
 function backToWorkspace() {
-    state.activeProjectId = null;
-    UiPrefs.set('activeProject', null);
-    updateWorkspaceUI();
+    if (state.activeWorkspaceId && state.workspaces[state.activeWorkspaceId]) {
+        openContainerPage('workspace', state.activeWorkspaceId);
+    } else {
+        navigate({ type: 'workspaces' });
+    }
 }
 
-/** Back up to the workspaces list (drill level → 0). */
+/** Go to the workspaces list. */
 function backToWorkspaces() {
     state.activeProjectId = null;
     state.activeWorkspaceId = null;
     UiPrefs.set('activeProject', null);
     UiPrefs.set('activeWorkspace', null);
-    updateWorkspaceUI();
+    navigate({ type: 'workspaces' });
 }
 
 /**
- * Create a chat in the active container (workspace- or project-level) from the
- * drill-in "New chat" buttons, then open it.
+ * Create a chat in the container of the current view (a workspace or project
+ * page → workspace-/project-level; otherwise unfiled), then open it.
  */
 async function startNewChatInContainer() {
-    const container = state.activeProjectId
-        ? { projectId: state.activeProjectId }
-        : (state.activeWorkspaceId ? { workspaceId: state.activeWorkspaceId } : null);
+    const v = state.ui.mainView || {};
+    let container = null;
+    if (v.type === 'project') container = { projectId: v.id };
+    else if (v.type === 'workspace') container = { workspaceId: v.id };
+
     try {
         await createConversation('New Chat', container);
     } catch (err) {
@@ -3735,9 +3582,7 @@ async function startNewChatInContainer() {
         displayError(err, { action: 'create chat' });
         return;
     }
-    updateWorkspaceUI();   // the new chat appears in the drill-in
-    renderConversation();  // and opens in the main area
-    closeSidebar();
+    navigate({ type: 'chat', id: state.activeConversationId });
 }
 
 /**
@@ -3886,24 +3731,86 @@ async function setExpression(exprName) {
     }
 }
 
-// ===== Conversation Rendering =====
-function renderConversation() {
-    elements.messagesContainer.innerHTML = '';
+// ===== Main-area router (WR-07) =====
+// The main area shows exactly one view, chosen by state.ui.mainView. The sidebar
+// is a section rail that navigates between views. navigate() is the single entry
+// point: it sets the view, repaints the shell (rail highlight + contextual top
+// bar) and the main content, and closes the mobile drawer.
 
-    // Keep the workspace chip + sidebar scope in sync. renderConversation is the
-    // chokepoint every active-conversation change hits (switch / new / delete),
-    // including paths that don't call updateUI.
-    updateWorkspaceUI();
+/**
+ * Navigate the main area to a view and repaint the shell.
+ * @param {{type:string, id?:string}} view
+ */
+function navigate(view) {
+    state.ui.mainView = view || { type: 'chats' };
+    renderShell();
+    renderMainView();
+    closeSidebar();
+}
 
-    // An inline container page (workspace/project) takes over the main area when
-    // open — independent of which chat is active. Opening a chat clears it.
-    const oc = state.ui.openContainer;
-    if (oc && ((oc.kind === 'workspace' && state.workspaces[oc.id]) ||
-               (oc.kind === 'project' && state.projects[oc.id]))) {
-        renderContainerPage(oc.kind, oc.id);
+/** Which rail section the current view belongs to (for rail highlighting). */
+function currentSection() {
+    const v = state.ui.mainView || {};
+    if (v.type === 'workspaces' || v.type === 'workspace' || v.type === 'project') return 'workspaces';
+    if (v.type === 'chat') {
+        const c = state.conversations[v.id];
+        return (c && (c.workspaceId || c.projectId)) ? 'workspaces' : 'chats';
+    }
+    return 'chats'; // 'chats' (and any fallback)
+}
+
+/** Repaint the navigation shell: rail highlight + contextual top bar. */
+function renderShell() {
+    renderRail();
+    renderTopBar();
+    renderBreadcrumb();
+}
+
+/**
+ * Render the active main-area view. Guards against views whose entity was
+ * deleted by falling back to the owning list.
+ */
+function renderMainView() {
+    const v = state.ui.mainView || { type: 'chats' };
+
+    if (v.type === 'workspace') {
+        if (!state.workspaces[v.id]) return navigate({ type: 'workspaces' });
+        elements.messagesContainer.innerHTML = '';
+        renderContainerPage('workspace', v.id);
         return;
     }
-    if (oc) state.ui.openContainer = null; // referenced container was deleted
+    if (v.type === 'project') {
+        if (!state.projects[v.id]) return navigate({ type: 'workspaces' });
+        elements.messagesContainer.innerHTML = '';
+        renderContainerPage('project', v.id);
+        return;
+    }
+    if (v.type === 'workspaces') {
+        renderWorkspacesListMain();
+        return;
+    }
+    if (v.type === 'chat') {
+        if (!state.conversations[v.id]) return navigate({ type: 'chats' });
+        renderChatThread();
+        return;
+    }
+    // 'chats' (default)
+    renderChatsListMain();
+}
+
+/**
+ * Back-compat shim. Older call sites call renderConversation() to mean "repaint
+ * the main area"; route them through the view dispatcher (+ shell) so the rail
+ * and top bar stay in sync.
+ */
+function renderConversation() {
+    renderShell();
+    renderMainView();
+}
+
+/** Render the active conversation's message thread into the main area. */
+function renderChatThread() {
+    elements.messagesContainer.innerHTML = '';
 
     const activeConvo = getActiveConversation();
     const messages = activeConvo ? activeConvo.messages : [];
@@ -3930,13 +3837,71 @@ function renderConversation() {
     scrollToBottom();
 }
 
+/** Highlight the rail item for the section the current view belongs to. */
+function renderRail() {
+    const section = currentSection();
+    document.querySelectorAll('.rail-item[data-section]').forEach(b =>
+        b.classList.toggle('active', b.dataset.section === section));
+}
+
+/**
+ * Contextual top bar (WR-07): the model badge stays always (quick model-switch);
+ * in a chat show the workspace breadcrumb (where it lives), while browsing show
+ * the persona selector (who the next chat will be). Only one of the two shows.
+ */
+function renderTopBar() {
+    const inChat = (state.ui.mainView || {}).type === 'chat';
+    const personaBtn = document.getElementById('personaButton');
+    const bc = elements.workspaceBreadcrumb;
+    if (personaBtn) personaBtn.hidden = inChat;
+    if (bc) bc.hidden = !inChat;
+}
+
+/** Main-area "Chats" section: unfiled chats grouped by persona + a New-chat action. */
+function renderChatsListMain() {
+    const c = elements.messagesContainer;
+    c.innerHTML = `
+        <div class="section-view">
+            <div class="section-head">
+                <h1 class="section-title">Chats</h1>
+                <button class="section-new-btn" id="chatsNewBtn" type="button">+ New chat</button>
+            </div>
+            <div class="section-list" id="chatsListBody"></div>
+        </div>`;
+    renderGroupedChatList(c.querySelector('#chatsListBody'));
+    const nb = c.querySelector('#chatsNewBtn');
+    if (nb) nb.addEventListener('click', startNewConversation);
+}
+
+/** Main-area "Workspaces" section: the list of workspaces + a New-workspace action. */
+function renderWorkspacesListMain() {
+    const c = elements.messagesContainer;
+    const workspaces = Object.values(state.workspaces).sort(byUpdatedDesc);
+    const list = workspaces.length
+        ? `<div class="drill-list">${workspaces.map(workspaceRowHTML).join('')}</div>`
+        : `<p class="empty-state small">No workspaces yet. Create one to group projects and share instructions + files.</p>`;
+    c.innerHTML = `
+        <div class="section-view">
+            <div class="section-head">
+                <h1 class="section-title">Workspaces</h1>
+                <button class="section-new-btn" id="wsNewBtn" type="button">+ New workspace</button>
+            </div>
+            ${list}
+        </div>`;
+    const nb = c.querySelector('#wsNewBtn');
+    if (nb) nb.addEventListener('click', startNewWorkspace);
+    c.querySelectorAll('.ws-info[data-workspace-id]').forEach(el =>
+        el.addEventListener('click', () => navigate({ type: 'workspace', id: el.dataset.workspaceId })));
+    c.querySelectorAll('.ws-menu-btn[data-workspace-id]').forEach(btn =>
+        btn.addEventListener('click', (e) => { e.stopPropagation(); showWorkspaceContextMenu(btn, btn.dataset.workspaceId); }));
+}
+
 // ===== Inline container pages (workspace / project) =====
-// The main area is container-aware (WR-05): when state.ui.openContainer is set,
-// renderConversation hands off to renderContainerPage instead of the chat. The
-// page edits name + instructions + files inline (replacing the old edit modals)
-// and lists the container's projects/chats. Entry points: the top-bar breadcrumb
-// segments, the sidebar "Edit instructions & files" buttons, and the name-only
-// create step (which lands here after creating).
+// A workspace/project page is a main-area router view (WR-07): renderMainView
+// calls renderContainerPage for mainView {type:'workspace'|'project'}. The page
+// edits name + instructions + files inline and lists the container's projects/
+// chats. Entry points: the workspaces list, the in-chat breadcrumb, the project
+// rows, and the name-only create step (which lands here after creating).
 
 const CONTAINER_FOLDER_SVG = '<svg class="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>';
 const CONTAINER_UPLOAD_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
@@ -4006,14 +3971,7 @@ function openContainerPage(kind, id) {
         UiPrefs.set('activeProject', id);
         UiPrefs.set('activeWorkspace', state.activeWorkspaceId);
     }
-    state.ui.openContainer = { kind, id };
-    renderConversation(); // openContainer wins the main area; also refreshes nav
-    closeSidebar();        // close the mobile drawer if open
-}
-
-/** Close the inline page; the main area falls back to the active chat/welcome. */
-function closeContainerPage() {
-    state.ui.openContainer = null;
+    navigate({ type: kind, id });
 }
 
 /**
@@ -4091,13 +4049,7 @@ function containerProjectsListHTML(workspace) {
 
     let h = `<div class="cp-section"><div class="cp-section-label">Projects</div>`;
     if (projects.length > 0) {
-        h += `<div class="cp-row-list">` + projects.map(p => {
-            const fc = p.fileCount || 0;
-            return `<button class="cp-row" data-open-project="${escapeHtml(p.id)}" type="button">
-                        <span class="cp-row-name">${escapeHtml(p.name || 'Untitled project')}</span>
-                        <span class="cp-row-meta">${fc} file${fc !== 1 ? 's' : ''}</span>
-                    </button>`;
-        }).join('') + `</div>`;
+        h += `<div class="drill-list">${projects.map(projectRowHTML).join('')}</div>`;
     } else {
         h += `<p class="empty-state small">No projects yet.</p>`;
     }
@@ -4154,17 +4106,13 @@ function wireContainerPage(kind, id) {
     if (instrEl) instrEl.addEventListener('input', markDirty);
     if (saveBtn) saveBtn.addEventListener('click', () => saveContainerEdits(kind, id, { saveBtn, nameEl, instrEl, hintEl }));
 
-    // Breadcrumb out of the page.
+    // Breadcrumb out of the page (into the main-area router).
     page.querySelectorAll('.cp-crumb[data-nav]').forEach(el => el.addEventListener('click', () => {
         const nav = el.dataset.nav;
         if (nav === 'workspace' && entity.workspaceId) {
             openContainerPage('workspace', entity.workspaceId);
-        } else { // 'workspaces' — leave the page for the workspaces list
-            closeContainerPage();
-            backToWorkspaces();
-            switchTab('projects');
-            openSidebar();
-            renderConversation();
+        } else { // 'workspaces' — back to the workspaces list
+            navigate({ type: 'workspaces' });
         }
     }));
 
@@ -4176,9 +4124,13 @@ function wireContainerPage(kind, id) {
         fileInput.addEventListener('change', () => uploadContainerFiles(kind, id, fileInput.files));
     }
 
-    // Project/chat rows + add buttons.
-    page.querySelectorAll('[data-open-project]').forEach(b =>
-        b.addEventListener('click', () => openContainerPage('project', b.dataset.openProject)));
+    // Project rows (workspace page): open on the info area, ⋯ menu for edit/delete.
+    page.querySelectorAll('.project-info[data-project-id]').forEach(el =>
+        el.addEventListener('click', () => openContainerPage('project', el.dataset.projectId)));
+    page.querySelectorAll('.project-menu-btn[data-project-id]').forEach(btn =>
+        btn.addEventListener('click', (e) => { e.stopPropagation(); showProjectMenu(btn, btn.dataset.projectId); }));
+
+    // Chat rows + add buttons.
     page.querySelectorAll('[data-open-chat]').forEach(b =>
         b.addEventListener('click', () => switchConversation(b.dataset.openChat)));
     page.querySelectorAll('[data-action="new-project"]').forEach(b =>
@@ -5924,10 +5876,16 @@ function setupEventListeners() {
         elements.criticalBannerDismiss.addEventListener('click', hideCriticalBanner);
     }
 
-    // Sidebar tabs
-    document.querySelectorAll('.sidebar-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            switchTab(tab.dataset.tab);
+    // Section rail → main-area router (Chats/Workspaces). Personas + Settings are
+    // interim: they open the existing popover/modal until WR-07b/c make them
+    // full main-area sections.
+    document.querySelectorAll('.rail-item[data-section]').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const section = item.dataset.section;
+            if (section === 'chats') navigate({ type: 'chats' });
+            else if (section === 'workspaces') navigate({ type: 'workspaces' });
+            else if (section === 'personas') { e.stopPropagation(); showPersonaPopover(item); }
+            else if (section === 'settings') openSettingsModal();
         });
     });
 
@@ -6022,8 +5980,8 @@ function setupEventListeners() {
         });
     }
 
-    // Chats tab controls
-    elements.newChatBtn.addEventListener('click', startNewConversation);
+    // (The "+ New chat" button lives in the main-area Chats list, wired per
+    // render in renderChatsListMain.)
 
     // Name-only create modal (workspace + project creation). The create/edit
     // triggers live in the Workspaces drill-in and the inline container pages,
