@@ -119,3 +119,38 @@ folder → `Tessera/Downloads/` (unfiled).
 - Inline pages **replace** the modal; keep only a name-only create step.
 - Indicator is a **breadcrumb**, not a switcher.
 - Unfiled area named **"Chats" / "No workspace"**.
+
+## Progress (status log)
+
+- **WR-02 was split** into **WR-02a** (instructions-layering + Drive folders) and
+  **WR-02b** (workspace reference files: `workspace_files` table + upload routes +
+  folding files into context) — a scoping decision made because WR-01 created no
+  `workspace_files` table. Both shipped.
+
+| Task | Status | PR | Notes |
+|------|--------|----|-------|
+| WR-01 schema + DAL + migration | ✅ merged | #45 | migration runner + `workspaces` + backfill |
+| WR-02a routes + context layering + Drive | ✅ merged | #46 | `/api/workspaces`, layered ctx, best-effort Drive folders |
+| WR-02b workspace files | ✅ merged | #47 | `workspace_files`, `/api/workspaces/:id/files`, shared assembler |
+| WR-03 chat separation + creation context | ✅ merged | #48 | conv `workspace_id` (derived from project), home = unfiled only |
+| WR-04 drill-in sidebar + breadcrumb | 🔄 PR open | #49 | two-level drill-in, breadcrumb indicator (frontend) |
+| WR-05 inline container pages + create step | ⬜ next | — | see below |
+| WR-06 verify + review + migration test | ⬜ | — | |
+
+**WR-05 picks up from these WR-04 bridges:**
+- Container editing is still a **modal** (`#projectModal`, `#workspaceModal` in
+  index.html). WR-05 replaces these with **inline pages in the main area**
+  (container-aware: workspace page = editable name + instructions + files + its
+  projects + ws-chats; project page = chats + inherited-context note).
+- The project drill view's **"Edit instructions & files"** button is a stopgap
+  opening the project modal — replace with the inline project page.
+- **Workspace file upload UI** lands here (backend ready since WR-02b:
+  `API.workspaces.files` list/upload/delete/contentUrl).
+- The **breadcrumb** currently navigates the sidebar; WR-05 should make a segment
+  click open that container's **inline page** in the main area.
+- Add the **tiny name-only create step** (replacing the create modals).
+
+**Then Track A (Tool Use)** resumes on the new model (`docs/PHASE2_TASKS.md`):
+tool file destinations = active project folder → active workspace folder →
+`Tessera/Downloads/` (unfiled). Drive layout helpers live in `server/src/utils/drive.js`
+(`ensureWorkspaceFolder`, plus `ensureProjectFolderId` in `routes/projects.js`).
