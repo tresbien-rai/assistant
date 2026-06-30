@@ -567,12 +567,10 @@ const state = {
         activeTab: 'chats',
         // Persona group ids collapsed in the home chat list (session-only).
         collapsedPersonaGroups: new Set(),
-        // Project modal mode: holds the id being edited, or null when creating.
-        editingProjectId: null,
-        // When creating a project, the workspace it should be created under.
-        newProjectWorkspaceId: null,
-        // Workspace modal mode: holds the id being edited, or null when creating.
-        editingWorkspaceId: null
+        // Inline container page open in the main area (replaces the edit modals):
+        // { kind: 'workspace'|'project', id } or null when a chat/welcome shows.
+        // Decoupled from the active chat — opening a chat clears it.
+        openContainer: null
     },
     currentExpression: 'neutral',
     isLoading: false,
@@ -624,6 +622,7 @@ async function createConversation(title = 'New Chat', container = null) {
         messages: [],
     };
     state.activeConversationId = created.id;
+    state.ui.openContainer = null; // a chat now owns the main area
     return created.id;
 }
 
@@ -869,26 +868,14 @@ const elements = {
     // Workspaces tab (two-level drill-in panel)
     workspacesPanel: document.getElementById('workspacesPanel'),
 
-    // Project create/edit modal
-    projectModal: document.getElementById('projectModal'),
-    projectModalTitle: document.getElementById('projectModalTitle'),
-    closeProjectModal: document.getElementById('closeProjectModal'),
-    projectNameInput: document.getElementById('projectNameInput'),
-    projectInstructionsInput: document.getElementById('projectInstructionsInput'),
-    saveProjectBtn: document.getElementById('saveProjectBtn'),
-    projectFilesSection: document.getElementById('projectFilesSection'),
-    projectFileList: document.getElementById('projectFileList'),
-    noProjectFilesMessage: document.getElementById('noProjectFilesMessage'),
-    projectFileInput: document.getElementById('projectFileInput'),
-    projectFileUploadBtn: document.getElementById('projectFileUploadBtn'),
-
-    // Workspace create/edit modal
-    workspaceModal: document.getElementById('workspaceModal'),
-    workspaceModalTitle: document.getElementById('workspaceModalTitle'),
-    closeWorkspaceModal: document.getElementById('closeWorkspaceModal'),
-    workspaceNameInput: document.getElementById('workspaceNameInput'),
-    workspaceInstructionsInput: document.getElementById('workspaceInstructionsInput'),
-    saveWorkspaceBtn: document.getElementById('saveWorkspaceBtn'),
+    // Name-only create modal (shared by workspace + project creation; the full
+    // edit UI lives inline on the container page — WR-05).
+    nameModal: document.getElementById('nameModal'),
+    nameModalTitle: document.getElementById('nameModalTitle'),
+    nameModalLabel: document.getElementById('nameModalLabel'),
+    nameModalInput: document.getElementById('nameModalInput'),
+    nameModalSaveBtn: document.getElementById('nameModalSaveBtn'),
+    closeNameModal: document.getElementById('closeNameModal'),
 
     // Top-bar breadcrumb indicator (No workspace / WS / WS › Project)
     workspaceBreadcrumb: document.getElementById('workspaceBreadcrumb'),
@@ -2836,6 +2823,7 @@ async function switchConversation(conversationId) {
     if (!state.conversations[conversationId]) return;
 
     state.activeConversationId = conversationId;
+    state.ui.openContainer = null; // leaving any open container page for the chat
 
     // Also switch to the persona that owns this conversation. activePersonaId
     // is session state — not persisted server-side — so no savePersonas() call
@@ -3290,6 +3278,7 @@ function renderWorkspaceDrillView(panel, workspace) {
     let html = '';
     html += drillBackHTML('Workspaces', 'back-workspaces');
     html += `<div class="drill-title">${escapeHtml(workspace.name || 'Untitled workspace')}</div>`;
+    html += `<button class="drill-edit-btn" data-action="edit-workspace">Edit instructions &amp; files</button>`;
 
     html += `<div class="drill-section-label">Projects</div>`;
     if (projects.length > 0) {
@@ -3379,6 +3368,7 @@ function wireWorkspacesPanel(panel) {
     on('[data-action="new-project"]', () => startNewProjectIn(state.activeWorkspaceId));
     on('[data-action="new-chat"]', startNewChatInContainer);
     on('[data-action="edit-project"]', () => { if (state.activeProjectId) editProject(state.activeProjectId); });
+    on('[data-action="edit-workspace"]', () => { if (state.activeWorkspaceId) editWorkspace(state.activeWorkspaceId); });
 
     panel.querySelectorAll('.ws-info[data-workspace-id]').forEach(el => {
         el.addEventListener('click', () => enterWorkspace(el.dataset.workspaceId));
@@ -3442,129 +3432,46 @@ function showProjectMenu(anchorEl, projectId) {
 }
 
 /**
- * Open the project modal. Pass a projectId to edit, or null/omit to create.
- * Unlike personas, projects are created via the modal's Save (which also makes
- * the Drive folder) so an abandoned "New Project" never creates anything.
- * @param {string|null} [projectId]
- */
-function openProjectModal(projectId = null) {
-    state.ui.editingProjectId = projectId;
-    const project = projectId ? state.projects[projectId] : null;
-
-    elements.projectModalTitle.textContent = project ? 'Edit Project' : 'New Project';
-    elements.projectNameInput.value = project ? (project.name || '') : '';
-    elements.projectInstructionsInput.value = project ? (project.instructions || '') : '';
-
-    // Files can only be attached to a project that exists, so the section is
-    // shown only in edit mode. (Creating transitions into edit mode on Save.)
-    if (project) {
-        showProjectFilesSection(true);
-        renderProjectFiles(project.id);
-    } else {
-        showProjectFilesSection(false);
-    }
-
-    closeSidebar(); // close the mobile drawer if open
-    elements.projectModal.classList.add('visible');
-    elements.projectNameInput.focus();
-}
-
-/**
- * Toggle the modal's file-management section.
- * @param {boolean} visible
- */
-function showProjectFilesSection(visible) {
-    elements.projectFilesSection.hidden = !visible;
-}
-
-function closeProjectModal() {
-    elements.projectModal.classList.remove('visible');
-    state.ui.editingProjectId = null;
-    state.ui.newProjectWorkspaceId = null;
-}
-
-/**
- * Save the project modal — create or update depending on editingProjectId.
- */
-async function saveProject() {
-    const name = elements.projectNameInput.value.trim();
-    const instructions = elements.projectInstructionsInput.value;
-
-    if (!name) {
-        showToast('Project name is required.', { type: 'error' });
-        elements.projectNameInput.focus();
-        return;
-    }
-
-    const editingId = state.ui.editingProjectId;
-    elements.saveProjectBtn.disabled = true;
-    let createdId = null;
-    try {
-        if (editingId) {
-            const updated = await API.projects.update(editingId, { name, instructions });
-            state.projects[editingId] = {
-                ...state.projects[editingId],
-                name: updated.name,
-                instructions: updated.instructions,
-                updatedAt: updated.updatedAt,
-            };
-        } else {
-            // New projects nest under the workspace they were created from.
-            const created = await API.projects.create({
-                name,
-                instructions,
-                workspaceId: state.ui.newProjectWorkspaceId || undefined,
-            });
-            state.projects[created.id] = {
-                id: created.id,
-                workspaceId: created.workspaceId || null,
-                name: created.name,
-                instructions: created.instructions || '',
-                fileCount: created.fileCount || 0,
-                createdAt: created.createdAt,
-                updatedAt: created.updatedAt,
-            };
-            createdId = created.id;
-        }
-    } catch (err) {
-        console.error('Failed to save project:', err);
-        displayError(err, { action: 'save project' });
-        return;
-    } finally {
-        elements.saveProjectBtn.disabled = false;
-    }
-
-    updateWorkspaceUI(); // refresh the drill-in (and breadcrumb name if renamed)
-
-    if (createdId) {
-        // Stay open and switch into edit mode so the user can add files right away.
-        state.ui.editingProjectId = createdId;
-        state.ui.newProjectWorkspaceId = null;
-        elements.projectModalTitle.textContent = 'Edit Project';
-        showProjectFilesSection(true);
-        renderProjectFiles(createdId);
-        showToast('Project created. You can now add files.', { type: 'success' });
-    } else {
-        closeProjectModal();
-    }
-}
-
-/**
- * Open the modal to create a new project nested under the given workspace.
+ * Create a new project (name-only step) nested under the given workspace, then
+ * open its inline page so the user can fill in instructions/files.
  * @param {string} workspaceId - The owning workspace (defaults to the active one)
  */
-function startNewProjectIn(workspaceId) {
-    state.ui.newProjectWorkspaceId = workspaceId || state.activeWorkspaceId || null;
-    openProjectModal(null);
+async function startNewProjectIn(workspaceId) {
+    const wsId = workspaceId || state.activeWorkspaceId || null;
+    const name = await promptName({
+        title: 'New project',
+        label: 'Project name',
+        placeholder: 'e.g., Q3 launch',
+    });
+    if (!name) return;
+
+    let created;
+    try {
+        created = await API.projects.create({ name, workspaceId: wsId || undefined });
+    } catch (err) {
+        console.error('Failed to create project:', err);
+        displayError(err, { action: 'create project' });
+        return;
+    }
+    state.projects[created.id] = {
+        id: created.id,
+        workspaceId: created.workspaceId || null,
+        name: created.name,
+        instructions: created.instructions || '',
+        fileCount: created.fileCount || 0,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+    };
+    openContainerPage('project', created.id);
 }
 
 /**
- * Open the modal to edit an existing project.
+ * Open a project's inline page to edit its name/instructions/files.
  * @param {string} projectId
  */
 function editProject(projectId) {
     if (!state.projects[projectId]) return;
-    openProjectModal(projectId);
+    openContainerPage('project', projectId);
 }
 
 /**
@@ -3595,94 +3502,66 @@ async function deleteProjectPrompt(projectId) {
     }
 
     delete state.projects[projectId];
+
+    // If this project's inline page was open, leave it for the main area.
+    const pageWasOpen = state.ui.openContainer
+        && state.ui.openContainer.kind === 'project'
+        && state.ui.openContainer.id === projectId;
+    if (pageWasOpen) closeContainerPage();
+
     if (state.activeProjectId === projectId) {
         // The active project was deleted — drop back to its workspace view.
         backToWorkspace();
     } else {
         updateWorkspaceUI();
     }
+    if (pageWasOpen) renderConversation();
 }
 
-// ===== Workspace modal (create / edit name + instructions) =====
-// Workspace reference-file editing lives in the inline workspace page (WR-05);
-// for now this modal covers name + shared instructions.
+// ===== Workspace create + edit =====
+// Name + shared instructions + reference files are all edited inline on the
+// workspace page (renderContainerPage). Creation is a name-only step that lands
+// on that page.
 
-function openWorkspaceModal(workspaceId = null) {
-    state.ui.editingWorkspaceId = workspaceId;
-    const ws = workspaceId ? state.workspaces[workspaceId] : null;
+/**
+ * Create a new workspace (name-only step), then open its inline page so the user
+ * can fill in shared instructions and add reference files.
+ */
+async function startNewWorkspace() {
+    const name = await promptName({
+        title: 'New workspace',
+        label: 'Workspace name',
+        placeholder: 'e.g., Vibe Coding',
+    });
+    if (!name) return;
 
-    elements.workspaceModalTitle.textContent = ws ? 'Edit Workspace' : 'New Workspace';
-    elements.workspaceNameInput.value = ws ? (ws.name || '') : '';
-    elements.workspaceInstructionsInput.value = ws ? (ws.instructions || '') : '';
-
-    closeSidebar();
-    elements.workspaceModal.classList.add('visible');
-    elements.workspaceNameInput.focus();
-}
-
-function closeWorkspaceModal() {
-    elements.workspaceModal.classList.remove('visible');
-    state.ui.editingWorkspaceId = null;
-}
-
-async function saveWorkspace() {
-    const name = elements.workspaceNameInput.value.trim();
-    const instructions = elements.workspaceInstructionsInput.value;
-
-    if (!name) {
-        showToast('Workspace name is required.', { type: 'error' });
-        elements.workspaceNameInput.focus();
-        return;
-    }
-
-    const editingId = state.ui.editingWorkspaceId;
-    elements.saveWorkspaceBtn.disabled = true;
-    let created = null;
+    let created;
     try {
-        if (editingId) {
-            const updated = await API.workspaces.update(editingId, { name, instructions });
-            state.workspaces[editingId] = {
-                ...state.workspaces[editingId],
-                name: updated.name,
-                instructions: updated.instructions,
-                updatedAt: updated.updatedAt,
-            };
-        } else {
-            const c = await API.workspaces.create({ name, instructions });
-            state.workspaces[c.id] = {
-                id: c.id,
-                name: c.name,
-                instructions: c.instructions || '',
-                projectCount: c.projectCount || 0,
-                fileCount: c.fileCount || 0,
-                createdAt: c.createdAt,
-                updatedAt: c.updatedAt,
-            };
-            created = c;
-        }
+        created = await API.workspaces.create({ name });
     } catch (err) {
-        console.error('Failed to save workspace:', err);
-        displayError(err, { action: 'save workspace' });
+        console.error('Failed to create workspace:', err);
+        displayError(err, { action: 'create workspace' });
         return;
-    } finally {
-        elements.saveWorkspaceBtn.disabled = false;
     }
-
-    closeWorkspaceModal();
-    if (created) {
-        enterWorkspace(created.id); // drop straight into the new workspace
-    } else {
-        updateWorkspaceUI();
-    }
+    state.workspaces[created.id] = {
+        id: created.id,
+        name: created.name,
+        instructions: created.instructions || '',
+        projectCount: created.projectCount || 0,
+        fileCount: created.fileCount || 0,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+    };
+    openContainerPage('workspace', created.id);
 }
 
-function startNewWorkspace() {
-    openWorkspaceModal(null);
-}
-
+/**
+ * Open a workspace's inline page to edit its name/instructions/files.
+ * @param {string} workspaceId
+ */
 function editWorkspace(workspaceId) {
     if (!state.workspaces[workspaceId]) return;
-    openWorkspaceModal(workspaceId);
+    openContainerPage('workspace', workspaceId);
 }
 
 /**
@@ -3724,11 +3603,21 @@ async function deleteWorkspacePrompt(workspaceId) {
         }
     }
 
+    // If an inline page for this workspace (or one of its now-deleted projects)
+    // was open, leave it for the main area.
+    const open = state.ui.openContainer;
+    const pageWasOpen = open && (
+        (open.kind === 'workspace' && open.id === workspaceId) ||
+        (open.kind === 'project' && !state.projects[open.id])
+    );
+    if (pageWasOpen) closeContainerPage();
+
     if (state.activeWorkspaceId === workspaceId) {
         backToWorkspaces();
     } else {
         updateWorkspaceUI();
     }
+    if (pageWasOpen) renderConversation();
     renderConversationList(); // the reparented chats now show at home
 }
 
@@ -3779,14 +3668,15 @@ function renderBreadcrumb() {
         seg.addEventListener('click', () => {
             const nav = seg.dataset.nav;
             if (nav === 'project' && state.activeProjectId) {
-                enterProject(state.activeProjectId);
+                // Open that container's inline page in the main area (WR-05).
+                openContainerPage('project', state.activeProjectId);
             } else if (nav === 'workspace' && state.activeWorkspaceId) {
-                enterWorkspace(state.activeWorkspaceId);
+                openContainerPage('workspace', state.activeWorkspaceId);
             } else {
                 // "No workspace" → open the workspaces list to pick one.
                 switchTab('projects');
+                openSidebar();
             }
-            openSidebar();
         });
     });
 }
@@ -3881,112 +3771,6 @@ function showWorkspaceContextMenu(anchorEl, workspaceId) {
     });
 
     attachPopoverOutsideClose(menu, anchorEl);
-}
-
-/**
- * Render the file list for a project inside the modal, and keep the cached
- * file count in sync.
- * @param {string} projectId
- */
-async function renderProjectFiles(projectId) {
-    const listEl = elements.projectFileList;
-    listEl.innerHTML = '';
-
-    let files;
-    try {
-        files = await API.projects.files.list(projectId);
-    } catch (err) {
-        console.error('Failed to load project files:', err);
-        displayError(err, { action: 'load files' });
-        return;
-    }
-
-    if (state.projects[projectId]) {
-        state.projects[projectId].fileCount = files.length;
-        renderWorkspacesTab();
-    }
-
-    if (files.length === 0) {
-        elements.noProjectFilesMessage.style.display = 'block';
-        return;
-    }
-    elements.noProjectFilesMessage.style.display = 'none';
-
-    files.forEach(f => {
-        const row = document.createElement('div');
-        row.className = 'project-file-item';
-        const label = getFileTypeLabel(f.filename, f.mimeType);
-        const href = API.projects.files.contentUrl(projectId, f.id);
-        row.innerHTML = `
-            <span class="project-file-badge">${escapeHtml(label)}</span>
-            <span class="project-file-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
-            <span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>
-            <a class="project-file-download" href="${href}" download title="Download">⤓</a>
-            <button class="project-file-delete" type="button" title="Delete">✕</button>
-        `;
-        row.querySelector('.project-file-delete')
-            .addEventListener('click', () => deleteProjectFilePrompt(projectId, f.id, f.filename));
-        listEl.appendChild(row);
-    });
-}
-
-/**
- * Upload one or more files to a project, then refresh the list.
- * @param {string} projectId
- * @param {FileList|File[]} fileList
- */
-async function uploadProjectFiles(projectId, fileList) {
-    const files = Array.from(fileList || []);
-    if (files.length === 0) return;
-
-    // Show an indeterminate "uploading" state on the button while the (real,
-    // server-side) Drive upload is in flight. fetch can't report byte progress,
-    // so this is a spinner rather than a percentage bar (P2-U1 decision).
-    const btn = elements.projectFileUploadBtn;
-    const originalHTML = btn.innerHTML;
-    btn.disabled = true;
-    btn.classList.add('is-uploading');
-    btn.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span> Uploading…`;
-
-    let failures = 0;
-    for (const file of files) {
-        try {
-            await API.projects.files.upload(projectId, file);
-        } catch (err) {
-            failures++;
-            console.error('Failed to upload file:', file.name, err);
-            displayError(err, { action: 'upload file' });
-        }
-    }
-
-    btn.classList.remove('is-uploading');
-    btn.innerHTML = originalHTML;
-    btn.disabled = false;
-    elements.projectFileInput.value = ''; // allow re-selecting the same file
-    await renderProjectFiles(projectId);
-
-    const ok = files.length - failures;
-    if (ok > 0) {
-        showToast(`Uploaded ${ok} file${ok !== 1 ? 's' : ''}.`, { type: 'success' });
-    }
-}
-
-/**
- * Confirm and delete a single project file (from Drive + DB).
- * @param {string} projectId
- * @param {string} fileId
- * @param {string} filename
- */
-async function deleteProjectFilePrompt(projectId, fileId, filename) {
-    if (!confirm(`Delete file "${filename}"? This removes it from the workspace and your Google Drive.`)) return;
-    try {
-        await API.projects.files.delete(projectId, fileId);
-    } catch (err) {
-        console.error('Failed to delete file:', err);
-        displayError(err, { action: 'delete file' });
-        return;
-    }
-    await renderProjectFiles(projectId);
 }
 
 /**
@@ -4111,15 +3895,17 @@ function renderConversation() {
     // including paths that don't call updateUI.
     updateWorkspaceUI();
 
-    const activeConvo = getActiveConversation();
-
-    // Workspace home: inside a workspace with no chat open, show the workspace
-    // landing panel instead of the generic welcome.
-    if (!activeConvo && state.activeProjectId && state.projects[state.activeProjectId]) {
-        renderProjectHome(state.projects[state.activeProjectId]);
+    // An inline container page (workspace/project) takes over the main area when
+    // open — independent of which chat is active. Opening a chat clears it.
+    const oc = state.ui.openContainer;
+    if (oc && ((oc.kind === 'workspace' && state.workspaces[oc.id]) ||
+               (oc.kind === 'project' && state.projects[oc.id]))) {
+        renderContainerPage(oc.kind, oc.id);
         return;
     }
+    if (oc) state.ui.openContainer = null; // referenced container was deleted
 
+    const activeConvo = getActiveConversation();
     const messages = activeConvo ? activeConvo.messages : [];
     const persona = getActivePersona();
     const assistantName = persona ? persona.name : CONFIG.defaults.assistantName;
@@ -4144,38 +3930,421 @@ function renderConversation() {
     scrollToBottom();
 }
 
+// ===== Inline container pages (workspace / project) =====
+// The main area is container-aware (WR-05): when state.ui.openContainer is set,
+// renderConversation hands off to renderContainerPage instead of the chat. The
+// page edits name + instructions + files inline (replacing the old edit modals)
+// and lists the container's projects/chats. Entry points: the top-bar breadcrumb
+// segments, the sidebar "Edit instructions & files" buttons, and the name-only
+// create step (which lands here after creating).
+
+const CONTAINER_FOLDER_SVG = '<svg class="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>';
+const CONTAINER_UPLOAD_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
+
+// ===== Name-only create modal =====
+// The single remaining create dialog: asks only for a name, then the caller
+// opens the new container's inline page to fill in the rest. Promise-based —
+// resolves to the trimmed name, or null if cancelled.
+let _namePromptResolve = null;
+
 /**
- * Render the workspace "home" panel in the main area: name, instructions
- * preview, file count, and quick actions. Shown when a workspace is entered but
- * no chat is open. (As Tool Use lands, this is where created files will surface.)
- * @param {Object} project
+ * Show the name-only modal and resolve with the entered name (or null).
+ * @param {{title?:string, label?:string, placeholder?:string}} [opts]
+ * @returns {Promise<string|null>}
  */
-function renderProjectHome(project) {
-    const count = project.fileCount || 0;
-    const instr = (project.instructions || '').trim();
-    const instrPreview = instr
-        ? escapeHtml(instr.length > 240 ? instr.slice(0, 240) + '…' : instr)
-        : 'No instructions yet.';
+function promptName({ title = 'New', label = 'Name', placeholder = '' } = {}) {
+    // If one is somehow already open, cancel it before reusing the modal.
+    if (_namePromptResolve) closeNameModal(null);
+    return new Promise(resolve => {
+        _namePromptResolve = resolve;
+        elements.nameModalTitle.textContent = title;
+        elements.nameModalLabel.textContent = label;
+        elements.nameModalInput.value = '';
+        elements.nameModalInput.placeholder = placeholder;
+        closeSidebar(); // close the mobile drawer if open
+        elements.nameModal.classList.add('visible');
+        elements.nameModalInput.focus();
+    });
+}
+
+/** Close the name modal, resolving the pending promise with `result`. */
+function closeNameModal(result = null) {
+    elements.nameModal.classList.remove('visible');
+    const resolve = _namePromptResolve;
+    _namePromptResolve = null;
+    if (resolve) resolve(result);
+}
+
+/** Submit the name modal (Create button / Enter): resolve with the trimmed name. */
+function submitNameModal() {
+    const name = elements.nameModalInput.value.trim();
+    if (!name) {
+        elements.nameModalInput.focus();
+        return;
+    }
+    closeNameModal(name);
+}
+
+/**
+ * Open a container's inline page in the main area. Also syncs the active-
+ * container navigation (breadcrumb + sidebar drill level) to match.
+ * @param {'workspace'|'project'} kind
+ * @param {string} id
+ */
+function openContainerPage(kind, id) {
+    if (kind === 'workspace') {
+        if (!state.workspaces[id]) return;
+        state.activeWorkspaceId = id;
+        state.activeProjectId = null;
+        UiPrefs.set('activeWorkspace', id);
+        UiPrefs.set('activeProject', null);
+    } else {
+        const project = state.projects[id];
+        if (!project) return;
+        state.activeProjectId = id;
+        state.activeWorkspaceId = project.workspaceId || null;
+        UiPrefs.set('activeProject', id);
+        UiPrefs.set('activeWorkspace', state.activeWorkspaceId);
+    }
+    state.ui.openContainer = { kind, id };
+    renderConversation(); // openContainer wins the main area; also refreshes nav
+    closeSidebar();        // close the mobile drawer if open
+}
+
+/** Close the inline page; the main area falls back to the active chat/welcome. */
+function closeContainerPage() {
+    state.ui.openContainer = null;
+}
+
+/**
+ * Render the inline container page (workspace or project) into the main area.
+ * @param {'workspace'|'project'} kind
+ * @param {string} id
+ */
+function renderContainerPage(kind, id) {
+    const isWs = kind === 'workspace';
+    const entity = isWs ? state.workspaces[id] : state.projects[id];
+    if (!entity) return;
+    const workspace = isWs ? entity : state.workspaces[entity.workspaceId];
+
+    // Breadcrumb row at the top of the page (climbs out of the page).
+    const crumbs = isWs
+        ? `<span class="cp-crumb" data-nav="workspaces">‹ Workspaces</span>`
+        : `<span class="cp-crumb" data-nav="workspace">‹ ${escapeHtml(workspace ? (workspace.name || 'Workspace') : 'Workspace')}</span>`;
+
+    const instrPlaceholder = isWs
+        ? 'Shared context injected into every chat in this workspace and its projects (optional).'
+        : 'Context injected into every chat in this project — on top of its workspace (optional).';
+
+    const inheritNote = (!isWs && workspace)
+        ? `<p class="cp-inherit-note">Inherits <strong>${escapeHtml(workspace.name || 'workspace')}</strong> context (its instructions + files apply here too).</p>`
+        : '';
+
+    const listsHTML = isWs
+        ? containerProjectsListHTML(entity) + containerChatsListHTML(kind, entity)
+        : containerChatsListHTML(kind, entity);
 
     elements.messagesContainer.innerHTML = `
-        <div class="project-home">
-            <div class="project-home-header">
-                <svg class="project-home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
-                <h1>${escapeHtml(project.name || 'Untitled workspace')}</h1>
+        <div class="container-page" data-kind="${kind}" data-id="${escapeHtml(id)}">
+            <div class="cp-breadcrumb">${crumbs}</div>
+
+            <div class="cp-head">
+                ${CONTAINER_FOLDER_SVG}
+                <input class="cp-name" id="cpName" type="text" maxlength="100" placeholder="${isWs ? 'Workspace name' : 'Project name'}">
             </div>
-            <p class="project-home-instructions">${instrPreview}</p>
-            <p class="project-home-meta">${count} file${count !== 1 ? 's' : ''}</p>
-            <div class="project-home-actions">
-                <button class="project-home-btn primary" id="projectHomeNewChat" type="button">+ New chat</button>
-                <button class="project-home-btn" id="projectHomeSettings" type="button">Workspace settings</button>
+            ${inheritNote}
+
+            <label class="cp-label" for="cpInstructions">Instructions</label>
+            <div class="textarea-resizable">
+                <textarea class="cp-instructions" id="cpInstructions" rows="6" placeholder="${instrPlaceholder}"></textarea>
+                <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
             </div>
+            <div class="cp-save-row">
+                <button class="cp-save-btn" id="cpSave" type="button" disabled>Save</button>
+                <span class="cp-save-hint" id="cpSaveHint" aria-live="polite"></span>
+            </div>
+
+            <div class="cp-section">
+                <div class="cp-section-label">Files</div>
+                <div class="project-file-list" id="cpFileList"></div>
+                <p class="empty-state small" id="cpNoFiles" hidden>No files yet.</p>
+                <div class="file-upload-wrapper">
+                    <input type="file" id="cpFileInput" class="file-input-hidden" multiple>
+                    <button type="button" class="file-upload-btn" id="cpUploadBtn">${CONTAINER_UPLOAD_SVG} Upload files</button>
+                </div>
+                <p class="help-text">Text, code, and PDF files up to 10MB each.</p>
+            </div>
+
+            ${listsHTML}
         </div>
     `;
 
-    const newBtn = document.getElementById('projectHomeNewChat');
-    if (newBtn) newBtn.addEventListener('click', startNewConversation);
-    const setBtn = document.getElementById('projectHomeSettings');
-    if (setBtn) setBtn.addEventListener('click', () => editProject(project.id));
+    wireContainerPage(kind, id);
+    loadContainerFiles(kind, id);
+}
+
+/** Projects list for a workspace page (each row opens that project's page). */
+function containerProjectsListHTML(workspace) {
+    const projects = Object.values(state.projects)
+        .filter(p => p.workspaceId === workspace.id)
+        .sort(byUpdatedDesc);
+
+    let h = `<div class="cp-section"><div class="cp-section-label">Projects</div>`;
+    if (projects.length > 0) {
+        h += `<div class="cp-row-list">` + projects.map(p => {
+            const fc = p.fileCount || 0;
+            return `<button class="cp-row" data-open-project="${escapeHtml(p.id)}" type="button">
+                        <span class="cp-row-name">${escapeHtml(p.name || 'Untitled project')}</span>
+                        <span class="cp-row-meta">${fc} file${fc !== 1 ? 's' : ''}</span>
+                    </button>`;
+        }).join('') + `</div>`;
+    } else {
+        h += `<p class="empty-state small">No projects yet.</p>`;
+    }
+    h += `<button class="cp-add-btn" data-action="new-project" type="button">+ New project</button></div>`;
+    return h;
+}
+
+/** Chats list for a container page (workspace-level or project-level chats). */
+function containerChatsListHTML(kind, entity) {
+    const chats = (kind === 'workspace'
+        ? Object.values(state.conversations).filter(c => c.workspaceId === entity.id && !c.projectId)
+        : Object.values(state.conversations).filter(c => c.projectId === entity.id)
+    ).sort(byUpdatedDesc);
+
+    const sectionLabel = kind === 'workspace' ? 'Chats here' : 'Chats';
+    const addLabel = kind === 'workspace' ? '+ New chat here' : '+ New chat';
+
+    let h = `<div class="cp-section"><div class="cp-section-label">${sectionLabel}</div>`;
+    if (chats.length > 0) {
+        h += `<div class="cp-row-list">` + chats.map(ch =>
+            `<button class="cp-row" data-open-chat="${escapeHtml(ch.id)}" type="button">
+                <span class="cp-row-name">${escapeHtml(ch.title || 'New Chat')}</span>
+                <span class="cp-row-meta">${formatTimeAgo(ch.updatedAt || ch.createdAt)}</span>
+            </button>`).join('') + `</div>`;
+    } else {
+        h += `<p class="empty-state small">No chats yet.</p>`;
+    }
+    h += `<button class="cp-add-btn" data-action="new-chat" type="button">${addLabel}</button></div>`;
+    return h;
+}
+
+/** Wire the interactive elements of the currently-rendered container page. */
+function wireContainerPage(kind, id) {
+    const page = elements.messagesContainer.querySelector('.container-page');
+    if (!page) return;
+    const isWs = kind === 'workspace';
+    const entity = isWs ? state.workspaces[id] : state.projects[id];
+    if (!entity) return;
+
+    const nameEl = page.querySelector('#cpName');
+    const instrEl = page.querySelector('#cpInstructions');
+    const saveBtn = page.querySelector('#cpSave');
+    const hintEl = page.querySelector('#cpSaveHint');
+
+    // Set values via property (avoids HTML-escaping pitfalls in attributes/body).
+    if (nameEl) nameEl.value = entity.name || '';
+    if (instrEl) instrEl.value = entity.instructions || '';
+
+    const markDirty = () => { if (saveBtn) saveBtn.disabled = false; if (hintEl) hintEl.textContent = ''; };
+    if (nameEl) {
+        nameEl.addEventListener('input', markDirty);
+        nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveBtn?.click(); } });
+    }
+    if (instrEl) instrEl.addEventListener('input', markDirty);
+    if (saveBtn) saveBtn.addEventListener('click', () => saveContainerEdits(kind, id, { saveBtn, nameEl, instrEl, hintEl }));
+
+    // Breadcrumb out of the page.
+    page.querySelectorAll('.cp-crumb[data-nav]').forEach(el => el.addEventListener('click', () => {
+        const nav = el.dataset.nav;
+        if (nav === 'workspace' && entity.workspaceId) {
+            openContainerPage('workspace', entity.workspaceId);
+        } else { // 'workspaces' — leave the page for the workspaces list
+            closeContainerPage();
+            backToWorkspaces();
+            switchTab('projects');
+            openSidebar();
+            renderConversation();
+        }
+    }));
+
+    // Files.
+    const uploadBtn = page.querySelector('#cpUploadBtn');
+    const fileInput = page.querySelector('#cpFileInput');
+    if (uploadBtn && fileInput) {
+        uploadBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => uploadContainerFiles(kind, id, fileInput.files));
+    }
+
+    // Project/chat rows + add buttons.
+    page.querySelectorAll('[data-open-project]').forEach(b =>
+        b.addEventListener('click', () => openContainerPage('project', b.dataset.openProject)));
+    page.querySelectorAll('[data-open-chat]').forEach(b =>
+        b.addEventListener('click', () => switchConversation(b.dataset.openChat)));
+    page.querySelectorAll('[data-action="new-project"]').forEach(b =>
+        b.addEventListener('click', () => startNewProjectIn(id)));
+    page.querySelectorAll('[data-action="new-chat"]').forEach(b =>
+        b.addEventListener('click', startNewChatInContainer));
+}
+
+/**
+ * Persist the inline name + instructions edits for a container.
+ * @param {'workspace'|'project'} kind
+ * @param {string} id
+ * @param {{saveBtn:HTMLElement, nameEl:HTMLInputElement, instrEl:HTMLTextAreaElement, hintEl:HTMLElement}} els
+ */
+async function saveContainerEdits(kind, id, els) {
+    const { saveBtn, nameEl, instrEl, hintEl } = els;
+    const name = (nameEl?.value || '').trim();
+    const instructions = instrEl?.value || '';
+    const label = kind === 'workspace' ? 'Workspace' : 'Project';
+
+    if (!name) {
+        showToast(`${label} name is required.`, { type: 'error' });
+        nameEl?.focus();
+        return;
+    }
+
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+        if (kind === 'workspace') {
+            const u = await API.workspaces.update(id, { name, instructions });
+            state.workspaces[id] = { ...state.workspaces[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
+        } else {
+            const u = await API.projects.update(id, { name, instructions });
+            state.projects[id] = { ...state.projects[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
+        }
+    } catch (err) {
+        console.error('Failed to save container:', err);
+        displayError(err, { action: 'save changes' });
+        if (saveBtn) saveBtn.disabled = false;
+        return;
+    }
+
+    if (hintEl) {
+        hintEl.textContent = 'Saved';
+        setTimeout(() => { if (hintEl.isConnected) hintEl.textContent = ''; }, 1500);
+    }
+    updateWorkspaceUI(); // refresh breadcrumb + sidebar names (leaves the page intact)
+}
+
+/** The files API namespace for a container kind. */
+function containerFilesApi(kind) {
+    return kind === 'workspace' ? API.workspaces.files : API.projects.files;
+}
+
+/**
+ * Load and render the file list for the open container page, keeping the cached
+ * file count (and the sidebar/breadcrumb meta) in sync.
+ * @param {'workspace'|'project'} kind
+ * @param {string} id
+ */
+async function loadContainerFiles(kind, id) {
+    const listEl = document.getElementById('cpFileList');
+    if (!listEl) return;
+
+    let files;
+    try {
+        files = await containerFilesApi(kind).list(id);
+    } catch (err) {
+        console.error('Failed to load files:', err);
+        displayError(err, { action: 'load files' });
+        return;
+    }
+
+    // Keep the cached count current, then refresh the sidebar/breadcrumb meta.
+    if (kind === 'workspace' && state.workspaces[id]) state.workspaces[id].fileCount = files.length;
+    if (kind === 'project' && state.projects[id]) state.projects[id].fileCount = files.length;
+    updateWorkspaceUI(); // sidebar/breadcrumb only — does not touch the main page
+
+    if (!listEl.isConnected) return; // navigated away during the await
+    listEl.innerHTML = '';
+    const noEl = document.getElementById('cpNoFiles');
+
+    if (files.length === 0) {
+        if (noEl) noEl.hidden = false;
+        return;
+    }
+    if (noEl) noEl.hidden = true;
+
+    files.forEach(f => {
+        const row = document.createElement('div');
+        row.className = 'project-file-item';
+        const label = getFileTypeLabel(f.filename, f.mimeType);
+        const href = containerFilesApi(kind).contentUrl(id, f.id);
+        row.innerHTML = `
+            <span class="project-file-badge">${escapeHtml(label)}</span>
+            <span class="project-file-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
+            <span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>
+            <a class="project-file-download" href="${href}" download title="Download">⤓</a>
+            <button class="project-file-delete" type="button" title="Delete">✕</button>
+        `;
+        row.querySelector('.project-file-delete')
+            .addEventListener('click', () => deleteContainerFilePrompt(kind, id, f.id, f.filename));
+        listEl.appendChild(row);
+    });
+}
+
+/**
+ * Upload one or more files to the open container, then refresh the list.
+ * @param {'workspace'|'project'} kind
+ * @param {string} id
+ * @param {FileList|File[]} fileList
+ */
+async function uploadContainerFiles(kind, id, fileList) {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+
+    const btn = document.getElementById('cpUploadBtn');
+    const originalHTML = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('is-uploading');
+        btn.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span> Uploading…`;
+    }
+
+    let failures = 0;
+    for (const file of files) {
+        try {
+            await containerFilesApi(kind).upload(id, file);
+        } catch (err) {
+            failures++;
+            console.error('Failed to upload file:', file.name, err);
+            displayError(err, { action: 'upload file' });
+        }
+    }
+
+    if (btn && btn.isConnected) {
+        btn.classList.remove('is-uploading');
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+    }
+    const input = document.getElementById('cpFileInput');
+    if (input) input.value = ''; // allow re-selecting the same file
+    await loadContainerFiles(kind, id);
+
+    const ok = files.length - failures;
+    if (ok > 0) showToast(`Uploaded ${ok} file${ok !== 1 ? 's' : ''}.`, { type: 'success' });
+}
+
+/**
+ * Confirm and delete a single container file (from Drive + DB), then refresh.
+ * @param {'workspace'|'project'} kind
+ * @param {string} id
+ * @param {string} fileId
+ * @param {string} filename
+ */
+async function deleteContainerFilePrompt(kind, id, fileId, filename) {
+    const where = kind === 'workspace' ? 'workspace' : 'project';
+    if (!confirm(`Delete file "${filename}"? This removes it from the ${where} and your Google Drive.`)) return;
+    try {
+        await containerFilesApi(kind).delete(id, fileId);
+    } catch (err) {
+        console.error('Failed to delete file:', err);
+        displayError(err, { action: 'delete file' });
+        return;
+    }
+    await loadContainerFiles(kind, id);
 }
 
 async function appendMessage(role, content, save = true, explicitIndex = null, attachments = null) {
@@ -5856,38 +6025,24 @@ function setupEventListeners() {
     // Chats tab controls
     elements.newChatBtn.addEventListener('click', startNewConversation);
 
-    // Project create/edit modal (the "New project" trigger lives in the
-    // Workspaces drill-in, wired per-render in wireWorkspacesPanel).
-    elements.closeProjectModal.addEventListener('click', closeProjectModal);
-    elements.saveProjectBtn.addEventListener('click', saveProject);
-    elements.projectModal.addEventListener('click', (e) => {
-        if (e.target === elements.projectModal) closeProjectModal();
+    // Name-only create modal (workspace + project creation). The create/edit
+    // triggers live in the Workspaces drill-in and the inline container pages,
+    // wired per-render. Container instructions/files are edited inline, not here.
+    elements.closeNameModal.addEventListener('click', () => closeNameModal(null));
+    elements.nameModalSaveBtn.addEventListener('click', submitNameModal);
+    elements.nameModal.addEventListener('click', (e) => {
+        if (e.target === elements.nameModal) closeNameModal(null);
+    });
+    elements.nameModalInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submitNameModal(); }
     });
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && elements.projectModal.classList.contains('visible')) {
-            closeProjectModal();
+        if (e.key === 'Escape' && elements.nameModal.classList.contains('visible')) {
+            closeNameModal(null);
         }
     });
-
-    // Workspace create/edit modal
-    elements.closeWorkspaceModal.addEventListener('click', closeWorkspaceModal);
-    elements.saveWorkspaceBtn.addEventListener('click', saveWorkspace);
-    elements.workspaceModal.addEventListener('click', (e) => {
-        if (e.target === elements.workspaceModal) closeWorkspaceModal();
-    });
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && elements.workspaceModal.classList.contains('visible')) {
-            closeWorkspaceModal();
-        }
-    });
-
-    // Project file upload (modal)
-    elements.projectFileUploadBtn.addEventListener('click', () => elements.projectFileInput.click());
-    elements.projectFileInput.addEventListener('change', () => {
-        const projectId = state.ui.editingProjectId;
-        if (projectId) uploadProjectFiles(projectId, elements.projectFileInput.files);
-    });
-    // The top-bar breadcrumb wires its own segment clicks per render (renderBreadcrumb).
+    // The top-bar breadcrumb and inline container pages wire their own controls
+    // per render (renderBreadcrumb / wireContainerPage).
 
     // Close any open context menus when clicking elsewhere
     document.addEventListener('click', (e) => {

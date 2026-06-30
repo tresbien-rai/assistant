@@ -134,21 +134,33 @@ folder → `Tessera/Downloads/` (unfiled).
 | WR-02b workspace files | ✅ merged | #47 | `workspace_files`, `/api/workspaces/:id/files`, shared assembler |
 | WR-03 chat separation + creation context | ✅ merged | #48 | conv `workspace_id` (derived from project), home = unfiled only |
 | WR-04 drill-in sidebar + breadcrumb | 🔄 PR open | #49 | two-level drill-in, breadcrumb indicator (frontend) |
-| WR-05 inline container pages + create step | ⬜ next | — | see below |
-| WR-06 verify + review + migration test | ⬜ | — | |
+| WR-05 inline container pages + create step | 🔄 PR open | — | inline pages, ws file UI, name-only create; stacked on WR-04 |
+| WR-06 verify + review + migration test | ⬜ next | — | |
 
-**WR-05 picks up from these WR-04 bridges:**
-- Container editing is still a **modal** (`#projectModal`, `#workspaceModal` in
-  index.html). WR-05 replaces these with **inline pages in the main area**
-  (container-aware: workspace page = editable name + instructions + files + its
-  projects + ws-chats; project page = chats + inherited-context note).
-- The project drill view's **"Edit instructions & files"** button is a stopgap
-  opening the project modal — replace with the inline project page.
-- **Workspace file upload UI** lands here (backend ready since WR-02b:
-  `API.workspaces.files` list/upload/delete/contentUrl).
-- The **breadcrumb** currently navigates the sidebar; WR-05 should make a segment
-  click open that container's **inline page** in the main area.
-- Add the **tiny name-only create step** (replacing the create modals).
+**WR-05 done (delivered against the WR-04 bridges):**
+- Container editing is now an **inline page in the main area** (`renderContainerPage`
+  in app.js), replacing the `#projectModal`/`#workspaceModal` edit modals (removed).
+  Driven by `state.ui.openContainer = { kind, id }`; `renderConversation` hands off
+  to the page when set, and opening a chat clears it (decoupled from the active chat).
+  - **Workspace page:** editable name + instructions (+ Save) + reference files +
+    its projects ("New project") + workspace-level chats ("New chat here").
+  - **Project page:** editable name + instructions + files + inherited-context note
+    ("Inherits `<Workspace>` context") + its chats ("New chat").
+- **Workspace file upload UI** landed (generic `loadContainerFiles` / `uploadContainerFiles`
+  / `deleteContainerFilePrompt` over `API.workspaces.files` + `API.projects.files`).
+- The **breadcrumb** segments + the sidebar **"Edit instructions & files"** buttons
+  (project *and* workspace) now open the inline page via `openContainerPage`.
+- **Name-only create step** (`#nameModal` + `promptName`): create asks only for a
+  name, then lands on the new container's inline page. The full edit modals are gone.
+- Verified via dev-login: open WS/project pages from breadcrumb + sidebar; edit +
+  Save persists to state and server; drill WS→project page + back crumb; name-only
+  create → drops onto the new project's page; zero console errors; backend suite
+  green (frontend-only). File *upload* needs the human on the live deploy (the
+  dev-login stub user has no Drive — carried to WR-06).
+
+**WR-06 (next):** end-to-end verify on the live deploy (incl. real Drive file
+upload for workspace + project pages), migration tested against a copy of real
+data, `/code-review`, then merge the WR-04→WR-05 stack.
 
 **Then Track A (Tool Use)** resumes on the new model (`docs/PHASE2_TASKS.md`):
 tool file destinations = active project folder → active workspace folder →

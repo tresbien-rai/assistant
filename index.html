@@ -637,68 +637,21 @@ When responding, you may optionally include an expression tag like [expression: 
         </div>
     </div>
 
-    <!-- Project Create/Edit Modal -->
-    <div class="modal-overlay" id="projectModal">
-        <div class="modal-content">
+    <!-- Name-only create step (workspace or project). Instructions and files are
+         edited inline on the container page (WR-05), so creation only asks for a
+         name and then drops you onto that page. -->
+    <div class="modal-overlay" id="nameModal">
+        <div class="modal-content modal-small">
             <div class="modal-header">
-                <h3 id="projectModalTitle">New Project</h3>
-                <button class="modal-close" id="closeProjectModal" aria-label="Close">×</button>
+                <h3 id="nameModalTitle">New</h3>
+                <button class="modal-close" id="closeNameModal" aria-label="Close">×</button>
             </div>
             <div class="modal-body">
-                <label for="projectNameInput">Name</label>
-                <input type="text" id="projectNameInput" placeholder="e.g., Q3 launch" maxlength="100">
-
-                <label for="projectInstructionsInput">Instructions</label>
-                <div class="textarea-resizable">
-                    <textarea id="projectInstructionsInput" rows="6" placeholder="Background context or instructions injected into every chat in this project (optional)."></textarea>
-                    <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
-                </div>
-                <p class="help-text">These instructions and the project's files are added to the model's context for any chat in this project — on top of its workspace's context.</p>
-
-                <div class="project-files-section" id="projectFilesSection" hidden>
-                    <label>Files</label>
-                    <div class="project-file-list" id="projectFileList">
-                        <!-- Populated dynamically -->
-                    </div>
-                    <p class="empty-state" id="noProjectFilesMessage">No files yet.</p>
-                    <div class="file-upload-wrapper">
-                        <input type="file" id="projectFileInput" class="file-input-hidden" multiple>
-                        <button type="button" class="file-upload-btn" id="projectFileUploadBtn">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                            </svg>
-                            Upload files
-                        </button>
-                    </div>
-                    <p class="help-text">Text, code, and PDF files up to 10MB each.</p>
-                </div>
+                <label for="nameModalInput" id="nameModalLabel">Name</label>
+                <input type="text" id="nameModalInput" maxlength="100">
             </div>
             <div class="modal-footer">
-                <button class="modal-btn primary" id="saveProjectBtn">Save</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Workspace Modal (create / edit name + shared instructions) -->
-    <div class="modal-overlay" id="workspaceModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="workspaceModalTitle">New Workspace</h3>
-                <button class="modal-close" id="closeWorkspaceModal" aria-label="Close">×</button>
-            </div>
-            <div class="modal-body">
-                <label for="workspaceNameInput">Name</label>
-                <input type="text" id="workspaceNameInput" placeholder="e.g., Vibe Coding" maxlength="100">
-
-                <label for="workspaceInstructionsInput">Instructions</label>
-                <div class="textarea-resizable">
-                    <textarea id="workspaceInstructionsInput" rows="6" placeholder="Shared context or instructions injected into every chat in this workspace and its projects (optional)."></textarea>
-                    <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
-                </div>
-                <p class="help-text">A workspace groups related projects and shares its instructions (and reference files) with every chat inside it.</p>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn primary" id="saveWorkspaceBtn">Save</button>
+                <button class="modal-btn primary" id="nameModalSaveBtn">Create</button>
             </div>
         </div>
     </div>
