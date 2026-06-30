@@ -51,23 +51,28 @@
     <div class="app-container" id="appContainer" hidden>
         <!-- Sidebar with tabs -->
         <aside class="sidebar" id="sidebar">
-            <!-- Tab Bar (Personas tab retired — persona management is in the
-                 top-bar persona popover) -->
-            <div class="sidebar-tabs">
-                <button class="sidebar-tab active" data-tab="chats">Chats</button>
-                <button class="sidebar-tab" data-tab="projects">Workspaces</button>
-                <button class="close-sidebar" id="closeSidebar">×</button>
-            </div>
-
-            <!-- Chats Tab Content (unfiled chats only; workspace/project chats
-                 live in the Workspaces drill-in) -->
-            <div class="tab-content active" id="chatsTab" data-tab="chats">
-                <button class="new-chat-btn" id="newChatBtn">+ New Chat</button>
-                <div class="conversation-list" id="conversationList">
-                    <!-- Populated dynamically -->
-                </div>
-                <p class="empty-state" id="noConversationsMessage">No conversations yet. Start chatting!</p>
-            </div>
+            <!-- Section rail (WR-07): a thin nav rail that switches the main-area
+                 router between top-level sections. Lists + detail live in the
+                 main area, not here. -->
+            <nav class="rail" aria-label="Sections">
+                <button class="rail-item active" data-section="chats" type="button">
+                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    <span>Chats</span>
+                </button>
+                <button class="rail-item" data-section="workspaces" type="button">
+                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                    <span>Workspaces</span>
+                </button>
+                <button class="rail-item" data-section="personas" type="button">
+                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <span>Personas</span>
+                </button>
+                <button class="rail-item" data-section="settings" type="button">
+                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    <span>Settings</span>
+                </button>
+                <button class="close-sidebar" id="closeSidebar" type="button" aria-label="Close menu">×</button>
+            </nav>
 
             <!-- Settings Modal (moved to <body> on load to escape the sidebar stacking context) -->
             <div class="modal-overlay" id="settingsModal">
@@ -401,14 +406,6 @@ When responding, you may optionally include an expression tag like [expression: 
                 </div><!-- /.settings-modal-body -->
               </div><!-- /.modal-content -->
             </div><!-- /#settingsModal -->
-
-            <!-- Workspaces Tab Content (two-level drill-in: workspaces →
-                 projects + workspace chats → project chats) -->
-            <div class="tab-content" id="projectsTab" data-tab="projects">
-                <div class="workspaces-panel" id="workspacesPanel">
-                    <!-- Drill-in nav rendered dynamically (renderWorkspacesTab) -->
-                </div>
-            </div>
         </aside>
 
         <!-- Sidebar resize handle (desktop only; drag to resize, double-click to reset) -->
