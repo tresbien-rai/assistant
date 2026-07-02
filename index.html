@@ -117,7 +117,7 @@
                 <!-- Model Settings (per-persona) -->
                 <div class="settings-section">
                     <h3>Model Settings</h3>
-                    <p class="section-note">These settings apply to the current persona.</p>
+                    <p class="section-note">The active model — used by every chat until you switch. Personas set to "Fixed" load and remember their own.</p>
 
                     <label for="providerSelect">Provider</label>
                     <select id="providerSelect">
@@ -149,7 +149,7 @@
                 <!-- Advanced Settings (per-persona) -->
                 <div class="settings-section">
                     <h3>Advanced Settings</h3>
-                    <p class="section-note">Model parameters for the current persona.</p>
+                    <p class="section-note">Parameters for the active model (see Model Settings above).</p>
 
                     <!-- Common Parameters -->
                     <div class="param-group" id="temperatureGroup">
@@ -305,6 +305,15 @@ When responding, you may optionally include an expression tag like [expression: 
                         <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
                     </div>
                     <p class="help-text">Model continues from this text. Hidden in responses.</p>
+
+                    <!-- Model-settings mode (WR-12): shared = persona never touches
+                         the active model/params; fixed = it keeps its own. -->
+                    <label>Model Settings</label>
+                    <div class="appearance-options" id="personaModelModeOptions">
+                        <button type="button" data-model-mode="shared">Shared</button>
+                        <button type="button" data-model-mode="fixed">Fixed</button>
+                    </div>
+                    <p class="help-text">Shared: this persona uses whatever model and parameters are currently active. Fixed: it keeps its own — switching to it loads them, and changes made while it's active are remembered.</p>
                 </div>
 
                 <!-- Persona avatar image (re-parented into #personaEditView on load — WR-08) -->

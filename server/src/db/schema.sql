@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS settings (
     avatar_position TEXT DEFAULT 'top-right',
     show_avatar     INTEGER DEFAULT 1,  -- SQLite boolean (0/1)
     custom_models   TEXT DEFAULT '{}',  -- JSON for custom model definitions
+    current_model_config TEXT,          -- JSON: the active model layer (WR-12); NULL until the client seeds it
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
 );

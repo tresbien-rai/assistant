@@ -539,6 +539,12 @@ const state = {
             openai: []
         }
     },
+    // The active model layer (WR-12): provider + model + params that every
+    // chat send and the model/params UI use. User-level, persisted in
+    // settings.currentModelConfig. Personas only touch it when their mode is
+    // 'fixed' (see docs/MODEL_DESYNC_DESIGN.md). Seeded in init(); the
+    // default here only covers the window before hydration completes.
+    currentModelConfig: getDefaultModelConfig(),
     // Per-provider key presence metadata from API.apiKeys.list().
     // Never the keys themselves — the backend never returns plaintext.
     apiKeyStatus: {
@@ -726,17 +732,14 @@ function getActivePersona() {
 }
 
 /**
- * Get the model configuration for the active persona
- * Falls back to defaultModelConfig if persona has no modelConfig
+ * Get the ACTIVE MODEL LAYER (WR-12) — the provider/model/params every send
+ * and the model UI use. Callers may mutate the returned object; persistence
+ * goes through persistSettings (+ mirrorLayerToFixedPersona for personas
+ * that keep their own settings).
  * @returns {Object} The model configuration (provider, model, modelParams)
  */
 function getActiveModelConfig() {
-    const persona = getActivePersona();
-    if (persona?.modelConfig) {
-        return persona.modelConfig;
-    }
-    // Fallback to default model config
-    return getDefaultModelConfig();
+    return state.currentModelConfig;
 }
 
 /**
@@ -773,17 +776,80 @@ function getDefaultModelConfig() {
     };
 }
 
+// ===== Persona model-settings mode (WR-12) =====
+// A persona's modelConfig JSON carries a `mode` flag:
+//   'shared' (default) — the persona never touches the active layer.
+//   'fixed'            — activating it loads its saved config into the layer,
+//                        and layer edits made while it is active are
+//                        remembered back to it.
+
+/** @returns {'shared'|'fixed'} */
+function personaModelMode(persona) {
+    return persona?.modelConfig?.mode === 'fixed' ? 'fixed' : 'shared';
+}
+
+/** Deep-clone a persona's saved modelConfig into layer shape (no mode flag). */
+function layerFromPersona(persona) {
+    const cfg = mergeModelConfig(persona?.modelConfig);
+    delete cfg.mode;
+    return cfg;
+}
+
 /**
- * Save model configuration to the active persona
- * @param {Object} modelConfig - The model config to save
+ * Mirror the active layer back into the active persona when it keeps its own
+ * settings (mode 'fixed'). State-only — persistence rides on the caller's
+ * persistSettings()/savePersonas() call.
  */
-function saveModelConfigToPersona(modelConfig) {
+function mirrorLayerToFixedPersona() {
     const persona = getActivePersona();
-    if (persona) {
-        persona.modelConfig = modelConfig;
-        persona.updatedAt = Date.now();
-        savePersonas();
+    if (!persona || personaModelMode(persona) !== 'fixed') return;
+    persona.modelConfig = {
+        ...JSON.parse(JSON.stringify(state.currentModelConfig)),
+        mode: 'fixed',
+    };
+    persona.updatedAt = Date.now();
+}
+
+/**
+ * Apply a persona's model-settings mode on activation: 'fixed' loads its
+ * saved config into the layer (and persists the layer change); 'shared'
+ * leaves the layer untouched.
+ */
+function applyPersonaModelSettings(persona) {
+    if (!persona || personaModelMode(persona) !== 'fixed') return;
+    state.currentModelConfig = layerFromPersona(persona);
+    persistSettings();
+}
+
+/** Reflect the active persona's model-settings mode into the editor toggle. */
+function syncPersonaModelModeControls() {
+    const mode = personaModelMode(getActivePersona());
+    document.querySelectorAll('#personaModelModeOptions button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.modelMode === mode);
+    });
+}
+
+/**
+ * Set the active persona's model-settings mode (from the editor toggle).
+ * Flipping to 'fixed' snapshots the CURRENT layer as the persona's own
+ * settings — you're capturing what's on screen, not resurrecting a stale
+ * pre-de-sync config. Flipping to 'shared' keeps the saved config dormant.
+ */
+function setPersonaModelMode(mode) {
+    const persona = getActivePersona();
+    if (!persona || personaModelMode(persona) === mode) return;
+    if (mode === 'fixed') {
+        persona.modelConfig = {
+            ...JSON.parse(JSON.stringify(state.currentModelConfig)),
+            mode: 'fixed',
+        };
+    } else {
+        persona.modelConfig = { ...persona.modelConfig };
+        delete persona.modelConfig.mode;
     }
+    persona.updatedAt = Date.now();
+    savePersonas();
+    syncPersonaModelModeControls();
 }
 
 /**
@@ -1029,6 +1095,16 @@ async function init() {
     pickActivePersona();
     pickActiveConversation();
 
+    // Seed the active model layer (WR-12) on first load after the de-sync
+    // upgrade: adopt the active persona's saved config so nothing visibly
+    // changes. Persisted immediately so the seed is stable across devices.
+    if (!state.currentModelConfig) {
+        state.currentModelConfig = layerFromPersona(getActivePersona());
+        API.settings.update({ currentModelConfig: state.currentModelConfig }).catch(err => {
+            console.error('Failed to persist seeded model layer:', err);
+        });
+    }
+
     // Restore the entered container (device-local). A project implies its
     // workspace; otherwise restore a bare workspace. Stale ids are cleared. If
     // the picked conversation isn't in the restored container, drop it so the
@@ -1087,6 +1163,12 @@ function hydrateSettings(settings) {
         google: Array.isArray(cm.google) ? cm.google : [],
         openai: Array.isArray(cm.openai) ? cm.openai : [],
     };
+    // The active model layer (WR-12). NULL sentinel = not yet seeded (first
+    // load after the de-sync upgrade) — init() seeds it from the active
+    // persona once personas are hydrated.
+    state.currentModelConfig = settings.currentModelConfig
+        ? (() => { const cfg = mergeModelConfig(settings.currentModelConfig); delete cfg.mode; return cfg; })()
+        : null;
 }
 
 function hydratePersonas(personas) {
@@ -1137,6 +1219,9 @@ function mergeModelConfig(serverConfig) {
     return {
         provider: serverConfig.provider || defaults.provider,
         model: serverConfig.model || defaults.model,
+        // Persona model-settings mode (WR-12). Absent = 'shared'; must survive
+        // the merge or fixed personas would reset on every reload.
+        ...(serverConfig.mode === 'fixed' ? { mode: 'fixed' } : {}),
         modelParams: {
             ...defaults.modelParams,
             ...incoming,
@@ -1334,11 +1419,10 @@ function autoSaveSettings() {
 function saveAllSettingsFromUI() {
     const persona = getActivePersona();
 
-    // Provider & model - save to active persona's modelConfig
-    if (persona && persona.modelConfig) {
-        persona.modelConfig.provider = elements.providerSelect.value;
-        persona.modelConfig.model = elements.modelSelect.value;
-    }
+    // Provider & model → the active layer (WR-12)
+    const layer = getActiveModelConfig();
+    layer.provider = elements.providerSelect.value;
+    if (elements.modelSelect.value) layer.model = elements.modelSelect.value;
 
     // API key for current provider: store-only path. Scheduled for server
     // persistence on a separate debounce so /api/settings updates don't ping
@@ -1346,7 +1430,7 @@ function saveAllSettingsFromUI() {
     // in `state` — it's read from elements.apiKeyInput.value at debounce
     // fire-time. Optimistically update apiKeyStatus.hasKey so the send
     // button / fetch-models button unlock without waiting for the PUT.
-    const currentProvider = persona?.modelConfig?.provider || CONFIG.defaults.provider;
+    const currentProvider = layer.provider || CONFIG.defaults.provider;
     const inputKey = elements.apiKeyInput.value;
     // Only schedule a PUT for non-empty input. Empty input deliberately does
     // NOT auto-DELETE the server-stored key — a stray touch-then-clear would
@@ -1372,8 +1456,11 @@ function saveAllSettingsFromUI() {
     // don't read the preset buttons — that would clobber a free value.
     state.settings.showAvatar = elements.showAvatar.checked;
 
-    // Model parameters (save to active persona)
+    // Model parameters (save to the active layer)
     saveModelParamsFromUI();
+
+    // A fixed-mode persona remembers layer changes as its own (WR-12).
+    mirrorLayerToFixedPersona();
 
     // Persona settings (name, system prompt, prefill)
     if (persona) {
@@ -1429,8 +1516,7 @@ function persistPendingApiKey() {
  * because this is destructive.
  */
 async function clearStoredApiKey() {
-    const persona = getActivePersona();
-    const provider = persona?.modelConfig?.provider || CONFIG.defaults.provider;
+    const provider = getActiveModelConfig().provider || CONFIG.defaults.provider;
     if (!state.apiKeyStatus[provider]?.hasKey) return;
 
     if (!confirm(`Clear your saved ${provider} API key from the server? You'll need to re-enter it to chat.`)) {
@@ -1462,6 +1548,7 @@ function persistSettings() {
         avatarPosition: state.settings.avatarPosition,
         showAvatar: state.settings.showAvatar,
         customModels: state.settings.customModels,
+        currentModelConfig: state.currentModelConfig, // the active layer (WR-12)
     };
     API.settings.update(settingsPayload).catch(err => {
         console.error('Failed to persist settings:', err);
@@ -1567,6 +1654,9 @@ async function updateUI() {
     // Reflect appearance prefs (theme / accent / chat width) into the controls.
     syncAppearanceControls();
 
+    // Reflect the active persona's model-settings mode (persona editor toggle).
+    syncPersonaModelModeControls();
+
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
@@ -1642,12 +1732,9 @@ function updateApiKeyFieldForProvider(provider) {
  * @param {string} provider - The new provider
  */
 function handleProviderChange(provider) {
-    // Update provider in active persona's modelConfig.
-    const persona = getActivePersona();
-    if (persona && persona.modelConfig) {
-        persona.modelConfig.provider = provider;
-        persona.updatedAt = Date.now();
-    }
+    // Update provider on the active layer (WR-12); fixed personas remember it.
+    getActiveModelConfig().provider = provider;
+    mirrorLayerToFixedPersona();
 
     // Clear the key input on provider switch. We never want a previously-typed
     // plaintext key from one provider to leak into the form for another, and
@@ -1665,9 +1752,8 @@ function handleProviderChange(provider) {
 
     // Update send button state
     updateSendButtonState();
-
-    // Sync to storage
-    savePersonas();
+    // Persistence rides on the callers: the Settings select fires
+    // autoSaveSettings, and selectModel calls persistSettings directly.
 }
 
 // ===== Model Parameter Helpers =====
@@ -1739,10 +1825,7 @@ function updateParamGroupDisabledState() {
  * Save model parameters from UI controls to state
  */
 function saveModelParamsFromUI() {
-    const persona = getActivePersona();
-    if (!persona || !persona.modelConfig) return;
-
-    const params = persona.modelConfig.modelParams;
+    const params = getActiveModelConfig().modelParams;
 
     // Common parameters
     params.temperature = elements.temperatureSlider.value / 100;
@@ -1775,8 +1858,7 @@ function saveModelParamsFromUI() {
  */
 function renderStopSequencesTags() {
     const container = elements.stopSequencesTags;
-    const persona = getActivePersona();
-    const sequences = persona?.modelConfig?.modelParams?.stopSequences || [];
+    const sequences = getActiveModelConfig().modelParams.stopSequences || [];
     container.innerHTML = '';
 
     sequences.forEach((seq, index) => {
@@ -1785,11 +1867,9 @@ function renderStopSequencesTags() {
         tag.textContent = seq;
         tag.title = 'Click to remove';
         tag.addEventListener('click', () => {
-            if (persona?.modelConfig?.modelParams?.stopSequences) {
-                persona.modelConfig.modelParams.stopSequences.splice(index, 1);
-                renderStopSequencesTags();
-                autoSaveSettings();
-            }
+            getActiveModelConfig().modelParams.stopSequences.splice(index, 1);
+            renderStopSequencesTags();
+            autoSaveSettings();
         });
         container.appendChild(tag);
     });
@@ -1801,10 +1881,9 @@ function renderStopSequencesTags() {
 function addStopSequence() {
     const input = elements.stopSequenceInput;
     const value = input.value.trim();
-    const persona = getActivePersona();
 
-    if (value && persona?.modelConfig?.modelParams) {
-        const sequences = persona.modelConfig.modelParams.stopSequences;
+    if (value) {
+        const sequences = getActiveModelConfig().modelParams.stopSequences;
         if (!sequences.includes(value)) {
             sequences.push(value);
             renderStopSequencesTags();
@@ -2398,11 +2477,11 @@ function removeCustomModel(id) {
     providerModels.splice(index, 1);
     saveCustomModels();
 
-    // If the removed model was selected, update persona's model
-    const persona = getActivePersona();
-    if (persona?.modelConfig?.model === id) {
-        persona.modelConfig.model = providerModels.length > 0 ? providerModels[0].id : '';
-        savePersonas();
+    // If the removed model was the layer's selected one, fall back
+    if (modelConfig.model === id) {
+        modelConfig.model = providerModels.length > 0 ? providerModels[0].id : '';
+        mirrorLayerToFixedPersona();
+        persistSettings();
     }
 }
 
@@ -2449,12 +2528,10 @@ function populateModelDropdown() {
             select.appendChild(option);
         });
 
-        // If selected model not in list, select first one and update persona
+        // If selected model not in list, fall back to the provider's first
         if (!providerModels.some(m => m.id === modelConfig.model)) {
-            const persona = getActivePersona();
-            if (persona && persona.modelConfig) {
-                persona.modelConfig.model = providerModels[0].id;
-            }
+            modelConfig.model = providerModels[0].id;
+            mirrorLayerToFixedPersona();
             select.value = providerModels[0].id;
         }
     }
@@ -2818,6 +2895,8 @@ async function switchConversation(conversationId) {
     // bandwidth and risking cross-write clobbers).
     if (convo.personaId && convo.personaId !== state.activePersonaId) {
         state.activePersonaId = convo.personaId;
+        // A fixed-mode persona brings its own model settings along (WR-12).
+        applyPersonaModelSettings(getActivePersona());
     }
 
     // Lazy-load messages if this is the first time we're activating this
@@ -2960,6 +3039,7 @@ async function switchPersona(personaId) {
     if (!state.personas[personaId]) return;
 
     state.activePersonaId = personaId;
+    applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
     state.ui.collapsedPersonaGroups.delete(personaId);
 
     // Leaving any workspace so the persona's grouped chats are actually visible
@@ -2985,6 +3065,7 @@ function editPersona(personaId) {
     if (!state.personas[personaId]) return;
 
     state.activePersonaId = personaId;
+    applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
     savePersonas();
     updateUI();
     navigate({ type: 'persona-edit' });
@@ -3109,20 +3190,18 @@ const PROVIDER_LABELS = {
  * @param {string} [provider] - the model's provider; defaults to the current one.
  */
 function selectModel(modelId, provider) {
-    const persona = getActivePersona();
-    if (!persona || !persona.modelConfig) return;
-    const targetProvider = provider || persona.modelConfig.provider;
-    if (persona.modelConfig.model === modelId
-        && persona.modelConfig.provider === targetProvider) return;
-    if (persona.modelConfig.provider !== targetProvider) {
+    const layer = getActiveModelConfig();
+    const targetProvider = provider || layer.provider;
+    if (layer.model === modelId && layer.provider === targetProvider) return;
+    if (layer.provider !== targetProvider) {
         // Full provider-switch housekeeping (key field, provider params,
         // model dropdown, send button) — same path as the Settings select.
         handleProviderChange(targetProvider);
         elements.providerSelect.value = targetProvider;
     }
-    persona.modelConfig.model = modelId;
-    persona.updatedAt = Date.now();
-    savePersonas();
+    layer.model = modelId;
+    mirrorLayerToFixedPersona();
+    persistSettings();
     updateUI();
 }
 
@@ -3274,6 +3353,7 @@ async function deletePersonaPrompt(personaId) {
         if (state.activePersonaId === personaId) {
             const remaining = Object.values(state.personas);
             state.activePersonaId = remaining.length > 0 ? remaining[0].id : null;
+            applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
         }
 
         // Clear active conversation if it was deleted by the cascade.
@@ -4068,6 +4148,7 @@ function renderPersonasListMain() {
 function activatePersona(personaId) {
     if (!state.personas[personaId]) return;
     state.activePersonaId = personaId;
+    applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
     savePersonas();
     updateUI(); // refreshes the section (Active badge) + header
 }
@@ -6220,6 +6301,11 @@ function setupEventListeners() {
             const existingMenu = document.querySelector('.context-menu');
             if (existingMenu) existingMenu.remove();
         }
+    });
+
+    // Persona model-settings mode toggle (persona editor, WR-12)
+    document.querySelectorAll('#personaModelModeOptions button').forEach(btn => {
+        btn.addEventListener('click', () => setPersonaModelMode(btn.dataset.modelMode));
     });
 
     // Provider & Model - auto-save on change

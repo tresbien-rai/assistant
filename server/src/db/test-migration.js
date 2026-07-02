@@ -47,6 +47,14 @@ try {
       instructions TEXT DEFAULT '', drive_folder_id TEXT DEFAULT '',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
+    -- Legacy settings shape (pre-WR-12: no current_model_config) so
+    -- migration 002 is exercised too.
+    CREATE TABLE settings (
+      id TEXT PRIMARY KEY, user_id TEXT UNIQUE NOT NULL,
+      avatar_size TEXT DEFAULT 'medium', avatar_position TEXT DEFAULT 'top-right',
+      show_avatar INTEGER DEFAULT 1, custom_models TEXT DEFAULT '{}',
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
   `);
 
   // --- Seed legacy data -----------------------------------------------------
@@ -100,6 +108,11 @@ try {
   check('chat in P2 inherited workspace', conv(cP2).workspace_id === wsA.id);
   check('unfiled chat A stays unfiled', conv(cUnfiledA).workspace_id === null);
   check('unfiled chat B stays unfiled', conv(cUnfiledB).workspace_id === null);
+
+  // --- Assert 002 (current_model_config column) -------------------------------
+  check('002_current_model_config applied', applied.includes('002_current_model_config'));
+  const settingsCols = db.prepare('PRAGMA table_info(settings)').all().map(c => c.name);
+  check('settings.current_model_config column added', settingsCols.includes('current_model_config'));
 
   // --- Assert idempotency ---------------------------------------------------
   console.log('\n3. Asserting idempotency...');
