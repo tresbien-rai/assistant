@@ -2947,6 +2947,30 @@ body {
     border-top: none;
 }
 
+/* ===== Settings section (WR-07b) — the settings form as a main-area panel ===== */
+/* Same max-width + padding as .section-view / .container-page so every main-area
+   view shares one spacing system. */
+#settingsView {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 24px 60px;
+}
+
+.settings-view-title {
+    max-width: 720px;
+    margin: 0 auto 16px;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+#settingsView .settings-modal-body {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0;
+    overflow: visible;
+}
+
 .manage-models-btn {
     width: 100%;
     padding: 8px 12px;

@@ -135,8 +135,10 @@ folder → `Tessera/Downloads/` (unfiled).
 | WR-03 chat separation + creation context | ✅ merged | #48 | conv `workspace_id` (derived from project), home = unfiled only |
 | WR-04 drill-in sidebar + breadcrumb | ✅ merged | #49 | two-level drill-in, breadcrumb indicator (frontend) |
 | WR-05 inline container pages + create step | ✅ merged | #50 | inline pages, ws file UI, name-only create |
-| WR-06 verify + review + migration test | ⬜ | — | live Drive upload + migration test on real-data copy |
-| WR-07 navigation consolidation (UX) | ⬜ next | — | section rail + main-area router + contextual top bar (see below) |
+| WR-06 verify + review + migration test | ✅ live-validated | — | live Drive upload + migration confirmed working by the human (2026-07-01) |
+| WR-07a nav shell (rail + router + top bar) | ✅ merged | #51 | section rail, main-area router, contextual top bar, width fix |
+| WR-07b Settings as main-area section | ✅ merged | — | settings form re-parented into a router view; composer/avatar hidden off-chat |
+| WR-07c Personas as main-area section | ⬜ next | — | main-area personas list + manage |
 
 **WR-05 done (delivered against the WR-04 bridges):**
 - Container editing is now an **inline page in the main area** (`renderContainerPage`
