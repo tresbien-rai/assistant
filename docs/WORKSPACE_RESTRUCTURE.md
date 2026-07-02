@@ -137,8 +137,8 @@ folder → `Tessera/Downloads/` (unfiled).
 | WR-05 inline container pages + create step | ✅ merged | #50 | inline pages, ws file UI, name-only create |
 | WR-06 verify + review + migration test | ✅ live-validated | — | live Drive upload + migration confirmed working by the human (2026-07-01) |
 | WR-07a nav shell (rail + router + top bar) | ✅ merged | #51 | section rail, main-area router, contextual top bar, width fix |
-| WR-07b Settings as main-area section | ✅ merged | — | settings form re-parented into a router view; composer/avatar hidden off-chat |
-| WR-07c Personas as main-area section | ⬜ next | — | main-area personas list + manage |
+| WR-07b Settings as main-area section | ✅ merged | #52 | settings form re-parented into a router view; composer/avatar hidden off-chat |
+| WR-07c Personas as main-area section | ✅ merged | — | main-area persona cards (switch/edit/delete); top-bar popover kept for quick-switch |
 
 **WR-05 done (delivered against the WR-04 bridges):**
 - Container editing is now an **inline page in the main area** (`renderContainerPage`

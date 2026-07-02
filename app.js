@@ -3810,6 +3810,10 @@ function renderMainView() {
         renderWorkspacesListMain();
         return;
     }
+    if (v.type === 'personas') {
+        renderPersonasListMain();
+        return;
+    }
     if (v.type === 'chat') {
         if (!state.conversations[v.id]) return navigate({ type: 'chats' });
         renderChatThread();
@@ -3915,6 +3919,81 @@ function renderWorkspacesListMain() {
         el.addEventListener('click', () => navigate({ type: 'workspace', id: el.dataset.workspaceId })));
     c.querySelectorAll('.ws-menu-btn[data-workspace-id]').forEach(btn =>
         btn.addEventListener('click', (e) => { e.stopPropagation(); showWorkspaceContextMenu(btn, btn.dataset.workspaceId); }));
+}
+
+/**
+ * Main-area "Personas" section (WR-07c): cards for each persona (avatar + name +
+ * Active badge). Click a card to make it active (stays here); the ⋯ menu edits
+ * (→ Settings) or deletes. The top-bar persona popover still handles quick-switch.
+ */
+function renderPersonasListMain() {
+    const c = elements.messagesContainer;
+    const personas = Object.values(state.personas)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    const cards = personas.map(p => {
+        const active = p.id === state.activePersonaId;
+        const sub = (p.systemPrompt || '').trim().replace(/\s+/g, ' ').slice(0, 90);
+        return `
+            <div class="persona-card${active ? ' active' : ''}">
+                <div class="persona-card-open" data-persona-open="${escapeHtml(p.id)}">
+                    <div class="persona-card-avatar">${personaAvatarHTML(p)}</div>
+                    <div class="persona-card-info">
+                        <span class="persona-card-name">${escapeHtml(p.name || 'Untitled')}${active ? '<span class="persona-card-badge">Active</span>' : ''}</span>
+                        <span class="persona-card-sub">${sub ? escapeHtml(sub) : 'No system prompt'}</span>
+                    </div>
+                </div>
+                <button class="project-menu-btn persona-card-menu" data-persona-menu="${escapeHtml(p.id)}" title="Options">⋯</button>
+            </div>`;
+    }).join('');
+
+    c.innerHTML = `
+        <div class="section-view">
+            <div class="section-head">
+                <h1 class="section-title">Personas</h1>
+                <button class="section-new-btn" id="personaNewBtn" type="button">+ New persona</button>
+            </div>
+            ${personas.length ? `<div class="persona-card-list">${cards}</div>` : `<p class="empty-state small">No personas yet.</p>`}
+        </div>`;
+
+    const nb = c.querySelector('#personaNewBtn');
+    if (nb) nb.addEventListener('click', startNewPersona);
+    c.querySelectorAll('[data-persona-open]').forEach(el =>
+        el.addEventListener('click', () => activatePersona(el.dataset.personaOpen)));
+    c.querySelectorAll('[data-persona-menu]').forEach(btn =>
+        btn.addEventListener('click', (e) => { e.stopPropagation(); showPersonaCardMenu(btn, btn.dataset.personaMenu); }));
+}
+
+/** Make a persona active from the Personas section (stays on the section). */
+function activatePersona(personaId) {
+    if (!state.personas[personaId]) return;
+    state.activePersonaId = personaId;
+    savePersonas();
+    updateUI(); // refreshes the section (Active badge) + header
+}
+
+/** Per-card context menu on the Personas section: Edit (→ Settings) / Delete. */
+function showPersonaCardMenu(anchorEl, personaId) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = `
+        <button class="context-menu-item" data-action="edit">Edit</button>
+        <button class="context-menu-item danger" data-action="delete">Delete</button>
+    `;
+    positionPopover(menu, anchorEl, 'right');
+    document.body.appendChild(menu);
+
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            menu.remove();
+            if (item.dataset.action === 'edit') editPersona(personaId);
+            else if (item.dataset.action === 'delete') deletePersonaPrompt(personaId);
+        });
+    });
+    attachPopoverOutsideClose(menu, anchorEl);
 }
 
 // ===== Inline container pages (workspace / project) =====
@@ -5905,8 +5984,8 @@ function setupEventListeners() {
             const section = item.dataset.section;
             if (section === 'chats') navigate({ type: 'chats' });
             else if (section === 'workspaces') navigate({ type: 'workspaces' });
-            else if (section === 'personas') { e.stopPropagation(); showPersonaPopover(item); }
-            else if (section === 'settings') openSettingsModal();
+            else if (section === 'personas') navigate({ type: 'personas' });
+            else if (section === 'settings') navigate({ type: 'settings' });
         });
     });
 

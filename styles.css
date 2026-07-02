@@ -467,6 +467,95 @@ body {
     flex-direction: column;
 }
 
+/* ===== Personas section (WR-07c) ===== */
+.persona-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.persona-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    transition: border-color 0.15s;
+}
+
+.persona-card.active {
+    border-color: var(--accent);
+}
+
+.persona-card-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.persona-card-avatar {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    font-size: 22px;
+}
+
+.persona-card-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.persona-card-info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.persona-card-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.persona-card-badge {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    background: var(--accent-subtle);
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+}
+
+.persona-card-sub {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.persona-card-menu {
+    flex: 0 0 auto;
+}
+
 .tab-content {
     display: none;
     flex-direction: column;
