@@ -1026,6 +1026,7 @@ const elements = {
     messagesContainer: document.getElementById('messagesContainer'),
     settingsView: document.getElementById('settingsView'),
     personaEditView: document.getElementById('personaEditView'),
+    modelsView: document.getElementById('modelsView'),
     inputContainer: document.getElementById('inputContainer'),
     messageInput: document.getElementById('messageInput'),
     sendButton: document.getElementById('sendButton'),
@@ -1582,6 +1583,10 @@ function updateSettingsUI() {
 
     // Update status bar
     updateStatusBar();
+
+    // Keep the Models catalog's key badges current while it's open (e.g. a
+    // key was just typed — the optimistic hasKey update lands on this path).
+    if ((state.ui.mainView || {}).type === 'models') renderModelsCatalog();
 }
 
 /**
@@ -1656,6 +1661,9 @@ async function updateUI() {
 
     // Reflect the active persona's model-settings mode (persona editor toggle).
     syncPersonaModelModeControls();
+
+    // Keep the Models catalog current (Active badge, key badges) while open.
+    if ((state.ui.mainView || {}).type === 'models') renderModelsCatalog();
 
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
@@ -2467,10 +2475,13 @@ function addCustomModel(id, name) {
  * Remove a custom model from the list for the current provider
  * @param {string} id - The model ID to remove
  */
-function removeCustomModel(id) {
+function removeCustomModel(id, provider) {
     const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
-    const providerModels = state.settings.customModels[provider];
+    // Callers that know the model's provider pass it (Models catalog);
+    // the Manage Models modal operates on the active provider.
+    const targetProvider = provider || modelConfig.provider;
+    const providerModels = state.settings.customModels[targetProvider];
+    if (!providerModels) return;
     const index = providerModels.findIndex(m => m.id === id);
     if (index === -1) return;
 
@@ -2478,7 +2489,7 @@ function removeCustomModel(id) {
     saveCustomModels();
 
     // If the removed model was the layer's selected one, fall back
-    if (modelConfig.model === id) {
+    if (modelConfig.provider === targetProvider && modelConfig.model === id) {
         modelConfig.model = providerModels.length > 0 ? providerModels[0].id : '';
         mirrorLayerToFixedPersona();
         persistSettings();
@@ -3248,7 +3259,7 @@ function showModelMenu(anchorEl) {
         item.addEventListener('click', () => {
             menu.remove();
             if (item.dataset.action === 'manage') {
-                openModelModal();
+                navigate({ type: 'models' }); // the Models section (WR-13) is the catalog's home
                 return;
             }
             if (item.dataset.modelId) {
@@ -3921,6 +3932,7 @@ function navigate(view) {
 function currentSection() {
     const v = state.ui.mainView || {};
     if (v.type === 'settings') return 'settings';
+    if (v.type === 'models') return 'models';
     if (v.type === 'personas' || v.type === 'persona-edit') return 'personas';
     if (v.type === 'workspaces' || v.type === 'workspace' || v.type === 'project') return 'workspaces';
     if (v.type === 'chat') {
@@ -3962,9 +3974,15 @@ function renderMainView() {
     // survive — it is shown, not re-rendered).
     const isSettings = v.type === 'settings';
     const isPersonaEdit = v.type === 'persona-edit';
+    const isModels = v.type === 'models';
     if (elements.settingsView) elements.settingsView.hidden = !isSettings;
     if (elements.personaEditView) elements.personaEditView.hidden = !isPersonaEdit;
-    if (elements.messagesContainer) elements.messagesContainer.hidden = isSettings || isPersonaEdit;
+    if (elements.modelsView) elements.modelsView.hidden = !isModels;
+    if (elements.messagesContainer) elements.messagesContainer.hidden = isSettings || isPersonaEdit || isModels;
+    if (isModels) {
+        renderModelsCatalog();
+        return;
+    }
     if (isPersonaEdit) {
         // The editor's inputs always edit the *active* persona (editPersona
         // activates before navigating); the title just needs to match it.
@@ -4029,7 +4047,7 @@ function renderChatThread() {
         elements.messagesContainer.innerHTML = `
             <div class="welcome-message">
                 <h1>Welcome!</h1>
-                <p>${hasApiKey ? 'Start chatting with ' + assistantName + '!' : 'Configure your API key in the settings (☰) to get started.'}</p>
+                <p>${hasApiKey ? 'Start chatting with ' + assistantName + '!' : 'Add your API key in the Models tab (☰) to get started.'}</p>
             </div>
         `;
         return;
@@ -4142,6 +4160,77 @@ function renderPersonasListMain() {
         el.addEventListener('click', () => activatePersona(el.dataset.personaOpen)));
     c.querySelectorAll('[data-persona-menu]').forEach(btn =>
         btn.addEventListener('click', (e) => { e.stopPropagation(); showPersonaCardMenu(btn, btn.dataset.personaMenu); }));
+}
+
+/**
+ * Models & Providers catalog (WR-13): every added model, grouped by provider,
+ * with the provider's API-key status in the group header. Clicking a card
+ * makes that model the active layer's (provider switches along); the ⋯ menu
+ * removes the model from the catalog.
+ */
+function renderModelsCatalog() {
+    const c = document.getElementById('modelsCatalog');
+    if (!c) return;
+    const layer = getActiveModelConfig();
+
+    let html = '';
+    for (const [provider, label] of Object.entries(PROVIDER_LABELS)) {
+        const models = state.settings.customModels[provider] || [];
+        const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
+        html += `
+            <div class="model-group-head">
+                <span class="model-group-name">${label}</span>
+                <span class="model-key-badge${hasKey ? ' has-key' : ''}">${hasKey ? 'API key saved' : 'no API key'}</span>
+            </div>`;
+        if (models.length === 0) {
+            html += `<p class="empty-state small">No ${label} models added.</p>`;
+            continue;
+        }
+        models.forEach(m => {
+            const active = provider === layer.provider && m.id === layer.model;
+            html += `
+                <div class="model-card${active ? ' active' : ''}">
+                    <div class="model-card-open" data-model-select="${escapeHtml(m.id)}" data-provider="${provider}">
+                        <div class="model-card-info">
+                            <span class="model-card-name">${escapeHtml(m.name)}${active ? '<span class="persona-card-badge">Active</span>' : ''}</span>
+                            <span class="model-card-sub">${escapeHtml(m.id)}</span>
+                        </div>
+                    </div>
+                    <button class="project-menu-btn model-card-menu" data-model-menu="${escapeHtml(m.id)}" data-provider="${provider}" title="Options">⋯</button>
+                </div>`;
+        });
+    }
+    c.innerHTML = html;
+
+    c.querySelectorAll('[data-model-select]').forEach(el =>
+        el.addEventListener('click', () => {
+            selectModel(el.dataset.modelSelect, el.dataset.provider);
+            renderModelsCatalog(); // refresh the Active badge
+        }));
+    c.querySelectorAll('[data-model-menu]').forEach(btn =>
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showModelCardMenu(btn, btn.dataset.modelMenu, btn.dataset.provider);
+        }));
+}
+
+/** Per-card ⋯ menu on the Models section: Remove from catalog. */
+function showModelCardMenu(anchorEl, modelId, provider) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = `<button class="context-menu-item danger" data-action="remove">Remove</button>`;
+    positionPopover(menu, anchorEl, 'right');
+    document.body.appendChild(menu);
+
+    menu.querySelector('[data-action="remove"]').addEventListener('click', () => {
+        menu.remove();
+        removeCustomModel(modelId, provider);
+        renderModelsCatalog();
+    });
+    attachPopoverOutsideClose(menu, anchorEl);
 }
 
 /** Make a persona active from the Personas section (stays on the section). */
@@ -6167,6 +6256,7 @@ function setupEventListeners() {
             if (section === 'chats') navigate({ type: 'chats' });
             else if (section === 'workspaces') navigate({ type: 'workspaces' });
             else if (section === 'personas') navigate({ type: 'personas' });
+            else if (section === 'models') navigate({ type: 'models' });
             else if (section === 'settings') navigate({ type: 'settings' });
         });
     });
@@ -6202,6 +6292,27 @@ function setupEventListeners() {
         elements.personaEditView.appendChild(editorBody);
         document.getElementById('personaEditBack')
             .addEventListener('click', () => navigate({ type: 'personas' }));
+    }
+
+    // Models & Providers section (WR-13): a title row + the model catalog
+    // (rendered per-visit by renderModelsCatalog) + the active-model/API-key
+    // and advanced-params sections re-parented out of the settings form.
+    // Same re-parenting trick — every input keeps its id-cached ref + listeners.
+    if (elements.modelsView) {
+        elements.modelsView.innerHTML = `
+            <div class="models-head">
+                <h1 class="settings-view-title">Models</h1>
+                <button class="section-new-btn" id="modelsAddBtn" type="button">+ Add model</button>
+            </div>
+            <div class="models-catalog" id="modelsCatalog"></div>`;
+        const modelsBody = document.createElement('div');
+        modelsBody.className = 'settings-modal-body';
+        ['modelSettingsSection', 'advancedSettingsSection'].forEach(id => {
+            const section = document.getElementById(id);
+            if (section) modelsBody.appendChild(section);
+        });
+        elements.modelsView.appendChild(modelsBody);
+        document.getElementById('modelsAddBtn').addEventListener('click', openModelModal);
     }
     if (elements.personaButton) {
         elements.personaButton.addEventListener('click', (e) => {
