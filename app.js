@@ -1901,10 +1901,12 @@ function applyAvatarPosition(avatar, pos) {
     }
     avatar.className = 'floating-avatar';
     const chatArea = document.getElementById('chatArea');
-    const cRect = chatArea.getBoundingClientRect();
-    const aRect = avatar.getBoundingClientRect();
-    const maxLeft = Math.max(0, cRect.width - aRect.width);
-    const maxTop = Math.max(0, cRect.height - aRect.height);
+    // Layout sizes (offset/client), NOT getBoundingClientRect(): the rect is
+    // shrunk by the hidden state's scale(0.8) while the avatar is hidden or
+    // still fading in, which overstates the available travel and pushes a
+    // right/bottom-side avatar past the edge on show.
+    const maxLeft = Math.max(0, chatArea.clientWidth - avatar.offsetWidth);
+    const maxTop = Math.max(0, chatArea.clientHeight - avatar.offsetHeight);
     avatar.style.left = `${(free.x / 100) * maxLeft}px`;
     avatar.style.top = `${(free.y / 100) * maxTop}px`;
     avatar.style.right = 'auto';
@@ -1962,10 +1964,9 @@ function setupAvatarDrag() {
     frame.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         moved = true;
-        const cRect = chatArea.getBoundingClientRect();
-        const aRect = avatar.getBoundingClientRect();
-        const maxLeft = Math.max(0, cRect.width - aRect.width);
-        const maxTop = Math.max(0, cRect.height - aRect.height);
+        // Layout sizes for the travel bounds (transform-immune — see applyAvatarPosition).
+        const maxLeft = Math.max(0, chatArea.clientWidth - avatar.offsetWidth);
+        const maxTop = Math.max(0, chatArea.clientHeight - avatar.offsetHeight);
         const left = Math.max(0, Math.min(maxLeft, startLeft + (e.clientX - startX)));
         const top = Math.max(0, Math.min(maxTop, startTop + (e.clientY - startY)));
         // Drop any corner preset but keep the base + dragging classes.
@@ -1984,8 +1985,8 @@ function setupAvatarDrag() {
         if (!moved) return;
         const cRect = chatArea.getBoundingClientRect();
         const aRect = avatar.getBoundingClientRect();
-        const maxLeft = Math.max(1, cRect.width - aRect.width);
-        const maxTop = Math.max(1, cRect.height - aRect.height);
+        const maxLeft = Math.max(1, chatArea.clientWidth - avatar.offsetWidth);
+        const maxTop = Math.max(1, chatArea.clientHeight - avatar.offsetHeight);
         const xPct = Math.max(0, Math.min(100, ((aRect.left - cRect.left) / maxLeft) * 100));
         const yPct = Math.max(0, Math.min(100, ((aRect.top - cRect.top) / maxTop) * 100));
         state.settings.avatarPosition = `${xPct.toFixed(2)},${yPct.toFixed(2)}`;
@@ -4155,6 +4156,7 @@ function renderContainerPage(kind, id) {
     `;
 
     wireContainerPage(kind, id);
+    setupTextareaResizers(); // the page's Instructions handle is freshly rendered
     loadContainerFiles(kind, id);
 }
 
@@ -6615,12 +6617,16 @@ function autoResizeTextarea(textarea) {
 
 // Wire the themed bottom drag-bars that replace the native textarea grip.
 // Each `.textarea-resize-handle` resizes the textarea immediately before it.
+// Idempotent (skips already-wired handles): called once at init for the static
+// forms, and again whenever a view renders a fresh handle (container pages).
 function setupTextareaResizers() {
     const MIN_H = 80;
     const MAX_H = 600;
     document.querySelectorAll('.textarea-resize-handle').forEach(handle => {
         const ta = handle.previousElementSibling;
         if (!ta || ta.tagName !== 'TEXTAREA') return;
+        if (handle.dataset.resizerWired) return;
+        handle.dataset.resizerWired = 'true';
 
         let dragging = false;
         let startY = 0;

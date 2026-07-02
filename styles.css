@@ -676,6 +676,8 @@ body {
     color: var(--text-muted);
 }
 
+/* Row/card "⋯" menus: always visible (hover-reveal was invisible on touch
+   devices and easy to miss); hovering the button itself still tints it. */
 .conversation-menu-btn,
 .persona-menu-btn,
 .project-menu-btn {
@@ -686,16 +688,7 @@ body {
     cursor: pointer;
     border-radius: var(--radius-sm);
     font-size: var(--text-base);
-    opacity: 0;
     transition: all 0.2s;
-}
-
-.conversation-item:hover .conversation-menu-btn,
-.persona-item:hover .persona-menu-btn,
-.project-item:hover .project-menu-btn,
-.persona-card:hover .persona-card-menu,
-.persona-card-menu:focus-visible {
-    opacity: 1;
 }
 
 /* ===== Persona-grouped chat list (home) ===== */
