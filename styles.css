@@ -40,6 +40,7 @@
     --status-bar-height: 56px;
     --input-height: 80px;
     --chat-max-width: 780px; /* shared by the message column and the composer */
+    --section-max-width: 720px; /* shared by every main-area view (section lists, container pages, settings, persona editor) */
 
     /* Corner radii — softer/rounder; text buttons use --radius-full (pills) */
     --radius-sm: 6px;
@@ -423,8 +424,11 @@ body {
 }
 
 /* ===== Main-area section views (Chats / Workspaces lists) ===== */
+/* width: 100% matters: these are flex items of the centered .messages-container,
+   which would otherwise shrink-wrap them to their content width. */
 .section-view {
-    max-width: 720px;
+    width: 100%;
+    max-width: var(--section-max-width);
     margin: 0 auto;
     padding: 28px 24px 60px;
     display: flex;
@@ -688,7 +692,9 @@ body {
 
 .conversation-item:hover .conversation-menu-btn,
 .persona-item:hover .persona-menu-btn,
-.project-item:hover .project-menu-btn {
+.project-item:hover .project-menu-btn,
+.persona-card:hover .persona-card-menu,
+.persona-card-menu:focus-visible {
     opacity: 1;
 }
 
@@ -1810,7 +1816,8 @@ body {
 /* Rendered into the main messages area in place of a chat; edits name +
    instructions + files inline and lists the container's projects/chats. */
 .container-page {
-    max-width: 720px;
+    width: 100%; /* flex item of the centered .messages-container — see .section-view */
+    max-width: var(--section-max-width);
     margin: 0 auto;
     padding: 28px 24px 60px;
     display: flex;
@@ -3036,25 +3043,34 @@ body {
     border-top: none;
 }
 
-/* ===== Settings section (WR-07b) — the settings form as a main-area panel ===== */
+/* ===== Main-area form panels (WR-07b Settings, persona editor) ===== */
 /* Same max-width + padding as .section-view / .container-page so every main-area
    view shares one spacing system. */
-#settingsView {
+.main-view-panel {
     flex: 1;
     overflow-y: auto;
     padding: 28px 24px 60px;
 }
 
+.main-view-panel[hidden] {
+    display: none;
+}
+
+.settings-view-crumb {
+    max-width: var(--section-max-width);
+    margin: 0 auto 8px;
+}
+
 .settings-view-title {
-    max-width: 720px;
+    max-width: var(--section-max-width);
     margin: 0 auto 16px;
     font-size: var(--text-xl);
     font-weight: 600;
     color: var(--text-primary);
 }
 
-#settingsView .settings-modal-body {
-    max-width: 720px;
+.main-view-panel .settings-modal-body {
+    max-width: var(--section-max-width);
     margin: 0 auto;
     padding: 0;
     overflow: visible;
