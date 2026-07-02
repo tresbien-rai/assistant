@@ -3055,7 +3055,7 @@ function showAvatarMenu(anchorEl) {
     menu.innerHTML = `
         <button class="context-menu-item avatar-menu-toggle" data-avatar-show type="button">
             <span>Show floating avatar</span>
-            <span class="avatar-menu-check">${state.settings.showAvatar ? '✓' : ''}</span>
+            <span class="avatar-menu-check${state.settings.showAvatar ? '' : ' off'}">✓</span>
         </button>
         <div class="context-menu-separator"></div>
         <div class="context-menu-label">Size</div>
@@ -3078,7 +3078,7 @@ function showAvatarMenu(anchorEl) {
     // not a pick-one menu); only the settings link closes it.
     menu.querySelector('[data-avatar-show]').addEventListener('click', async () => {
         await setShowAvatar(!state.settings.showAvatar);
-        menu.querySelector('.avatar-menu-check').textContent = state.settings.showAvatar ? '✓' : '';
+        menu.querySelector('.avatar-menu-check').classList.toggle('off', !state.settings.showAvatar);
     });
     menu.querySelectorAll('.size-preset-btn').forEach(btn =>
         btn.addEventListener('click', () => setAvatarSize(btn.dataset.size)));

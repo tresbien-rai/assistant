@@ -1122,10 +1122,16 @@ body {
     gap: 12px;
 }
 
+/* The ✓ stays in the layout when unchecked (visibility, not textContent) so
+   the glyph's taller line box can't nudge the row height on toggle. */
 .avatar-menu-check {
     color: var(--accent);
     min-width: 14px;
     text-align: right;
+}
+
+.avatar-menu-check.off {
+    visibility: hidden;
 }
 
 .context-menu-wide .context-menu-item {
