@@ -1105,6 +1105,36 @@ body {
     color: var(--text-secondary);
 }
 
+/* Avatar options popover (WR-10): a context menu holding mini preset rows */
+.avatar-menu {
+    min-width: 230px;
+}
+
+.avatar-menu .avatar-menu-row {
+    display: flex;
+    gap: 6px;
+    margin: 2px 12px 10px;
+}
+
+.avatar-menu .size-preset-btn,
+.avatar-menu .position-preset-btn {
+    padding: 6px 8px;
+    font-size: var(--text-xs);
+}
+
+.avatar-menu-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.avatar-menu-check {
+    color: var(--accent);
+    min-width: 14px;
+    text-align: right;
+}
+
 .context-menu-wide .context-menu-item {
     white-space: nowrap;
     overflow: hidden;

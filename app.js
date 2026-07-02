@@ -579,7 +579,6 @@ const state = {
     currentExpression: 'neutral',
     isLoading: false,
     currentPrefill: '',  // Tracks active prefill for response stripping
-    sessionStartTime: Date.now(),
     estimatedTokens: 0,
     tempExpressionBlob: null, // Blob waiting to be saved when expression is saved
     tempExpressionPreviewUrl: '', // Object URL for preview in modal
@@ -848,7 +847,6 @@ const elements = {
     // Settings modal (relocated out of the sidebar)
     settingsModal: document.getElementById('settingsModal'),
     closeSettingsModal: document.getElementById('closeSettingsModal'),
-    openSettingsBtn: document.getElementById('openSettingsBtn'),
 
     // Appearance controls
     accentPicker: document.getElementById('accentPicker'),
@@ -975,10 +973,7 @@ const elements = {
     modelIndicator: document.getElementById('modelIndicator'),
     personaButton: document.getElementById('personaButton'),
     modelButton: document.getElementById('modelButton'),
-    statusMood: document.getElementById('statusMood'),
-    statusMessages: document.getElementById('statusMessages'),
     statusTokens: document.getElementById('statusTokens'),
-    statusSession: document.getElementById('statusSession'),
     avatarToggleBtn: document.getElementById('avatarToggleBtn'),
     
     // Floating avatar
@@ -1054,7 +1049,6 @@ async function init() {
     applyDevMode(); // reflect the device-local developer-mode pref
     await updateUI();
     createSidebarOverlay();
-    startSessionTimer();
 
     // ImageStore is retained for transient pre-send attachment blobs only.
     // It is NOT required to run the app — avatars and all persisted data come
@@ -1931,6 +1925,33 @@ function syncAvatarPositionControls() {
     });
 }
 
+// ===== Avatar display setters =====
+// Shared by the Settings "Avatar Display" controls and the top-bar avatar
+// popover (WR-10). The sync helpers above match buttons by class, so both
+// UIs stay consistent whichever one made the change.
+
+async function setAvatarSize(size) {
+    state.settings.avatarSize = size;
+    syncAvatarSizeControls();
+    await updateFloatingAvatar();
+    autoSaveSettings();
+}
+
+async function setAvatarPosition(pos) {
+    state.settings.avatarPosition = pos;
+    syncAvatarPositionControls();
+    await updateFloatingAvatar();
+    autoSaveSettings();
+}
+
+async function setShowAvatar(show) {
+    state.settings.showAvatar = show;
+    elements.showAvatar.checked = show;
+    await updateFloatingAvatar();
+    elements.avatarToggleBtn.classList.toggle('active', show);
+    autoSaveSettings();
+}
+
 // Drag the floating avatar (by its frame) to position it freely within the
 // chat area. The result is stored as "x,y" % of available travel and saved.
 function setupAvatarDrag() {
@@ -2063,29 +2084,10 @@ async function updateFloatingAvatar() {
     elements.floatingAvatarExpression.textContent = state.currentExpression;
 }
 
+// Slimmed to tokens only (WR-10): mood is the avatar itself, and the message
+// count / session timer never informed a decision.
 function updateStatusBar() {
-    // Update mood
-    const persona = getActivePersona();
-    const expressions = (persona && persona.expressions && Object.keys(persona.expressions).length > 0)
-        ? persona.expressions
-        : CONFIG.defaultExpressions;
-    // Final guard: never let a missing expression entry throw and abort startup.
-    const expr = expressions[state.currentExpression] || expressions.neutral || { emoji: '🤖' };
-    elements.statusMood.textContent = `${expr.emoji} ${state.currentExpression}`;
-
-    // Update message count
-    const activeConvo = getActiveConversation();
-    elements.statusMessages.textContent = activeConvo ? activeConvo.messages.length : 0;
-
-    // Update estimated tokens
     elements.statusTokens.textContent = `~${formatNumber(state.estimatedTokens)}`;
-}
-
-function startSessionTimer() {
-    setInterval(() => {
-        const elapsed = Math.floor((Date.now() - state.sessionStartTime) / 1000 / 60);
-        elements.statusSession.textContent = `${elapsed}m`;
-    }, 60000);
 }
 
 function formatNumber(num) {
@@ -3032,6 +3034,61 @@ function attachPopoverOutsideClose(menu, anchorEl) {
             }
         });
     }, 0);
+}
+
+/**
+ * Top-bar avatar options popover (WR-10): show/hide toggle + size and corner
+ * presets, with a link to the full Avatar Display settings. Replaces the old
+ * click-to-toggle behavior of the avatar button (and the top-bar gear — the
+ * general Settings section lives on the rail now).
+ */
+function showAvatarMenu(anchorEl) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const sizes = [['small', 'S'], ['medium', 'M'], ['large', 'L'], ['xlarge', 'XL']];
+    const corners = [['top-left', '↖'], ['top-right', '↗'], ['bottom-left', '↙'], ['bottom-right', '↘']];
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu avatar-menu';
+    menu.innerHTML = `
+        <button class="context-menu-item avatar-menu-toggle" data-avatar-show type="button">
+            <span>Show floating avatar</span>
+            <span class="avatar-menu-check">${state.settings.showAvatar ? '✓' : ''}</span>
+        </button>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-label">Size</div>
+        <div class="avatar-menu-row size-preset-buttons">
+            ${sizes.map(([s, label]) =>
+                `<button class="size-preset-btn${state.settings.avatarSize === s ? ' active' : ''}" data-size="${s}" type="button">${label}</button>`).join('')}
+        </div>
+        <div class="context-menu-label">Position</div>
+        <div class="avatar-menu-row position-preset-buttons">
+            ${corners.map(([pos, glyph]) =>
+                `<button class="position-preset-btn${state.settings.avatarPosition === pos ? ' active' : ''}" data-position="${pos}" type="button" aria-label="Position ${pos}">${glyph}</button>`).join('')}
+        </div>
+        <div class="context-menu-separator"></div>
+        <button class="context-menu-item" data-avatar-settings type="button">All avatar settings…</button>
+    `;
+    positionPopover(menu, anchorEl, 'right');
+    document.body.appendChild(menu);
+
+    // Controls act immediately and keep the popover open (it's a mini panel,
+    // not a pick-one menu); only the settings link closes it.
+    menu.querySelector('[data-avatar-show]').addEventListener('click', async () => {
+        await setShowAvatar(!state.settings.showAvatar);
+        menu.querySelector('.avatar-menu-check').textContent = state.settings.showAvatar ? '✓' : '';
+    });
+    menu.querySelectorAll('.size-preset-btn').forEach(btn =>
+        btn.addEventListener('click', () => setAvatarSize(btn.dataset.size)));
+    menu.querySelectorAll('.position-preset-btn').forEach(btn =>
+        btn.addEventListener('click', () => setAvatarPosition(btn.dataset.position)));
+    menu.querySelector('[data-avatar-settings]').addEventListener('click', () => {
+        menu.remove();
+        navigate({ type: 'settings' });
+    });
+
+    attachPopoverOutsideClose(menu, anchorEl);
 }
 
 /**
@@ -6038,9 +6095,6 @@ function setupEventListeners() {
         document.getElementById('personaEditBack')
             .addEventListener('click', () => navigate({ type: 'personas' }));
     }
-    if (elements.openSettingsBtn) {
-        elements.openSettingsBtn.addEventListener('click', () => navigate({ type: 'settings' }));
-    }
     if (elements.personaButton) {
         elements.personaButton.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -6223,24 +6277,12 @@ function setupEventListeners() {
         elements.clearApiKeyBtn.addEventListener('click', clearStoredApiKey);
     }
     
-    // Size preset buttons — set a named size, sync the slider, re-render, save.
+    // Size / position preset buttons in Settings (the popover wires its own).
     document.querySelectorAll('.size-preset-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            state.settings.avatarSize = btn.dataset.size;
-            syncAvatarSizeControls();
-            await updateFloatingAvatar();
-            autoSaveSettings();
-        });
+        btn.addEventListener('click', () => setAvatarSize(btn.dataset.size));
     });
-
-    // Position preset buttons — set a corner, re-render, save.
     document.querySelectorAll('.position-preset-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            state.settings.avatarPosition = btn.dataset.position;
-            syncAvatarPositionControls();
-            await updateFloatingAvatar();
-            autoSaveSettings();
-        });
+        btn.addEventListener('click', () => setAvatarPosition(btn.dataset.position));
     });
 
     // Custom size slider — continuous scale beyond the presets.
@@ -6257,20 +6299,14 @@ function setupEventListeners() {
     setupAvatarDrag();
 
     // Show avatar checkbox - auto-save
-    elements.showAvatar.addEventListener('change', async () => {
-        state.settings.showAvatar = elements.showAvatar.checked;
-        await updateFloatingAvatar();
-        elements.avatarToggleBtn.classList.toggle('active', state.settings.showAvatar);
-        autoSaveSettings();
+    elements.showAvatar.addEventListener('change', () => {
+        setShowAvatar(elements.showAvatar.checked);
     });
 
-    // Avatar toggle button in status bar
-    elements.avatarToggleBtn.addEventListener('click', async () => {
-        state.settings.showAvatar = !state.settings.showAvatar;
-        elements.showAvatar.checked = state.settings.showAvatar;
-        await updateFloatingAvatar();
-        elements.avatarToggleBtn.classList.toggle('active', state.settings.showAvatar);
-        autoSaveSettings();
+    // Avatar button in the top bar → options popover (WR-10)
+    elements.avatarToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showAvatarMenu(elements.avatarToggleBtn);
     });
     
     // Avatar file upload
@@ -6764,7 +6800,6 @@ async function handleLogoutClick() {
     }
     // Hard reload to fully tear down session-owned client state:
     // - Aborts any in-flight chat stream (fetch is cancelled on navigation)
-    // - Stops the startSessionTimer setInterval
     // - Drops in-memory state.personas / state.conversations / etc.
     // - Closes the ImageStore IndexedDB connection (and its blob URLs)
     // The server-side cookie has been cleared (or was already invalid),
