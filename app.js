@@ -961,6 +961,7 @@ const elements = {
     dragOverlay: document.getElementById('dragOverlay'),
     messagesContainer: document.getElementById('messagesContainer'),
     settingsView: document.getElementById('settingsView'),
+    personaEditView: document.getElementById('personaEditView'),
     inputContainer: document.getElementById('inputContainer'),
     messageInput: document.getElementById('messageInput'),
     sendButton: document.getElementById('sendButton'),
@@ -1575,6 +1576,7 @@ async function updateUI() {
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
+    syncPersonaEditTitle();
 
     // Reflect the active workspace in the top-bar chip + sidebar scope.
     updateWorkspaceUI();
@@ -2575,15 +2577,6 @@ function closeModelModal() {
 }
 
 /**
- * Open Settings — now a main-area router section (WR-07b), not a modal. Kept as a
- * named helper because several call sites (the gear button, editPersona) open it.
- * Form fields stay current via updateUI on every state change.
- */
-function openSettingsModal() {
-    navigate({ type: 'settings' });
-}
-
-/**
  * Handle fetch models button click
  */
 async function handleFetchModels() {
@@ -2991,7 +2984,15 @@ function editPersona(personaId) {
     state.activePersonaId = personaId;
     savePersonas();
     updateUI();
-    openSettingsModal();
+    navigate({ type: 'persona-edit' });
+}
+
+/** Keep the persona editor's page title in sync with the active persona's name. */
+function syncPersonaEditTitle() {
+    const title = document.getElementById('personaEditTitle');
+    if (!title) return;
+    const persona = getActivePersona();
+    title.textContent = persona ? (persona.name || 'Untitled') : 'Persona';
 }
 
 // ===== Top-bar popovers (P2-U3a) =====
@@ -3195,6 +3196,13 @@ async function deletePersonaPrompt(personaId) {
         // Clear active conversation if it was deleted by the cascade.
         if (state.activeConversationId && !state.conversations[state.activeConversationId]) {
             state.activeConversationId = null;
+        }
+
+        // The persona editor always shows the active persona, which just got
+        // deleted (or swapped) — fall back to the Personas list instead of
+        // silently re-targeting the editor at another persona.
+        if ((state.ui.mainView || {}).type === 'persona-edit') {
+            state.ui.mainView = { type: 'personas' };
         }
 
         renderConversationList();
@@ -3750,7 +3758,7 @@ function navigate(view) {
 function currentSection() {
     const v = state.ui.mainView || {};
     if (v.type === 'settings') return 'settings';
-    if (v.type === 'personas') return 'personas';
+    if (v.type === 'personas' || v.type === 'persona-edit') return 'personas';
     if (v.type === 'workspaces' || v.type === 'workspace' || v.type === 'project') return 'workspaces';
     if (v.type === 'chat') {
         const c = state.conversations[v.id];
@@ -3790,8 +3798,17 @@ function renderMainView() {
     // the settings form (which lives in #settingsView so its inputs + listeners
     // survive — it is shown, not re-rendered).
     const isSettings = v.type === 'settings';
+    const isPersonaEdit = v.type === 'persona-edit';
     if (elements.settingsView) elements.settingsView.hidden = !isSettings;
-    if (elements.messagesContainer) elements.messagesContainer.hidden = isSettings;
+    if (elements.personaEditView) elements.personaEditView.hidden = !isPersonaEdit;
+    if (elements.messagesContainer) elements.messagesContainer.hidden = isSettings || isPersonaEdit;
+    if (isPersonaEdit) {
+        // The editor's inputs always edit the *active* persona (editPersona
+        // activates before navigating); the title just needs to match it.
+        if (!getActivePersona()) return navigate({ type: 'personas' });
+        syncPersonaEditTitle();
+        return;
+    }
     if (isSettings) return;
 
     if (v.type === 'workspace') {
@@ -6002,6 +6019,25 @@ function setupEventListeners() {
         elements.settingsView.appendChild(settingsBody);
         if (elements.settingsModal) elements.settingsModal.remove(); // discard the empty modal shell
     }
+
+    // Persona editor (WR-08): pull the persona-identity sections (profile /
+    // avatar image / expressions) out of the settings form into their own
+    // main-area panel, reached from the Personas section. Same re-parenting
+    // trick as above — inputs stay cached by id, listeners survive the move.
+    if (elements.personaEditView) {
+        elements.personaEditView.innerHTML = `
+            <div class="settings-view-crumb"><span class="cp-crumb" id="personaEditBack">‹ Personas</span></div>
+            <h1 class="settings-view-title" id="personaEditTitle">Persona</h1>`;
+        const editorBody = document.createElement('div');
+        editorBody.className = 'settings-modal-body';
+        ['personaProfileSection', 'personaAvatarSection', 'personaExpressionsSection'].forEach(id => {
+            const section = document.getElementById(id);
+            if (section) editorBody.appendChild(section);
+        });
+        elements.personaEditView.appendChild(editorBody);
+        document.getElementById('personaEditBack')
+            .addEventListener('click', () => navigate({ type: 'personas' }));
+    }
     if (elements.openSettingsBtn) {
         elements.openSettingsBtn.addEventListener('click', () => navigate({ type: 'settings' }));
     }
@@ -6373,9 +6409,12 @@ function setupEventListeners() {
         elements.modelIndicator.textContent = getModelDisplayName(elements.modelSelect.value);
     });
     
-    // Assistant name preview
+    // Assistant name preview (avatar card + persona-editor page title)
     elements.assistantName.addEventListener('input', () => {
-        elements.avatarPreviewName.textContent = elements.assistantName.value || 'Assistant';
+        const name = elements.assistantName.value || 'Assistant';
+        elements.avatarPreviewName.textContent = name;
+        const editTitle = document.getElementById('personaEditTitle');
+        if (editTitle) editTitle.textContent = name;
     });
 }
 

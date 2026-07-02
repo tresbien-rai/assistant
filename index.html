@@ -283,9 +283,9 @@
                     </div>
                 </div>
 
-                <!-- Persona Settings -->
-                <div class="settings-section">
-                    <h3>Current Persona</h3>
+                <!-- Persona profile (re-parented into #personaEditView on load — WR-08) -->
+                <div class="settings-section" id="personaProfileSection">
+                    <h3>Profile</h3>
 
                     <label for="assistantName">Assistant Name</label>
                     <input type="text" id="assistantName" placeholder="Assistant" value="Assistant">
@@ -307,8 +307,8 @@ When responding, you may optionally include an expression tag like [expression: 
                     <p class="help-text">Model continues from this text. Hidden in responses.</p>
                 </div>
 
-                <!-- Avatar Settings -->
-                <div class="settings-section">
+                <!-- Persona avatar image (re-parented into #personaEditView on load — WR-08) -->
+                <div class="settings-section" id="personaAvatarSection">
                     <h3>Avatar</h3>
 
                     <div class="avatar-settings-preview">
@@ -333,6 +333,11 @@ When responding, you may optionally include an expression tag like [expression: 
                         </button>
                     </div>
                     <p class="help-text">Upload an image from your device. Stored locally in your browser.</p>
+                </div>
+
+                <!-- Avatar display prefs (user-level settings; stays in Settings) -->
+                <div class="settings-section">
+                    <h3>Avatar Display</h3>
 
                     <label>Avatar Size</label>
                     <div class="size-preset-buttons">
@@ -384,8 +389,8 @@ When responding, you may optionally include an expression tag like [expression: 
                     </div>
                 </div>
 
-                <!-- Expression Settings -->
-                <div class="settings-section">
+                <!-- Expressions (re-parented into #personaEditView on load — WR-08) -->
+                <div class="settings-section" id="personaExpressionsSection">
                     <h3>Expressions</h3>
                     <p class="help-text">Configure avatar expressions. The assistant can change expressions based on mood.</p>
 
@@ -491,6 +496,12 @@ When responding, you may optionally include an expression tag like [expression: 
                      here from #settingsModal at load and shown as a main-area
                      view (not a modal) when the Settings section is active. -->
                 <div class="main-view-panel" id="settingsView" hidden></div>
+
+                <!-- Persona editor (WR-08): the persona-identity settings sections
+                     (profile / avatar image / expressions) are re-parented here
+                     from the settings form at load; shown when editing a persona
+                     from the Personas section. -->
+                <div class="main-view-panel" id="personaEditView" hidden></div>
 
                 <!-- Floating Avatar -->
                 <div class="floating-avatar top-right" id="floatingAvatar">
