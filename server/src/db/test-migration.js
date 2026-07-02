@@ -55,6 +55,13 @@ try {
       show_avatar INTEGER DEFAULT 1, custom_models TEXT DEFAULT '{}',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
+    -- Legacy messages shape (pre-WR-14: no model column) so migration 003
+    -- is exercised too.
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
+      content TEXT DEFAULT '', attachments TEXT DEFAULT '[]',
+      created_at INTEGER NOT NULL
+    );
   `);
 
   // --- Seed legacy data -----------------------------------------------------
@@ -113,6 +120,11 @@ try {
   check('002_current_model_config applied', applied.includes('002_current_model_config'));
   const settingsCols = db.prepare('PRAGMA table_info(settings)').all().map(c => c.name);
   check('settings.current_model_config column added', settingsCols.includes('current_model_config'));
+
+  // --- Assert 003 (messages.model column) --------------------------------------
+  check('003_message_model applied', applied.includes('003_message_model'));
+  const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+  check('messages.model column added', messageCols.includes('model'));
 
   // --- Assert idempotency ---------------------------------------------------
   console.log('\n3. Asserting idempotency...');

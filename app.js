@@ -585,6 +585,7 @@ const state = {
     currentExpression: 'neutral',
     isLoading: false,
     currentPrefill: '',  // Tracks active prefill for response stripping
+    lastRequestModel: null, // Model id of the in-flight/last request, for the per-message tag (WR-14)
     estimatedTokens: 0,
     tempExpressionBlob: null, // Blob waiting to be saved when expression is saved
     tempExpressionPreviewUrl: '', // Object URL for preview in modal
@@ -1618,6 +1619,7 @@ async function persistMessage(conversationId, message) {
         role: message.role,
         content: message.content,
         attachments: message.attachments || [],
+        ...(message.model ? { model: message.model } : {}),
     });
 }
 
@@ -2199,6 +2201,19 @@ function getModelDisplayName(modelId) {
 
     // Fallback to model ID
     return modelId;
+}
+
+/**
+ * Display name for a per-message model tag (WR-14). Unlike
+ * getModelDisplayName it searches EVERY provider's catalog — an old message
+ * may have been generated under a different provider than the active one.
+ */
+function modelTagLabel(modelId) {
+    for (const models of Object.values(state.settings.customModels)) {
+        const m = (models || []).find(x => x.id === modelId);
+        if (m) return m.name;
+    }
+    return modelId; // removed from the catalog — show the raw id
 }
 
 function updateSendButtonState() {
@@ -4054,7 +4069,7 @@ function renderChatThread() {
     }
 
     messages.forEach((msg, index) => {
-        appendMessage(msg.role, msg.content, false, index, msg.attachments);
+        appendMessage(msg.role, msg.content, false, index, msg.attachments, msg.model || null);
     });
 
     scrollToBottom();
@@ -4670,11 +4685,17 @@ async function deleteContainerFilePrompt(kind, id, fileId, filename) {
     await loadContainerFiles(kind, id);
 }
 
-async function appendMessage(role, content, save = true, explicitIndex = null, attachments = null) {
+async function appendMessage(role, content, save = true, explicitIndex = null, attachments = null, model = null) {
     const welcome = elements.messagesContainer.querySelector('.welcome-message');
     if (welcome) {
         welcome.remove();
     }
+
+    // Which model generated this assistant message (WR-14): stored messages
+    // pass theirs in; a fresh reply uses the model recorded at request time.
+    const messageModel = role === 'assistant'
+        ? (model || (save ? state.lastRequestModel : null))
+        : null;
 
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
@@ -4687,6 +4708,13 @@ async function appendMessage(role, content, save = true, explicitIndex = null, a
     } else if (role === 'assistant') {
         const persona = getActivePersona();
         labelDiv.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
+        if (messageModel) {
+            const tag = document.createElement('span');
+            tag.className = 'message-model-tag';
+            tag.textContent = modelTagLabel(messageModel);
+            tag.title = messageModel; // full model id on hover
+            labelDiv.appendChild(tag);
+        }
     }
     messageDiv.appendChild(labelDiv);
 
@@ -4737,7 +4765,12 @@ async function appendMessage(role, content, save = true, explicitIndex = null, a
 
         const activeConvo = getActiveConversation();
         if (activeConvo) {
-            const msg = { role, content: displayContent, attachments: attachments || [] };
+            const msg = {
+                role,
+                content: displayContent,
+                attachments: attachments || [],
+                ...(messageModel ? { model: messageModel } : {}),
+            };
             activeConvo.messages.push(msg);
             messageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
 
@@ -5622,6 +5655,11 @@ function buildChatRequest() {
     // The model echoes back the prefill — track it so appendStreamChunk and
     // the non-streaming branch can strip it from displayed/persisted output.
     state.currentPrefill = prefillText;
+
+    // Record which model this request uses so the assistant reply can be
+    // tagged with it (WR-14) — read the layer NOW, not at append time, in
+    // case the user switches models while the response streams.
+    state.lastRequestModel = modelConfig.model;
 
     const messages = conversationMessages.map(msg => ({
         role: msg.role,

@@ -1237,6 +1237,20 @@ body {
     flex: 0 0 auto;
 }
 
+/* Per-message model tag (WR-14): small pill after the speaker name on
+   assistant messages, recording which model generated the reply. */
+.message-model-tag {
+    margin-left: 8px;
+    padding: 1px 7px;
+    border-radius: var(--radius-full);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 400;
+    vertical-align: middle;
+}
+
 /* Unified model menu (WR-11): "no key" badge on provider group headers whose
    provider has no stored API key (models stay pickable; sending surfaces the
    missing-key error with guidance). */
