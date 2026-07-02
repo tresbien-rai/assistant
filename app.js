@@ -3092,16 +3092,34 @@ function showAvatarMenu(anchorEl) {
     attachPopoverOutsideClose(menu, anchorEl);
 }
 
+// Display names for the provider group headers (and anywhere else a provider
+// id needs a human label). Order here = display order in the model menu.
+const PROVIDER_LABELS = {
+    anthropic: 'Anthropic',
+    google: 'Google',
+    openai: 'OpenAI'
+};
+
 /**
- * Switch the active persona's model (from the top-bar model popover). Mirrors
- * the settings-modal model dropdown: writes to the persona's modelConfig and
- * re-renders. No-op if unchanged or there's no active persona.
+ * Switch the active persona's model — and, when the model belongs to another
+ * provider, the provider with it (WR-11: the top-bar menu lists all providers'
+ * models; persona/character is retained across the switch by design). Writes
+ * to the persona's modelConfig and re-renders. No-op if unchanged.
  * @param {string} modelId
+ * @param {string} [provider] - the model's provider; defaults to the current one.
  */
-function selectModel(modelId) {
+function selectModel(modelId, provider) {
     const persona = getActivePersona();
     if (!persona || !persona.modelConfig) return;
-    if (persona.modelConfig.model === modelId) return;
+    const targetProvider = provider || persona.modelConfig.provider;
+    if (persona.modelConfig.model === modelId
+        && persona.modelConfig.provider === targetProvider) return;
+    if (persona.modelConfig.provider !== targetProvider) {
+        // Full provider-switch housekeeping (key field, provider params,
+        // model dropdown, send button) — same path as the Settings select.
+        handleProviderChange(targetProvider);
+        elements.providerSelect.value = targetProvider;
+    }
     persona.modelConfig.model = modelId;
     persona.updatedAt = Date.now();
     savePersonas();
@@ -3109,8 +3127,10 @@ function selectModel(modelId) {
 }
 
 /**
- * Top-bar model button popover: quick-switch among the active persona's
- * provider's configured models, plus a link to the Manage Models modal.
+ * Top-bar model button popover (WR-11): every configured model across ALL
+ * providers, grouped by provider, with a "no key" badge on providers that
+ * have no stored API key. Picking a model sets provider+model together while
+ * retaining the persona — plus a link to the Manage Models modal.
  * @param {HTMLElement} anchorEl
  */
 function showModelMenu(anchorEl) {
@@ -3118,20 +3138,25 @@ function showModelMenu(anchorEl) {
     if (existing) existing.remove();
 
     const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
-    const models = state.settings.customModels[provider] || [];
 
     const menu = document.createElement('div');
-    menu.className = 'context-menu context-menu-wide';
+    menu.className = 'context-menu context-menu-wide model-menu';
 
     let html = '';
-    if (models.length === 0) {
-        html += `<div class="context-menu-empty">No models configured</div>`;
-    } else {
+    let total = 0;
+    for (const [provider, label] of Object.entries(PROVIDER_LABELS)) {
+        const models = state.settings.customModels[provider] || [];
+        if (models.length === 0) continue; // hide empty providers entirely
+        const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
+        html += `<div class="context-menu-label">${label}${hasKey ? '' : '<span class="model-menu-nokey">no key</span>'}</div>`;
         models.forEach(m => {
-            const active = m.id === modelConfig.model ? ' active' : '';
-            html += `<button class="context-menu-item${active}" data-model-id="${escapeHtml(m.id)}">${escapeHtml(m.name)}</button>`;
+            const active = provider === modelConfig.provider && m.id === modelConfig.model;
+            total++;
+            html += `<button class="context-menu-item${active ? ' active' : ''}" data-model-id="${escapeHtml(m.id)}" data-provider="${provider}">${escapeHtml(m.name)}</button>`;
         });
+    }
+    if (total === 0) {
+        html = `<div class="context-menu-empty">No models configured</div>`;
     }
     html += `<div class="context-menu-separator"></div>`;
     html += `<button class="context-menu-item" data-action="manage">Manage models…</button>`;
@@ -3148,7 +3173,7 @@ function showModelMenu(anchorEl) {
                 return;
             }
             if (item.dataset.modelId) {
-                selectModel(item.dataset.modelId);
+                selectModel(item.dataset.modelId, item.dataset.provider);
             }
         });
     });
