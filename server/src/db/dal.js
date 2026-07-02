@@ -587,6 +587,7 @@ function getSettingsByUser(userId) {
     avatarPosition: 'top-right',
     showAvatar: true,
     customModels: {},
+    currentModelConfig: null,
   };
 }
 
@@ -622,6 +623,10 @@ function upsertSettings(userId, data) {
       updates.push('custom_models = ?');
       values.push(JSON.stringify(data.customModels));
     }
+    if (data.currentModelConfig !== undefined) {
+      updates.push('current_model_config = ?');
+      values.push(data.currentModelConfig === null ? null : JSON.stringify(data.currentModelConfig));
+    }
 
     if (updates.length > 0) {
       updates.push('updated_at = ?');
@@ -633,8 +638,8 @@ function upsertSettings(userId, data) {
   } else {
     const id = generateId();
     db.prepare(`
-      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       userId,
@@ -642,6 +647,7 @@ function upsertSettings(userId, data) {
       data.avatarPosition || 'top-right',
       data.showAvatar !== undefined ? (data.showAvatar ? 1 : 0) : 1,
       JSON.stringify(data.customModels || {}),
+      data.currentModelConfig ? JSON.stringify(data.currentModelConfig) : null,
       timestamp,
       timestamp
     );
@@ -661,6 +667,7 @@ function parseSettingsJson(settings) {
     avatarPosition: settings.avatar_position,
     showAvatar: Boolean(settings.show_avatar),
     customModels: JSON.parse(settings.custom_models || '{}'),
+    currentModelConfig: settings.current_model_config ? JSON.parse(settings.current_model_config) : null,
     createdAt: settings.created_at,
     updatedAt: settings.updated_at,
   };

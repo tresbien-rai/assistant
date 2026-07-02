@@ -64,7 +64,7 @@ router.get('/', asyncHandler(async (req, res) => {
  * Creates settings record if none exists (upsert)
  */
 router.put('/', asyncHandler(async (req, res) => {
-  const { avatarSize, avatarPosition, showAvatar, customModels } = req.body;
+  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig } = req.body;
 
   // Validate avatarSize if provided (preset name or numeric px string)
   if (avatarSize !== undefined && !isValidAvatarSize(avatarSize)) {
@@ -92,12 +92,21 @@ router.put('/', asyncHandler(async (req, res) => {
     }
   }
 
+  // Validate currentModelConfig if provided (the active model layer, WR-12).
+  // null is allowed: it means "unseeded" (client re-seeds from the active persona).
+  if (currentModelConfig !== undefined && currentModelConfig !== null) {
+    if (typeof currentModelConfig !== 'object' || Array.isArray(currentModelConfig)) {
+      throw AppError.validation('currentModelConfig must be an object or null');
+    }
+  }
+
   // Build update data (only include fields that were provided)
   const updateData = {};
   if (avatarSize !== undefined) updateData.avatarSize = avatarSize;
   if (avatarPosition !== undefined) updateData.avatarPosition = avatarPosition;
   if (showAvatar !== undefined) updateData.showAvatar = showAvatar;
   if (customModels !== undefined) updateData.customModels = customModels;
+  if (currentModelConfig !== undefined) updateData.currentModelConfig = currentModelConfig;
 
   // Upsert settings
   const settings = dal.upsertSettings(req.user.userId, updateData);
