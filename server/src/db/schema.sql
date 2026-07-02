@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS messages (
     role            TEXT NOT NULL,      -- 'user' or 'assistant'
     content         TEXT DEFAULT '',
     attachments     TEXT DEFAULT '[]',  -- JSON array of attachment metadata
+    model           TEXT,               -- model id that generated an assistant message (WR-14); NULL for user/legacy rows
     created_at      INTEGER NOT NULL
 );
 

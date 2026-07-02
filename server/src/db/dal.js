@@ -493,17 +493,17 @@ function getMessagesByConversation(conversationId, userId) {
  * @param {Object} data - Message data
  * @returns {Object} The created message record
  */
-function createMessage(conversationId, { role, content, attachments }) {
+function createMessage(conversationId, { role, content, attachments, model }) {
   const db = getDb();
   const id = generateId();
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO messages (id, conversation_id, role, content, attachments, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, conversation_id, role, content, attachments, model, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  stmt.run(id, conversationId, role, content || '', JSON.stringify(attachments || []), timestamp);
+  stmt.run(id, conversationId, role, content || '', JSON.stringify(attachments || []), model || null, timestamp);
 
   // Touch the conversation's updated_at
   touchConversation(conversationId);

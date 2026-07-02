@@ -65,6 +65,9 @@ time by the chat routes. Old messages simply show no tag.
 
 ## Task breakdown
 
+*Progress: ALL DONE — WR-10 (#56), WR-11 (#58), WR-12 (#59), WR-13 (#60),
+WR-14 (#61) merged 2026-07-02.*
+
 | Task | Scope | Size |
 |------|-------|------|
 | **WR-10** | Top-bar slimming: remove Mood, Messages, Session (keep Tokens). Remove the top-bar gear (Settings lives on the rail). Avatar button becomes an options popover: show/hide, size presets, corner presets, link to full settings. | Small |

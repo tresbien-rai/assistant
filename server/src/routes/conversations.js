@@ -73,6 +73,7 @@ function formatMessage(message) {
     role: message.role,
     content: message.content,
     attachments: message.attachments,
+    model: message.model || null, // model id that generated it (WR-14); null for user/legacy rows
     createdAt: message.created_at,
   };
 }
@@ -274,11 +275,11 @@ router.delete('/:id', asyncHandler(async (req, res) => {
  * POST /api/conversations/:id/messages
  * Appends a message to the conversation
  * Updates conversation's updatedAt
- * Body: { role, content, attachments? }
+ * Body: { role, content, attachments?, model? }
  */
 router.post('/:id/messages', asyncHandler(async (req, res) => {
   const conversationId = req.params.id;
-  const { role, content, attachments } = req.body;
+  const { role, content, attachments, model } = req.body;
 
   // Verify the conversation exists and belongs to the user
   const conversation = dal.getConversationById(conversationId, req.user.userId);
@@ -306,10 +307,18 @@ router.post('/:id/messages', asyncHandler(async (req, res) => {
     }
   }
 
+  // Validate model if provided (the model id that generated this message, WR-14)
+  if (model !== undefined && model !== null) {
+    if (typeof model !== 'string' || model.length > 200) {
+      throw AppError.validation('model must be a string (max 200 chars)');
+    }
+  }
+
   const message = dal.createMessage(conversationId, {
     role,
     content,
     attachments: attachments || [],
+    model: model || null,
   });
 
   res.status(201).json(formatMessage(message));
