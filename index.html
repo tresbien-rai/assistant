@@ -486,7 +486,12 @@ When responding, you may optionally include an expression tag like [expression: 
                         <p>Configure your API key in the sidebar to get started.</p>
                     </div>
                 </div>
-                
+
+                <!-- Settings section (WR-07b): the settings form is re-parented
+                     here from #settingsModal at load and shown as a main-area
+                     view (not a modal) when the Settings section is active. -->
+                <div class="main-view-panel" id="settingsView" hidden></div>
+
                 <!-- Floating Avatar -->
                 <div class="floating-avatar top-right" id="floatingAvatar">
                     <div class="avatar-frame">
@@ -503,7 +508,7 @@ When responding, you may optionally include an expression tag like [expression: 
             </div>
             
             <!-- Input Area -->
-            <div class="input-container">
+            <div class="input-container" id="inputContainer">
                 <div class="attachment-preview-area" id="attachmentPreviewArea" style="display: none;"></div>
                 <div class="input-wrapper">
                     <button class="attach-button" id="attachButton" title="Attach files">

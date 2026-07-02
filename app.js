@@ -960,6 +960,8 @@ const elements = {
     chatArea: document.getElementById('chatArea'),
     dragOverlay: document.getElementById('dragOverlay'),
     messagesContainer: document.getElementById('messagesContainer'),
+    settingsView: document.getElementById('settingsView'),
+    inputContainer: document.getElementById('inputContainer'),
     messageInput: document.getElementById('messageInput'),
     sendButton: document.getElementById('sendButton'),
     stopButton: document.getElementById('stopButton'),
@@ -2011,7 +2013,9 @@ async function updateFloatingAvatar() {
     // Position (preset corner OR free "x,y"). This resets the wrapper's
     // className, so apply the hidden state afterwards.
     applyAvatarPosition(avatar, state.settings.avatarPosition);
-    avatar.classList.toggle('hidden', !state.settings.showAvatar);
+    // Floating avatar only appears in a chat view (WR-07b), and only if enabled.
+    const inChat = (state.ui.mainView || {}).type === 'chat';
+    avatar.classList.toggle('hidden', !state.settings.showAvatar || !inChat);
 
     // Built-in "thinking" animation while the model generates (P2-U2). Plays
     // over a custom thinking image/gif too, and is cleared automatically when
@@ -2571,18 +2575,12 @@ function closeModelModal() {
 }
 
 /**
- * Open the settings modal (relocated out of the sidebar). The form fields are
- * kept current by updateUI on every state change, so no refresh is needed here.
+ * Open Settings — now a main-area router section (WR-07b), not a modal. Kept as a
+ * named helper because several call sites (the gear button, editPersona) open it.
+ * Form fields stay current via updateUI on every state change.
  */
 function openSettingsModal() {
-    if (!elements.settingsModal) return;
-    closeSidebar(); // close the mobile drawer if it's open
-    elements.settingsModal.classList.add('visible');
-}
-
-function closeSettingsModal() {
-    if (!elements.settingsModal) return;
-    elements.settingsModal.classList.remove('visible');
+    navigate({ type: 'settings' });
 }
 
 /**
@@ -3751,6 +3749,8 @@ function navigate(view) {
 /** Which rail section the current view belongs to (for rail highlighting). */
 function currentSection() {
     const v = state.ui.mainView || {};
+    if (v.type === 'settings') return 'settings';
+    if (v.type === 'personas') return 'personas';
     if (v.type === 'workspaces' || v.type === 'workspace' || v.type === 'project') return 'workspaces';
     if (v.type === 'chat') {
         const c = state.conversations[v.id];
@@ -3759,11 +3759,24 @@ function currentSection() {
     return 'chats'; // 'chats' (and any fallback)
 }
 
-/** Repaint the navigation shell: rail highlight + contextual top bar. */
+/** Repaint the navigation shell: rail highlight + contextual top bar + chrome. */
 function renderShell() {
     renderRail();
     renderTopBar();
     renderBreadcrumb();
+    syncChatChrome();
+}
+
+/**
+ * Show the message composer + floating avatar only in a chat view — they're
+ * irrelevant (and visually noisy) on the lists / settings / container pages.
+ */
+function syncChatChrome() {
+    const inChat = (state.ui.mainView || {}).type === 'chat';
+    if (elements.inputContainer) elements.inputContainer.hidden = !inChat;
+    if (elements.floatingAvatar) {
+        elements.floatingAvatar.classList.toggle('hidden', !inChat || !state.settings.showAvatar);
+    }
 }
 
 /**
@@ -3772,6 +3785,14 @@ function renderShell() {
  */
 function renderMainView() {
     const v = state.ui.mainView || { type: 'chats' };
+
+    // Toggle the two persistent main-area panels: the messages/lists surface vs
+    // the settings form (which lives in #settingsView so its inputs + listeners
+    // survive — it is shown, not re-rendered).
+    const isSettings = v.type === 'settings';
+    if (elements.settingsView) elements.settingsView.hidden = !isSettings;
+    if (elements.messagesContainer) elements.messagesContainer.hidden = isSettings;
+    if (isSettings) return;
 
     if (v.type === 'workspace') {
         if (!state.workspaces[v.id]) return navigate({ type: 'workspaces' });
@@ -5889,13 +5910,21 @@ function setupEventListeners() {
         });
     });
 
-    // Settings modal: relocate it to <body> so it overlays as a top-level
-    // element rather than living inside the sidebar's stacking context.
-    if (elements.settingsModal && elements.settingsModal.parentElement !== document.body) {
-        document.body.appendChild(elements.settingsModal);
+    // Settings section (WR-07b): re-parent the settings form out of #settingsModal
+    // into the main-area panel #settingsView. All settings inputs are cached by id
+    // and wired below, so moving the subtree keeps every ref + listener valid — the
+    // settings form is now a router view, not a modal.
+    const settingsBody = document.querySelector('#settingsModal .settings-modal-body');
+    if (settingsBody && elements.settingsView) {
+        const heading = document.createElement('h1');
+        heading.className = 'settings-view-title';
+        heading.textContent = 'Settings';
+        elements.settingsView.appendChild(heading);
+        elements.settingsView.appendChild(settingsBody);
+        if (elements.settingsModal) elements.settingsModal.remove(); // discard the empty modal shell
     }
     if (elements.openSettingsBtn) {
-        elements.openSettingsBtn.addEventListener('click', openSettingsModal);
+        elements.openSettingsBtn.addEventListener('click', () => navigate({ type: 'settings' }));
     }
     if (elements.personaButton) {
         elements.personaButton.addEventListener('click', (e) => {
@@ -5909,19 +5938,6 @@ function setupEventListeners() {
             showModelMenu(elements.modelButton);
         });
     }
-    if (elements.closeSettingsModal) {
-        elements.closeSettingsModal.addEventListener('click', closeSettingsModal);
-    }
-    if (elements.settingsModal) {
-        elements.settingsModal.addEventListener('click', (e) => {
-            if (e.target === elements.settingsModal) closeSettingsModal();
-        });
-    }
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && elements.settingsModal && elements.settingsModal.classList.contains('visible')) {
-            closeSettingsModal();
-        }
-    });
 
     // Appearance: theme / accent / chat width (device-local, applied live)
     document.querySelectorAll('#themeOptions button').forEach(btn => {
