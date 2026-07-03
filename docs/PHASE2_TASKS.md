@@ -50,6 +50,18 @@ later, Phase 3).
    composer override** (nullable `tools_enabled` column on `conversations`,
    added by migration; `null` = inherit persona). Effective state =
    override ?? persona base. Base default: **off**.
+   **UI (second pass, 2026-07-03):** the composer becomes **two rows,
+   Claude.ai-style** — textarea on top, a **control row** beneath it: attach
+   button, the **file-tools toggle pill** (tinted/filled when on, muted when
+   off; tooltip states the effective source), and the **model chip**
+   (relocated from the top bar), with send/stop on the right. Attachment
+   previews stay above the textarea, so controls never shift. This amends
+   WR-07's "model badge always on the top bar": **in a chat** the top bar
+   shows only the breadcrumb (model lives in the composer); **while browsing**
+   (composer hidden per WR-07b) the top bar keeps the persona selector +
+   model badge as today — the model control is never absent, it lives where
+   composing happens. The "Press Enter to send" hint line is dropped (or made
+   desktop-only) to keep the mobile footprint sane.
 3. **Streaming v1.** When tools are enabled for a turn, the server runs the
    whole tool loop **non-streaming** (model → tool call → execute → result →
    … → final) and delivers tool activity + the final answer as **synthetic
@@ -124,19 +136,23 @@ later, Phase 3).
   budget-capped content. `list_files` returns DAL metadata. Everything
   user/container-scoped.
 
-- **P2-05 — Frontend: toggle + tool/file rendering** (`app.js`, `index.html`,
-  `styles.css`)
-  **Toggle UI:** an icon toggle button in the composer row next to the attach
-  button — accent-filled when tools are on, muted when off; tooltip states
-  the effective source ("File tools on — persona default" / "…overridden for
-  this chat"); clicking sets the per-conversation override; persona base
-  edited in the persona editor. (Placement rationale: the preview strip above
-  the input is transient, the top bar was deliberately de-crowded in WR-07,
-  and the composer is where the decision is made — it mirrors the attach
-  button: files you give the model vs files it can make.)
-  **Rendering:** tool activity as compact chips ("Created `file.md`" /
-  "Read `spec.txt`"); created files as downloadable attachment cards with
-  inline preview for text/code (reuse attachment-card styling +
+- **P2-05a — Composer control row rework** (`app.js`, `index.html`,
+  `styles.css`) — **frontend-only; independent of the tool backend, can land
+  early or in parallel with P2-01…04.**
+  Implement decision 2's UI: two-row composer (textarea + control row);
+  attach button moves into the row; **file-tools toggle pill** with visual
+  state ("File tools on — persona default" / "…overridden for this chat";
+  clicking sets the per-conversation override; persona base edited in the
+  persona editor); **model chip** relocated from the top bar; send/stop on
+  the right; top-bar contextual logic updated (in-chat: breadcrumb only;
+  browsing: persona + model badge as today); drop/trim the Enter hint;
+  verify mobile widths. Until P2-02 lands, the toggle can ship dark or
+  disabled-with-tooltip — the control row itself doesn't depend on tools.
+
+- **P2-05b — Tool/file rendering** (`app.js`, `index.html`, `styles.css`)
+  Tool activity as compact chips ("Created `file.md`" / "Read `spec.txt`");
+  created files as downloadable attachment cards with inline preview for
+  text/code (reuse attachment-card styling +
   `getFileTypeLabel`/`formatFileSize`). **Persistence:** store tool events in
   the message's existing `attachments` JSON (`type: 'tool_event'` /
   `'created_file'`) so chips and cards survive reload — no schema change.
@@ -211,7 +227,8 @@ later, Phase 3).
 
 ## Suggested order
 Track B is done. Track A build order: **P2-01 → P2-02** (the loop is the
-riskiest piece — land it on stub executors) → **P2-03 → P2-04 → P2-05 →
-P2-06**. The streaming approach and all open design questions are settled in
-the Decisions section above. One branch/PR per task or small group, per the
-project workflow.
+riskiest piece — land it on stub executors) → **P2-03 → P2-04 → P2-05b →
+P2-06**, with **P2-05a** (composer rework, frontend-only) landing anytime —
+early is fine. The streaming approach and all open design questions are
+settled in the Decisions section above. One branch/PR per task or small
+group, per the project workflow.
