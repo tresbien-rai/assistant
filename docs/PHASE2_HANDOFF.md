@@ -38,15 +38,19 @@ Claude Code Web, so local `main` may lag origin.
    the Drive/provider plumbing Phase 2 builds on.
 
 ## What the Tool Use track builds (one paragraph)
-Define backend **tools** the model can call mid-conversation — `create_file`
-(write content to the active project's Drive folder, or a `Tessera/Downloads/`
-folder if no project; record in `project_files`), `read_file`, and `list_files`.
-The chat proxy advertises these tools to the provider, and when the model
-returns a tool call the backend **executes it, returns the result to the model,
-and continues** until a final answer. The frontend renders tool calls and
-created files as downloadable attachments with inline preview. Provider mapping:
+Define backend **tools** the model can call mid-conversation — `create_file`,
+`read_file`, and `list_files`. Files land in the active **project** folder →
+active **workspace** folder → `Tessera/Downloads/` (unfiled), recorded in
+`project_files` / `workspace_files` / a NEW user-scoped `user_files` table
+respectively. The chat proxy advertises these tools to the provider (gated by
+a per-persona + per-conversation **toggle**), and when the model returns a
+tool call the backend **executes it, returns the result to the model, and
+continues** until a final answer. The frontend renders tool calls and created
+files as downloadable attachments with inline preview. Provider mapping:
 Anthropic `tool_use`/`tool_result`, Gemini `functionCall`/`functionResponse`
-(OpenAI later in Phase 3).
+(OpenAI later in Phase 3). **All open design questions were settled
+2026-07-03 — the Decisions section in `docs/PHASE2_TASKS.md` is the source of
+truth.**
 
 ## Already in place (don't rebuild)
 - **Drive I/O** (`server/src/utils/drive.js`): `getAuthForUser`, `ensureAppFolders`,
@@ -123,30 +127,43 @@ Anthropic `tool_use`/`tool_result`, Gemini `functionCall`/`functionResponse`
 - Commit messages end with the project's `Co-Authored-By` trailer (see git log).
 
 ## Phase 2 gotchas (read before coding Tool Use)
-- **Tool loop vs streaming is the hard part.** The multi-turn dance (model →
-  `tool_use` → execute → `tool_result` → model → … → final) does **not** map
-  cleanly onto the current "forward raw provider SSE to the client" model. Plan
-  for either (a) running tool turns **non-streaming** server-side and only
-  streaming the final answer, or (b) a more involved orchestration that emits
-  synthetic events for tool activity. Decide this early (P2-02) — it shapes
-  everything. The existing `X-Project-Context-Warning` synthetic-event pattern in
-  `api-client.js` is a precedent for surfacing non-SSE info to the client.
+- **Streaming is DECIDED (2026-07-03), don't re-litigate or over-build:** when
+  tools are enabled the turn runs **non-streaming** server-side, with tool
+  activity + the final answer delivered as **synthetic SSE events** over the
+  existing `/api/chat/stream` channel (precedent: the
+  `X-Project-Context-Warning` synthetic event in `api-client.js`). Tools off =
+  streaming unchanged. True streaming-with-tools (parse-while-forwarding +
+  continuation streams) is a feasible **v2** — keep the v1 event protocol
+  compatible with it, but do not build it now.
+- **Raw-message discipline:** the loop replays each provider's **raw assistant
+  message verbatim** in the continuation request; the common
+  `{ id, name, input }` shape is for executor dispatch only. This one rule
+  covers Anthropic `tool_use` replay, Anthropic **thinking-block echo** (tools
+  + extended thinking can coexist), Gemini 2.5 **`thoughtSignature`** echo, and
+  **parallel tool calls** (all results go back in a single follow-up message).
+- **Prefill is skipped when tools are enabled** — a trailing assistant prefill
+  conflicts with the tool-continuation protocol.
 - **Provider format differences** are real: Anthropic returns `tool_use` content
   blocks and expects `tool_result` blocks; Gemini uses `functionCall` parts and
-  `functionResponse`. Build a small mapping layer (mirror how `buildRequestBody`
-  already differs per provider).
+  `functionResponse`. P2-01 defines a small per-provider **tool contract**
+  (`formatTools` / `extractToolCalls` / `buildToolResultMessage`) so the loop
+  stays provider-agnostic — that contract is also how OpenAI lands in Phase 3.
 - **Reuse, don't reinvent** the Drive + DAL + allow-list plumbing for file I/O,
-  and enforce the same size/type limits on model-created files.
-- **`Tessera/Downloads/` folder**: add it via `ensureAppFolders` (or a sibling)
-  for files created outside any project.
+  and enforce the same size/type limits on model-created files (validate the
+  filename **extension**; the `mime_type` param is advisory).
+- **`Tessera/Downloads/` folder**: add it via a sibling of `ensureAppFolders`
+  for files created in unfiled chats — and record those files in the NEW
+  `user_files` table so `list_files`/`read_file`/downloads can see them.
 - **Security**: tools execute server-side with the user's Drive auth — validate
   filenames (no path tricks), enforce limits, and keep everything user-scoped.
+- **Abort + guards**: max 5 loop iterations; check the client-abort signal
+  **between** iterations so Stop never creates files after the user gave up.
 
 ## First steps
 1. `git fetch`, read the orientation docs above.
 2. If starting with **UI Polish #3** (tab integration), do the design discussion
    first — don't code until the model of tabs ↔ active conversation is agreed.
-3. For **Tool Use**, branch (e.g. `p2-01-tool-defs`), settle the streaming-vs-
-   tool-loop approach (P2-02) before building executors, then go down
-   `docs/PHASE2_TASKS.md` one branch/PR per task or small group.
+3. For **Tool Use**, read the **Decisions** section in `docs/PHASE2_TASKS.md`
+   (everything is settled — don't re-open), branch (e.g. `p2-01-tool-defs`),
+   then go down the tasks one branch/PR per task or small group.
 4. The **upload indicator (UI #1)** is a good, self-contained warm-up task.
