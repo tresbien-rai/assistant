@@ -2486,8 +2486,8 @@ body {
 
 /* Stop generation button */
 .stop-button {
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
     background-color: var(--error);
     border: none;
     border-radius: 50%;
@@ -2636,10 +2636,10 @@ body {
     background: rgba(0, 0, 0, 0.9);
 }
 
-/* Attachment input area */
+/* Attachment input area (circular, sized for the composer control row) */
 .attach-button {
-    width: 48px;
-    height: 48px;
+    width: 36px;
+    height: 36px;
     background: none;
     border: none;
     color: var(--text-secondary);
@@ -2660,6 +2660,8 @@ body {
 
 .attach-button svg {
     display: block;
+    width: 18px;
+    height: 18px;
 }
 
 .file-input-hidden {
@@ -2915,21 +2917,16 @@ body {
     flex-shrink: 0;
 }
 
-.input-wrapper {
+/* Composer field wrapper (P2-05a) — a two-row box: textarea on top, the
+   control row beneath. Owns the rounded border and clips the textarea's
+   scrollbar to the corners (same approach as the settings textboxes). */
+.composer-field {
     display: flex;
-    gap: 12px;
-    align-items: flex-end;
+    flex-direction: column;
+    min-width: 0;
     /* Match the message column width and center it for an in-line look. */
     max-width: var(--chat-max-width);
     margin-inline: auto;
-}
-
-/* Composer field wrapper — owns the rounded border and clips the textarea's
-   scrollbar to the corners (same approach as the settings textboxes). */
-.composer-field {
-    flex: 1;
-    min-width: 0;
-    display: flex;
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
@@ -2941,10 +2938,9 @@ body {
     border-color: var(--accent);
 }
 
-.input-wrapper textarea {
-    flex: 1;
+.composer-field textarea {
     width: 100%;
-    padding: 12px 16px;
+    padding: 12px 16px 6px;
     background-color: transparent;
     border: none;
     border-radius: 0;
@@ -2957,13 +2953,77 @@ body {
     overflow-y: auto;
 }
 
-.input-wrapper textarea:focus {
+.composer-field textarea:focus {
     outline: none;
 }
 
+/* Control row: attach + tools toggle left, model chip + send/stop right. */
+.composer-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px 8px;
+}
+
+.composer-spacer {
+    flex: 1;
+}
+
+/* File-tools toggle pill. Ships disabled until the tool backend (Track A
+   P2-02) lands; .on is the enabled/accent state used from P2-05b onward. */
+.tools-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+}
+
+.tools-toggle:hover:not(:disabled) {
+    color: var(--text-secondary);
+    border-color: var(--text-muted);
+}
+
+.tools-toggle.on {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-color: transparent;
+}
+
+.tools-toggle:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.tools-toggle svg {
+    flex-shrink: 0;
+}
+
+/* Composer model chip: same accent pill as the top-bar model button, sized
+   down for the control row; long model names truncate instead of wrapping. */
+.composer-controls .model-button {
+    padding: 4px 10px;
+    min-width: 0;
+}
+
+.composer-controls .model-badge {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .send-button {
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
     background-color: var(--accent);
     border: none;
     border-radius: 50%;
@@ -2989,13 +3049,6 @@ body {
 .send-button svg,
 .stop-button svg {
     display: block;
-}
-
-.input-hint {
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    text-align: center;
-    margin-top: 8px;
 }
 
 /* ===== Modal ===== */
@@ -3525,7 +3578,7 @@ body {
     }
 
     /* A touch more room for the composer on small screens (~1/3 of viewport) */
-    .input-wrapper textarea {
+    .composer-field textarea {
         max-height: 33dvh;
     }
 
@@ -3542,8 +3595,18 @@ body {
 }
 
 @media (max-width: 480px) {
-    .model-button {
+    /* Top-bar model button only — the composer model chip stays (truncated)
+       so small phones keep a model control in chat (they had none before). */
+    .status-bar .model-button {
         display: none;
+    }
+
+    .composer-controls .model-badge {
+        max-width: 110px;
+    }
+
+    .tools-toggle span {
+        display: none; /* icon-only pill on small phones */
     }
 }
 

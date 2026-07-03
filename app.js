@@ -1035,6 +1035,8 @@ const elements = {
     attachButton: document.getElementById('attachButton'),
     fileAttachInput: document.getElementById('fileAttachInput'),
     attachmentPreviewArea: document.getElementById('attachmentPreviewArea'),
+    composerModelButton: document.getElementById('composerModelButton'),
+    composerModelName: document.getElementById('composerModelName'),
     
     // Status bar
     headerAssistantName: document.getElementById('headerAssistantName'),
@@ -1669,7 +1671,7 @@ async function updateUI() {
 
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
-    elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
+    setModelIndicator(getModelDisplayName(modelConfig.model));
     syncPersonaEditTitle();
 
     // Reflect the active workspace in the top-bar chip + sidebar scope.
@@ -2562,8 +2564,8 @@ function populateModelDropdown() {
         }
     }
 
-    // Update status bar
-    elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
+    // Update the model indicators (top bar + composer chip)
+    setModelIndicator(getModelDisplayName(modelConfig.model));
 }
 
 /**
@@ -3125,6 +3127,14 @@ function positionPopover(menu, anchorEl, align) {
     } else {
         menu.style.left = `${rect.left}px`;
     }
+    // Flip above the anchor when the menu would overflow the viewport bottom
+    // (e.g. anchored to the composer's model chip). Only measurable once the
+    // menu is in the DOM, so callers that need the flip must append first.
+    if (menu.isConnected && menu.offsetHeight) {
+        if (rect.bottom + 6 + menu.offsetHeight > window.innerHeight) {
+            menu.style.top = `${Math.max(8, rect.top - 6 - menu.offsetHeight)}px`;
+        }
+    }
 }
 
 /**
@@ -3267,8 +3277,10 @@ function showModelMenu(anchorEl) {
     html += `<button class="context-menu-item" data-action="manage">Manage models…</button>`;
     menu.innerHTML = html;
 
-    positionPopover(menu, anchorEl, 'right');
+    // Append before positioning so the flip-above-the-anchor logic can
+    // measure the menu (needed when anchored to the composer model chip).
     document.body.appendChild(menu);
+    positionPopover(menu, anchorEl, 'right');
 
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -4083,9 +4095,10 @@ function renderRail() {
 }
 
 /**
- * Contextual top bar (WR-07): the model badge stays always (quick model-switch);
- * in a chat show the workspace breadcrumb (where it lives), while browsing show
- * the persona selector (who the next chat will be). Only one of the two shows.
+ * Contextual top bar (WR-07, amended by P2-05a): in a chat show only the
+ * workspace breadcrumb — the model chip lives in the composer's control row.
+ * While browsing (composer hidden) show the persona selector (who the next
+ * chat will be) plus the model button, since there's no composer to host it.
  */
 function renderTopBar() {
     const inChat = (state.ui.mainView || {}).type === 'chat';
@@ -4093,6 +4106,13 @@ function renderTopBar() {
     const bc = elements.workspaceBreadcrumb;
     if (personaBtn) personaBtn.hidden = inChat;
     if (bc) bc.hidden = !inChat;
+    if (elements.modelButton) elements.modelButton.hidden = inChat;
+}
+
+/** Update the model name shown on the top-bar button and the composer chip. */
+function setModelIndicator(name) {
+    if (elements.modelIndicator) elements.modelIndicator.textContent = name;
+    if (elements.composerModelName) elements.composerModelName.textContent = name;
 }
 
 /** Main-area "Chats" section: unfiled chats grouped by persona + a New-chat action. */
@@ -6358,6 +6378,12 @@ function setupEventListeners() {
             showPersonaPopover(elements.personaButton);
         });
     }
+    if (elements.composerModelButton) {
+        elements.composerModelButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showModelMenu(elements.composerModelButton);
+        });
+    }
     if (elements.modelButton) {
         elements.modelButton.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -6704,7 +6730,7 @@ function setupEventListeners() {
     
     // Model select change
     elements.modelSelect.addEventListener('change', () => {
-        elements.modelIndicator.textContent = getModelDisplayName(elements.modelSelect.value);
+        setModelIndicator(getModelDisplayName(elements.modelSelect.value));
     });
     
     // Assistant name preview (avatar card + persona-editor page title)
