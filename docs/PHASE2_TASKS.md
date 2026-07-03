@@ -51,11 +51,14 @@ later, Phase 3).
    added by migration; `null` = inherit persona). Effective state =
    override ?? persona base. Base default: **off**.
    **UI (second pass, 2026-07-03):** the composer becomes **two rows,
-   Claude.ai-style** — textarea on top, a **control row** beneath it: attach
-   button, the **file-tools toggle pill** (tinted/filled when on, muted when
-   off; tooltip states the effective source), and the **model chip**
-   (relocated from the top bar), with send/stop on the right. Attachment
-   previews stay above the textarea, so controls never shift. This amends
+   Claude.ai-style** — textarea on top, a **control row** beneath it: the
+   attach button (keeps its current **circular** shape) and the **file-tools
+   toggle pill** (tinted/filled when on, muted when off; tooltip states the
+   effective source) on the left; the **model chip** (relocated from the top
+   bar) on the **right, beside the send button** — the model sits where the
+   eye lands on send. Send keeps its current **paper-airplane icon** and
+   circular shape. Attachment previews stay above the textarea, so controls
+   never shift. This amends
    WR-07's "model badge always on the top bar": **in a chat** the top bar
    shows only the breadcrumb (model lives in the composer); **while browsing**
    (composer hidden per WR-07b) the top bar keeps the persona selector +
