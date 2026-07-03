@@ -2965,10 +2965,6 @@ body {
     padding: 4px 8px 8px;
 }
 
-.composer-spacer {
-    flex: 1;
-}
-
 /* File-tools toggle pill. Ships disabled until the tool backend (Track A
    P2-02) lands; .on is the enabled/accent state used from P2-05b onward. */
 .tools-toggle {
@@ -3008,10 +3004,12 @@ body {
 }
 
 /* Composer model chip: same accent pill as the top-bar model button, sized
-   down for the control row; long model names truncate instead of wrapping. */
+   down for the control row; long model names truncate instead of wrapping.
+   margin-left: auto pushes the chip + send/stop to the right edge. */
 .composer-controls .model-button {
     padding: 4px 10px;
     min-width: 0;
+    margin-left: auto;
 }
 
 .composer-controls .model-badge {
