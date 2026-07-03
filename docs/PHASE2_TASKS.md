@@ -12,6 +12,11 @@ original spec). Phase 4 in `PLANNING.txt` lists related QoL items.
 > now: Workspace Restructure (WR-01…06) → Track A (P2-01…06).** Track A file
 > destinations become: active project folder → active workspace folder →
 > `Tessera/Downloads/` (unfiled).
+>
+> **Update (2026-07-03):** the Workspace Restructure is complete and
+> live-validated (WR-01…07c + the model de-sync work, WR-10…14). Track A was
+> re-reviewed against the restructured codebase; its open design questions are
+> now settled — see **Decisions** under Track A below.
 
 Two tracks — they can interleave; agree ordering with the human:
 - **Track A — Tool Use (File Creation):** the planned Phase 2 feature.
@@ -22,51 +27,130 @@ Two tracks — they can interleave; agree ordering with the human:
 ## Track A — Tool Use (File Creation)
 
 Goal: let the model create/read/list files mid-conversation, stored on the
-user's Google Drive (in the active project, or a `Tessera/Downloads/` folder).
-Tools: `create_file(filename, content, mime_type)`, `read_file(filename)`,
-`list_files()`. Provider mapping: Anthropic `tool_use`/`tool_result`, Gemini
-`functionCall`/`functionResponse` (OpenAI later, Phase 3).
+user's Google Drive. Tools: `create_file(filename, content, mime_type)`,
+`read_file(filename)`, `list_files()`. Provider mapping: Anthropic
+`tool_use`/`tool_result`, Gemini `functionCall`/`functionResponse` (OpenAI
+later, Phase 3).
 
-- **P2-01 — Tool definitions + provider mapping** (`server/src/tools/` or
-  `utils/tools.js`, + `providers/anthropic.js`, `gemini.js`)
-  Define the tool schemas once, then translate them into each provider's format
-  in `buildRequestBody`. Parse each provider's tool-call response back into a
-  common shape `{ name, input, id }`. No execution yet — just advertise tools and
-  detect calls.
+### Decisions (settled with the human, 2026-07-03)
+
+1. **File destinations + unfiled storage.** Tool files land in: active
+   **project** folder → active **workspace** folder → **`Tessera/Downloads/`**
+   (unfiled chat). Project/workspace files record in `project_files` /
+   `workspace_files` as usual. Unfiled files get a NEW user-scoped
+   **`user_files`** table (mirrors `project_files`) + a download endpoint
+   (e.g. `GET /api/files/:id/content`), so Downloads files are just as
+   listable/readable/downloadable as the others. (Without this, unfiled
+   tool files would exist on Drive but be invisible to `list_files` /
+   `read_file` and have no download link.)
+2. **Tools toggle.** Advertising tools costs tokens, changes model behavior,
+   and errors on models without tool support (users can add arbitrary custom
+   models) — so tool use is switchable. **Per-persona base setting** (in the
+   persona's `model_config` JSON — no schema change) + **per-conversation
+   composer override** (nullable `tools_enabled` column on `conversations`,
+   added by migration; `null` = inherit persona). Effective state =
+   override ?? persona base. Base default: **off**.
+3. **Streaming v1.** When tools are enabled for a turn, the server runs the
+   whole tool loop **non-streaming** (model → tool call → execute → result →
+   … → final) and delivers tool activity + the final answer as **synthetic
+   SSE events** over the existing `/api/chat/stream` channel (precedent: the
+   `project-context-warning` synthetic event in `api-client.js`). Tools off =
+   streaming exactly as today. **Do not over-build v1:** true
+   streaming-with-tools (server parses provider SSE while forwarding, detects
+   the tool-use stop, executes, opens a continuation stream on the same
+   response) is a feasible v2 in this architecture — the v1 event protocol
+   should not preclude it, but do not build it now.
+4. **Raw-message discipline (provider correctness).** The loop keeps each
+   provider's **raw assistant message** and replays it **verbatim** in the
+   continuation request. This one rule handles: Anthropic's requirement to
+   resend `tool_use` blocks exactly; Anthropic **thinking block** echo
+   (+signatures) so extended thinking + tools can coexist; Gemini 2.5
+   **`thoughtSignature`** echo on `functionCall` parts; and **parallel tool
+   calls** (multiple calls in one response → all results returned in a single
+   follow-up message). The common `{ id, name, input }` shape is for executor
+   dispatch only — never rebuild provider messages from it.
+5. **Prefill is skipped when tools are enabled** (a trailing assistant
+   prefill conflicts with the tool-continuation protocol). Note it in the
+   toggle's UI copy.
+6. **`create_file` semantics.** Validate the **filename extension** against
+   `config.projectFiles.acceptedExtensions` (the `mime_type` param is
+   advisory — extensions are the reliable signal); enforce `maxFileBytes` on
+   the content; **overwrite on duplicate filename** within the destination
+   scope (replace the Drive file + update the existing row) so `read_file`
+   stays unambiguous and the model can iterate on a file. Content is a JSON
+   string, so v1 is text-only by construction.
+7. **Context side effect (accepted for v1).** A tool-created project or
+   workspace file is a normal file row, so it joins that container's injected
+   context on subsequent turns. Acceptable v1 behavior (the model "remembers"
+   its files); revisit if it starts eating the context budget.
+
+### Tasks
+
+- **P2-01 — Tool definitions + provider tool contract** (`server/src/tools/`,
+  + `providers/anthropic.js`, `gemini.js`)
+  Define the tool schemas once. Each provider implements a small contract:
+  `formatTools(defs)` → native tools param; `extractToolCalls(response)` →
+  `{ calls: [{ id, name, input }], rawAssistantMessage }`;
+  `buildToolResultMessage(calls, results)` → native continuation message.
+  Thread `tools` through `buildRequestBody` so `/api/chat/preview` (the
+  request inspector) shows tool definitions for free. Also move
+  `ensureProjectFolderId` / `ensureWorkspaceFolderId` out of
+  `routes/projects.js` into a shared module (`utils/drive.js` or the tools
+  module) so executors don't import from a sibling route. No execution yet.
+  **This contract is the multi-provider mitigation:** Phase 3's OpenAI =
+  implement the same three functions in `openai.js`; the loop never changes.
 
 - **P2-02 — Tool execution loop in the chat proxy** (`server/src/routes/chat.js`)
-  **Decide the streaming strategy first** (see handoff gotcha): recommended v1 =
-  run tool turns **non-streaming** server-side (model → tool_use → execute →
-  tool_result → loop), then stream (or return) only the final assistant message.
-  Add a max-iterations guard. Thread the existing project resolution through so
-  tools know the active project. This is the riskiest task — land it before the
-  executors are fully fleshed out.
+  Implement decision 3 (non-streaming loop + synthetic SSE events:
+  tool-activity, final text, done). Refactor `resolveRequestContext` to also
+  return the resolved **workspace/project rows** — executors need the
+  destination container, not just the assembled context text. Guards: max
+  **5 iterations**; check the client-abort signal **between** iterations
+  (never execute a tool after the user hits Stop); skip prefill when tools
+  are on (decision 5). Toggle plumbing: persona base + conversation override
+  resolved server-side. Riskiest task — land it before the executors are
+  fully fleshed out (stub executors are fine).
 
-- **P2-03 — `create_file` executor**
-  Validate filename + type against the `config.projectFiles` allow-list and size
-  cap. Upload via `drive.uploadFile` to the active project's folder (reuse the
-  self-heal path) or to a `Tessera/Downloads/` folder (add to `ensureAppFolders`)
-  when there's no project. Record in `project_files` via `dal.addProjectFile`.
-  Return a result the model can reference (filename + a download URL using the
-  existing `/files/:id/content` endpoint).
+- **P2-03 — Destinations + `create_file` executor**
+  Destination resolution per decision 1; add `Tessera/Downloads/` via a
+  sibling of `ensureAppFolders`. NEW `user_files` table + DAL + user-scoped
+  download endpoint. Validation + overwrite semantics per decision 6. Record
+  in the destination's table; return filename + download URL to the model.
 
 - **P2-04 — `read_file` + `list_files` executors**
-  `read_file`: resolve by filename within the project, extract text via the
-  `projectContext` helpers (text + PDF), return content (budget-guarded).
-  `list_files`: return `dal.listProjectFiles` metadata. Both user/project-scoped.
+  Scope mirrors context inheritance: project files first, then workspace
+  files; unfiled chats see `user_files` (Downloads). `read_file` extracts
+  text via the `projectContext` helpers (text + PDF, cached), returns
+  budget-capped content. `list_files` returns DAL metadata. Everything
+  user/container-scoped.
 
-- **P2-05 — Frontend tool/file rendering** (`app.js`, `index.html`, `styles.css`)
-  Show tool activity in the conversation (e.g. a compact "Created `file.md`" /
-  "Read `spec.txt`" chip) and render created files as downloadable attachments
-  with inline preview for text/code (reuse attachment-card styling +
-  `getFileTypeLabel`/`formatFileSize`). If P2-02 uses synthetic events, consume
-  them like the `project-context-warning` precedent.
+- **P2-05 — Frontend: toggle + tool/file rendering** (`app.js`, `index.html`,
+  `styles.css`)
+  **Toggle UI:** an icon toggle button in the composer row next to the attach
+  button — accent-filled when tools are on, muted when off; tooltip states
+  the effective source ("File tools on — persona default" / "…overridden for
+  this chat"); clicking sets the per-conversation override; persona base
+  edited in the persona editor. (Placement rationale: the preview strip above
+  the input is transient, the top bar was deliberately de-crowded in WR-07,
+  and the composer is where the decision is made — it mirrors the attach
+  button: files you give the model vs files it can make.)
+  **Rendering:** tool activity as compact chips ("Created `file.md`" /
+  "Read `spec.txt`"); created files as downloadable attachment cards with
+  inline preview for text/code (reuse attachment-card styling +
+  `getFileTypeLabel`/`formatFileSize`). **Persistence:** store tool events in
+  the message's existing `attachments` JSON (`type: 'tool_event'` /
+  `'created_file'`) so chips and cards survive reload — no schema change.
+  Consume the synthetic SSE events like the `project-context-warning`
+  precedent.
 
 - **P2-06 — Verify + review + merge**
-  Backend: in-process tests of the tool loop with a mocked provider that emits a
-  tool call (assert execute → tool_result → final), plus executor unit tests with
-  mocked Drive. Live end-to-end on the deploy (ask the model to create a file →
-  confirm it lands in Drive + the project). `/code-review`; merge; update memory.
+  Backend: in-process tests of the loop with a mocked provider emitting tool
+  calls (single **and parallel**; assert execute → tool_result → final; abort
+  + max-iteration guards), plus executor unit tests with mocked Drive. Live
+  end-to-end on the deploy: create a file in a **project** chat, a
+  **workspace** chat, and an **unfiled** chat (Downloads); run **Anthropic
+  with extended thinking on** and **Gemini 2.5** function calling (thought
+  signatures). `/code-review`; merge; update memory.
 
 ---
 
@@ -126,8 +210,8 @@ Tools: `create_file(filename, content, mime_type)`, `read_file(filename)`,
 ---
 
 ## Suggested order
-Settle Track B #3's design early (it may influence other UI work). A good build
-order: **P2-U1** (small, self-contained warm-up) → **P2-01 → P2-02** (lock the
-tool-loop/streaming approach) → **P2-03 → P2-04 → P2-05 → P2-06**, with **P2-U2**
-and **P2-U3** interleaved per the human's priority. One branch/PR per task or
-small group, per the project workflow.
+Track B is done. Track A build order: **P2-01 → P2-02** (the loop is the
+riskiest piece — land it on stub executors) → **P2-03 → P2-04 → P2-05 →
+P2-06**. The streaming approach and all open design questions are settled in
+the Decisions section above. One branch/PR per task or small group, per the
+project workflow.
