@@ -1035,6 +1035,8 @@ const elements = {
     attachButton: document.getElementById('attachButton'),
     fileAttachInput: document.getElementById('fileAttachInput'),
     attachmentPreviewArea: document.getElementById('attachmentPreviewArea'),
+    composerModelButton: document.getElementById('composerModelButton'),
+    composerModelName: document.getElementById('composerModelName'),
     
     // Status bar
     headerAssistantName: document.getElementById('headerAssistantName'),
@@ -1669,7 +1671,7 @@ async function updateUI() {
 
     // Update header
     elements.headerAssistantName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
-    elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
+    setModelIndicator(getModelDisplayName(modelConfig.model));
     syncPersonaEditTitle();
 
     // Reflect the active workspace in the top-bar chip + sidebar scope.
@@ -2562,8 +2564,8 @@ function populateModelDropdown() {
         }
     }
 
-    // Update status bar
-    elements.modelIndicator.textContent = getModelDisplayName(modelConfig.model);
+    // Update the model indicators (top bar + composer chip)
+    setModelIndicator(getModelDisplayName(modelConfig.model));
 }
 
 /**
@@ -3108,15 +3110,19 @@ function syncPersonaEditTitle() {
 // ===== Top-bar popovers (P2-U3a) =====
 
 /**
- * Position a context-menu/popover relative to its anchor button. `align`
- * controls which edge lines up: 'left' pins the menu's left edge to the
- * anchor's left, 'right' pins its right edge to the anchor's right (so menus
- * opened from the right side of the bar don't overflow off-screen).
+ * Attach a context-menu/popover to the body and position it relative to its
+ * anchor button. `align` controls which edge lines up: 'left' pins the menu's
+ * left edge to the anchor's left, 'right' pins its right edge to the anchor's
+ * right (so menus opened from the right side of the bar don't overflow
+ * off-screen). Appending happens here (not at the call sites) so the menu can
+ * be measured and flipped above the anchor when it would overflow the viewport
+ * bottom — e.g. anchored to the composer's model chip.
  * @param {HTMLElement} menu
  * @param {HTMLElement} anchorEl
  * @param {'left'|'right'} align
  */
 function positionPopover(menu, anchorEl, align) {
+    document.body.appendChild(menu);
     const rect = anchorEl.getBoundingClientRect();
     menu.style.position = 'fixed';
     menu.style.top = `${rect.bottom + 6}px`;
@@ -3124,6 +3130,9 @@ function positionPopover(menu, anchorEl, align) {
         menu.style.right = `${window.innerWidth - rect.right}px`;
     } else {
         menu.style.left = `${rect.left}px`;
+    }
+    if (rect.bottom + 6 + menu.offsetHeight > window.innerHeight) {
+        menu.style.top = `${Math.max(8, rect.top - 6 - menu.offsetHeight)}px`;
     }
 }
 
@@ -3179,7 +3188,6 @@ function showAvatarMenu(anchorEl) {
         <button class="context-menu-item" data-avatar-settings type="button">All avatar settings…</button>
     `;
     positionPopover(menu, anchorEl, 'right');
-    document.body.appendChild(menu);
 
     // Controls act immediately and keep the popover open (it's a mini panel,
     // not a pick-one menu); only the settings link closes it.
@@ -3268,7 +3276,6 @@ function showModelMenu(anchorEl) {
     menu.innerHTML = html;
 
     positionPopover(menu, anchorEl, 'right');
-    document.body.appendChild(menu);
 
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -3319,7 +3326,6 @@ function showPersonaPopover(anchorEl) {
     menu.innerHTML = html;
 
     positionPopover(menu, anchorEl, 'left');
-    document.body.appendChild(menu);
 
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -3797,7 +3803,6 @@ function showWorkspaceContextMenu(anchorEl, workspaceId) {
     `;
 
     positionPopover(menu, anchorEl, 'left');
-    document.body.appendChild(menu);
 
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -4083,16 +4088,22 @@ function renderRail() {
 }
 
 /**
- * Contextual top bar (WR-07): the model badge stays always (quick model-switch);
- * in a chat show the workspace breadcrumb (where it lives), while browsing show
- * the persona selector (who the next chat will be). Only one of the two shows.
+ * Contextual top bar (WR-07, amended by P2-05a): in a chat show only the
+ * workspace breadcrumb — the model chip lives in the composer's control row.
+ * While browsing (composer hidden) show the persona selector (who the next
+ * chat will be) plus the model button, since there's no composer to host it.
  */
 function renderTopBar() {
     const inChat = (state.ui.mainView || {}).type === 'chat';
-    const personaBtn = document.getElementById('personaButton');
-    const bc = elements.workspaceBreadcrumb;
-    if (personaBtn) personaBtn.hidden = inChat;
-    if (bc) bc.hidden = !inChat;
+    if (elements.personaButton) elements.personaButton.hidden = inChat;
+    if (elements.workspaceBreadcrumb) elements.workspaceBreadcrumb.hidden = !inChat;
+    if (elements.modelButton) elements.modelButton.hidden = inChat;
+}
+
+/** Update the model name shown on the top-bar button and the composer chip. */
+function setModelIndicator(name) {
+    if (elements.modelIndicator) elements.modelIndicator.textContent = name;
+    if (elements.composerModelName) elements.composerModelName.textContent = name;
 }
 
 /** Main-area "Chats" section: unfiled chats grouped by persona + a New-chat action. */
@@ -4238,7 +4249,6 @@ function showModelCardMenu(anchorEl, modelId, provider) {
     menu.className = 'context-menu';
     menu.innerHTML = `<button class="context-menu-item danger" data-action="remove">Remove</button>`;
     positionPopover(menu, anchorEl, 'right');
-    document.body.appendChild(menu);
 
     menu.querySelector('[data-action="remove"]').addEventListener('click', () => {
         menu.remove();
@@ -4269,7 +4279,6 @@ function showPersonaCardMenu(anchorEl, personaId) {
         <button class="context-menu-item danger" data-action="delete">Delete</button>
     `;
     positionPopover(menu, anchorEl, 'right');
-    document.body.appendChild(menu);
 
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -6358,12 +6367,15 @@ function setupEventListeners() {
             showPersonaPopover(elements.personaButton);
         });
     }
-    if (elements.modelButton) {
-        elements.modelButton.addEventListener('click', (e) => {
+    // The model menu opens from either the top-bar button (browsing) or the
+    // composer chip (in chat) — same menu, anchored to whichever was clicked.
+    [elements.modelButton, elements.composerModelButton].forEach((btn) => {
+        if (!btn) return;
+        btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            showModelMenu(elements.modelButton);
+            showModelMenu(btn);
         });
-    }
+    });
 
     // Appearance: theme / accent / chat width (device-local, applied live)
     document.querySelectorAll('#themeOptions button').forEach(btn => {
@@ -6704,7 +6716,7 @@ function setupEventListeners() {
     
     // Model select change
     elements.modelSelect.addEventListener('change', () => {
-        elements.modelIndicator.textContent = getModelDisplayName(elements.modelSelect.value);
+        setModelIndicator(getModelDisplayName(elements.modelSelect.value));
     });
     
     // Assistant name preview (avatar card + persona-editor page title)
