@@ -2486,8 +2486,8 @@ body {
 
 /* Stop generation button */
 .stop-button {
-    width: 40px;
-    height: 40px;
+    width: 34px;
+    height: 34px;
     background-color: var(--error);
     border: none;
     border-radius: 50%;
@@ -2638,8 +2638,8 @@ body {
 
 /* Attachment input area (circular, sized for the composer control row) */
 .attach-button {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     background: none;
     border: none;
     color: var(--text-secondary);
@@ -2660,8 +2660,8 @@ body {
 
 .attach-button svg {
     display: block;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
 }
 
 .file-input-hidden {
@@ -3007,7 +3007,9 @@ body {
    down for the control row; long model names truncate instead of wrapping.
    margin-left: auto pushes the chip + send/stop to the right edge. */
 .composer-controls .model-button {
-    padding: 4px 10px;
+    padding: 5px 12px;
+    /* Transparent border matches the tools pill's box height exactly. */
+    border: 1px solid transparent;
     min-width: 0;
     margin-left: auto;
 }
@@ -3020,8 +3022,8 @@ body {
 }
 
 .send-button {
-    width: 40px;
-    height: 40px;
+    width: 34px;
+    height: 34px;
     background-color: var(--accent);
     border: none;
     border-radius: 50%;
