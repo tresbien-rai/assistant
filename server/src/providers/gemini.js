@@ -256,12 +256,20 @@ function extractToolCalls(data) {
 /**
  * Build the user-role continuation message carrying function responses.
  * Handles parallel calls: all results return in ONE message, ordered like
- * `calls`. Gemini matches responses by function NAME (it has no call ids).
+ * `calls`. Gemini matches responses by function NAME (it has no call ids) —
+ * so when the SAME function is called twice in one turn, pairing relies
+ * entirely on order. The loop must keep results[i] answering calls[i]; this
+ * function preserves that order into the parts array.
  * @param {Array<{id, name, input}>} calls - From extractToolCalls
  * @param {Array<{content: string, isError?: boolean}>} results - results[i] answers calls[i]
  * @returns {{role: 'user', parts: Array}} Message for the continuation request
  */
 function buildToolResultMessage(calls, results) {
+  if (results.length !== calls.length) {
+    // A mismatch is a tool-loop programming error; fail loudly with a clear
+    // message instead of a TypeError deep in the map below.
+    throw new Error(`buildToolResultMessage: ${calls.length} calls but ${results.length} results`);
+  }
   return {
     role: 'user',
     parts: calls.map((call, i) => ({

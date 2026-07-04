@@ -35,7 +35,10 @@ function buildRequestBody(params) {
 
   // Build messages array, handling attachments in the content
   const formattedMessages = messages.map(msg => {
-    // If content is already an array (with attachments), use as-is
+    // If content is already an array, use as-is. This is both the attachment
+    // path AND the raw-replay path for the tool loop (assistant messages with
+    // tool_use/thinking blocks, user messages with tool_result blocks) —
+    // blocks must pass through VERBATIM (raw-message discipline, Track A).
     if (Array.isArray(msg.content)) {
       return { role: msg.role, content: msg.content };
     }
@@ -145,6 +148,11 @@ function extractToolCalls(data) {
  * @returns {{role: 'user', content: Array}} Message for the continuation request
  */
 function buildToolResultMessage(calls, results) {
+  if (results.length !== calls.length) {
+    // A mismatch is a tool-loop programming error; fail loudly with a clear
+    // message instead of a TypeError deep in the map below.
+    throw new Error(`buildToolResultMessage: ${calls.length} calls but ${results.length} results`);
+  }
   return {
     role: 'user',
     content: calls.map((call, i) => ({

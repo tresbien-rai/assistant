@@ -122,6 +122,14 @@ check('returns null when there are no tool calls', () => {
   );
 });
 
+check('buildToolResultMessage throws on calls/results length mismatch', () => {
+  const { calls } = anthropic.extractToolCalls(anthropicResponse);
+  assert.throws(
+    () => anthropic.buildToolResultMessage(calls, [{ content: 'only one' }]),
+    /2 calls but 1 results/
+  );
+});
+
 check('buildToolResultMessage pairs results by call id, flags errors', () => {
   const { calls } = anthropic.extractToolCalls(anthropicResponse);
   const msg = anthropic.buildToolResultMessage(calls, [
@@ -221,6 +229,14 @@ check('returns null when there are no function calls', () => {
   assert.strictEqual(
     gemini.extractToolCalls({ candidates: [{ content: { parts: [{ text: 'done' }] } }] }),
     null
+  );
+});
+
+check('buildToolResultMessage throws on calls/results length mismatch', () => {
+  const { calls } = gemini.extractToolCalls(geminiResponse);
+  assert.throws(
+    () => gemini.buildToolResultMessage(calls, []),
+    /2 calls but 0 results/
   );
 });
 
