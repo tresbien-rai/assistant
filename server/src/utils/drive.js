@@ -257,6 +257,56 @@ async function ensureWorkspaceFolder(auth, name) {
 }
 
 // =============================================================================
+// Row-aware folder helpers (shared by the project/workspace routes and the
+// Track A tool executors — moved here from routes/projects.js in P2-01)
+// =============================================================================
+
+/**
+ * Ensure a workspace row has a backing Drive folder, persisting its id if just
+ * created. Returns the folder id.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} userId
+ * @param {Object} workspace - workspaces row
+ * @returns {Promise<string>} The workspace folder id
+ */
+async function ensureWorkspaceFolderId(auth, userId, workspace) {
+  if (workspace.drive_folder_id) return workspace.drive_folder_id;
+  const folderId = await ensureWorkspaceFolder(auth, workspace.name);
+  dal.updateWorkspace(workspace.id, userId, { driveFolderId: folderId });
+  return folderId;
+}
+
+/**
+ * Ensure a project row has a backing Drive folder under its workspace
+ * (`{root}/<Workspace>/<Project>/`), persisting its id if just created. Falls
+ * back to the legacy `{root}/projects/` folder for an orphan project that has
+ * no workspace. Returns the folder id. Requires a working Drive auth.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} userId
+ * @param {Object} project - projects row
+ * @returns {Promise<string>} The project folder id
+ */
+async function ensureProjectFolderId(auth, userId, project) {
+  if (project.drive_folder_id) return project.drive_folder_id;
+
+  let parentId = null;
+  if (project.workspace_id) {
+    const workspace = dal.getWorkspaceById(project.workspace_id, userId);
+    if (workspace) {
+      parentId = await ensureWorkspaceFolderId(auth, userId, workspace);
+    }
+  }
+  if (!parentId) {
+    const { projectsId } = await ensureAppFolders(auth);
+    parentId = projectsId;
+  }
+
+  const folderId = await createFolder(auth, project.name, parentId);
+  dal.updateProject(project.id, userId, { driveFolderId: folderId });
+  return folderId;
+}
+
+// =============================================================================
 // File helpers
 // =============================================================================
 
@@ -372,6 +422,8 @@ module.exports = {
   getAuthForUser,
   ensureAppFolders,
   ensureWorkspaceFolder,
+  ensureWorkspaceFolderId,
+  ensureProjectFolderId,
   createFolder,
   uploadFile,
   downloadFileText,

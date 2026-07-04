@@ -308,11 +308,7 @@ router.post('/:id/files', upload.single('file'), handleUploadError, asyncHandler
 
   const auth = drive.getAuthForUser(req.user.userId);
 
-  let folderId = workspace.drive_folder_id;
-  if (!folderId) {
-    folderId = await drive.ensureWorkspaceFolder(auth, workspace.name);
-    dal.updateWorkspace(workspace.id, req.user.userId, { driveFolderId: folderId });
-  }
+  const folderId = await drive.ensureWorkspaceFolderId(auth, req.user.userId, workspace);
 
   const uploaded = await drive.uploadFile(auth, {
     name: req.file.originalname,
