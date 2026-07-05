@@ -31,11 +31,14 @@ function buildHeaders(apiKey) {
  * @returns {Object} Request body
  */
 function buildRequestBody(params) {
-  const { model, messages, systemPrompt, modelParams, prefill, stream = false } = params;
+  const { model, messages, systemPrompt, modelParams, prefill, tools, stream = false } = params;
 
   // Build messages array, handling attachments in the content
   const formattedMessages = messages.map(msg => {
-    // If content is already an array (with attachments), use as-is
+    // If content is already an array, use as-is. This is both the attachment
+    // path AND the raw-replay path for the tool loop (assistant messages with
+    // tool_use/thinking blocks, user messages with tool_result blocks) —
+    // blocks must pass through VERBATIM (raw-message discipline, Track A).
     if (Array.isArray(msg.content)) {
       return { role: msg.role, content: msg.content };
     }
@@ -57,6 +60,12 @@ function buildRequestBody(params) {
   // Add system prompt if provided
   if (systemPrompt) {
     body.system = systemPrompt;
+  }
+
+  // Advertise tools (Track A). `tools` arrives in the provider-neutral shape
+  // from tools/definitions.js — for Anthropic that IS the native shape.
+  if (Array.isArray(tools) && tools.length > 0) {
+    body.tools = formatTools(tools);
   }
 
   // Add stream flag
@@ -89,6 +98,70 @@ function buildRequestBody(params) {
   }
 
   return body;
+}
+
+// =============================================================================
+// Tool contract (Track A, P2-01) — formatTools / extractToolCalls /
+// buildToolResultMessage. The chat loop (P2-02) stays provider-agnostic by
+// only ever touching this trio; adding a provider means implementing the same
+// three functions there. See "Decisions" in docs/PHASE2_TASKS.md.
+// =============================================================================
+
+/**
+ * Translate provider-neutral tool definitions into Anthropic's `tools` param.
+ * The neutral shape is Anthropic's shape (name / description / input_schema),
+ * so this is a defensive copy of exactly those fields.
+ * @param {Array} defs - tools/definitions.js TOOL_DEFINITIONS
+ * @returns {Array} Anthropic tools array
+ */
+function formatTools(defs) {
+  return defs.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
+}
+
+/**
+ * Extract tool calls from a non-streaming Messages API response.
+ *
+ * Returns dispatch-shaped calls PLUS the raw assistant message. The loop must
+ * replay `rawAssistantMessage` verbatim in the continuation request —
+ * including thinking blocks (with signatures) and text — never rebuild it
+ * from the dispatch shape (raw-message discipline).
+ *
+ * @param {Object} data - Parsed Messages API response JSON
+ * @returns {{ calls: Array<{id: string, name: string, input: Object}>,
+ *             rawAssistantMessage: {role: 'assistant', content: Array} } | null}
+ *          null when the response contains no tool calls (final answer).
+ */
+function extractToolCalls(data) {
+  const blocks = Array.isArray(data.content) ? data.content : [];
+  const calls = blocks
+    .filter((b) => b.type === 'tool_use')
+    .map((b) => ({ id: b.id, name: b.name, input: b.input || {} }));
+  if (calls.length === 0) return null;
+  return { calls, rawAssistantMessage: { role: 'assistant', content: blocks } };
+}
+
+/**
+ * Build the user-role continuation message carrying tool results. Handles
+ * parallel calls: all results return in ONE message, ordered like `calls`.
+ * @param {Array<{id, name, input}>} calls - From extractToolCalls
+ * @param {Array<{content: string, isError?: boolean}>} results - results[i] answers calls[i]
+ * @returns {{role: 'user', content: Array}} Message for the continuation request
+ */
+function buildToolResultMessage(calls, results) {
+  if (results.length !== calls.length) {
+    // A mismatch is a tool-loop programming error; fail loudly with a clear
+    // message instead of a TypeError deep in the map below.
+    throw new Error(`buildToolResultMessage: ${calls.length} calls but ${results.length} results`);
+  }
+  return {
+    role: 'user',
+    content: calls.map((call, i) => ({
+      type: 'tool_result',
+      tool_use_id: call.id,
+      content: results[i].content,
+      ...(results[i].isError ? { is_error: true } : {}),
+    })),
+  };
 }
 
 /**
@@ -262,4 +335,8 @@ module.exports = {
   // Exposed for the request inspector (P2-U4): builds the exact provider body
   // without sending it. The API key is never part of the body (it's a header).
   buildRequestBody,
+  // Tool contract (Track A, P2-01) — consumed by the chat tool loop.
+  formatTools,
+  extractToolCalls,
+  buildToolResultMessage,
 };

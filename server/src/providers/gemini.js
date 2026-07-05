@@ -28,10 +28,19 @@ function buildHeaders(apiKey) {
  * @returns {Object} Request body
  */
 function buildRequestBody(params) {
-  const { messages, systemPrompt, modelParams, prefill } = params;
+  const { messages, systemPrompt, modelParams, prefill, tools } = params;
 
   // Convert messages to Google format: 'assistant' -> 'model', 'user' -> 'user'
   const contents = messages.map(msg => {
+    // Already-native message (raw model reply or functionResponse turn from
+    // the tool loop): pass its parts through VERBATIM so functionCall parts
+    // keep their thoughtSignature (raw-message discipline, Track A).
+    if (Array.isArray(msg.parts)) {
+      return {
+        role: msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user',
+        parts: msg.parts,
+      };
+    }
     // If content is an array (with attachments), convert to parts format
     if (Array.isArray(msg.content)) {
       const parts = msg.content.map(item => {
@@ -121,6 +130,12 @@ function buildRequestBody(params) {
     };
   }
 
+  // Advertise tools (Track A). `tools` arrives in the provider-neutral shape
+  // from tools/definitions.js and is translated to functionDeclarations.
+  if (Array.isArray(tools) && tools.length > 0) {
+    body.tools = formatTools(tools);
+  }
+
   // Add safety settings if configured
   if (modelParams?.google) {
     const safetySettings = [];
@@ -154,6 +169,118 @@ function buildRequestBody(params) {
   }
 
   return body;
+}
+
+// =============================================================================
+// Tool contract (Track A, P2-01) — formatTools / extractToolCalls /
+// buildToolResultMessage. Mirrors providers/anthropic.js so the chat loop
+// stays provider-agnostic. See "Decisions" in docs/PHASE2_TASKS.md.
+// =============================================================================
+
+/**
+ * Convert a JSON Schema fragment to Gemini's Schema shape. Gemini's `type`
+ * field is a proto enum (STRING / OBJECT / ...), so JSON Schema's lowercase
+ * types are uppercased recursively; other fields pass through.
+ * @param {Object} schema
+ * @returns {Object}
+ */
+function toGeminiSchema(schema) {
+  if (!schema || typeof schema !== 'object') return schema;
+  const out = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'type' && typeof value === 'string') {
+      out.type = value.toUpperCase();
+    } else if (key === 'properties' && value && typeof value === 'object') {
+      out.properties = {};
+      for (const [prop, sub] of Object.entries(value)) {
+        out.properties[prop] = toGeminiSchema(sub);
+      }
+    } else if (key === 'items') {
+      out.items = toGeminiSchema(value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Translate provider-neutral tool definitions into Gemini's `tools` param
+ * (a single functionDeclarations group). A no-argument tool omits
+ * `parameters` entirely — Gemini rejects an OBJECT schema with no properties.
+ * @param {Array} defs - tools/definitions.js TOOL_DEFINITIONS
+ * @returns {Array} Gemini tools array
+ */
+function formatTools(defs) {
+  return [{
+    functionDeclarations: defs.map((d) => {
+      const decl = { name: d.name, description: d.description };
+      if (d.input_schema && Object.keys(d.input_schema.properties || {}).length > 0) {
+        decl.parameters = toGeminiSchema(d.input_schema);
+      }
+      return decl;
+    }),
+  }];
+}
+
+/**
+ * Extract function calls from a non-streaming generateContent response.
+ *
+ * Gemini has no per-call ids, so stable synthetic ids (`name_index`) are
+ * minted for dispatch. The raw candidate parts are returned as
+ * `rawAssistantMessage` and must be replayed VERBATIM in the continuation
+ * request — Gemini 2.5's functionCall parts carry a `thoughtSignature` that
+ * the API requires back (raw-message discipline).
+ *
+ * @param {Object} data - Parsed generateContent response JSON
+ * @returns {{ calls: Array<{id: string, name: string, input: Object}>,
+ *             rawAssistantMessage: {role: 'model', parts: Array} } | null}
+ *          null when the response contains no function calls (final answer).
+ */
+function extractToolCalls(data) {
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const calls = [];
+  parts.forEach((part, i) => {
+    if (part.functionCall) {
+      calls.push({
+        id: `${part.functionCall.name}_${i}`,
+        name: part.functionCall.name,
+        input: part.functionCall.args || {},
+      });
+    }
+  });
+  if (calls.length === 0) return null;
+  return { calls, rawAssistantMessage: { role: 'model', parts } };
+}
+
+/**
+ * Build the user-role continuation message carrying function responses.
+ * Handles parallel calls: all results return in ONE message, ordered like
+ * `calls`. Gemini matches responses by function NAME (it has no call ids) —
+ * so when the SAME function is called twice in one turn, pairing relies
+ * entirely on order. The loop must keep results[i] answering calls[i]; this
+ * function preserves that order into the parts array.
+ * @param {Array<{id, name, input}>} calls - From extractToolCalls
+ * @param {Array<{content: string, isError?: boolean}>} results - results[i] answers calls[i]
+ * @returns {{role: 'user', parts: Array}} Message for the continuation request
+ */
+function buildToolResultMessage(calls, results) {
+  if (results.length !== calls.length) {
+    // A mismatch is a tool-loop programming error; fail loudly with a clear
+    // message instead of a TypeError deep in the map below.
+    throw new Error(`buildToolResultMessage: ${calls.length} calls but ${results.length} results`);
+  }
+  return {
+    role: 'user',
+    parts: calls.map((call, i) => ({
+      functionResponse: {
+        name: call.name,
+        response: results[i].isError
+          ? { error: results[i].content }
+          : { output: results[i].content },
+      },
+    })),
+  };
 }
 
 /**
@@ -412,4 +539,8 @@ module.exports = {
   // Exposed for the request inspector (P2-U4): builds the exact provider body
   // without sending it. The API key is never part of the body (it's a header).
   buildRequestBody,
+  // Tool contract (Track A, P2-01) — consumed by the chat tool loop.
+  formatTools,
+  extractToolCalls,
+  buildToolResultMessage,
 };

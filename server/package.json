@@ -6,10 +6,11 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node src/db/test-migration.js && node src/db/test-dal.js && node src/routes/test-context.js",
+    "test": "node src/db/test-migration.js && node src/db/test-dal.js && node src/routes/test-context.js && node src/providers/test-tools.js",
     "test:dal": "node src/db/test-dal.js",
     "test:migration": "node src/db/test-migration.js",
-    "test:context": "node src/routes/test-context.js"
+    "test:context": "node src/routes/test-context.js",
+    "test:tools": "node src/providers/test-tools.js"
   },
   "keywords": [],
   "author": "",
