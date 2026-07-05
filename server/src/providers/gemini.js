@@ -284,6 +284,24 @@ function buildToolResultMessage(calls, results) {
 }
 
 /**
+ * Shape the tool loop's final answer as ONE synthetic provider-native SSE
+ * payload (P2-02, decision 3): the client's existing Gemini stream parser
+ * consumes it with zero changes (text + any generated images as parts).
+ * Part of the tool contract so chat.js never needs provider-shape knowledge.
+ * @param {{text: string, generatedImages?: Array}} result - formatChatResult output
+ * @returns {{event: string|null, data: Object}}
+ */
+function formatFinalSseEvent(result) {
+  const parts = [
+    { text: result.text },
+    ...(result.generatedImages || []).map((img) => ({
+      inlineData: { mimeType: img.mimeType, data: img.base64Data },
+    })),
+  ];
+  return { event: null, data: { candidates: [{ content: { parts } }] } };
+}
+
+/**
  * Map Gemini API errors to AppError
  * @param {Response} response - Fetch response
  * @param {Object} errorData - Parsed error response
@@ -370,12 +388,15 @@ function parseMultimodalResponse(candidate) {
 }
 
 /**
- * Non-streaming chat completion
+ * Non-streaming request returning the RAW parsed generateContent response.
+ * The tool loop (P2-02) needs the native shape for extractToolCalls; chat()
+ * wraps this for the plain no-tools path.
  * @param {string} apiKey - User's Google API key
- * @param {Object} params - Chat parameters
- * @returns {Promise<Object>} Response object with text content
+ * @param {Object} params - Chat parameters (may include tools + raw parts messages)
+ * @param {AbortSignal} [signal] - Optional abort signal for cancellation
+ * @returns {Promise<Object>} Parsed response JSON
  */
-async function chat(apiKey, params) {
+async function chatRaw(apiKey, params, signal) {
   const headers = buildHeaders(apiKey);
   const body = buildRequestBody(params);
   const { model } = params;
@@ -388,6 +409,7 @@ async function chat(apiKey, params) {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -395,8 +417,16 @@ async function chat(apiKey, params) {
     throw mapApiError(response, errorData);
   }
 
-  const data = await response.json();
+  return response.json();
+}
 
+/**
+ * Reduce a raw generateContent response to the app's chat-result shape.
+ * @param {Object} data - Parsed generateContent response JSON
+ * @param {string} model - The model the request was made with (Gemini doesn't echo it)
+ * @returns {{text: string, model: string, generatedImages: Array, stopReason?: string, usage?: Object}}
+ */
+function formatChatResult(data, model) {
   // Extract content from Gemini response format
   const candidate = data.candidates?.[0];
   if (!candidate) {
@@ -422,6 +452,10 @@ async function chat(apiKey, params) {
       totalTokens: data.usageMetadata.totalTokenCount,
     } : undefined,
   };
+}
+
+async function chat(apiKey, params) {
+  return formatChatResult(await chatRaw(apiKey, params), params.model);
 }
 
 /**
@@ -534,6 +568,8 @@ async function listModels(apiKey) {
 
 module.exports = {
   chat,
+  chatRaw,
+  formatChatResult,
   stream,
   listModels,
   // Exposed for the request inspector (P2-U4): builds the exact provider body
@@ -543,4 +579,5 @@ module.exports = {
   formatTools,
   extractToolCalls,
   buildToolResultMessage,
+  formatFinalSseEvent,
 };

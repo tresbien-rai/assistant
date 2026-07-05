@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "tessera-server",
   "version": "1.0.0",
   "description": "Backend server for Tessera",
@@ -6,11 +6,11 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node src/db/test-migration.js && node src/db/test-dal.js && node src/routes/test-context.js && node src/providers/test-tools.js",
+    "test": "node src/db/test-migration.js && node src/db/test-dal.js && node src/routes/test-context.js && node src/providers/test-tools.js && node src/routes/test-toolloop.js",
     "test:dal": "node src/db/test-dal.js",
     "test:migration": "node src/db/test-migration.js",
     "test:context": "node src/routes/test-context.js",
-    "test:tools": "node src/providers/test-tools.js"
+    "test:tools": "node src/providers/test-tools.js && node src/routes/test-toolloop.js"
   },
   "keywords": [],
   "author": "",

@@ -257,6 +257,29 @@ check('buildToolResultMessage answers by function name, error variant wraps', ()
 });
 
 // ---------------------------------------------------------------------------
+console.log('\n6. formatFinalSseEvent (synthetic final chunk shapes)...');
+
+check('anthropic final chunk is a client-parseable text_delta', () => {
+  const ev = anthropic.formatFinalSseEvent({ text: 'Done!' });
+  assert.strictEqual(ev.event, 'content_block_delta');
+  assert.deepStrictEqual(ev.data, {
+    type: 'content_block_delta',
+    delta: { type: 'text_delta', text: 'Done!' },
+  });
+});
+
+check('gemini final chunk carries text + generated images as parts', () => {
+  const ev = gemini.formatFinalSseEvent({
+    text: 'Done!',
+    generatedImages: [{ mimeType: 'image/png', base64Data: 'AAA' }],
+  });
+  assert.strictEqual(ev.event, null);
+  const parts = ev.data.candidates[0].content.parts;
+  assert.strictEqual(parts[0].text, 'Done!');
+  assert.deepStrictEqual(parts[1].inlineData, { mimeType: 'image/png', data: 'AAA' });
+});
+
+// ---------------------------------------------------------------------------
 console.log('');
 if (failures > 0) {
   console.error(`${failures} tool-contract test(s) FAILED`);
