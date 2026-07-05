@@ -221,6 +221,26 @@ function applyRequestContext(requestContext, systemPrompt) {
  * @param {Object|null} conversation - conversations row (snake_case)
  * @returns {boolean}
  */
+/**
+ * Build the runToolLoop inputs shared by the JSON and SSE endpoints, so the
+ * two branches can't drift (same params contract, same tool context).
+ * @param {Object} req - Express request (req.user)
+ * @param {Object} containers - resolveRequestContainers(req) result
+ * @param {Object} chatParams - { model, messages, systemPrompt, modelParams, attachments }
+ * @returns {{ params: Object, toolContext: Object }}
+ */
+function buildToolLoopInvocation(req, containers, chatParams) {
+  return {
+    params: chatParams,
+    toolContext: {
+      userId: req.user.userId,
+      workspace: containers.workspace,
+      project: containers.project,
+      conversationId: containers.conversation?.id || null,
+    },
+  };
+}
+
 function resolveToolsEnabled(userId, conversation) {
   if (!conversation) return false;
   if (conversation.tools_enabled === 0) return false;
@@ -382,16 +402,14 @@ router.post('/', asyncHandler(async (req, res) => {
     const abortController = new AbortController();
     req.on('close', () => abortController.abort());
 
+    const { params: loopParams, toolContext } = buildToolLoopInvocation(req, containers, {
+      model, messages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
+    });
     const { result: loopResult, toolEvents, aborted } = await runToolLoop({
       providerModule,
       apiKey,
-      params: { model, messages, systemPrompt: effectiveSystemPrompt, modelParams, attachments },
-      toolContext: {
-        userId: req.user.userId,
-        workspace: containers.workspace,
-        project: containers.project,
-        conversationId: containers.conversation?.id || null,
-      },
+      params: loopParams,
+      toolContext,
       signal: abortController.signal,
     });
     if (aborted) {
@@ -487,37 +505,24 @@ router.post('/stream', asyncHandler(async (req, res) => {
     };
 
     try {
+      const { params: loopParams, toolContext } = buildToolLoopInvocation(req, containers, {
+        model, messages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
+      });
       const { result, toolEvents, aborted } = await runToolLoop({
         providerModule,
         apiKey,
-        params: { model, messages, systemPrompt: effectiveSystemPrompt, modelParams, attachments },
-        toolContext: {
-          userId: req.user.userId,
-          workspace: containers.workspace,
-          project: containers.project,
-          conversationId: containers.conversation?.id || null,
-        },
+        params: loopParams,
+        toolContext,
         signal: abortController.signal,
         onEvent: (ev) => writeEvent('tool-activity', { type: 'tool_activity', ...ev }),
       });
 
       if (!aborted) {
-        if (provider === 'anthropic') {
-          writeEvent('content_block_delta', {
-            type: 'content_block_delta',
-            delta: { type: 'text_delta', text: result.text },
-          });
-        } else {
-          // google: one synthetic chunk with the final parts (text + any
-          // generated images), in the shape the client already parses.
-          const parts = [
-            { text: result.text },
-            ...(result.generatedImages || []).map((img) => ({
-              inlineData: { mimeType: img.mimeType, data: img.base64Data },
-            })),
-          ];
-          writeEvent(null, { candidates: [{ content: { parts } }] });
-        }
+        // Final answer as one provider-native-shaped chunk. The shape lives
+        // in the provider module (tool contract) so chat.js stays
+        // provider-agnostic — Phase 3's OpenAI just implements the same fn.
+        const finalEvent = providerModule.formatFinalSseEvent(result);
+        writeEvent(finalEvent.event, finalEvent.data);
         writeEvent('done', { type: 'tool_loop_done', toolEvents });
       }
     } catch (err) {

@@ -284,6 +284,24 @@ function buildToolResultMessage(calls, results) {
 }
 
 /**
+ * Shape the tool loop's final answer as ONE synthetic provider-native SSE
+ * payload (P2-02, decision 3): the client's existing Gemini stream parser
+ * consumes it with zero changes (text + any generated images as parts).
+ * Part of the tool contract so chat.js never needs provider-shape knowledge.
+ * @param {{text: string, generatedImages?: Array}} result - formatChatResult output
+ * @returns {{event: string|null, data: Object}}
+ */
+function formatFinalSseEvent(result) {
+  const parts = [
+    { text: result.text },
+    ...(result.generatedImages || []).map((img) => ({
+      inlineData: { mimeType: img.mimeType, data: img.base64Data },
+    })),
+  ];
+  return { event: null, data: { candidates: [{ content: { parts } }] } };
+}
+
+/**
  * Map Gemini API errors to AppError
  * @param {Response} response - Fetch response
  * @param {Object} errorData - Parsed error response
@@ -561,4 +579,5 @@ module.exports = {
   formatTools,
   extractToolCalls,
   buildToolResultMessage,
+  formatFinalSseEvent,
 };

@@ -165,6 +165,21 @@ function buildToolResultMessage(calls, results) {
 }
 
 /**
+ * Shape the tool loop's final answer as ONE synthetic provider-native SSE
+ * payload (P2-02, decision 3): the client's existing Anthropic stream parser
+ * consumes it with zero changes. Part of the tool contract so chat.js never
+ * needs provider-shape knowledge.
+ * @param {{text: string}} result - formatChatResult output
+ * @returns {{event: string|null, data: Object}}
+ */
+function formatFinalSseEvent(result) {
+  return {
+    event: 'content_block_delta',
+    data: { type: 'content_block_delta', delta: { type: 'text_delta', text: result.text } },
+  };
+}
+
+/**
  * Map Anthropic API errors to AppError
  * @param {Response} response - Fetch response
  * @param {Object} errorData - Parsed error response
@@ -361,4 +376,5 @@ module.exports = {
   formatTools,
   extractToolCalls,
   buildToolResultMessage,
+  formatFinalSseEvent,
 };
