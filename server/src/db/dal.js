@@ -419,6 +419,12 @@ function updateConversation(conversationId, userId, data) {
     updates.push('workspace_id = ?');
     values.push(data.workspaceId);
   }
+  if (data.toolsEnabled !== undefined) {
+    // Tri-state file-tools override (Track A): true/false → 1/0, null = clear
+    // back to inheriting the persona base.
+    updates.push('tools_enabled = ?');
+    values.push(data.toolsEnabled === null ? null : (data.toolsEnabled ? 1 : 0));
+  }
 
   if (updates.length === 0) {
     return getConversationById(conversationId, userId);

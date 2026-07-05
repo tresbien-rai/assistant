@@ -198,12 +198,15 @@ function mapApiError(response, errorData) {
 }
 
 /**
- * Non-streaming chat completion
+ * Non-streaming request returning the RAW parsed Messages API response. The
+ * tool loop (P2-02) needs the native shape for extractToolCalls; chat() wraps
+ * this for the plain no-tools path.
  * @param {string} apiKey - User's Anthropic API key
- * @param {Object} params - Chat parameters
- * @returns {Promise<Object>} Response object with text content
+ * @param {Object} params - Chat parameters (may include tools + raw messages)
+ * @param {AbortSignal} [signal] - Optional abort signal for cancellation
+ * @returns {Promise<Object>} Parsed response JSON
  */
-async function chat(apiKey, params) {
+async function chatRaw(apiKey, params, signal) {
   const headers = buildHeaders(apiKey);
   const body = buildRequestBody({ ...params, stream: false });
 
@@ -213,6 +216,7 @@ async function chat(apiKey, params) {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -220,9 +224,15 @@ async function chat(apiKey, params) {
     throw mapApiError(response, errorData);
   }
 
-  const data = await response.json();
+  return response.json();
+}
 
-  // Extract text content from response
+/**
+ * Reduce a raw Messages API response to the app's chat-result shape.
+ * @param {Object} data - Parsed Messages API response JSON
+ * @returns {{text: string, model: string, usage?: Object, stopReason?: string}}
+ */
+function formatChatResult(data) {
   const textContent = data.content?.find(block => block.type === 'text');
   if (!textContent) {
     throw AppError.provider('No text response received from Anthropic', { provider: 'anthropic' });
@@ -234,6 +244,16 @@ async function chat(apiKey, params) {
     usage: data.usage,
     stopReason: data.stop_reason,
   };
+}
+
+/**
+ * Non-streaming chat completion
+ * @param {string} apiKey - User's Anthropic API key
+ * @param {Object} params - Chat parameters
+ * @returns {Promise<Object>} Response object with text content
+ */
+async function chat(apiKey, params) {
+  return formatChatResult(await chatRaw(apiKey, params));
 }
 
 /**
@@ -330,6 +350,8 @@ async function listModels(apiKey) {
 
 module.exports = {
   chat,
+  chatRaw,
+  formatChatResult,
   stream,
   listModels,
   // Exposed for the request inspector (P2-U4): builds the exact provider body

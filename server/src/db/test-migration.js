@@ -126,6 +126,16 @@ try {
   const messageCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
   check('messages.model column added', messageCols.includes('model'));
 
+  // --- Assert 004 (conversations.tools_enabled column) -------------------------
+  // The fixture's conversations table is the legacy (pre-Track A) shape, so
+  // the migration is exercised, and the column must arrive nullable (NULL =
+  // inherit the persona base).
+  check('004_conversation_tools applied', applied.includes('004_conversation_tools'));
+  const convCols = db.prepare('PRAGMA table_info(conversations)').all().map(c => c.name);
+  check('conversations.tools_enabled column added', convCols.includes('tools_enabled'));
+  check('existing chats default to NULL (inherit)',
+    db.prepare('SELECT tools_enabled FROM conversations WHERE id = ?').get(cP1).tools_enabled === null);
+
   // --- Assert idempotency ---------------------------------------------------
   console.log('\n3. Asserting idempotency...');
   const applied2 = runMigrations(db);

@@ -16,8 +16,14 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const { getDecryptedApiKey } = require('./apiKeys');
 const dal = require('../db/dal');
 const { assembleProjectContext, assembleWorkspaceContext } = require('../utils/projectContext');
+const { TOOL_DEFINITIONS } = require('../tools/definitions');
+const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
+
+// Tool-loop iteration cap (Track A): each iteration is one provider round
+// trip; a healthy exchange needs 2-3, so 5 means something is looping.
+const MAX_TOOL_ITERATIONS = 5;
 
 // Provider modules
 const anthropic = require('../providers/anthropic');
@@ -106,8 +112,7 @@ function getProvider(provider) {
 // so req.user is already available when requests reach this router.
 
 /**
- * Resolve the workspace + project for a chat request and assemble their layered
- * context block (workspace first, then project — see WORKSPACE_RESTRUCTURE.md).
+ * Resolve the conversation/workspace/project ROWS for a chat request.
  *
  * The chat route is otherwise stateless about conversations, so the client
  * passes either a `conversationId` (preferred — the container is resolved from
@@ -115,16 +120,14 @@ function getProvider(provider) {
  * not yet persisted). Both are always re-loaded user-scoped, so the client can
  * never inject another user's container or arbitrary file contents.
  *
- * Layering: workspace context frames everything, then project context, then the
- * persona system prompt (added by applyRequestContext). A project-level chat
- * inherits both; a workspace-level chat only the workspace; an unfiled chat
- * neither. When a project is known but its workspace wasn't passed explicitly,
- * the workspace is derived from the project so inheritance always holds.
+ * Split from resolveRequestContext (P2-02) because the tool loop needs the
+ * rows themselves: the conversation for the tools toggle, the workspace +
+ * project as file destinations.
  *
  * @param {Object} req - Express request (req.user, req.body)
- * @returns {Promise<{ text: string, warning: string|null }|null>}
+ * @returns {{ conversation: Object|null, workspace: Object|null, project: Object|null }}
  */
-async function resolveRequestContext(req) {
+function resolveRequestContainers(req) {
   const userId = req.user.userId;
   // Guard the types: these come straight from the request body, and passing a
   // non-string to better-sqlite3 throws (TypeError) rather than simply missing.
@@ -132,12 +135,13 @@ async function resolveRequestContext(req) {
   const projectId = typeof req.body.projectId === 'string' ? req.body.projectId : null;
   const workspaceId = typeof req.body.workspaceId === 'string' ? req.body.workspaceId : null;
 
+  let conversation = null;
   let workspace = null;
   let project = null;
 
   if (conversationId) {
     // Metadata-only lookup — we just need the container ids, not the messages.
-    const conversation = dal.getConversationMeta(conversationId, userId);
+    conversation = dal.getConversationMeta(conversationId, userId) || null;
     if (conversation) {
       if (conversation.project_id) project = dal.getProjectById(conversation.project_id, userId);
       if (conversation.workspace_id) workspace = dal.getWorkspaceById(conversation.workspace_id, userId);
@@ -152,6 +156,26 @@ async function resolveRequestContext(req) {
   if (project && !workspace && project.workspace_id) {
     workspace = dal.getWorkspaceById(project.workspace_id, userId);
   }
+
+  return { conversation, workspace: workspace || null, project: project || null };
+}
+
+/**
+ * Assemble the layered context block for a chat request (workspace first,
+ * then project — see WORKSPACE_RESTRUCTURE.md). Layering: workspace context
+ * frames everything, then project context, then the persona system prompt
+ * (added by applyRequestContext). A project-level chat inherits both; a
+ * workspace-level chat only the workspace; an unfiled chat neither.
+ *
+ * @param {Object} req - Express request (req.user, req.body)
+ * @param {Object} [containers] - resolveRequestContainers(req) result, when
+ *   the caller already resolved it (avoids double lookups)
+ * @returns {Promise<{ text: string, warning: string|null }|null>} null when
+ *   there is nothing to inject
+ */
+async function resolveRequestContext(req, containers = null) {
+  const userId = req.user.userId;
+  const { workspace, project } = containers || resolveRequestContainers(req);
 
   const blocks = [];
   const warnings = [];
@@ -181,6 +205,117 @@ async function resolveRequestContext(req) {
 function applyRequestContext(requestContext, systemPrompt) {
   if (!requestContext?.text) return systemPrompt;
   return `${requestContext.text}\n\n${systemPrompt || ''}`.trim();
+}
+
+/**
+ * Resolve whether file tools are enabled for this request (Track A).
+ * Precedence: conversation override (tools_enabled 1/0) → persona base
+ * (model_config.toolsEnabled) → false. Resolved SERVER-SIDE only — the
+ * client never passes a tools flag and the routes never forward one, so
+ * tools cannot be injected via the request body.
+ *
+ * A request without a persisted conversation (e.g. a preview for a fresh
+ * chat) has no override or persona to consult → tools off.
+ *
+ * @param {string} userId
+ * @param {Object|null} conversation - conversations row (snake_case)
+ * @returns {boolean}
+ */
+function resolveToolsEnabled(userId, conversation) {
+  if (!conversation) return false;
+  if (conversation.tools_enabled === 0) return false;
+  if (conversation.tools_enabled === 1) return true;
+  if (!conversation.persona_id) return false;
+  const persona = dal.getPersonaById(conversation.persona_id, userId);
+  return persona?.modelConfig?.toolsEnabled === true;
+}
+
+/**
+ * The Track A tool loop (decision 3 in docs/PHASE2_TASKS.md): repeatedly call
+ * the provider NON-streaming; when the model requests tools, execute them and
+ * continue with the raw assistant message + a tool-result message appended
+ * (raw-message discipline — decision 4); stop at the first response with no
+ * tool calls, which is the final answer.
+ *
+ * Ordering invariant: results[i] must answer calls[i] — Gemini pairs
+ * same-name parallel responses by order alone. Tools execute sequentially to
+ * keep that trivially true.
+ *
+ * Abort: checked between the provider round trip and tool execution, and
+ * between tools — a tool has side effects, so nothing executes after the
+ * client disconnects. An abort mid-provider-fetch surfaces as AbortError and
+ * is converted to `{ aborted: true }`.
+ *
+ * @param {Object} opts
+ * @param {Object} opts.providerModule - Must implement chatRaw/formatChatResult
+ *   + the tool contract (formatTools/extractToolCalls/buildToolResultMessage)
+ * @param {string} opts.apiKey
+ * @param {Object} opts.params - { model, messages, systemPrompt, modelParams, attachments }
+ *   (NO prefill — skipped when tools are on, decision 5)
+ * @param {Object} opts.toolContext - { userId, workspace, project, conversationId }
+ * @param {AbortSignal} [opts.signal]
+ * @param {(event: Object) => void} [opts.onEvent] - Called after each tool
+ *   executes, with { tool, filename?, ok } (compact — no file contents)
+ * @returns {Promise<{ result?: Object, toolEvents: Array, aborted?: boolean }>}
+ */
+async function runToolLoop({ providerModule, apiKey, params, toolContext, signal, onEvent = () => {} }) {
+  const messages = [...params.messages];
+  const toolEvents = [];
+
+  for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+    let data;
+    try {
+      data = await providerModule.chatRaw(
+        apiKey,
+        { ...params, messages, prefill: undefined, tools: TOOL_DEFINITIONS },
+        signal
+      );
+    } catch (err) {
+      if (err.name === 'AbortError') return { aborted: true, toolEvents };
+      throw err;
+    }
+
+    const extraction = providerModule.extractToolCalls(data);
+    if (!extraction) {
+      return { result: providerModule.formatChatResult(data, params.model), toolEvents };
+    }
+
+    if (signal?.aborted) return { aborted: true, toolEvents };
+
+    messages.push(extraction.rawAssistantMessage);
+
+    const results = [];
+    for (const call of extraction.calls) {
+      let result;
+      try {
+        result = await executeToolCall(call, toolContext);
+      } catch (err) {
+        // Executor failures feed back to the model as an error result — a
+        // broken tool must never break the conversation.
+        logger.error({ userId: toolContext.userId, tool: call.name, msg: err.message }, 'Tool executor threw');
+        result = { content: `Tool ${call.name} failed: ${err.message}`, isError: true };
+      }
+      results.push(result);
+
+      const event = {
+        tool: call.name,
+        ...(typeof call.input?.filename === 'string' ? { filename: call.input.filename } : {}),
+        ok: !result.isError,
+        // Executors may attach display extras (e.g. a download URL, P2-03).
+        ...(result.display || {}),
+      };
+      toolEvents.push(event);
+      onEvent(event);
+
+      if (signal?.aborted) return { aborted: true, toolEvents };
+    }
+
+    messages.push(providerModule.buildToolResultMessage(extraction.calls, results));
+  }
+
+  throw AppError.provider(
+    `The model kept calling tools without finishing (limit: ${MAX_TOOL_ITERATIONS} rounds). Try rephrasing the request.`
+  );
 }
 
 /**
@@ -226,8 +361,10 @@ router.post('/', asyncHandler(async (req, res) => {
   const providerModule = getProvider(provider);
 
   // Inject workspace + project context (instructions + files) before the persona prompt.
-  const requestContext = await resolveRequestContext(req);
+  const containers = resolveRequestContainers(req);
+  const requestContext = await resolveRequestContext(req, containers);
   const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
+  const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   logger.info({
     userId: req.user.userId,
@@ -235,17 +372,44 @@ router.post('/', asyncHandler(async (req, res) => {
     model,
     messageCount: messages.length,
     projectContext: Boolean(requestContext?.text),
+    toolsEnabled,
   }, 'Chat request');
 
-  // Call provider's chat method
-  const result = await providerModule.chat(apiKey, {
-    model,
-    messages,
-    systemPrompt: effectiveSystemPrompt,
-    modelParams,
-    prefill,
-    attachments,
-  });
+  let result;
+  if (toolsEnabled) {
+    // Tool loop (prefill intentionally dropped — decision 5). Abort on client
+    // disconnect so no tool executes for an abandoned request.
+    const abortController = new AbortController();
+    req.on('close', () => abortController.abort());
+
+    const { result: loopResult, toolEvents, aborted } = await runToolLoop({
+      providerModule,
+      apiKey,
+      params: { model, messages, systemPrompt: effectiveSystemPrompt, modelParams, attachments },
+      toolContext: {
+        userId: req.user.userId,
+        workspace: containers.workspace,
+        project: containers.project,
+        conversationId: containers.conversation?.id || null,
+      },
+      signal: abortController.signal,
+    });
+    if (aborted) {
+      res.end();
+      return;
+    }
+    result = { ...loopResult, toolEvents };
+  } else {
+    // Call provider's chat method
+    result = await providerModule.chat(apiKey, {
+      model,
+      messages,
+      systemPrompt: effectiveSystemPrompt,
+      modelParams,
+      prefill,
+      attachments,
+    });
+  }
 
   if (requestContext?.warning) {
     result.contextWarning = requestContext.warning;
@@ -279,8 +443,10 @@ router.post('/stream', asyncHandler(async (req, res) => {
 
   // Inject workspace + project context before the persona prompt.
   // Resolved before any SSE headers are sent so the warning header is valid.
-  const requestContext = await resolveRequestContext(req);
+  const containers = resolveRequestContainers(req);
+  const requestContext = await resolveRequestContext(req, containers);
   const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
+  const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   if (requestContext?.warning) {
     res.setHeader('X-Project-Context-Warning', encodeURIComponent(requestContext.warning));
@@ -292,6 +458,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
     model,
     messageCount: messages.length,
     projectContext: Boolean(requestContext?.text),
+    toolsEnabled,
   }, 'Stream request');
 
   // Set up abort handling for client disconnect
@@ -301,6 +468,71 @@ router.post('/stream', asyncHandler(async (req, res) => {
     logger.debug({ userId: req.user.userId }, 'Client disconnected from stream');
     abortController.abort();
   });
+
+  if (toolsEnabled) {
+    // Tools-on turns run the NON-streaming loop and deliver everything as
+    // synthetic SSE over this same channel (decision 3): tool-activity events
+    // while tools run, then the final answer as ONE provider-native-shaped
+    // chunk so the existing client accumulator renders it unchanged, then a
+    // done event carrying the full tool-event list (P2-05b persists it).
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const writeEvent = (eventName, payload) => {
+      if (res.writableEnded) return;
+      if (eventName) res.write(`event: ${eventName}\n`);
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    try {
+      const { result, toolEvents, aborted } = await runToolLoop({
+        providerModule,
+        apiKey,
+        params: { model, messages, systemPrompt: effectiveSystemPrompt, modelParams, attachments },
+        toolContext: {
+          userId: req.user.userId,
+          workspace: containers.workspace,
+          project: containers.project,
+          conversationId: containers.conversation?.id || null,
+        },
+        signal: abortController.signal,
+        onEvent: (ev) => writeEvent('tool-activity', { type: 'tool_activity', ...ev }),
+      });
+
+      if (!aborted) {
+        if (provider === 'anthropic') {
+          writeEvent('content_block_delta', {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: result.text },
+          });
+        } else {
+          // google: one synthetic chunk with the final parts (text + any
+          // generated images), in the shape the client already parses.
+          const parts = [
+            { text: result.text },
+            ...(result.generatedImages || []).map((img) => ({
+              inlineData: { mimeType: img.mimeType, data: img.base64Data },
+            })),
+          ];
+          writeEvent(null, { candidates: [{ content: { parts } }] });
+        }
+        writeEvent('done', { type: 'tool_loop_done', toolEvents });
+      }
+    } catch (err) {
+      // SSE headers are already sent, so the HTTP error path can't run.
+      // Emit the provider-style error payload the client's mid-stream error
+      // handler (C7) already understands, then end.
+      logger.error({ userId: req.user.userId, provider, msg: err.message }, 'Tool loop failed');
+      writeEvent('error', {
+        type: 'error',
+        error: { type: err.code || 'TOOL_LOOP_ERROR', message: err.message },
+      });
+    }
+    res.end();
+    return;
+  }
 
   // Call provider's stream method
   await providerModule.stream(apiKey, {
@@ -344,17 +576,22 @@ router.post('/preview', asyncHandler(async (req, res) => {
     throw AppError.validation(`Request preview not supported for provider: ${provider}`);
   }
 
-  // Identical context assembly to the real chat path.
-  const requestContext = await resolveRequestContext(req);
+  // Identical context assembly to the real chat path — including the tools
+  // toggle, so the inspector shows the tool definitions (and the skipped
+  // prefill) exactly as a real tools-on send would build them.
+  const containers = resolveRequestContainers(req);
+  const requestContext = await resolveRequestContext(req, containers);
   const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
+  const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   const body = providerModule.buildRequestBody({
     model,
     messages,
     systemPrompt: effectiveSystemPrompt,
     modelParams,
-    prefill,
+    prefill: toolsEnabled ? undefined : prefill,
     attachments,
+    ...(toolsEnabled ? { tools: TOOL_DEFINITIONS } : {}),
     stream: false,
   });
 
@@ -368,6 +605,7 @@ router.post('/preview', asyncHandler(async (req, res) => {
     // Surfaced so the UI can make clear the key isn't missing — it's just not
     // part of the body.
     apiKeyLocation: 'sent as a request header (never in the body)',
+    toolsEnabled,
     ...(requestContext?.warning ? { contextWarning: requestContext.warning } : {}),
   });
 }));
@@ -413,4 +651,8 @@ module.exports = {
   // Exported for headless context-layering tests.
   resolveRequestContext,
   applyRequestContext,
+  // Exported for headless tool-loop tests (P2-02).
+  resolveRequestContainers,
+  resolveToolsEnabled,
+  runToolLoop,
 };

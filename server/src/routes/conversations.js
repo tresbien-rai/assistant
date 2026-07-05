@@ -43,6 +43,10 @@ function formatConversation(conversation) {
     projectId: conversation.project_id,
     workspaceId: conversation.workspace_id,
     title: conversation.title,
+    // Track A file-tools override: null = inherit persona base, true/false = forced.
+    toolsEnabled: conversation.tools_enabled === null || conversation.tools_enabled === undefined
+      ? null
+      : conversation.tools_enabled === 1,
     createdAt: conversation.created_at,
     updatedAt: conversation.updated_at,
   };
@@ -208,13 +212,22 @@ router.post('/', asyncHandler(async (req, res) => {
 /**
  * PUT /api/conversations/:id
  * Updates conversation metadata (only if owned by user)
- * Body: { title?, personaId?, projectId?, workspaceId? }
+ * Body: { title?, personaId?, projectId?, workspaceId?, toolsEnabled? }
  * Moving a chat's container re-applies the hierarchy invariant (workspace_id is
  * derived from the project; clearing both unfiles the chat).
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { title, personaId, projectId, workspaceId } = req.body;
+  const { title, personaId, projectId, workspaceId, toolsEnabled } = req.body;
   const updateData = {};
+
+  // Track A composer override: boolean forces on/off, null clears back to
+  // inheriting the persona base.
+  if (toolsEnabled !== undefined) {
+    if (toolsEnabled !== null && typeof toolsEnabled !== 'boolean') {
+      throw AppError.validation('toolsEnabled must be true, false, or null');
+    }
+    updateData.toolsEnabled = toolsEnabled;
+  }
 
   // Validate and collect fields to update
   if (title !== undefined) {
