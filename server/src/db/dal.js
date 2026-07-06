@@ -1196,29 +1196,37 @@ function getWorkspaceFileByName(workspaceId, filename) {
 
 /**
  * Repoint a project file row at replacement content (overwrite semantics).
+ * Scoped by projectId so the UPDATE can't touch another container's row.
  * @param {string} fileId
+ * @param {string} projectId
  * @param {{mimeType?: string, sizeBytes?: number, driveFileId: string}} data
- * @returns {Object|undefined} The updated row
+ * @returns {Object|undefined} The updated row, or undefined if not in scope
  */
-function updateProjectFileContent(fileId, { mimeType, sizeBytes, driveFileId }) {
+function updateProjectFileContent(fileId, projectId, { mimeType, sizeBytes, driveFileId }) {
   const db = getDb();
-  db.prepare(`
-    UPDATE project_files SET mime_type = ?, size_bytes = ?, drive_file_id = ? WHERE id = ?
-  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId);
+  const res = db.prepare(`
+    UPDATE project_files SET mime_type = ?, size_bytes = ?, drive_file_id = ?
+    WHERE id = ? AND project_id = ?
+  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId, projectId);
+  if (res.changes === 0) return undefined;
   return db.prepare('SELECT * FROM project_files WHERE id = ?').get(fileId);
 }
 
 /**
  * Repoint a workspace file row at replacement content (overwrite semantics).
+ * Scoped by workspaceId so the UPDATE can't touch another container's row.
  * @param {string} fileId
+ * @param {string} workspaceId
  * @param {{mimeType?: string, sizeBytes?: number, driveFileId: string}} data
- * @returns {Object|undefined} The updated row
+ * @returns {Object|undefined} The updated row, or undefined if not in scope
  */
-function updateWorkspaceFileContent(fileId, { mimeType, sizeBytes, driveFileId }) {
+function updateWorkspaceFileContent(fileId, workspaceId, { mimeType, sizeBytes, driveFileId }) {
   const db = getDb();
-  db.prepare(`
-    UPDATE workspace_files SET mime_type = ?, size_bytes = ?, drive_file_id = ? WHERE id = ?
-  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId);
+  const res = db.prepare(`
+    UPDATE workspace_files SET mime_type = ?, size_bytes = ?, drive_file_id = ?
+    WHERE id = ? AND workspace_id = ?
+  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId, workspaceId);
+  if (res.changes === 0) return undefined;
   return db.prepare('SELECT * FROM workspace_files WHERE id = ?').get(fileId);
 }
 
@@ -1291,15 +1299,19 @@ function getUserFileByName(userId, filename) {
 
 /**
  * Repoint a user file row at replacement content (overwrite semantics).
+ * Scoped by userId so the UPDATE can't touch another user's row.
  * @param {string} fileId
+ * @param {string} userId
  * @param {{mimeType?: string, sizeBytes?: number, driveFileId: string}} data
- * @returns {Object|undefined} The updated row
+ * @returns {Object|undefined} The updated row, or undefined if not in scope
  */
-function updateUserFileContent(fileId, { mimeType, sizeBytes, driveFileId }) {
+function updateUserFileContent(fileId, userId, { mimeType, sizeBytes, driveFileId }) {
   const db = getDb();
-  db.prepare(`
-    UPDATE user_files SET mime_type = ?, size_bytes = ?, drive_file_id = ? WHERE id = ?
-  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId);
+  const res = db.prepare(`
+    UPDATE user_files SET mime_type = ?, size_bytes = ?, drive_file_id = ?
+    WHERE id = ? AND user_id = ?
+  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId, userId);
+  if (res.changes === 0) return undefined;
   return db.prepare('SELECT * FROM user_files WHERE id = ?').get(fileId);
 }
 

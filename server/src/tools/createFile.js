@@ -28,10 +28,16 @@
 const path = require('node:path');
 
 const config = require('../config');
-const dal = require('../db/dal');
 const drive = require('../utils/drive');
 const { ACCEPTED_EXTENSIONS } = require('../utils/fileUploads');
+const { resolveFileStore } = require('./fileStore');
 const { logger } = require('../utils/logger');
+
+// A well-formed `type/subtype` MIME (RFC 2045 token chars only). Anything with
+// a CR/LF, space, or `;` fails — this is what keeps a model-supplied mime_type
+// out of the response Content-Type header downstream (files.js), where a raw
+// newline would otherwise throw ERR_INVALID_CHAR on download.
+const MIME_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/i;
 
 // Extension → MIME for common text types; fallback text/plain. mime_type from
 // the model wins when provided (advisory but usually right).
@@ -82,45 +88,19 @@ function validateFilename(filename) {
 }
 
 /**
- * Resolve the destination for this conversation's files: folder on Drive +
- * the DAL accessors for the matching table.
- * @param {import('google-auth-library').OAuth2Client} auth
- * @param {Object} ctx - ToolContext ({ userId, workspace, project })
- * @returns {Promise<{kind: string, folderId: string, findByName: Function,
- *   add: Function, updateContent: Function, urlFor: (fileId: string) => string}>}
+ * Resolve the MIME type: a well-formed model-supplied mime_type wins; otherwise
+ * derive from the extension; else text/plain. A malformed value (spaces, `;`,
+ * CR/LF — e.g. a header-injection attempt) is dropped, never stored.
+ * @param {*} inputMime
+ * @param {string} ext - lowercased extension incl. leading dot
+ * @returns {string}
  */
-async function resolveDestination(auth, ctx) {
-  if (ctx.project) {
-    const folderId = await drive.ensureProjectFolderId(auth, ctx.userId, ctx.project);
-    return {
-      kind: 'project',
-      folderId,
-      findByName: (name) => dal.getProjectFileByName(ctx.project.id, name),
-      add: (data) => dal.addProjectFile(ctx.project.id, data),
-      updateContent: (fileId, data) => dal.updateProjectFileContent(fileId, data),
-      urlFor: (fileId) => `/api/projects/${ctx.project.id}/files/${fileId}/content`,
-    };
+function resolveMime(inputMime, ext) {
+  if (typeof inputMime === 'string') {
+    const m = inputMime.trim();
+    if (MIME_RE.test(m)) return m;
   }
-  if (ctx.workspace) {
-    const folderId = await drive.ensureWorkspaceFolderId(auth, ctx.userId, ctx.workspace);
-    return {
-      kind: 'workspace',
-      folderId,
-      findByName: (name) => dal.getWorkspaceFileByName(ctx.workspace.id, name),
-      add: (data) => dal.addWorkspaceFile(ctx.workspace.id, data),
-      updateContent: (fileId, data) => dal.updateWorkspaceFileContent(fileId, data),
-      urlFor: (fileId) => `/api/workspaces/${ctx.workspace.id}/files/${fileId}/content`,
-    };
-  }
-  const folderId = await drive.ensureDownloadsFolder(auth);
-  return {
-    kind: 'downloads',
-    folderId,
-    findByName: (name) => dal.getUserFileByName(ctx.userId, name),
-    add: (data) => dal.addUserFile(ctx.userId, data),
-    updateContent: (fileId, data) => dal.updateUserFileContent(fileId, data),
-    urlFor: (fileId) => `/api/files/${fileId}/content`,
-  };
+  return MIME_BY_EXTENSION[ext] || 'text/plain';
 }
 
 /**
@@ -148,9 +128,7 @@ async function executeCreateFile(input, ctx) {
     };
   }
 
-  const mimeType = (typeof input.mime_type === 'string' && input.mime_type.trim())
-    ? input.mime_type.trim()
-    : (MIME_BY_EXTENSION[check.ext] || 'text/plain');
+  const mimeType = resolveMime(input.mime_type, check.ext);
 
   // Drive-less users (e.g. dev login) get a readable failure, not a crash.
   let auth;
@@ -163,25 +141,26 @@ async function executeCreateFile(input, ctx) {
     };
   }
 
-  const dest = await resolveDestination(auth, ctx);
+  const store = resolveFileStore(ctx);
+  const folderId = await store.ensureFolder(auth);
 
   // Upload the new bytes FIRST — if this fails, an existing same-name file is
   // left untouched.
   const uploaded = await drive.uploadFile(auth, {
     name: filename,
     mimeType,
-    parentId: dest.folderId,
+    parentId: folderId,
     data: bytes,
   });
 
   // Overwrite-on-duplicate (decision 6): repoint the existing row (its id —
   // and therefore any previously shared download link — keeps working), then
   // drop the old Drive file best-effort.
-  const existing = dest.findByName(filename);
+  const existing = store.findByName(filename);
   let record;
   let overwritten = false;
   if (existing) {
-    record = dest.updateContent(existing.id, {
+    record = store.updateContent(existing.id, {
       mimeType,
       sizeBytes: bytes.length,
       driveFileId: uploaded.id,
@@ -198,7 +177,7 @@ async function executeCreateFile(input, ctx) {
       }
     }
   } else {
-    record = dest.add({
+    record = store.add({
       filename,
       mimeType,
       sizeBytes: bytes.length,
@@ -206,25 +185,20 @@ async function executeCreateFile(input, ctx) {
     });
   }
 
-  const url = dest.urlFor(record.id);
+  const url = store.urlFor(record.id);
   const sizeLabel = bytes.length < 1024 ? `${bytes.length} B` : `${(bytes.length / 1024).toFixed(1)} KB`;
-  const where = dest.kind === 'project'
-    ? `the project "${ctx.project.name}"`
-    : dest.kind === 'workspace'
-      ? `the workspace "${ctx.workspace.name}"`
-      : "the user's Downloads folder";
 
   logger.info(
-    { userId: ctx.userId, destination: dest.kind, fileId: record.id, sizeBytes: bytes.length, overwritten },
+    { userId: ctx.userId, destination: store.kind, fileId: record.id, sizeBytes: bytes.length, overwritten },
     'create_file executed'
   );
 
   return {
-    content: `${overwritten ? 'Updated' : 'Created'} "${filename}" (${sizeLabel}, ${mimeType}) in ${where}. The user can download it at ${url} — you can reference this link in your reply as a markdown link.`,
+    content: `${overwritten ? 'Updated' : 'Created'} "${filename}" (${sizeLabel}, ${mimeType}) in ${store.label}. The user can download it at ${url} — you can reference this link in your reply as a markdown link.`,
     display: {
       fileId: record.id,
       url,
-      destination: dest.kind,
+      destination: store.kind,
       sizeBytes: bytes.length,
       mimeType,
       overwritten,

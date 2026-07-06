@@ -208,9 +208,12 @@ try {
   if (dal.getUserFileByName(user.id, 'draft.md').id !== uFile.id) throw new Error('getUserFileByName wrong');
   console.log('   ✓ list/get/getByName user file');
   // Overwrite: repoint content, keep the same row id (download links survive).
-  const repointed = dal.updateUserFileContent(uFile.id, { mimeType: 'text/markdown', sizeBytes: 20, driveFileId: 'udrive-2' });
+  const repointed = dal.updateUserFileContent(uFile.id, user.id, { mimeType: 'text/markdown', sizeBytes: 20, driveFileId: 'udrive-2' });
   if (repointed.id !== uFile.id || repointed.drive_file_id !== 'udrive-2' || repointed.size_bytes !== 20) throw new Error('updateUserFileContent wrong');
-  console.log('   ✓ updateUserFileContent repoints same row');
+  // Scoping: a wrong userId must NOT update the row.
+  if (dal.updateUserFileContent(uFile.id, 'someone-else', { driveFileId: 'x' }) !== undefined) throw new Error('updateUserFileContent ignored user scope');
+  if (dal.getUserFile(uFile.id, user.id).drive_file_id !== 'udrive-2') throw new Error('cross-user update leaked');
+  console.log('   ✓ updateUserFileContent repoints same row, rejects wrong user');
   if (!dal.deleteUserFile(uFile.id, user.id)) throw new Error('deleteUserFile failed');
   if (dal.getUserFile(uFile.id, user.id)) throw new Error('user file not deleted');
   console.log('   ✓ Deleted user file');
@@ -224,12 +227,14 @@ try {
   const proj2 = dal.createProject(user.id, { workspaceId: ws2.id, name: 'P2' });
   const pf = dal.addProjectFile(proj2.id, { filename: 'gen.md', mimeType: 'text/markdown', sizeBytes: 5, driveFileId: 'pdrive-1' });
   if (dal.getProjectFileByName(proj2.id, 'gen.md').id !== pf.id) throw new Error('getProjectFileByName wrong');
-  const pfUpdated = dal.updateProjectFileContent(pf.id, { mimeType: 'text/markdown', sizeBytes: 8, driveFileId: 'pdrive-2' });
+  const pfUpdated = dal.updateProjectFileContent(pf.id, proj2.id, { mimeType: 'text/markdown', sizeBytes: 8, driveFileId: 'pdrive-2' });
   if (pfUpdated.id !== pf.id || pfUpdated.drive_file_id !== 'pdrive-2') throw new Error('updateProjectFileContent wrong');
+  if (dal.updateProjectFileContent(pf.id, 'other-proj', { driveFileId: 'x' }) !== undefined) throw new Error('updateProjectFileContent ignored project scope');
   const wf = dal.addWorkspaceFile(ws2.id, { filename: 'gen.md', driveFileId: 'wdrive-1' });
   if (dal.getWorkspaceFileByName(ws2.id, 'gen.md').id !== wf.id) throw new Error('getWorkspaceFileByName wrong');
-  const wfUpdated = dal.updateWorkspaceFileContent(wf.id, { sizeBytes: 3, driveFileId: 'wdrive-2' });
+  const wfUpdated = dal.updateWorkspaceFileContent(wf.id, ws2.id, { sizeBytes: 3, driveFileId: 'wdrive-2' });
   if (wfUpdated.drive_file_id !== 'wdrive-2') throw new Error('updateWorkspaceFileContent wrong');
+  if (dal.updateWorkspaceFileContent(wf.id, 'other-ws', { driveFileId: 'x' }) !== undefined) throw new Error('updateWorkspaceFileContent ignored workspace scope');
   console.log('   ✓ getProjectFileByName/getWorkspaceFileByName + updateContent helpers');
 
   // Cleanup

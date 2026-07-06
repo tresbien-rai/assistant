@@ -156,13 +156,30 @@ function restoreDrive() {
       driveConnected = true;
     });
 
-    console.log('\n5. mime_type override is honored...');
-    await check('explicit mime_type wins over extension default', async () => {
+    console.log('\n5. mime_type override + sanitization...');
+    await check('explicit well-formed mime_type wins over extension default', async () => {
       const res = await executeCreateFile(
         { filename: 'weird.txt', content: 'x', mime_type: 'application/json' },
         unfiledCtx
       );
       assert.strictEqual(res.display.mimeType, 'application/json');
+    });
+
+    await check('malformed mime_type (header injection) is dropped for the extension default', async () => {
+      const res = await executeCreateFile(
+        { filename: 'inject.txt', content: 'x', mime_type: 'text/plain\r\nX-Injected: 1' },
+        unfiledCtx
+      );
+      assert.ok(!res.isError, 'still creates the file');
+      assert.strictEqual(res.display.mimeType, 'text/plain', 'falls back to extension MIME');
+    });
+
+    await check('mime_type with a parameter/semicolon is rejected too', async () => {
+      const res = await executeCreateFile(
+        { filename: 'param.txt', content: 'x', mime_type: 'text/plain; charset=utf-8' },
+        unfiledCtx
+      );
+      assert.strictEqual(res.display.mimeType, 'text/plain');
     });
 
   } catch (err) {
