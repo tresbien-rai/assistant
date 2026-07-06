@@ -256,6 +256,18 @@ async function ensureWorkspaceFolder(auth, name) {
   return ensureFolder(auth, name, rootId);
 }
 
+/**
+ * Ensure the `{driveRootFolder}/Downloads/` folder exists and return its id
+ * (Track A): the destination for tool-created files when the chat is unfiled
+ * (no project, no workspace). Idempotent, like the other ensure* helpers.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @returns {Promise<string>} The Downloads folder's id
+ */
+async function ensureDownloadsFolder(auth) {
+  const rootId = await ensureFolder(auth, APP_ROOT_FOLDER, null);
+  return ensureFolder(auth, 'Downloads', rootId);
+}
+
 // =============================================================================
 // Row-aware folder helpers (shared by the project/workspace routes and the
 // Track A tool executors — moved here from routes/projects.js in P2-01)
@@ -424,6 +436,7 @@ module.exports = {
   ensureWorkspaceFolder,
   ensureWorkspaceFolderId,
   ensureProjectFolderId,
+  ensureDownloadsFolder,
   createFolder,
   uploadFile,
   downloadFileText,

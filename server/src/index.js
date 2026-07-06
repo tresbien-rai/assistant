@@ -26,6 +26,7 @@ const conversationsRoutes = require('./routes/conversations');
 const workspacesRoutes = require('./routes/workspaces');
 const projectsRoutes = require('./routes/projects');
 const settingsRoutes = require('./routes/settings');
+const filesRoutes = require('./routes/files');
 const { chatRouter, modelsRouter } = require('./routes/chat');
 const { personaAvatarRouter, avatarServingRouter } = require('./routes/avatars');
 
@@ -97,6 +98,9 @@ app.use('/api/projects', projectsRoutes);
 
 // User settings
 app.use('/api/settings', settingsRoutes);
+
+// User (Downloads) files — tool-created files from unfiled chats (Track A)
+app.use('/api/files', authenticate, filesRoutes);
 
 // Avatar upload/delete (on persona routes) and serving
 app.use('/api/personas', personaAvatarRouter);

@@ -22,21 +22,34 @@
  * @property {string|null} conversationId
  */
 
-const { TOOL_DEFINITIONS } = require('./definitions');
 const { logger } = require('../utils/logger');
+const { executeCreateFile } = require('./createFile');
 
-const KNOWN_TOOLS = new Set(TOOL_DEFINITIONS.map((t) => t.name));
+/**
+ * Executor dispatch table. Each entry runs one tool's real work and returns a
+ * provider-neutral result. read_file + list_files land in P2-04; until then
+ * they fall through to the not-implemented stub below.
+ */
+const EXECUTORS = {
+  create_file: (input, ctx) => executeCreateFile(input, ctx),
+  // read_file / list_files: P2-04.
+};
 
 /**
  * Execute a single tool call.
  * @param {{id: string, name: string, input: Object}} call
  * @param {ToolContext} ctx
- * @returns {Promise<{content: string, isError?: boolean}>}
+ * @returns {Promise<{content: string, isError?: boolean, display?: Object}>}
  */
 async function executeToolCall(call, ctx) {
-  if (!KNOWN_TOOLS.has(call.name)) {
-    // The model hallucinated a tool name; tell it rather than crash the turn.
-    return { content: `Unknown tool: ${call.name}`, isError: true };
+  const executor = EXECUTORS[call.name];
+  if (!executor) {
+    // Either an as-yet-unimplemented tool (read_file/list_files) or a name the
+    // model hallucinated — tell it rather than crash the turn.
+    return {
+      content: `The "${call.name}" tool is not available yet. Tell the user this capability is still being set up.`,
+      isError: true,
+    };
   }
 
   logger.info(
@@ -44,11 +57,7 @@ async function executeToolCall(call, ctx) {
     'Tool call'
   );
 
-  // P2-03/P2-04 replace this with real executors (Drive I/O + DAL records).
-  return {
-    content: `The ${call.name} tool is not available yet. Tell the user file tools are still being set up.`,
-    isError: true,
-  };
+  return executor(call.input || {}, ctx);
 }
 
 module.exports = { executeToolCall };

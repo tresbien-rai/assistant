@@ -1158,6 +1158,177 @@ function deleteWorkspaceFile(fileId, workspaceId) {
 }
 
 // =============================================================================
+// FILE OVERWRITE HELPERS (Track A, P2-03)
+// =============================================================================
+//
+// create_file OVERWRITES an existing file with the same name in its scope
+// (decision 6 in docs/PHASE2_TASKS.md): the row keeps its id (so previously
+// shared download links keep working, now serving the new content) and points
+// at the replacement Drive file.
+
+/**
+ * Find a project file by exact filename (scoped to its project).
+ * @param {string} projectId
+ * @param {string} filename
+ * @returns {Object|undefined}
+ */
+function getProjectFileByName(projectId, filename) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM project_files WHERE project_id = ? AND filename = ?
+    ORDER BY created_at DESC LIMIT 1
+  `).get(projectId, filename);
+}
+
+/**
+ * Find a workspace file by exact filename (scoped to its workspace).
+ * @param {string} workspaceId
+ * @param {string} filename
+ * @returns {Object|undefined}
+ */
+function getWorkspaceFileByName(workspaceId, filename) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM workspace_files WHERE workspace_id = ? AND filename = ?
+    ORDER BY created_at DESC LIMIT 1
+  `).get(workspaceId, filename);
+}
+
+/**
+ * Repoint a project file row at replacement content (overwrite semantics).
+ * Scoped by projectId so the UPDATE can't touch another container's row.
+ * @param {string} fileId
+ * @param {string} projectId
+ * @param {{mimeType?: string, sizeBytes?: number, driveFileId: string}} data
+ * @returns {Object|undefined} The updated row, or undefined if not in scope
+ */
+function updateProjectFileContent(fileId, projectId, { mimeType, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const res = db.prepare(`
+    UPDATE project_files SET mime_type = ?, size_bytes = ?, drive_file_id = ?
+    WHERE id = ? AND project_id = ?
+  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId, projectId);
+  if (res.changes === 0) return undefined;
+  return db.prepare('SELECT * FROM project_files WHERE id = ?').get(fileId);
+}
+
+/**
+ * Repoint a workspace file row at replacement content (overwrite semantics).
+ * Scoped by workspaceId so the UPDATE can't touch another container's row.
+ * @param {string} fileId
+ * @param {string} workspaceId
+ * @param {{mimeType?: string, sizeBytes?: number, driveFileId: string}} data
+ * @returns {Object|undefined} The updated row, or undefined if not in scope
+ */
+function updateWorkspaceFileContent(fileId, workspaceId, { mimeType, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const res = db.prepare(`
+    UPDATE workspace_files SET mime_type = ?, size_bytes = ?, drive_file_id = ?
+    WHERE id = ? AND workspace_id = ?
+  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId, workspaceId);
+  if (res.changes === 0) return undefined;
+  return db.prepare('SELECT * FROM workspace_files WHERE id = ?').get(fileId);
+}
+
+// =============================================================================
+// USER FILES (Track A, P2-03)
+// =============================================================================
+//
+// Tool-created files from UNFILED chats, stored in the user's
+// Tessera/Downloads/ Drive folder. Scoped directly by user_id — unlike
+// project/workspace files there is no container to pre-verify, so every
+// function here takes the userId itself.
+
+/**
+ * Record a user (Downloads) file's metadata (the bytes live on Drive).
+ * @param {string} userId - The user's UUID
+ * @param {{filename: string, mimeType?: string, sizeBytes?: number, driveFileId?: string}} data
+ * @returns {Object} The created user_files record
+ */
+function addUserFile(userId, { filename, mimeType, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+
+  db.prepare(`
+    INSERT INTO user_files (id, user_id, filename, mime_type, size_bytes, drive_file_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, userId, filename, mimeType || '', sizeBytes || 0, driveFileId || '', timestamp);
+
+  return db.prepare('SELECT * FROM user_files WHERE id = ?').get(id);
+}
+
+/**
+ * List a user's Downloads files (metadata only, from SQLite — no Drive calls).
+ * @param {string} userId - The user's UUID
+ * @returns {Array} Array of user_files records
+ */
+function listUserFiles(userId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM user_files WHERE user_id = ? ORDER BY created_at ASC
+  `).all(userId);
+}
+
+/**
+ * Get a single user file (user-scoped).
+ * @param {string} fileId - The file's UUID
+ * @param {string} userId - The user's UUID
+ * @returns {Object|undefined}
+ */
+function getUserFile(fileId, userId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM user_files WHERE id = ? AND user_id = ?
+  `).get(fileId, userId);
+}
+
+/**
+ * Find a user file by exact filename (user-scoped).
+ * @param {string} userId
+ * @param {string} filename
+ * @returns {Object|undefined}
+ */
+function getUserFileByName(userId, filename) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM user_files WHERE user_id = ? AND filename = ?
+    ORDER BY created_at DESC LIMIT 1
+  `).get(userId, filename);
+}
+
+/**
+ * Repoint a user file row at replacement content (overwrite semantics).
+ * Scoped by userId so the UPDATE can't touch another user's row.
+ * @param {string} fileId
+ * @param {string} userId
+ * @param {{mimeType?: string, sizeBytes?: number, driveFileId: string}} data
+ * @returns {Object|undefined} The updated row, or undefined if not in scope
+ */
+function updateUserFileContent(fileId, userId, { mimeType, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const res = db.prepare(`
+    UPDATE user_files SET mime_type = ?, size_bytes = ?, drive_file_id = ?
+    WHERE id = ? AND user_id = ?
+  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId, userId);
+  if (res.changes === 0) return undefined;
+  return db.prepare('SELECT * FROM user_files WHERE id = ?').get(fileId);
+}
+
+/**
+ * Delete a user file's metadata row (user-scoped).
+ * Removing the file from Drive is the caller's responsibility.
+ * @param {string} fileId - The file's UUID
+ * @param {string} userId - The user's UUID
+ * @returns {boolean} True if deleted, false if not found
+ */
+function deleteUserFile(fileId, userId) {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM user_files WHERE id = ? AND user_id = ?').run(fileId, userId);
+  return result.changes > 0;
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
@@ -1226,4 +1397,18 @@ module.exports = {
   listWorkspaceFiles,
   getWorkspaceFile,
   deleteWorkspaceFile,
+
+  // File overwrite helpers (Track A, P2-03)
+  getProjectFileByName,
+  getWorkspaceFileByName,
+  updateProjectFileContent,
+  updateWorkspaceFileContent,
+
+  // User Files (Track A, P2-03 — unfiled/Downloads)
+  addUserFile,
+  listUserFiles,
+  getUserFile,
+  getUserFileByName,
+  updateUserFileContent,
+  deleteUserFile,
 };
