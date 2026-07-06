@@ -199,6 +199,39 @@ try {
   if (!survivedProj || survivedProj.workspace_id !== null || survivedProj.project_id !== null) throw new Error('project chat not reparented to unfiled');
   console.log('   ✓ deleteWorkspace cascaded projects; chats survived as unfiled');
 
+  // --- User files (Track A, P2-03 — Downloads / unfiled tool files) --------
+  console.log('\n11c. Testing user files (Downloads)...');
+  const uFile = dal.addUserFile(user.id, { filename: 'draft.md', mimeType: 'text/markdown', sizeBytes: 10, driveFileId: 'udrive-1' });
+  console.log(`   ✓ Added user file: ${uFile.filename}`);
+  if (dal.listUserFiles(user.id).length !== 1) throw new Error('expected 1 user file');
+  if (dal.getUserFile(uFile.id, user.id).drive_file_id !== 'udrive-1') throw new Error('getUserFile wrong');
+  if (dal.getUserFileByName(user.id, 'draft.md').id !== uFile.id) throw new Error('getUserFileByName wrong');
+  console.log('   ✓ list/get/getByName user file');
+  // Overwrite: repoint content, keep the same row id (download links survive).
+  const repointed = dal.updateUserFileContent(uFile.id, { mimeType: 'text/markdown', sizeBytes: 20, driveFileId: 'udrive-2' });
+  if (repointed.id !== uFile.id || repointed.drive_file_id !== 'udrive-2' || repointed.size_bytes !== 20) throw new Error('updateUserFileContent wrong');
+  console.log('   ✓ updateUserFileContent repoints same row');
+  if (!dal.deleteUserFile(uFile.id, user.id)) throw new Error('deleteUserFile failed');
+  if (dal.getUserFile(uFile.id, user.id)) throw new Error('user file not deleted');
+  console.log('   ✓ Deleted user file');
+  // Cascade on user delete: re-add one and confirm it goes with the user below.
+  dal.addUserFile(user.id, { filename: 'keep.txt', driveFileId: 'udrive-3' });
+
+  // --- Filename overwrite lookups for project/workspace files --------------
+  // Fresh container (the workspace above was deleted, cascading its project).
+  console.log('\n11d. Testing project/workspace file overwrite lookups...');
+  const ws2 = dal.createWorkspace(user.id, { name: 'WS2' });
+  const proj2 = dal.createProject(user.id, { workspaceId: ws2.id, name: 'P2' });
+  const pf = dal.addProjectFile(proj2.id, { filename: 'gen.md', mimeType: 'text/markdown', sizeBytes: 5, driveFileId: 'pdrive-1' });
+  if (dal.getProjectFileByName(proj2.id, 'gen.md').id !== pf.id) throw new Error('getProjectFileByName wrong');
+  const pfUpdated = dal.updateProjectFileContent(pf.id, { mimeType: 'text/markdown', sizeBytes: 8, driveFileId: 'pdrive-2' });
+  if (pfUpdated.id !== pf.id || pfUpdated.drive_file_id !== 'pdrive-2') throw new Error('updateProjectFileContent wrong');
+  const wf = dal.addWorkspaceFile(ws2.id, { filename: 'gen.md', driveFileId: 'wdrive-1' });
+  if (dal.getWorkspaceFileByName(ws2.id, 'gen.md').id !== wf.id) throw new Error('getWorkspaceFileByName wrong');
+  const wfUpdated = dal.updateWorkspaceFileContent(wf.id, { sizeBytes: 3, driveFileId: 'wdrive-2' });
+  if (wfUpdated.drive_file_id !== 'wdrive-2') throw new Error('updateWorkspaceFileContent wrong');
+  console.log('   ✓ getProjectFileByName/getWorkspaceFileByName + updateContent helpers');
+
   // Cleanup
   console.log('\n12. Cleanup...');
   db.prepare('DELETE FROM users WHERE id = ?').run(user.id);

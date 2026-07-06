@@ -137,6 +137,22 @@ CREATE TABLE IF NOT EXISTS project_files (
 
 CREATE INDEX IF NOT EXISTS idx_project_files_project_id ON project_files(project_id);
 
+-- User files (Track A, P2-03): tool-created files from UNFILED chats, stored in
+-- the user's Tessera/Downloads/ Drive folder. Mirrors project_files but is
+-- scoped directly to the user (no container). New table => created here by
+-- CREATE TABLE IF NOT EXISTS on boot; no migration needed (WR-02b precedent).
+CREATE TABLE IF NOT EXISTS user_files (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename        TEXT NOT NULL,
+    mime_type       TEXT DEFAULT '',
+    size_bytes      INTEGER DEFAULT 0,
+    drive_file_id   TEXT DEFAULT '',
+    created_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_files_user_id ON user_files(user_id);
+
 -- Settings table
 -- Per-user application settings
 CREATE TABLE IF NOT EXISTS settings (
