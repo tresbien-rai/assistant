@@ -3820,6 +3820,11 @@ function showWorkspaceContextMenu(anchorEl, workspaceId) {
 
 /**
  * Format a byte count as a short human-readable size.
+ *
+ * NOTE: mirrors the server-side `formatFileSize` in
+ * server/src/utils/format.js. The two are intentionally independent across
+ * the client/server boundary (no shared bundle); keep their thresholds and
+ * formatting in sync if either changes.
  * @param {number} bytes
  * @returns {string}
  */

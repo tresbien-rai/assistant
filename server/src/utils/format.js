@@ -1,9 +1,10 @@
 /**
  * Small shared formatting helpers (server-side).
  *
- * NOTE: the frontend has its own `formatFileSize` (app.js) for attachment
- * cards. The two are intentionally independent across the client/server
- * boundary; keep their thresholds in sync if either changes.
+ * NOTE: the frontend has its own `formatFileSize` (app.js, ~L3826) for
+ * attachment cards. The two are intentionally independent across the
+ * client/server boundary (no shared bundle); keep their thresholds and
+ * formatting in sync if either changes.
  */
 
 /**
