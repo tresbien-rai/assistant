@@ -6,11 +6,9 @@
  * provider-neutral result { content: string, isError?: boolean } for
  * buildToolResultMessage().
  *
- * P2-02 ships STUBS so the loop can land first — every tool reports itself
- * unavailable (isError, which the model relays gracefully). P2-03 implements
- * create_file; P2-04 implements read_file + list_files. The tools toggle is
- * off for everyone until the frontend exposes it (P2-05b), so the stubs are
- * unreachable in normal use.
+ * All three file tools are implemented (create_file: P2-03; read_file +
+ * list_files: P2-04). The tools toggle is off for everyone until the frontend
+ * exposes it (P2-05b), so these are unreachable in normal use for now.
  *
  * Executor errors must NEVER break the conversation: the loop converts a
  * thrown error into an isError result so the model can explain the failure.
@@ -24,15 +22,16 @@
 
 const { logger } = require('../utils/logger');
 const { executeCreateFile } = require('./createFile');
+const { executeReadFile, executeListFiles } = require('./readFiles');
 
 /**
  * Executor dispatch table. Each entry runs one tool's real work and returns a
- * provider-neutral result. read_file + list_files land in P2-04; until then
- * they fall through to the not-implemented stub below.
+ * provider-neutral result { content, isError?, display? }.
  */
 const EXECUTORS = {
   create_file: (input, ctx) => executeCreateFile(input, ctx),
-  // read_file / list_files: P2-04.
+  read_file: (input, ctx) => executeReadFile(input, ctx),
+  list_files: (input, ctx) => executeListFiles(input, ctx),
 };
 
 /**
@@ -44,10 +43,9 @@ const EXECUTORS = {
 async function executeToolCall(call, ctx) {
   const executor = EXECUTORS[call.name];
   if (!executor) {
-    // Either an as-yet-unimplemented tool (read_file/list_files) or a name the
-    // model hallucinated — tell it rather than crash the turn.
+    // A tool name the model hallucinated — tell it rather than crash the turn.
     return {
-      content: `The "${call.name}" tool is not available yet. Tell the user this capability is still being set up.`,
+      content: `Unknown tool "${call.name}". Available tools: ${Object.keys(EXECUTORS).join(', ')}.`,
       isError: true,
     };
   }
