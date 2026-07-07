@@ -15,25 +15,30 @@
  */
 
 const config = require('../config');
-const drive = require('../utils/drive');
 const { extractFileText } = require('../utils/projectContext');
 const { formatFileSize } = require('../utils/format');
-const { resolveReadStores } = require('./fileStore');
+const { resolveReadStores, resolveToolDriveAuth } = require('./fileStore');
 const { logger } = require('../utils/logger');
 
 /**
  * Find a file by exact name across the conversation's read stores (most
- * specific first).
+ * specific first). Also reports any LESS-specific stores that hold the same
+ * name (shadowing) so the caller can disambiguate for the user.
  * @param {Array} stores - resolveReadStores(ctx)
  * @param {string} filename
- * @returns {{file: Object, store: Object}|null}
+ * @returns {{file: Object, store: Object, shadowedKinds: string[]}|null}
  */
 function findAcrossStores(stores, filename) {
+  let hit = null;
+  const shadowedKinds = [];
   for (const store of stores) {
     const file = store.findByName(filename);
-    if (file) return { file, store };
+    if (!file) continue;
+    if (!hit) hit = { file, store };
+    else shadowedKinds.push(store.kind); // same name in a less-specific store
   }
-  return null;
+  if (!hit) return null;
+  return { ...hit, shadowedKinds };
 }
 
 /**
@@ -61,15 +66,8 @@ async function executeReadFile(input, ctx) {
   }
 
   // Drive-less users (e.g. dev login) get a readable failure, not a crash.
-  let auth;
-  try {
-    auth = drive.getAuthForUser(ctx.userId);
-  } catch (err) {
-    return {
-      content: 'Cannot read the file: Google Drive is not connected for this account. Ask the user to reconnect Google Drive in Tessera.',
-      isError: true,
-    };
-  }
+  const { auth, unavailable } = resolveToolDriveAuth(ctx.userId);
+  if (unavailable) return { content: `Cannot read the file: ${unavailable}`, isError: true };
 
   let text;
   try {
@@ -93,13 +91,20 @@ async function executeReadFile(input, ctx) {
     'read_file executed'
   );
 
+  // Shadowing: the same name in a less-specific store was NOT read (the more
+  // specific copy wins). Tell the model so it doesn't confuse the user who may
+  // have edited the other copy.
+  const shadowNote = hit.shadowedKinds.length > 0
+    ? ` (note: read the ${hit.store.kind} copy; a different file with this name also exists in the ${hit.shadowedKinds.join(' and ')})`
+    : '';
+
   const header = truncated
-    ? `Contents of "${filename}" (truncated to the first ${cap} characters — the file is longer):`
-    : `Contents of "${filename}":`;
+    ? `Contents of "${filename}"${shadowNote} (truncated to the first ${cap} characters — the file is longer):`
+    : `Contents of "${filename}"${shadowNote}:`;
 
   return {
     content: `${header}\n\n${text}`,
-    display: { source: hit.store.kind, truncated },
+    display: { source: hit.store.kind, truncated, ...(hit.shadowedKinds.length ? { shadowedBy: hit.shadowedKinds } : {}) },
   };
 }
 

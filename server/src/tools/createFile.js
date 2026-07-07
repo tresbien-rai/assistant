@@ -31,7 +31,7 @@ const config = require('../config');
 const drive = require('../utils/drive');
 const { ACCEPTED_EXTENSIONS } = require('../utils/fileUploads');
 const { formatFileSize } = require('../utils/format');
-const { resolveFileStore } = require('./fileStore');
+const { resolveFileStore, resolveToolDriveAuth } = require('./fileStore');
 const { logger } = require('../utils/logger');
 
 // A well-formed `type/subtype` MIME (RFC 2045 token chars only). Anything with
@@ -132,15 +132,8 @@ async function executeCreateFile(input, ctx) {
   const mimeType = resolveMime(input.mime_type, check.ext);
 
   // Drive-less users (e.g. dev login) get a readable failure, not a crash.
-  let auth;
-  try {
-    auth = drive.getAuthForUser(ctx.userId);
-  } catch (err) {
-    return {
-      content: 'Cannot create the file: Google Drive is not connected for this account. Ask the user to reconnect Google Drive in Tessera.',
-      isError: true,
-    };
-  }
+  const { auth, unavailable } = resolveToolDriveAuth(ctx.userId);
+  if (unavailable) return { content: `Cannot create the file: ${unavailable}`, isError: true };
 
   const store = resolveFileStore(ctx);
   const folderId = await store.ensureFolder(auth);

@@ -102,4 +102,20 @@ function resolveReadStores(ctx) {
   return [downloadsStore(ctx)];
 }
 
-module.exports = { resolveFileStore, resolveReadStores };
+/**
+ * Resolve the user's Drive auth for a tool, converting the "not connected"
+ * case (e.g. dev login) into a reusable reason string instead of a throw —
+ * so create_file / read_file can return a friendly isError result. The
+ * reconnect wording lives here so the file tools stay consistent.
+ * @param {string} userId
+ * @returns {{auth: object}|{unavailable: string}}
+ */
+function resolveToolDriveAuth(userId) {
+  try {
+    return { auth: drive.getAuthForUser(userId) };
+  } catch (err) {
+    return { unavailable: 'Google Drive is not connected for this account. Ask the user to reconnect Google Drive in Tessera.' };
+  }
+}
+
+module.exports = { resolveFileStore, resolveReadStores, resolveToolDriveAuth };

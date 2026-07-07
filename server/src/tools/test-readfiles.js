@@ -119,6 +119,23 @@ function restoreDrive() {
       assert.ok(res.isError);
     });
 
+    await check('shadowing: project copy wins + a note flags the workspace twin', async () => {
+      // Same filename in BOTH the project and the (inherited) workspace.
+      const dupW = dal.addWorkspaceFile(workspace.id, { filename: 'dup.md', driveFileId: 'd_dupw' });
+      driveBytes.set('d_dupw', Buffer.from('WORKSPACE DUP', 'utf8'));
+      const dupP = dal.addProjectFile(project.id, { filename: 'dup.md', driveFileId: 'd_dupp' });
+      driveBytes.set('d_dupp', Buffer.from('PROJECT DUP', 'utf8'));
+      clearCache();
+      const res = await executeReadFile({ filename: 'dup.md' }, projectCtx);
+      assert.ok(!res.isError, res.content);
+      assert.match(res.content, /PROJECT DUP/, 'reads the project copy');
+      assert.strictEqual(res.display.source, 'project');
+      assert.deepStrictEqual(res.display.shadowedBy, ['workspace']);
+      assert.match(res.content, /also exists in the workspace/);
+      dal.deleteProjectFile(dupP.id, project.id);
+      dal.deleteWorkspaceFile(dupW.id, workspace.id);
+    });
+
     console.log('\n2. read_file error results...');
 
     await check('missing filename -> isError', async () => {
