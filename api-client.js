@@ -337,6 +337,20 @@
     },
 
     // -------------------------------------------------------------------------
+    // FILES (Track A: tool-created files in the user's Drive Downloads folder)
+    // -------------------------------------------------------------------------
+    files: {
+      /** Returns [{ id, filename, mimeType, sizeBytes, createdAt }]. */
+      list() {
+        return request('GET', '/api/files');
+      },
+      /** Same-origin download URL (cookie-authed <a href download>). */
+      contentUrl(id) {
+        return `/api/files/${encodeURIComponent(id)}/content`;
+      },
+    },
+
+    // -------------------------------------------------------------------------
     // PROJECTS
     // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------

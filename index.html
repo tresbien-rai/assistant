@@ -318,6 +318,14 @@ When responding, you may optionally include an expression tag like [expression: 
                         <button type="button" data-model-mode="fixed">Fixed</button>
                     </div>
                     <p class="help-text">Shared: this persona uses whatever model and parameters are currently active. Fixed: it keeps its own — switching to it loads them, and changes made while it's active are remembered.</p>
+
+                    <!-- File-tools base default (Track A, P2-05b). Per-chat
+                         override lives on the composer toggle. -->
+                    <label class="checkbox-row" for="personaToolsBase" style="margin-top: 12px;">
+                        <input type="checkbox" id="personaToolsBase">
+                        <span>Enable file tools by default</span>
+                    </label>
+                    <p class="help-text">Lets this persona create, read, and list files on your Google Drive during a chat. You can override it per conversation with the toggle next to the composer.</p>
                 </div>
 
                 <!-- Persona avatar image (re-parented into #personaEditView on load — WR-08) -->
@@ -542,9 +550,9 @@ When responding, you may optionally include an expression tag like [expression: 
                             </svg>
                         </button>
                         <input type="file" id="fileAttachInput" multiple accept="image/*,.pdf,.txt,.csv,.md,.json,.js,.py,.html,.css,.ts,.xml,.yaml,.yml,.mp3,.wav,.ogg,.webm" class="file-input-hidden">
-                        <!-- Track A (P2-02/P2-05b) wires this up; ships disabled
-                             so the control row lands in its final shape. -->
-                        <button class="tools-toggle" id="toolsToggleBtn" type="button" disabled title="File tools — coming soon" aria-label="File tools (coming soon)">
+                        <!-- File-tools toggle (Track A, P2-05b). aria-pressed +
+                             title are managed by syncToolsToggle(). -->
+                        <button class="tools-toggle" id="toolsToggleBtn" type="button" aria-pressed="false" title="File tools" aria-label="Toggle file tools">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
                             </svg>
