@@ -25,37 +25,39 @@
 const dal = require('../db/dal');
 const drive = require('../utils/drive');
 
-/**
- * @param {Object} ctx - ToolContext ({ userId, workspace, project })
- * @returns {FileStore}
- */
-function resolveFileStore(ctx) {
-  if (ctx.project) {
-    const projectId = ctx.project.id;
-    return {
-      kind: 'project',
-      label: `the project "${ctx.project.name}"`,
-      ensureFolder: (auth) => drive.ensureProjectFolderId(auth, ctx.userId, ctx.project),
-      findByName: (name) => dal.getProjectFileByName(projectId, name),
-      list: () => dal.listProjectFiles(projectId),
-      add: (data) => dal.addProjectFile(projectId, data),
-      updateContent: (fileId, data) => dal.updateProjectFileContent(fileId, projectId, data),
-      urlFor: (fileId) => `/api/projects/${projectId}/files/${fileId}/content`,
-    };
-  }
-  if (ctx.workspace) {
-    const workspaceId = ctx.workspace.id;
-    return {
-      kind: 'workspace',
-      label: `the workspace "${ctx.workspace.name}"`,
-      ensureFolder: (auth) => drive.ensureWorkspaceFolderId(auth, ctx.userId, ctx.workspace),
-      findByName: (name) => dal.getWorkspaceFileByName(workspaceId, name),
-      list: () => dal.listWorkspaceFiles(workspaceId),
-      add: (data) => dal.addWorkspaceFile(workspaceId, data),
-      updateContent: (fileId, data) => dal.updateWorkspaceFileContent(fileId, workspaceId, data),
-      urlFor: (fileId) => `/api/workspaces/${workspaceId}/files/${fileId}/content`,
-    };
-  }
+// Per-kind store builders. Kept separate so writes can pick ONE destination by
+// precedence (resolveFileStore) while reads can search SEVERAL (resolveReadStores)
+// without re-deriving the accessor wiring.
+
+function projectStore(ctx) {
+  const projectId = ctx.project.id;
+  return {
+    kind: 'project',
+    label: `the project "${ctx.project.name}"`,
+    ensureFolder: (auth) => drive.ensureProjectFolderId(auth, ctx.userId, ctx.project),
+    findByName: (name) => dal.getProjectFileByName(projectId, name),
+    list: () => dal.listProjectFiles(projectId),
+    add: (data) => dal.addProjectFile(projectId, data),
+    updateContent: (fileId, data) => dal.updateProjectFileContent(fileId, projectId, data),
+    urlFor: (fileId) => `/api/projects/${projectId}/files/${fileId}/content`,
+  };
+}
+
+function workspaceStore(ctx) {
+  const workspaceId = ctx.workspace.id;
+  return {
+    kind: 'workspace',
+    label: `the workspace "${ctx.workspace.name}"`,
+    ensureFolder: (auth) => drive.ensureWorkspaceFolderId(auth, ctx.userId, ctx.workspace),
+    findByName: (name) => dal.getWorkspaceFileByName(workspaceId, name),
+    list: () => dal.listWorkspaceFiles(workspaceId),
+    add: (data) => dal.addWorkspaceFile(workspaceId, data),
+    updateContent: (fileId, data) => dal.updateWorkspaceFileContent(fileId, workspaceId, data),
+    urlFor: (fileId) => `/api/workspaces/${workspaceId}/files/${fileId}/content`,
+  };
+}
+
+function downloadsStore(ctx) {
   const userId = ctx.userId;
   return {
     kind: 'downloads',
@@ -69,4 +71,35 @@ function resolveFileStore(ctx) {
   };
 }
 
-module.exports = { resolveFileStore };
+/**
+ * The single WRITE destination for this conversation (create_file), by
+ * precedence: active project → active workspace → the user's Downloads.
+ * @param {Object} ctx - ToolContext ({ userId, workspace, project })
+ * @returns {FileStore}
+ */
+function resolveFileStore(ctx) {
+  if (ctx.project) return projectStore(ctx);
+  if (ctx.workspace) return workspaceStore(ctx);
+  return downloadsStore(ctx);
+}
+
+/**
+ * The ordered READ search list for this conversation (read_file / list_files),
+ * mirroring context inheritance: a project chat sees BOTH its project and its
+ * (inherited) workspace files; a workspace chat sees the workspace; an unfiled
+ * chat sees Downloads. Crucially, callers use `findByName`/`list` only — never
+ * `ensureFolder` — so a read never creates a Drive folder as a side effect.
+ * @param {Object} ctx - ToolContext ({ userId, workspace, project })
+ * @returns {FileStore[]} search order (most specific first)
+ */
+function resolveReadStores(ctx) {
+  if (ctx.project) {
+    const stores = [projectStore(ctx)];
+    if (ctx.workspace) stores.push(workspaceStore(ctx));
+    return stores;
+  }
+  if (ctx.workspace) return [workspaceStore(ctx)];
+  return [downloadsStore(ctx)];
+}
+
+module.exports = { resolveFileStore, resolveReadStores };

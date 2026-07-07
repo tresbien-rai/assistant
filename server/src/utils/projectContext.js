@@ -275,6 +275,9 @@ function assembleWorkspaceContext(userId, workspace) {
 module.exports = {
   assembleProjectContext,
   assembleWorkspaceContext,
+  // Shared with the read_file tool executor (Track A, P2-04): same
+  // download + PDF-extraction + per-Drive-id cache path.
+  extractFileText,
   // exported for tests
   _isPdf: isPdf,
   _textCache: textCache,

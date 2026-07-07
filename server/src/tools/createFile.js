@@ -30,6 +30,7 @@ const path = require('node:path');
 const config = require('../config');
 const drive = require('../utils/drive');
 const { ACCEPTED_EXTENSIONS } = require('../utils/fileUploads');
+const { formatFileSize } = require('../utils/format');
 const { resolveFileStore } = require('./fileStore');
 const { logger } = require('../utils/logger');
 
@@ -186,7 +187,7 @@ async function executeCreateFile(input, ctx) {
   }
 
   const url = store.urlFor(record.id);
-  const sizeLabel = bytes.length < 1024 ? `${bytes.length} B` : `${(bytes.length / 1024).toFixed(1)} KB`;
+  const sizeLabel = formatFileSize(bytes.length);
 
   logger.info(
     { userId: ctx.userId, destination: store.kind, fileId: record.id, sizeBytes: bytes.length, overwritten },

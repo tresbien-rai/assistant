@@ -56,6 +56,11 @@ const config = {
     // exceed this, so a large knowledge base can't blow up the prompt / cost on
     // every turn. ~4 chars per token, so ~500k chars ≈ ~125k tokens.
     contextBudgetChars: parseInt(process.env.PROJECT_CONTEXT_BUDGET_CHARS, 10) || 500000,
+    // Per-call cap for the read_file tool (Track A, P2-04). A single tool result
+    // is echoed straight back into the conversation, so it's capped much tighter
+    // than the whole-context budget. ~100k chars ≈ ~25k tokens; larger files are
+    // truncated with a note so the model knows there's more.
+    toolReadMaxChars: parseInt(process.env.TOOL_READ_MAX_CHARS, 10) || 100000,
     // Accepted file extensions: text/code + PDF (Phase 1 decision #2). Lowercase,
     // leading dot. Anything else is rejected on upload. Extension is the reliable
     // signal here because browsers send inconsistent MIME types for source files.
