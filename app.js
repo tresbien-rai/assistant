@@ -636,7 +636,7 @@ async function createConversation(title = 'New Chat', container = null) {
 
     // Apply a per-chat file-tools override chosen BEFORE the chat was persisted
     // (the toggle was flipped on a fresh, unsaved chat).
-    if (state.pendingToolsOverride !== undefined && state.pendingToolsOverride !== null) {
+    if (state.pendingToolsOverride != null) {
         const override = state.pendingToolsOverride;
         state.pendingToolsOverride = undefined;
         state.conversations[created.id].toolsEnabled = override;
@@ -663,14 +663,23 @@ function personaToolsBase(persona) {
 }
 
 /**
+ * The active chat's per-conversation file-tools override: the saved
+ * conversation value, or the pending choice for a fresh unsaved chat.
+ * true/false = forced, null/undefined = inherit the persona base.
+ */
+function getToolsOverride() {
+    const convo = getActiveConversation();
+    return convo ? convo.toolsEnabled : state.pendingToolsOverride;
+}
+
+/**
  * The EFFECTIVE file-tools state for the active chat: the per-conversation
  * override wins, else the active persona's base. Mirrors the server's
  * resolveToolsEnabled precedence so the UI matches what a send will do.
  * @returns {boolean}
  */
 function effectiveToolsEnabled() {
-    const convo = getActiveConversation();
-    const override = convo ? convo.toolsEnabled : state.pendingToolsOverride;
+    const override = getToolsOverride();
     if (override === true) return true;
     if (override === false) return false;
     return personaToolsBase(getActivePersona());
@@ -678,8 +687,7 @@ function effectiveToolsEnabled() {
 
 /** Whether the effective state comes from a per-chat override vs the persona base. */
 function toolsOverrideActive() {
-    const convo = getActiveConversation();
-    const override = convo ? convo.toolsEnabled : state.pendingToolsOverride;
+    const override = getToolsOverride();
     return override === true || override === false;
 }
 
@@ -5566,7 +5574,8 @@ async function sendMessageFromText(text, attachments = []) {
  * @returns {Object} attachment entry (type 'created_file' or 'tool_event')
  */
 function toolEventToAttachment(ev) {
-    if (ev.tool === 'create_file' && ev.ok !== false && ev.url) {
+    // A download card implies a successful create — require ok AND a url.
+    if (ev.tool === 'create_file' && ev.ok === true && ev.url) {
         return {
             type: 'created_file',
             tool: 'create_file',
@@ -5580,6 +5589,29 @@ function toolEventToAttachment(ev) {
     return { type: 'tool_event', tool: ev.tool, filename: ev.filename || null, ok: ev.ok !== false };
 }
 
+/**
+ * Append the shared non-image file-card parts (type badge + icon + filename)
+ * to `el`. Used by both the uploaded-file attachment card and the model-
+ * created-file download card so the structure stays in sync.
+ */
+function appendFileCardParts(el, fileName, mimeType) {
+    const badge = document.createElement('span');
+    badge.className = 'att-badge';
+    badge.textContent = getFileTypeLabel(fileName, mimeType);
+    el.appendChild(badge);
+
+    const iconDiv = document.createElement('div');
+    iconDiv.className = 'att-icon';
+    iconDiv.textContent = getFileIcon(mimeType);
+    el.appendChild(iconDiv);
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'att-name';
+    nameDiv.textContent = fileName || 'File';
+    nameDiv.title = fileName || 'File';
+    el.appendChild(nameDiv);
+}
+
 /** Build a downloadable card for a model-created file (Track A). */
 function buildCreatedFileCard(att) {
     const a = document.createElement('a');
@@ -5588,21 +5620,7 @@ function buildCreatedFileCard(att) {
     a.setAttribute('download', att.fileName || 'file');
     a.title = `Download ${att.fileName || 'file'}`;
 
-    const badge = document.createElement('span');
-    badge.className = 'att-badge';
-    badge.textContent = getFileTypeLabel(att.fileName, att.mimeType);
-    a.appendChild(badge);
-
-    const iconDiv = document.createElement('div');
-    iconDiv.className = 'att-icon';
-    iconDiv.textContent = getFileIcon(att.mimeType);
-    a.appendChild(iconDiv);
-
-    const nameDiv = document.createElement('div');
-    nameDiv.className = 'att-name';
-    nameDiv.textContent = att.fileName || 'File';
-    nameDiv.title = att.fileName || 'File';
-    a.appendChild(nameDiv);
+    appendFileCardParts(a, att.fileName, att.mimeType);
 
     const dl = document.createElement('span');
     dl.className = 'tool-file-dl';
@@ -5716,22 +5734,7 @@ function renderMessageAttachments(attachments, containerDiv) {
         } else {
             // Non-image file → compact card (type badge + icon + filename), no preview.
             attEl.classList.add('message-attachment--file');
-
-            const badge = document.createElement('span');
-            badge.className = 'att-badge';
-            badge.textContent = getFileTypeLabel(att.fileName, att.mimeType);
-            attEl.appendChild(badge);
-
-            const iconDiv = document.createElement('div');
-            iconDiv.className = 'att-icon';
-            iconDiv.textContent = getFileIcon(att.mimeType);
-            attEl.appendChild(iconDiv);
-
-            const nameDiv = document.createElement('div');
-            nameDiv.className = 'att-name';
-            nameDiv.textContent = att.fileName || 'File';
-            nameDiv.title = att.fileName || 'File';
-            attEl.appendChild(nameDiv);
+            appendFileCardParts(attEl, att.fileName, att.mimeType);
         }
 
         containerDiv.appendChild(attEl);
@@ -6170,6 +6173,7 @@ function startStreamingMessage() {
     state.streamingMessageDiv = messageDiv;
     state.streamingAccumulator = '';
     state.streamingGeneratedImages = [];
+    state.streamingToolEvents = [];
 
     scrollToBottom();
 }
