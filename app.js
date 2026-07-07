@@ -626,13 +626,128 @@ async function createConversation(title = 'New Chat', container = null) {
         personaId: created.personaId,
         projectId: created.projectId,
         workspaceId: created.workspaceId,
+        toolsEnabled: created.toolsEnabled ?? null,
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
         messageCount: 0,
         messages: [],
     };
     state.activeConversationId = created.id;
+
+    // Apply a per-chat file-tools override chosen BEFORE the chat was persisted
+    // (the toggle was flipped on a fresh, unsaved chat).
+    if (state.pendingToolsOverride != null) {
+        const override = state.pendingToolsOverride;
+        state.pendingToolsOverride = undefined;
+        state.conversations[created.id].toolsEnabled = override;
+        try {
+            await API.conversations.update(created.id, { toolsEnabled: override });
+        } catch (err) {
+            console.error('Failed to persist pending tools override:', err);
+        }
+    }
+
     return created.id;
+}
+
+// ===== File-tools toggle (Track A, P2-05b) =====
+
+/**
+ * The persona's base file-tools setting (its default for new chats). Stored in
+ * the persona's model_config JSON; absent = off.
+ * @param {Object} persona
+ * @returns {boolean}
+ */
+function personaToolsBase(persona) {
+    return persona?.modelConfig?.toolsEnabled === true;
+}
+
+/**
+ * The active chat's per-conversation file-tools override: the saved
+ * conversation value, or the pending choice for a fresh unsaved chat.
+ * true/false = forced, null/undefined = inherit the persona base.
+ */
+function getToolsOverride() {
+    const convo = getActiveConversation();
+    return convo ? convo.toolsEnabled : state.pendingToolsOverride;
+}
+
+/**
+ * The EFFECTIVE file-tools state for the active chat: the per-conversation
+ * override wins, else the active persona's base. Mirrors the server's
+ * resolveToolsEnabled precedence so the UI matches what a send will do.
+ * @returns {boolean}
+ */
+function effectiveToolsEnabled() {
+    const override = getToolsOverride();
+    if (override === true) return true;
+    if (override === false) return false;
+    return personaToolsBase(getActivePersona());
+}
+
+/** Whether the effective state comes from a per-chat override vs the persona base. */
+function toolsOverrideActive() {
+    const override = getToolsOverride();
+    return override === true || override === false;
+}
+
+/**
+ * Reflect the effective file-tools state on the composer toggle: filled when
+ * on, muted when off, with a tooltip naming the source (persona default vs
+ * this-chat override).
+ */
+function syncToolsToggle() {
+    const btn = elements.toolsToggleBtn;
+    if (!btn) return;
+    const on = effectiveToolsEnabled();
+    const overridden = toolsOverrideActive();
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    const source = overridden ? 'this chat' : 'persona default';
+    btn.title = `File tools ${on ? 'on' : 'off'} (${source}) — click to turn ${on ? 'off' : 'on'}`;
+}
+
+/**
+ * Composer toggle click: flip the EFFECTIVE state and pin it as a per-chat
+ * override. Persisted immediately when the chat exists; stashed as pending for
+ * a fresh chat (applied on createConversation).
+ */
+async function toggleChatTools() {
+    const next = !effectiveToolsEnabled();
+    const convo = getActiveConversation();
+    if (convo) {
+        convo.toolsEnabled = next;
+        syncToolsToggle();
+        try {
+            await API.conversations.update(convo.id, { toolsEnabled: next });
+        } catch (err) {
+            console.error('Failed to save file-tools override:', err);
+        }
+    } else {
+        state.pendingToolsOverride = next;
+        syncToolsToggle();
+    }
+}
+
+/**
+ * Persona editor checkbox: set the active persona's base file-tools default.
+ */
+function setPersonaToolsBase(on) {
+    const persona = getActivePersona();
+    if (!persona) return;
+    persona.modelConfig = { ...persona.modelConfig };
+    if (on) persona.modelConfig.toolsEnabled = true;
+    else delete persona.modelConfig.toolsEnabled;
+    persona.updatedAt = Date.now();
+    savePersonas();
+    syncToolsToggle();
+}
+
+/** Reflect the active persona's base setting into the editor checkbox. */
+function syncPersonaToolsBaseControl() {
+    if (elements.personaToolsBase) {
+        elements.personaToolsBase.checked = personaToolsBase(getActivePersona());
+    }
 }
 
 /**
@@ -1037,6 +1152,8 @@ const elements = {
     attachmentPreviewArea: document.getElementById('attachmentPreviewArea'),
     composerModelButton: document.getElementById('composerModelButton'),
     composerModelName: document.getElementById('composerModelName'),
+    toolsToggleBtn: document.getElementById('toolsToggleBtn'),
+    personaToolsBase: document.getElementById('personaToolsBase'),
     
     // Status bar
     headerAssistantName: document.getElementById('headerAssistantName'),
@@ -1247,6 +1364,9 @@ function hydrateConversations(conversations) {
             personaId: c.personaId,
             projectId: c.projectId,
             workspaceId: c.workspaceId,
+            // Track A per-chat file-tools override: null = inherit persona base,
+            // true/false = forced. Preserved so the composer toggle reflects it.
+            toolsEnabled: c.toolsEnabled ?? null,
             createdAt: c.createdAt,
             updatedAt: c.updatedAt,
             messageCount: c.messageCount || 0,
@@ -1665,6 +1785,10 @@ async function updateUI() {
 
     // Reflect the active persona's model-settings mode (persona editor toggle).
     syncPersonaModelModeControls();
+    // Reflect the persona's file-tools base default + the composer toggle
+    // (effective state depends on both persona base and per-chat override).
+    syncPersonaToolsBaseControl();
+    syncToolsToggle();
 
     // Keep the Models catalog current (Active badge, key badges) while open.
     if ((state.ui.mainView || {}).type === 'models') renderModelsCatalog();
@@ -3985,6 +4109,8 @@ function syncChatChrome() {
     if (elements.floatingAvatar) {
         elements.floatingAvatar.classList.toggle('hidden', !inChat || !state.settings.showAvatar);
     }
+    // Reflect this chat's effective file-tools state on the composer toggle.
+    if (inChat) syncToolsToggle();
 }
 
 /**
@@ -5439,10 +5565,123 @@ async function sendMessageFromText(text, attachments = []) {
 }
 
 // Helper: render attachments in a message
+/**
+ * Normalize a server tool event (from the tool loop's SSE 'tool-activity'
+ * events, or the non-streaming toolEvents array) into a persistable attachment
+ * entry, so tool chips + created-file cards survive a reload via the message's
+ * existing `attachments` JSON (no schema change — Track A decision).
+ * @param {Object} ev - { tool, filename?, ok, + create_file display fields }
+ * @returns {Object} attachment entry (type 'created_file' or 'tool_event')
+ */
+function toolEventToAttachment(ev) {
+    // A download card implies a successful create — require ok AND a url.
+    if (ev.tool === 'create_file' && ev.ok === true && ev.url) {
+        return {
+            type: 'created_file',
+            tool: 'create_file',
+            fileName: ev.filename || 'file',
+            url: ev.url,
+            mimeType: ev.mimeType || '',
+            sizeBytes: ev.sizeBytes || 0,
+            overwritten: !!ev.overwritten,
+        };
+    }
+    return { type: 'tool_event', tool: ev.tool, filename: ev.filename || null, ok: ev.ok !== false };
+}
+
+/**
+ * Append the shared non-image file-card parts (type badge + icon + filename)
+ * to `el`. Used by both the uploaded-file attachment card and the model-
+ * created-file download card so the structure stays in sync.
+ */
+function appendFileCardParts(el, fileName, mimeType) {
+    const badge = document.createElement('span');
+    badge.className = 'att-badge';
+    badge.textContent = getFileTypeLabel(fileName, mimeType);
+    el.appendChild(badge);
+
+    const iconDiv = document.createElement('div');
+    iconDiv.className = 'att-icon';
+    iconDiv.textContent = getFileIcon(mimeType);
+    el.appendChild(iconDiv);
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'att-name';
+    nameDiv.textContent = fileName || 'File';
+    nameDiv.title = fileName || 'File';
+    el.appendChild(nameDiv);
+}
+
+/** Build a downloadable card for a model-created file (Track A). */
+function buildCreatedFileCard(att) {
+    const a = document.createElement('a');
+    a.className = 'message-attachment message-attachment--file tool-file-card';
+    a.href = att.url;
+    a.setAttribute('download', att.fileName || 'file');
+    a.title = `Download ${att.fileName || 'file'}`;
+
+    appendFileCardParts(a, att.fileName, att.mimeType);
+
+    const dl = document.createElement('span');
+    dl.className = 'tool-file-dl';
+    dl.innerHTML = '&#8681;'; // down arrow
+    a.appendChild(dl);
+    return a;
+}
+
+/** Build a compact chip describing a tool action (read/list, or a failure). */
+function buildToolChip(att) {
+    const chip = document.createElement('span');
+    chip.className = 'tool-chip' + (att.ok === false ? ' is-error' : '');
+    const name = att.filename ? `<code>${escapeHtml(att.filename)}</code>` : '';
+    let label;
+    if (att.ok === false) {
+        label = `${escapeHtml(att.tool || 'tool')} failed${name ? ' — ' + name : ''}`;
+    } else if (att.tool === 'read_file') {
+        label = `Read ${name || 'a file'}`;
+    } else if (att.tool === 'list_files') {
+        label = 'Listed files';
+    } else if (att.tool === 'create_file') {
+        label = `Created ${name || 'a file'}`;
+    } else {
+        label = escapeHtml(att.tool || 'Tool used');
+    }
+    chip.innerHTML = `<span class="tool-chip-icon" aria-hidden="true">${att.ok === false ? '⚠' : '✓'}</span> ${label}`;
+    return chip;
+}
+
+/**
+ * Append a live tool-activity chip/card to the in-progress streaming message
+ * (converted to the same attachment shape used at reload, so live and reload
+ * render identically).
+ */
+function renderLiveToolActivity(payload) {
+    if (!state.streamingMessageDiv) return;
+    let area = state.streamingMessageDiv.querySelector('.message-attachments');
+    if (!area) {
+        area = document.createElement('div');
+        area.className = 'message-attachments';
+        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
+        state.streamingMessageDiv.insertBefore(area, contentDiv);
+    }
+    renderMessageAttachments([toolEventToAttachment(payload)], area);
+    scrollToBottom();
+}
+
 function renderMessageAttachments(attachments, containerDiv) {
     if (!attachments || attachments.length === 0) return;
 
     attachments.forEach(att => {
+        // Track A tool artifacts: a created-file download card or an action chip.
+        if (att.type === 'created_file') {
+            containerDiv.appendChild(buildCreatedFileCard(att));
+            return;
+        }
+        if (att.type === 'tool_event') {
+            containerDiv.appendChild(buildToolChip(att));
+            return;
+        }
+
         const attEl = document.createElement('div');
         attEl.className = 'message-attachment';
 
@@ -5495,22 +5734,7 @@ function renderMessageAttachments(attachments, containerDiv) {
         } else {
             // Non-image file → compact card (type badge + icon + filename), no preview.
             attEl.classList.add('message-attachment--file');
-
-            const badge = document.createElement('span');
-            badge.className = 'att-badge';
-            badge.textContent = getFileTypeLabel(att.fileName, att.mimeType);
-            attEl.appendChild(badge);
-
-            const iconDiv = document.createElement('div');
-            iconDiv.className = 'att-icon';
-            iconDiv.textContent = getFileIcon(att.mimeType);
-            attEl.appendChild(iconDiv);
-
-            const nameDiv = document.createElement('div');
-            nameDiv.className = 'att-name';
-            nameDiv.textContent = att.fileName || 'File';
-            nameDiv.title = att.fileName || 'File';
-            attEl.appendChild(nameDiv);
+            appendFileCardParts(attEl, att.fileName, att.mimeType);
         }
 
         containerDiv.appendChild(attEl);
@@ -5773,10 +5997,13 @@ async function callAPI(userMessage, attachments = []) {
 
     const res = await API.chat.send(params);
     if (res.contextWarning) showProjectContextWarning(res.contextWarning);
+    // Track A: a tools-on non-streaming turn returns the tool-event list; turn
+    // it into chip/card attachments (same shape as the streaming path).
+    const toolAttachments = (res.toolEvents || []).map(toolEventToAttachment);
     const generatedAttachments = res.generatedImages
         ? await storeGeneratedImages(res.generatedImages)
         : [];
-    return { text: res.text || '', attachments: generatedAttachments };
+    return { text: res.text || '', attachments: [...toolAttachments, ...generatedAttachments] };
 }
 
 /**
@@ -5806,6 +6033,7 @@ async function callAPIStreaming(userMessage, attachments = []) {
 
     state.streamingAccumulator = '';
     state.streamingGeneratedImages = [];
+    state.streamingToolEvents = [];
 
     await API.chat.stream(params, (ev) => {
         // Synthetic event from the client (not provider SSE): project-context
@@ -5817,6 +6045,20 @@ async function callAPIStreaming(userMessage, attachments = []) {
         if (!ev.data) return;
         let payload;
         try { payload = JSON.parse(ev.data); } catch { return; }
+
+        // Track A tool loop (tools-on turns run non-streaming server-side and
+        // deliver activity as synthetic events, then the final answer as one
+        // provider-native chunk handled below): render a chip per tool as it
+        // runs; the done event's list is authoritative but matches what we
+        // already collected, so finalize persists state.streamingToolEvents.
+        if (payload.type === 'tool_activity') {
+            state.streamingToolEvents.push(payload);
+            renderLiveToolActivity(payload);
+            return;
+        }
+        if (payload.type === 'tool_loop_done') {
+            return;
+        }
 
         // C7: providers can emit an error event *mid-stream* (e.g. Anthropic's
         // `{type:'error', error:{type,message}}` for overloaded_error, or a
@@ -5865,6 +6107,7 @@ async function callAPIStreaming(userMessage, attachments = []) {
     return {
         text: state.streamingAccumulator,
         generatedImages: state.streamingGeneratedImages,
+        toolEvents: state.streamingToolEvents,
     };
 }
 
@@ -5930,6 +6173,7 @@ function startStreamingMessage() {
     state.streamingMessageDiv = messageDiv;
     state.streamingAccumulator = '';
     state.streamingGeneratedImages = [];
+    state.streamingToolEvents = [];
 
     scrollToBottom();
 }
@@ -5977,8 +6221,12 @@ async function finalizeStreamingMessage(fullText, generatedImages = [], targetCo
     }
     cleanText = stripExpressionTag(cleanText);
 
-    // Persist generated images to IndexedDB and produce attachment metadata.
-    const attachments = await storeGeneratedImages(generatedImages);
+    // Assemble this turn's attachments: Track A tool artifacts (chips +
+    // created-file cards) first, then any Gemini-generated images. Tool events
+    // become persistable entries so they survive a reload.
+    const toolAttachments = (state.streamingToolEvents || []).map(toolEventToAttachment);
+    const imageAttachments = await storeGeneratedImages(generatedImages);
+    const attachments = [...toolAttachments, ...imageAttachments];
 
     // Bail-out for empty results (e.g., user clicked Stop before any chunk
     // arrived). Persisting an empty assistant turn would pollute the
@@ -5988,10 +6236,15 @@ async function finalizeStreamingMessage(fullText, generatedImages = [], targetCo
         state.streamingMessageDiv = null;
         state.streamingAccumulator = '';
         state.streamingGeneratedImages = [];
+        state.streamingToolEvents = [];
         return;
     }
 
-    // Render any generated images above the text content.
+    // Reconcile the attachments row to the authoritative set: drop any live
+    // tool chips rendered mid-stream and re-render everything once, so the DOM
+    // matches exactly what a reload will produce from the persisted data.
+    const liveArea = state.streamingMessageDiv.querySelector('.message-attachments');
+    if (liveArea) liveArea.remove();
     if (attachments.length > 0) {
         const attachDiv = document.createElement('div');
         attachDiv.className = 'message-attachments';
@@ -6002,7 +6255,7 @@ async function finalizeStreamingMessage(fullText, generatedImages = [], targetCo
 
     const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
     if (contentDiv) {
-        if (!cleanText && attachments.length > 0) {
+        if (!cleanText && imageAttachments.length > 0) {
             contentDiv.innerHTML = '<em>Generated image(s)</em>';
         } else {
             contentDiv.innerHTML = renderMarkdown(cleanText);
@@ -6041,6 +6294,7 @@ async function finalizeStreamingMessage(fullText, generatedImages = [], targetCo
     state.streamingMessageDiv = null;
     state.streamingAccumulator = '';
     state.streamingGeneratedImages = [];
+    state.streamingToolEvents = [];
 }
 
 /**
@@ -6473,6 +6727,14 @@ function setupEventListeners() {
     document.querySelectorAll('#personaModelModeOptions button').forEach(btn => {
         btn.addEventListener('click', () => setPersonaModelMode(btn.dataset.modelMode));
     });
+
+    // File-tools: composer per-chat toggle + persona base default (Track A).
+    if (elements.toolsToggleBtn) {
+        elements.toolsToggleBtn.addEventListener('click', toggleChatTools);
+    }
+    if (elements.personaToolsBase) {
+        elements.personaToolsBase.addEventListener('change', () => setPersonaToolsBase(elements.personaToolsBase.checked));
+    }
 
     // Provider & Model - auto-save on change
     elements.providerSelect.addEventListener('change', (e) => {
