@@ -529,14 +529,16 @@ const state = {
     // Authenticated user (set after API.auth.status() / API.auth.me())
     // null when unauthenticated. Shape: { id, email, displayName }.
     user: null,
-    // App-level preferences from API.settings.get(). Provider/model settings
-    // live on each persona's modelConfig (not here).
+    // App-level preferences from API.settings.get(). Model params live on
+    // each catalog model's profile (customModels[provider][i].params).
     settings: {
         avatarSize: CONFIG.defaults.avatarSize,
         avatarPosition: CONFIG.defaults.avatarPosition,
         showAvatar: CONFIG.defaults.showAvatar,
         // User-defined models keyed by provider — persisted server-side as
-        // part of the settings row.
+        // part of the settings row. Each entry is { id, name, params? } where
+        // `params` is the model's own profile (full modelParams bag, prefill
+        // included) — the "engine" settings that load when it's selected.
         customModels: {
             anthropic: [],
             google: [],
@@ -545,9 +547,10 @@ const state = {
     },
     // The active model layer (WR-12): provider + model + params that every
     // chat send and the model/params UI use. User-level, persisted in
-    // settings.currentModelConfig. Personas only touch it when their mode is
-    // 'fixed' (see docs/MODEL_DESYNC_DESIGN.md). Seeded in init(); the
-    // default here only covers the window before hydration completes.
+    // settings.currentModelConfig. Effectively "the loaded model profile" —
+    // switching models saves/loads profiles (docs/MODEL_PROFILES_DESIGN.md);
+    // fixed-mode personas pin a model (docs/MODEL_DESYNC_DESIGN.md). Seeded
+    // in init(); the default here only covers pre-hydration.
     currentModelConfig: getDefaultModelConfig(),
     // Per-provider key presence metadata from API.apiKeys.list().
     // Never the keys themselves — the backend never returns plaintext.
@@ -810,7 +813,9 @@ function generateConversationTitle(content) {
  * @returns {Promise<string>} The server-generated persona ID
  */
 async function createPersona(name = CONFIG.defaults.assistantName) {
-    const modelConfig = JSON.parse(JSON.stringify(getDefaultModelConfig()));
+    // New personas are pure skin: shared model mode, no pin. Engine settings
+    // (params, prefill) live on model profiles, not here.
+    const modelConfig = {};
     const expressions = { ...CONFIG.defaultExpressions };
 
     const created = await API.personas.create({
@@ -854,8 +859,8 @@ function getActivePersona() {
 /**
  * Get the ACTIVE MODEL LAYER (WR-12) — the provider/model/params every send
  * and the model UI use. Callers may mutate the returned object; persistence
- * goes through persistSettings (+ mirrorLayerToFixedPersona for personas
- * that keep their own settings).
+ * goes through persistSettings (+ mirrorLayerToModelProfile so the active
+ * model's profile remembers the edits).
  * @returns {Object} The model configuration (provider, model, modelParams)
  */
 function getActiveModelConfig() {
@@ -876,6 +881,9 @@ function getDefaultModelConfig() {
             topK: 40,
             maxTokens: 4096,
             stopSequences: [],
+            // Response prefill — an "engine" param like temperature, saved per
+            // model profile (moved off the persona; personas are pure skin).
+            prefill: '',
             streaming: false,
             temperatureEnabled: true,
             topPEnabled: true,
@@ -896,19 +904,85 @@ function getDefaultModelConfig() {
     };
 }
 
-// ===== Persona model-settings mode (WR-12) =====
-// A persona's modelConfig JSON carries a `mode` flag:
-//   'shared' (default) — the persona never touches the active layer.
-//   'fixed'            — activating it loads its saved config into the layer,
-//                        and layer edits made while it is active are
-//                        remembered back to it.
+// ===== Model profiles =====
+// Each catalog model (settings.customModels[provider][i]) owns a `params`
+// profile — the full modelParams bag, prefill included. The active layer is
+// just "the currently loaded profile": switching models saves the outgoing
+// model's params to its profile and loads the incoming one's. A model that
+// has never been used keeps the carried-over params (and starts remembering
+// from there), so nothing resets unexpectedly.
+
+/** Find a model's catalog entry, or null. */
+function getCatalogEntry(provider, modelId) {
+    const models = state.settings.customModels[provider] || [];
+    return models.find(m => m.id === modelId) || null;
+}
+
+/**
+ * Save the active layer's params into the profile of the layer's current
+ * model. State-only — persistence rides on the caller's persistSettings()
+ * (customModels is part of the settings payload).
+ */
+function mirrorLayerToModelProfile() {
+    const layer = getActiveModelConfig();
+    const entry = getCatalogEntry(layer.provider, layer.model);
+    if (!entry) return;
+    entry.params = JSON.parse(JSON.stringify(layer.modelParams));
+}
+
+/**
+ * Load the layer's current model's saved profile into the layer. Models with
+ * no profile yet keep the carried-over params (today's behavior) — their
+ * profile is written on the next edit/switch. Deep-copied so later layer
+ * edits don't silently mutate the stored profile.
+ */
+function loadModelProfileIntoLayer() {
+    const layer = getActiveModelConfig();
+    const entry = getCatalogEntry(layer.provider, layer.model);
+    if (!entry || !entry.params) return;
+    const merged = mergeModelConfig({ modelParams: entry.params });
+    layer.modelParams = JSON.parse(JSON.stringify(merged.modelParams));
+}
+
+/**
+ * Core model switch: remember the outgoing model's params in its profile,
+ * move the layer to the new provider/model, and load the incoming profile.
+ * @returns {boolean} true if the layer actually changed.
+ */
+function applyModelToLayer(provider, modelId) {
+    const layer = getActiveModelConfig();
+    if (layer.provider === provider && layer.model === modelId) return false;
+    mirrorLayerToModelProfile();
+    if (layer.provider !== provider) {
+        // Full provider-switch housekeeping (key field, provider params,
+        // model dropdown, send button) — same path as the Settings select.
+        handleProviderChange(provider);
+        elements.providerSelect.value = provider;
+    }
+    layer.model = modelId;
+    loadModelProfileIntoLayer();
+    return true;
+}
+
+// ===== Persona model-settings mode (WR-12, reshaped by model profiles) =====
+// A persona's modelConfig JSON is now a PIN, not a snapshot:
+//   'shared' (default) — modelConfig is {}; the persona never touches the
+//                        active layer. Pure skin.
+//   'fixed'            — modelConfig is { mode:'fixed', provider, model }:
+//                        activating the persona selects that model, which
+//                        loads the model's own profile. The params live on
+//                        the model, never on the persona.
 
 /** @returns {'shared'|'fixed'} */
 function personaModelMode(persona) {
     return persona?.modelConfig?.mode === 'fixed' ? 'fixed' : 'shared';
 }
 
-/** Deep-clone a persona's saved modelConfig into layer shape (no mode flag). */
+/**
+ * Deep-clone a persona's saved modelConfig into layer shape (no mode flag).
+ * Legacy-seed helper: only used by init() to seed the layer on the first load
+ * after the WR-12 de-sync upgrade, when personas still held full snapshots.
+ */
 function layerFromPersona(persona) {
     const cfg = mergeModelConfig(persona?.modelConfig);
     delete cfg.mode;
@@ -916,56 +990,82 @@ function layerFromPersona(persona) {
 }
 
 /**
- * Mirror the active layer back into the active persona when it keeps its own
- * settings (mode 'fixed'). State-only — persistence rides on the caller's
- * persistSettings()/savePersonas() call.
+ * Keep the active fixed persona's pin pointing at the layer's current model.
+ * A model/provider switch made while a fixed persona is active re-pins it
+ * (last-used auto-save, same spirit as pre-profiles WR-12). State-only;
+ * persistSettings()'s savePersonas ride-along persists it.
  */
-function mirrorLayerToFixedPersona() {
+function updateFixedPersonaPin() {
     const persona = getActivePersona();
     if (!persona || personaModelMode(persona) !== 'fixed') return;
-    persona.modelConfig = {
-        ...JSON.parse(JSON.stringify(state.currentModelConfig)),
-        mode: 'fixed',
-    };
+    const layer = getActiveModelConfig();
+    const cfg = persona.modelConfig || {};
+    // `modelParams` present = legacy full snapshot → rewrite to a slim pin.
+    if (cfg.provider === layer.provider && cfg.model === layer.model && !cfg.modelParams) return;
+    persona.modelConfig = { mode: 'fixed', provider: layer.provider, model: layer.model };
     persona.updatedAt = Date.now();
 }
 
 /**
- * Apply a persona's model-settings mode on activation: 'fixed' loads its
- * saved config into the layer (and persists the layer change); 'shared'
- * leaves the layer untouched.
+ * Apply a persona's model-settings mode on activation: 'fixed' selects its
+ * pinned model (loading that model's profile); 'shared' leaves the layer
+ * untouched.
  */
 function applyPersonaModelSettings(persona) {
     if (!persona || personaModelMode(persona) !== 'fixed') return;
-    state.currentModelConfig = layerFromPersona(persona);
+    const pin = persona.modelConfig || {};
+    if (!pin.provider || !pin.model) return;
+    // One-time legacy migration: pre-profiles fixed personas snapshotted full
+    // params. Seed the pinned model's profile from them (unless it already
+    // has one), fold in the persona's old prefill, then slim to a pure pin.
+    if (pin.modelParams) {
+        const entry = getCatalogEntry(pin.provider, pin.model);
+        if (entry && !entry.params) {
+            entry.params = JSON.parse(JSON.stringify(pin.modelParams));
+            if (persona.prefill && entry.params.prefill === undefined) {
+                entry.params.prefill = persona.prefill;
+            }
+        }
+        persona.modelConfig = { mode: 'fixed', provider: pin.provider, model: pin.model };
+        persona.updatedAt = Date.now();
+    }
+    applyModelToLayer(pin.provider, pin.model);
     persistSettings();
 }
 
 /** Reflect the active persona's model-settings mode into the editor toggle. */
 function syncPersonaModelModeControls() {
-    const mode = personaModelMode(getActivePersona());
+    const persona = getActivePersona();
+    const mode = personaModelMode(persona);
     document.querySelectorAll('#personaModelModeOptions button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.modelMode === mode);
     });
+    const hint = document.getElementById('personaModelModeHint');
+    if (hint) {
+        if (mode === 'fixed') {
+            const pinnedModel = persona?.modelConfig?.model || '';
+            const label = pinnedModel ? getModelDisplayName(pinnedModel) : 'its pinned model';
+            hint.textContent = `Fixed: activating this persona always loads ${label} and that model's saved parameters.`;
+        } else {
+            hint.textContent = 'Shared: this persona uses whatever model (and its saved parameters) is currently active.';
+        }
+    }
 }
 
 /**
  * Set the active persona's model-settings mode (from the editor toggle).
- * Flipping to 'fixed' snapshots the CURRENT layer as the persona's own
- * settings — you're capturing what's on screen, not resurrecting a stale
- * pre-de-sync config. Flipping to 'shared' keeps the saved config dormant.
+ * Flipping to 'fixed' pins the CURRENTLY selected model — the params stay on
+ * the model's own profile, never on the persona. Flipping to 'shared' drops
+ * the pin.
  */
 function setPersonaModelMode(mode) {
     const persona = getActivePersona();
     if (!persona || personaModelMode(persona) === mode) return;
     if (mode === 'fixed') {
-        persona.modelConfig = {
-            ...JSON.parse(JSON.stringify(state.currentModelConfig)),
-            mode: 'fixed',
-        };
+        const layer = getActiveModelConfig();
+        persona.modelConfig = { mode: 'fixed', provider: layer.provider, model: layer.model };
     } else {
-        persona.modelConfig = { ...persona.modelConfig };
-        delete persona.modelConfig.mode;
+        persona.modelConfig = {};
     }
     persona.updatedAt = Date.now();
     savePersonas();
@@ -1230,6 +1330,21 @@ async function init() {
         });
     }
 
+    // One-time migration (model profiles): prefill used to live on the
+    // persona. When the saved layer predates the move, adopt the active
+    // persona's prefill into the layer + the active model's profile so
+    // existing setups keep responding the same after the upgrade.
+    if (layerNeedsPrefillSeed && getActivePersona()?.prefill) {
+        state.currentModelConfig.modelParams.prefill = getActivePersona().prefill;
+        mirrorLayerToModelProfile();
+        API.settings.update({
+            currentModelConfig: state.currentModelConfig,
+            customModels: state.settings.customModels,
+        }).catch(err => {
+            console.error('Failed to persist migrated prefill:', err);
+        });
+    }
+
     // Restore the entered container (device-local). A project implies its
     // workspace; otherwise restore a bare workspace. Stale ids are cleared. If
     // the picked conversation isn't in the restored container, drop it so the
@@ -1275,8 +1390,13 @@ async function init() {
 
 // ===== Server → state hydration =====
 
+// True when the saved layer predates the prefill move into model params —
+// init() then adopts the active persona's legacy prefill once.
+let layerNeedsPrefillSeed = false;
+
 function hydrateSettings(settings) {
     if (!settings) return;
+    layerNeedsPrefillSeed = settings.currentModelConfig?.modelParams?.prefill === undefined;
     state.settings.avatarSize = settings.avatarSize || CONFIG.defaults.avatarSize;
     state.settings.avatarPosition = settings.avatarPosition || CONFIG.defaults.avatarPosition;
     state.settings.showAvatar = settings.showAvatar !== undefined ? settings.showAvatar : CONFIG.defaults.showAvatar;
@@ -1318,11 +1438,12 @@ function hydratePersonas(personas) {
             prefill: p.prefill || '',
             avatarFilename: p.avatarFilename || '',
             expressions,
-            // Backfill missing modelConfig fields against the current default.
-            // Personas created server-side may have a minimal modelConfig
-            // (e.g., the OAuth callback's default-persona row only includes
-            // a few params); the UI assumes the full set, so merge here.
-            modelConfig: mergeModelConfig(p.modelConfig),
+            // Model profiles: a persona's modelConfig is a slim pin
+            // ({ mode:'fixed', provider, model }) or {} for shared. Kept raw —
+            // legacy full snapshots keep their modelParams so
+            // applyPersonaModelSettings can seed the pinned model's profile
+            // once, then slims them down.
+            modelConfig: (p.modelConfig && typeof p.modelConfig === 'object') ? p.modelConfig : {},
             createdAt: p.createdAt,
             updatedAt: p.updatedAt,
         };
@@ -1550,7 +1671,14 @@ function saveAllSettingsFromUI() {
     // Provider & model → the active layer (WR-12)
     const layer = getActiveModelConfig();
     layer.provider = elements.providerSelect.value;
-    if (elements.modelSelect.value) layer.model = elements.modelSelect.value;
+    // Model switched via the dropdown → full profile swap (save outgoing,
+    // load incoming) BEFORE params are read back from the UI, then refresh
+    // the controls so they show the incoming profile instead of clobbering
+    // it with the outgoing model's on-screen values.
+    if (elements.modelSelect.value && elements.modelSelect.value !== layer.model) {
+        applyModelToLayer(layer.provider, elements.modelSelect.value);
+        loadModelParamsToUI();
+    }
 
     // API key for current provider: store-only path. Scheduled for server
     // persistence on a separate debounce so /api/settings updates don't ping
@@ -1587,14 +1715,15 @@ function saveAllSettingsFromUI() {
     // Model parameters (save to the active layer)
     saveModelParamsFromUI();
 
-    // A fixed-mode persona remembers layer changes as its own (WR-12).
-    mirrorLayerToFixedPersona();
+    // Layer edits are remembered on the active model's profile; a fixed-mode
+    // persona just re-pins to the current model (params never live on it).
+    mirrorLayerToModelProfile();
+    updateFixedPersonaPin();
 
-    // Persona settings (name, system prompt, prefill)
+    // Persona settings (name, system prompt — prefill lives in model params now)
     if (persona) {
         persona.name = elements.assistantName.value || CONFIG.defaults.assistantName;
         persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
-        persona.prefill = elements.prefillInput.value || '';
         persona.updatedAt = Date.now();
     }
 }
@@ -1774,7 +1903,6 @@ async function updateUI() {
     updateApiKeyFieldForProvider(currentProvider);
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
-    elements.prefillInput.value = persona ? (persona.prefill || '') : '';
     elements.showAvatar.checked = state.settings.showAvatar;
 
     // Load model parameters to UI (from active persona's modelConfig)
@@ -1872,9 +2000,11 @@ function updateApiKeyFieldForProvider(provider) {
  * @param {string} provider - The new provider
  */
 function handleProviderChange(provider) {
-    // Update provider on the active layer (WR-12); fixed personas remember it.
-    getActiveModelConfig().provider = provider;
-    mirrorLayerToFixedPersona();
+    const layer = getActiveModelConfig();
+    // Remember the outgoing model's params in its profile BEFORE the provider
+    // moves — after the switch the layer points at another provider's model.
+    if (layer.provider !== provider) mirrorLayerToModelProfile();
+    layer.provider = provider;
 
     // Clear the key input on provider switch. We never want a previously-typed
     // plaintext key from one provider to leak into the form for another, and
@@ -1922,6 +2052,7 @@ function loadModelParamsToUI() {
     elements.topPValue.textContent = params.topP.toFixed(2);
     elements.topKInput.value = params.topK;
     elements.maxTokensInput.value = params.maxTokens;
+    elements.prefillInput.value = params.prefill || '';
     elements.streamingToggle.checked = params.streaming;
 
     // Parameter enabled checkboxes
@@ -1972,6 +2103,7 @@ function saveModelParamsFromUI() {
     params.topP = elements.topPSlider.value / 100;
     params.topK = parseInt(elements.topKInput.value, 10) || 40;
     params.maxTokens = parseInt(elements.maxTokensInput.value, 10) || 4096;
+    params.prefill = elements.prefillInput.value || '';
     params.streaming = elements.streamingToggle.checked;
     // stopSequences is already updated via tag input handlers
 
@@ -2636,7 +2768,9 @@ function removeCustomModel(id, provider) {
     // If the removed model was the layer's selected one, fall back
     if (modelConfig.provider === targetProvider && modelConfig.model === id) {
         modelConfig.model = providerModels.length > 0 ? providerModels[0].id : '';
-        mirrorLayerToFixedPersona();
+        loadModelProfileIntoLayer();
+        loadModelParamsToUI();
+        updateFixedPersonaPin();
         persistSettings();
     }
 }
@@ -2684,10 +2818,12 @@ function populateModelDropdown() {
             select.appendChild(option);
         });
 
-        // If selected model not in list, fall back to the provider's first
+        // If selected model not in list, fall back to the provider's first —
+        // and load THAT model's profile so its params come along.
         if (!providerModels.some(m => m.id === modelConfig.model)) {
             modelConfig.model = providerModels[0].id;
-            mirrorLayerToFixedPersona();
+            loadModelProfileIntoLayer();
+            loadModelParamsToUI();
             select.value = providerModels[0].id;
         }
     }
@@ -3344,25 +3480,18 @@ const PROVIDER_LABELS = {
 };
 
 /**
- * Switch the active persona's model — and, when the model belongs to another
- * provider, the provider with it (WR-11: the top-bar menu lists all providers'
- * models; persona/character is retained across the switch by design). Writes
- * to the persona's modelConfig and re-renders. No-op if unchanged.
+ * Switch the active model — and, when the model belongs to another provider,
+ * the provider with it (WR-11: the top-bar menu lists all providers' models;
+ * persona/character is retained across the switch by design). Saves the
+ * outgoing model's params to its profile and loads the incoming model's
+ * (model profiles). No-op if unchanged.
  * @param {string} modelId
  * @param {string} [provider] - the model's provider; defaults to the current one.
  */
 function selectModel(modelId, provider) {
     const layer = getActiveModelConfig();
-    const targetProvider = provider || layer.provider;
-    if (layer.model === modelId && layer.provider === targetProvider) return;
-    if (layer.provider !== targetProvider) {
-        // Full provider-switch housekeeping (key field, provider params,
-        // model dropdown, send button) — same path as the Settings select.
-        handleProviderChange(targetProvider);
-        elements.providerSelect.value = targetProvider;
-    }
-    layer.model = modelId;
-    mirrorLayerToFixedPersona();
+    if (!applyModelToLayer(provider || layer.provider, modelId)) return;
+    updateFixedPersonaPin();
     persistSettings();
     updateUI();
 }
@@ -5892,7 +6021,8 @@ function buildChatRequest() {
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
     const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
-    const prefillText = persona?.prefill?.trim() || '';
+    // Prefill is an engine param: it rides on the model profile, not the persona.
+    const prefillText = modelConfig.modelParams?.prefill?.trim() || '';
 
     // The model echoes back the prefill — track it so appendStreamChunk and
     // the non-streaming branch can strip it from displayed/persisted output.

@@ -83,7 +83,9 @@ the writes). WR-14 is independent of all of them.
 ## Non-goals (for now)
 
 - Per-conversation model memory (see above — rejected).
-- Model "profiles"/presets as a separate concept — the fixed-mode persona
-  already covers the curated-parameters case without a third entity.
+- ~~Model "profiles"/presets as a separate concept — the fixed-mode persona
+  already covers the curated-parameters case without a third entity.~~
+  **Superseded 2026-07-18:** per-model profiles adopted; fixed personas
+  became slim pins to a model. See docs/MODEL_PROFILES_DESIGN.md.
 - Floating avatar as live preview on the persona editor (noted for later,
   separate idea).
