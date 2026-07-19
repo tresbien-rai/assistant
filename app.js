@@ -964,6 +964,37 @@ function applyModelToLayer(provider, modelId) {
     return true;
 }
 
+/** Find which provider a catalog model id belongs to, or null if not saved. */
+function findModelProvider(modelId) {
+    for (const provider of Object.keys(state.settings.customModels)) {
+        if ((state.settings.customModels[provider] || []).some(m => m.id === modelId)) {
+            return provider;
+        }
+    }
+    return null;
+}
+
+/**
+ * Restore a chat's model on open: the model that produced its last assistant
+ * reply (per-message tag, WR-14) becomes the active model again, profile and
+ * all — so coming back to a conversation keeps the engine it was running on.
+ * Skipped when the chat's persona pins a model (fixed mode wins), when the
+ * chat has no tagged replies yet, or when the tagged model is no longer in
+ * the catalog. Requires convo.messages to be loaded.
+ */
+function restoreConversationModel(convo) {
+    if (!convo || !Array.isArray(convo.messages)) return;
+    if (personaModelMode(getActivePersona()) === 'fixed') return;
+    const lastTagged = [...convo.messages].reverse()
+        .find(m => m.role === 'assistant' && m.model);
+    if (!lastTagged) return;
+    const provider = findModelProvider(lastTagged.model);
+    if (!provider) return; // removed from the catalog — keep the current model
+    if (applyModelToLayer(provider, lastTagged.model)) {
+        persistSettings();
+    }
+}
+
 // ===== Persona model-settings mode (WR-12, reshaped by model profiles) =====
 // A persona's modelConfig JSON is now a PIN, not a snapshot:
 //   'shared' (default) — modelConfig is {}; the persona never touches the
@@ -1355,6 +1386,20 @@ async function init() {
     // render isn't empty. Other conversations are lazy-loaded on switch.
     if (state.activeConversationId) {
         await loadConversationMessages(state.activeConversationId);
+    }
+
+    // Reload = reopening the chat: align the persona with the restored
+    // conversation (pickActivePersona's most-recently-edited guess above is
+    // only a fallback for when no chat is restored) and bring back the chat's
+    // model — same behavior as switchConversation, so a reload never swaps
+    // the persona or engine mid-conversation.
+    const restoredConvo = getActiveConversation();
+    if (restoredConvo) {
+        if (restoredConvo.personaId && state.personas[restoredConvo.personaId]) {
+            state.activePersonaId = restoredConvo.personaId;
+            applyPersonaModelSettings(getActivePersona()); // fixed pin wins
+        }
+        restoreConversationModel(restoredConvo);
     }
 
     // (Appearance/layout prefs are applied early in bootstrap so they cover the
@@ -3194,6 +3239,10 @@ async function switchConversation(conversationId) {
     // Lazy-load messages if this is the first time we're activating this
     // conversation in the session.
     await loadConversationMessages(conversationId);
+
+    // The chat also remembers its engine: reactivate the model that wrote its
+    // last reply (unless the persona above pinned one — fixed mode wins).
+    restoreConversationModel(convo);
 
     navigate({ type: 'chat', id: conversationId });
     updateUI();
