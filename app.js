@@ -78,7 +78,10 @@ markedRenderer.code = function(code, language) {
         : hljs.highlightAuto(code).value;
 
     const langClass = validLanguage ? ` class="language-${language}"` : '';
-    return `<pre><code${langClass}>${highlighted}</code></pre>`;
+    // Wrap in a positioned container so a copy button can float in the corner.
+    // The button carries no code payload itself — the click handler reads the
+    // raw text from the sibling <code> element's textContent (markup stripped).
+    return `<div class="code-block"><button class="code-copy-btn" type="button" data-action="copy-code" title="Copy code" aria-label="Copy code">${ICON_SVG.copy}</button><pre><code${langClass}>${highlighted}</code></pre></div>`;
 };
 
 // Make links open in new tab
@@ -111,6 +114,7 @@ function renderMarkdown(content) {
 // inherit the theme text color and the hover color.
 const ICON_SVG = {
     copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>',
     rerun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>',
     delete: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
@@ -4539,7 +4543,7 @@ function renderContainerPage(kind, id) {
 
             <label class="cp-label" for="cpInstructions">Instructions</label>
             <div class="textarea-resizable">
-                <textarea class="cp-instructions" id="cpInstructions" rows="6" placeholder="${instrPlaceholder}"></textarea>
+                <textarea class="cp-instructions" id="cpInstructions" rows="8" placeholder="${instrPlaceholder}"></textarea>
                 <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
             </div>
             <div class="cp-save-row">
@@ -6693,6 +6697,26 @@ function setupEventListeners() {
         });
     }
 
+    // Copy button on rendered code blocks (delegated — blocks are injected as
+    // message HTML, so we can't bind them individually). Reads the raw code from
+    // the sibling <code> element and briefly swaps the icon to a checkmark.
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.code-copy-btn');
+        if (!btn) return;
+        const codeEl = btn.parentElement?.querySelector('pre code');
+        const text = codeEl ? codeEl.textContent : '';
+        if (!text) return;
+        navigator.clipboard?.writeText(text).then(() => {
+            btn.classList.add('copied');
+            btn.innerHTML = ICON_SVG.check;
+            clearTimeout(btn._copyResetTimer);
+            btn._copyResetTimer = setTimeout(() => {
+                btn.classList.remove('copied');
+                btn.innerHTML = ICON_SVG.copy;
+            }, 1500);
+        }, () => showToast('Copy failed.', { type: 'error' }));
+    });
+
     // (The "+ New chat" button lives in the main-area Chats list, wired per
     // render in renderChatsListMain.)
 
@@ -6927,7 +6951,9 @@ function setupEventListeners() {
     });
 
     elements.messageInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        // Shift+Enter sends; plain Enter inserts a newline. This guards against
+        // accidentally firing off a long, multi-paragraph message mid-thought.
+        if (e.key === 'Enter' && e.shiftKey) {
             e.preventDefault();
             sendMessage();
         }
