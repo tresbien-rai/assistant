@@ -10,8 +10,8 @@ and implementer — responsible for all technical decisions, code structure, and
 implementation. Explain technical trade-offs in plain language when relevant, and
 don't assume the human has deep familiarity with the codebase internals.
 
-The human occasionally runs parallel experiments in Claude Code Web, so the local
-repo may lag behind origin. Run `git fetch` before reviewing project state.
+All work now goes through Claude Code (no parallel Claude Code Web sessions), so
+local `main` and origin stay in sync during normal single-session work.
 
 ## Project Summary
 
@@ -255,4 +255,5 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
 ## Reference Documents
 
 - `PLANNING.txt` - Full architecture plan and development phases
-- `PHASE0_TASKS.txt` - Detailed task breakdown for Phase 0 (backend foundation)
+- `docs/` - Per-phase handoff + task breakdowns (`PHASE1_HANDOFF.md`, `PHASE2_TASKS.md`, etc.) and design notes
+- `docs/archive/` - Completed-phase docs kept for reference (`PHASE0_TASKS.txt`, etc.)

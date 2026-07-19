@@ -23,9 +23,6 @@ Phase 2 has **two tracks**:
   `DEPLOY_RAILWAY.md`.
 - Only `main` exists (feature branches are deleted after merge).
 
-Run `git fetch` before reviewing — the human sometimes runs parallel work in
-Claude Code Web, so local `main` may lag origin.
-
 ## Read these to get oriented (in order)
 1. `CLAUDE.md` — project instructions, architecture, conventions.
 2. The auto-memory `MEMORY.md` + `memory/project_phase1_status.md` (what shipped)
