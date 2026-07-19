@@ -121,7 +121,7 @@
                 <!-- Active model + API key (re-parented into #modelsView on load — WR-13) -->
                 <div class="settings-section" id="modelSettingsSection">
                     <h3>Active Model</h3>
-                    <p class="section-note">Used by every chat until you switch. Personas set to "Fixed" load and remember their own.</p>
+                    <p class="section-note">Used by every chat until you switch. Each model keeps its own profile of the settings below — switching models switches profiles.</p>
 
                     <label for="providerSelect">Provider</label>
                     <select id="providerSelect">
@@ -153,7 +153,7 @@
                 <!-- Advanced params (re-parented into #modelsView on load — WR-13) -->
                 <div class="settings-section" id="advancedSettingsSection">
                     <h3>Advanced Settings</h3>
-                    <p class="section-note">Parameters for the active model above.</p>
+                    <p class="section-note">Parameters for the active model above. Saved automatically to that model's profile.</p>
 
                     <!-- Common Parameters -->
                     <div class="param-group" id="temperatureGroup">
@@ -193,6 +193,15 @@
                             <input type="text" id="stopSequenceInput" placeholder="Type and press Enter">
                         </div>
                         <p class="help-text">Press Enter to add, click tag to remove</p>
+                    </div>
+
+                    <div class="param-group">
+                        <label for="prefillInput">Response Prefill</label>
+                        <div class="textarea-resizable">
+                            <textarea id="prefillInput" rows="3" placeholder="Text to start assistant responses with..."></textarea>
+                            <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+                        </div>
+                        <p class="help-text">The model continues from this text (hidden in responses). Not every model supports prefill — it's saved per model, like all settings here.</p>
                     </div>
 
                     <div class="param-group">
@@ -303,21 +312,15 @@ When responding, you may optionally include an expression tag like [expression: 
                     </div>
                     <p class="help-text">This defines your assistant's personality and behavior.</p>
 
-                    <label for="prefillInput">Response Prefill</label>
-                    <div class="textarea-resizable">
-                        <textarea id="prefillInput" rows="3" placeholder="Text to start assistant responses with..."></textarea>
-                        <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
-                    </div>
-                    <p class="help-text">Model continues from this text. Hidden in responses.</p>
-
-                    <!-- Model-settings mode (WR-12): shared = persona never touches
-                         the active model/params; fixed = it keeps its own. -->
+                    <!-- Model-settings mode (WR-12, reshaped by model profiles):
+                         shared = persona never touches the active model;
+                         fixed = it pins a model, whose own profile loads. -->
                     <label>Model Settings</label>
                     <div class="appearance-options" id="personaModelModeOptions">
                         <button type="button" data-model-mode="shared">Shared</button>
                         <button type="button" data-model-mode="fixed">Fixed</button>
                     </div>
-                    <p class="help-text">Shared: this persona uses whatever model and parameters are currently active. Fixed: it keeps its own — switching to it loads them, and changes made while it's active are remembered.</p>
+                    <p class="help-text" id="personaModelModeHint">Shared: this persona uses whatever model (and its saved parameters) is currently active.</p>
 
                     <!-- File-tools base default (Track A, P2-05b). Per-chat
                          override lives on the composer toggle. -->
