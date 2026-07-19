@@ -146,6 +146,7 @@ const UiPrefs = {
         chatWidth: 'comfortable', // narrow | comfortable | wide
         activeProject: null,      // id of the entered workspace, or null (home)
         devMode: false,           // show developer tools (e.g. request inspector)
+        textareaHeights: {},      // dragged heights by textarea id, px
     },
     _data: null,
     load() {
@@ -7399,14 +7400,22 @@ function autoResizeTextarea(textarea) {
 // Each `.textarea-resize-handle` resizes the textarea immediately before it.
 // Idempotent (skips already-wired handles): called once at init for the static
 // forms, and again whenever a view renders a fresh handle (container pages).
+// Dragged heights persist in UiPrefs (keyed by textarea id) so re-rendered
+// textareas — e.g. container-page Instructions — keep their size, matching the
+// static settings-modal ones.
 function setupTextareaResizers() {
     const MIN_H = 80;
     const MAX_H = 600;
+    const savedHeights = UiPrefs.get('textareaHeights') || {};
     document.querySelectorAll('.textarea-resize-handle').forEach(handle => {
         const ta = handle.previousElementSibling;
         if (!ta || ta.tagName !== 'TEXTAREA') return;
         if (handle.dataset.resizerWired) return;
         handle.dataset.resizerWired = 'true';
+
+        if (ta.id && savedHeights[ta.id]) {
+            ta.style.height = `${Math.max(MIN_H, Math.min(MAX_H, savedHeights[ta.id]))}px`;
+        }
 
         let dragging = false;
         let startY = 0;
@@ -7432,6 +7441,11 @@ function setupTextareaResizers() {
             dragging = false;
             handle.classList.remove('dragging');
             try { handle.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+            if (ta.id) {
+                const heights = { ...(UiPrefs.get('textareaHeights') || {}) };
+                heights[ta.id] = Math.round(ta.getBoundingClientRect().height);
+                UiPrefs.set('textareaHeights', heights);
+            }
         };
         handle.addEventListener('pointerup', end);
         handle.addEventListener('pointercancel', end);

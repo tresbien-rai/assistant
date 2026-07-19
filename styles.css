@@ -1372,6 +1372,12 @@ body {
     background: transparent;
     margin-bottom: 0;
     resize: none;
+    /* Text styling lives here (not just .settings-section) so wrapped textareas
+       outside the settings modal — e.g. container pages — don't fall back to
+       the browser-default black, which is unreadable on dark themes. */
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
     /* The wrapper has no padding, so the textarea owns its inner padding. Lives
        here (not just .settings-section) so wrapped textareas elsewhere — e.g. the
        project modal — aren't flush against the edge. */
@@ -3345,8 +3351,18 @@ body {
     font-family: var(--font-mono, monospace);
     font-size: var(--text-xs);
     line-height: 1.5;
-    white-space: pre;
+    /* Wrap like chat code blocks do — long strings (system prompts, file
+       contents) would otherwise force a very wide horizontal scroll. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     color: var(--text-primary);
+}
+
+/* Request inspector modal: wider than other modals — it shows a full request
+   body, so use the desktop real estate now that the JSON wraps. */
+.modal-content.modal-xl {
+    max-width: 1100px;
+    width: 95%;
 }
 
 /* Settings modal: roomy, with a fixed header and a scrolling body. */
