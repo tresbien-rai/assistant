@@ -61,6 +61,25 @@ layer lacking a `prefill` key), the active persona's prefill is copied into
 the layer + the active model's profile. Other personas' prefills stay dormant
 in their DB rows — re-enter them on the relevant model if still wanted.
 
+### 4. Chats restore their persona AND their model *(added 2026-07-19)*
+
+A conversation should never change character or engine behind the user's
+back:
+
+- **Persona**: a chat is bound to its persona (`conversations.persona_id`)
+  and opening it activates that persona. This already worked in-session; the
+  reload path now does the same (init used to fall back to the
+  most-recently-edited persona, ignoring the restored chat).
+- **Model**: opening a chat reactivates the model that produced its last
+  assistant reply — derived from the per-message model tag (WR-14), so no new
+  storage. The model's profile loads with it, as with any switch. Skipped
+  when the chat's persona is fixed (the pin wins), when the chat has no
+  tagged replies, or when that model was removed from the catalog.
+
+This supersedes the de-sync note's rejection of per-conversation model
+memory: opening a chat *is* user involvement, and the visible per-message
+tags + profiles make the restore predictable instead of disorienting.
+
 ## Non-goals (for now)
 
 - **Per-model capability matrix** (auto-disabling params a model rejects):

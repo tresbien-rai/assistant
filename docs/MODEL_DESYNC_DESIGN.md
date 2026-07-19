@@ -55,6 +55,12 @@ Rejected: per-conversation model memory (reopening an old chat silently
 restores its model) — disorienting; settings should never change without user
 involvement.
 
+> **Superseded 2026-07-19:** with model profiles in place, opening a chat now
+> DOES restore the model that wrote its last reply (derived from the
+> per-message tag below — no extra storage). Opening a chat is user
+> involvement, and profiles make the switch safe. Fixed personas still win.
+> See docs/MODEL_PROFILES_DESIGN.md §4.
+
 Adopted instead (RisuAI-style): **each assistant message records which
 provider/model generated it**, displayed as a small tag on the message. Coming
 back to an old conversation, the user can see what produced each reply and
@@ -82,7 +88,8 @@ the writes). WR-14 is independent of all of them.
 
 ## Non-goals (for now)
 
-- Per-conversation model memory (see above — rejected).
+- ~~Per-conversation model memory (see above — rejected).~~ Superseded
+  2026-07-19 — see §3 note and docs/MODEL_PROFILES_DESIGN.md §4.
 - ~~Model "profiles"/presets as a separate concept — the fixed-mode persona
   already covers the curated-parameters case without a third entity.~~
   **Superseded 2026-07-18:** per-model profiles adopted; fixed personas
