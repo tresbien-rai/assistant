@@ -25,9 +25,6 @@ a fresh session. Read this, then `docs/PHASE1_TASKS.md` for the task breakdown.
 4. `docs/PHASE1_TASKS.md` — the Phase 1 task breakdown (P1-01 … P1-12).
 5. `DEPLOY_RAILWAY.md` — deploy/ops (Drive API enablement, env vars, Volume).
 
-Run `git fetch` before reviewing — the human sometimes runs parallel work in
-Claude Code Web, so local `main` may lag origin.
-
 ## What Phase 1 builds (one paragraph)
 A Projects feature: a project bundles **instructions + files** that get injected
 as context into any conversation assigned to that project (independent of which
