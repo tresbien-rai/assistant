@@ -4441,3 +4441,182 @@ body {
 .file-upload-btn svg {
     margin-right: 0;
 }
+
+/* ===== File Panel (edit-in-context slice 1: viewer) ===== */
+/* Third column of .app-container, beside the chat. Desktop: a bordered side
+   panel; mobile: a full-screen overlay (never auto-opened there). */
+.file-panel {
+    display: flex;
+    flex-direction: column;
+    width: clamp(320px, 38vw, 640px);
+    height: 100vh; /* fallback */
+    height: 100dvh;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    min-width: 0;
+}
+
+.file-panel[hidden] {
+    display: none;
+}
+
+.file-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+/* The shared type badge is absolutely positioned inside cards — in the panel
+   header it flows inline instead. */
+.file-panel-header .att-badge {
+    position: static;
+    flex-shrink: 0;
+}
+
+.file-panel-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+}
+
+.file-panel-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    text-decoration: none;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.file-panel-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.file-panel-btn.active {
+    color: var(--accent);
+}
+
+.file-panel-body {
+    flex: 1;
+    overflow: auto;
+    padding: 16px;
+    font-size: var(--text-sm);
+}
+
+/* Raw text / code view: reuse the chat code-block look without its chrome. */
+.file-panel-body pre.file-panel-raw {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    color: var(--text-primary);
+}
+
+.file-panel-hint {
+    padding: 8px 12px;
+    border-top: 1px solid var(--border-color);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.file-panel-loading,
+.file-panel-error {
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 32px 16px;
+}
+
+.file-panel-error {
+    color: var(--error);
+}
+
+/* Rendered-markdown view inherits the message-content typography via the
+   .markdown-body class app.js applies (same renderer as chat bubbles). */
+
+/* Edge tab: peeks in from the right edge when the panel is closed but a
+   tool-created file exists in the open conversation. */
+.file-panel-tab {
+    position: fixed;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 52px;
+    border: 1px solid var(--border-color);
+    border-right: none;
+    border-radius: var(--radius-md) 0 0 var(--radius-md);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    transition: color 0.15s, width 0.15s;
+}
+
+.file-panel-tab:hover {
+    color: var(--accent);
+    width: 40px;
+}
+
+.file-panel-tab[hidden] {
+    display: none;
+}
+
+/* Unseen-activity dot: pulses until the panel is opened. */
+.file-panel-tab-dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: file-tab-pulse 1.6s ease-in-out infinite;
+}
+
+.file-panel-tab-dot[hidden] {
+    display: none;
+}
+
+@keyframes file-tab-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.35); opacity: 0.55; }
+}
+
+/* Mobile: the panel becomes a full-screen overlay above the chat (opened only
+   by explicit tap — app.js never auto-opens it at this width). */
+@media (max-width: 768px) {
+    .file-panel {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        z-index: 110;
+        border-left: none;
+    }
+}
