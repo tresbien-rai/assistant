@@ -359,6 +359,14 @@
         const res = await request('GET', contentUrl);
         return res.text();
       },
+      /**
+       * Save user-edited text over a file (the file panel's Save button).
+       * Takes the same content URL as fetchText — PUT on it replaces the
+       * file's content. Returns the updated file metadata.
+       */
+      saveText(contentUrl, content) {
+        return request('PUT', contentUrl, { body: { content } });
+      },
     },
 
     // -------------------------------------------------------------------------

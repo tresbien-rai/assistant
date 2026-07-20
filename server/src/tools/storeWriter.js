@@ -1,10 +1,11 @@
 /**
- * Shared store write path (file tools)
+ * Shared store write path (file tools + user saves)
  *
- * The ONE way tool executors write text content into a file store, used by
- * create_file and edit_file (and any future mutator). Lives apart from the
- * executors so they stay peers (no executor-to-executor imports), and apart
- * from fileStore.js, which is contracted as pure routing with no I/O.
+ * The ONE way text content is written into a file store — used by the
+ * create_file and edit_file executors and by the routes' user-save endpoints
+ * (PUT .../content, edit-in-context slice 3). Lives apart from the executors
+ * so they stay peers (no executor-to-executor imports), and apart from
+ * fileStore.js, which is contracted as pure routing with no I/O.
  *
  * Semantics:
  * - Upload the new bytes FIRST — a failure leaves any existing file untouched.
@@ -16,7 +17,11 @@
  *   injection never serve stale content after an overwrite or edit.
  */
 
+const path = require('node:path');
+
+const config = require('../config');
 const drive = require('../utils/drive');
+const { isTextAuthorableExtension } = require('../utils/fileUploads');
 const { logger } = require('../utils/logger');
 
 /**
@@ -28,6 +33,13 @@ const { logger } = require('../utils/logger');
  * @returns {Promise<{record: Object, overwritten: boolean}>}
  */
 async function writeContentToStore(auth, store, { filename, mimeType, bytes, userId }) {
+  // Safety net: callers pre-check with friendlier wording, but the shared
+  // write path is where the cap must actually hold — a future writer that
+  // skips its own check still can't upload past the limit.
+  if (bytes.length > config.projectFiles.maxFileBytes) {
+    throw new Error(`File content exceeds the ${config.projectFiles.maxFileBytes / (1024 * 1024)}MB limit.`);
+  }
+
   const folderId = await store.ensureFolder(auth);
 
   const uploaded = await drive.uploadFile(auth, {
@@ -69,4 +81,52 @@ async function writeContentToStore(auth, store, { filename, mimeType, bytes, use
   return { record, overwritten };
 }
 
-module.exports = { writeContentToStore };
+/**
+ * Validate and save user-supplied text over an EXISTING file row (the file
+ * panel's Save button). Same write mechanics as the tools (upload-first,
+ * stable row id, cache invalidation via the new Drive id), with the checks a
+ * route needs mapped to a { ok, reason } result instead of a throw.
+ *
+ * Known v1 limitation (deliberate): there is no revision precondition — a
+ * save is last-write-wins. The client warns about same-session conflicts,
+ * but a second tab/device can silently overwrite. The upgrade path is an
+ * If-Match-style check on the row's drive_file_id (client sends the id it
+ * last read; mismatch → 409) threaded through the GET/PUT content routes.
+ *
+ * @param {Object} auth - Drive auth for the user
+ * @param {Object} store - FileStore for the container the row lives in
+ * @param {Object} file - the existing file row (project/workspace/user_files)
+ * @param {*} content - user-supplied replacement text
+ * @param {string} userId
+ * @returns {Promise<{ok: true, record: Object} | {ok: false, reason: string}>}
+ */
+async function saveTextOverFile(auth, store, file, content, userId) {
+  if (typeof content !== 'string') {
+    return { ok: false, reason: 'content must be a string of the complete file text.' };
+  }
+  const ext = path.extname(file.filename || '').toLowerCase();
+  if (!isTextAuthorableExtension(ext)) {
+    return { ok: false, reason: 'This file type cannot be edited as text.' };
+  }
+  const bytes = Buffer.from(content, 'utf8');
+  if (bytes.length > config.projectFiles.maxFileBytes) {
+    const mb = config.projectFiles.maxFileBytes / (1024 * 1024);
+    return { ok: false, reason: `Content is too large (limit ${mb}MB).` };
+  }
+
+  const { record } = await writeContentToStore(auth, store, {
+    filename: file.filename,
+    mimeType: file.mime_type || 'text/plain',
+    bytes,
+    userId,
+  });
+
+  logger.info(
+    { userId, destination: store.kind, fileId: record.id, sizeBytes: bytes.length },
+    'User saved file content'
+  );
+
+  return { ok: true, record };
+}
+
+module.exports = { writeContentToStore, saveTextOverFile };
