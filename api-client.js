@@ -348,6 +348,17 @@
       contentUrl(id) {
         return `/api/files/${encodeURIComponent(id)}/content`;
       },
+      /**
+       * Fetch a content URL's body as text (for the in-app file panel).
+       * Accepts any of the three content-endpoint URLs (user/workspace/project
+       * files) so callers can pass the URL already carried on an attachment.
+       * Goes through request() for session-expiry (401) and network-error
+       * handling.
+       */
+      async fetchText(contentUrl) {
+        const res = await request('GET', contentUrl);
+        return res.text();
+      },
     },
 
     // -------------------------------------------------------------------------
