@@ -100,12 +100,21 @@
                         <button type="button" data-theme-name="light">Light</button>
                         <button type="button" data-theme-name="parchment">Parchment</button>
                         <button type="button" data-theme-name="rose">Rosé</button>
+                        <button type="button" data-theme-name="custom">Custom</button>
                     </div>
 
-                    <label for="accentPicker">Accent Color</label>
-                    <div class="accent-row">
-                        <input type="color" id="accentPicker" value="#6c63ff" aria-label="Accent color">
-                        <button type="button" class="accent-reset-btn" id="accentResetBtn">Reset</button>
+                    <label for="paletteBase">Custom Palette</label>
+                    <div class="palette-row">
+                        <input type="color" id="paletteBase" value="#6c63ff" aria-label="Base color">
+                        <div class="appearance-options" id="paletteModeOptions">
+                            <button type="button" data-palette-mode="dark">Dark</button>
+                            <button type="button" data-palette-mode="light">Light</button>
+                        </div>
+                        <button type="button" class="palette-reset-btn" id="paletteResetBtn">Reset</button>
+                    </div>
+                    <div class="palette-row">
+                        <label for="paletteTint" class="palette-tint-label">Background tint</label>
+                        <input type="range" id="paletteTint" min="0" max="100" step="5" value="50" aria-label="Background tint strength">
                     </div>
 
                     <label>Chat Width</label>

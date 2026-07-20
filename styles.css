@@ -286,14 +286,16 @@
 #themeOptions button[data-theme-name="parchment"] { --swatch-bg: #f3ecdd; --swatch-accent: #9c4a2f; }
 #themeOptions button[data-theme-name="rose"]      { --swatch-bg: #f9f1f3; --swatch-accent: #b02a5b; }
 
-.accent-row {
+/* Custom palette controls: base color porthole, dark/light mode, tint slider.
+   Interacting with any of them activates the Custom theme. */
+.palette-row {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 12px;
 }
 
-.accent-row input[type="color"] {
+.palette-row input[type="color"] {
     width: 48px;
     height: 36px;
     padding: 0;
@@ -301,23 +303,67 @@
     border-radius: var(--radius-md);
     background: none;
     cursor: pointer;
+    flex: 0 0 auto;
 }
 
 /* Round/border the native swatch directly so there's no rounded-outer /
    square-inner clash (no double packaging). */
-.accent-row input[type="color"]::-webkit-color-swatch-wrapper {
+.palette-row input[type="color"]::-webkit-color-swatch-wrapper {
     padding: 0;
 }
-.accent-row input[type="color"]::-webkit-color-swatch {
+.palette-row input[type="color"]::-webkit-color-swatch {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
 }
-.accent-row input[type="color"]::-moz-color-swatch {
+.palette-row input[type="color"]::-moz-color-swatch {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
 }
 
-.accent-reset-btn {
+.palette-row .appearance-options {
+    margin-bottom: 0;
+    flex: 1;
+}
+
+.palette-tint-label {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.palette-row input[type="range"] {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.palette-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.palette-row input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.palette-row input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+}
+
+.palette-reset-btn {
     height: 36px;
     background: none;
     border: 1px solid var(--border-color);
@@ -327,9 +373,10 @@
     font-size: var(--text-xs);
     cursor: pointer;
     transition: all 0.2s;
+    flex: 0 0 auto;
 }
 
-.accent-reset-btn:hover {
+.palette-reset-btn:hover {
     border-color: var(--accent);
     color: var(--accent);
 }
