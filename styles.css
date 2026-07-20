@@ -2538,8 +2538,9 @@ body {
     background: var(--bg-secondary);
 }
 
-/* Streaming cursor */
-.message.assistant.streaming .message-content::after {
+/* Streaming cursor. Suppressed before the first token arrives (the typing
+   dots stand in for that phase \u2014 see startStreamingMessage). */
+.message.assistant.streaming:not(.awaiting-first-token) .message-content::after {
     content: '\u258C';
     animation: blink 1s step-end infinite;
     color: var(--accent);

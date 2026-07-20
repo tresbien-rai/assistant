@@ -1498,6 +1498,13 @@ function hydratePersonas(personas) {
         const expressions = hasExpressions
             ? p.expressions
             : { ...CONFIG.defaultExpressions };
+        // 'thinking' is reserved for the built-in generation animation (P2-U2)
+        // and must always have a slot — otherwise setExpression('thinking')
+        // silently no-ops and the slot never appears in persona settings.
+        // Personas created before it became a default lack it, so backfill.
+        if (!expressions.thinking) {
+            expressions.thinking = { ...CONFIG.defaultExpressions.thinking };
+        }
         state.personas[p.id] = {
             id: p.id,
             name: p.name,
@@ -6800,6 +6807,11 @@ function startStreamingMessage() {
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
+    // Pre-token placeholder: show the animated "typing" dots until the first
+    // chunk arrives (appendStreamChunk overwrites this). The `awaiting-first-token`
+    // class suppresses the trailing block cursor so we don't show both.
+    messageDiv.classList.add('awaiting-first-token');
+    contentDiv.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
     messageDiv.appendChild(contentDiv);
     elements.messagesContainer.appendChild(messageDiv);
 
@@ -6814,6 +6826,9 @@ function startStreamingMessage() {
 function appendStreamChunk(text) {
     state.streamingAccumulator += text;
     if (state.streamingMessageDiv) {
+        // First real content: drop the pre-token placeholder state so the
+        // trailing block cursor takes over from the typing dots.
+        state.streamingMessageDiv.classList.remove('awaiting-first-token');
         const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
         if (contentDiv) {
             let displayText = state.streamingAccumulator;
