@@ -1189,9 +1189,14 @@ const elements = {
     filePanelBadge: document.getElementById('filePanelBadge'),
     filePanelName: document.getElementById('filePanelName'),
     filePanelRawToggle: document.getElementById('filePanelRawToggle'),
+    filePanelEditBtn: document.getElementById('filePanelEditBtn'),
     filePanelDownload: document.getElementById('filePanelDownload'),
     filePanelClose: document.getElementById('filePanelClose'),
     filePanelBody: document.getElementById('filePanelBody'),
+    filePanelFooter: document.getElementById('filePanelFooter'),
+    filePanelConflict: document.getElementById('filePanelConflict'),
+    filePanelCancelBtn: document.getElementById('filePanelCancelBtn'),
+    filePanelSaveBtn: document.getElementById('filePanelSaveBtn'),
     filePanelTab: document.getElementById('filePanelTab'),
     filePanelTabDot: document.getElementById('filePanelTabDot'),
 
@@ -5882,6 +5887,8 @@ const FilePanel = {
     isOpen: false,
     unseen: false,   // live activity arrived while closed → tab dot pulses
     rawMode: false,  // markdown only: show source instead of rendered
+    editMode: false, // user is editing in a textarea (slice 3)
+    conflict: false, // the assistant rewrote the file mid-edit (warn on save)
     _fetchSeq: 0,    // ignore stale fetch responses after rapid updates
     _cache: null,    // { url, text } — last fetched content, so raw/rendered
                      // toggles and card re-clicks don't re-download
@@ -5911,6 +5918,16 @@ const FilePanel = {
         if (convoId && convoId !== state.activeConversationId) return;
         // The file's content just changed server-side — drop the stale cache.
         if (this._cache && this._cache.url === att.url) this._cache = null;
+        // Never clobber an in-progress user edit: same file → flag the
+        // conflict so Save warns; different file → leave the editor alone
+        // (its card is in the chat; the user can open it after finishing).
+        if (this.editMode) {
+            if (this.file && this.file.url === att.url) {
+                this.conflict = true;
+                if (elements.filePanelConflict) elements.filePanelConflict.hidden = false;
+            }
+            return;
+        }
         if (this.isOpen || (this.mode() === 'auto' && !this.isMobile())) {
             this.open(att);
         } else {
@@ -5924,19 +5941,38 @@ const FilePanel = {
     /** Open the panel on a file (from activity, a card click, or the tab). */
     open(att) {
         if (!att || !att.url) return;
+        // A card click while editing another file must not discard the draft.
+        if (this.editMode && this.file && this.file.url !== att.url) {
+            showToast('Finish or cancel your edit first.', { type: 'warning' });
+            return;
+        }
         this.file = att;
         this.conversationId = state.activeConversationId;
         this.isOpen = true;
         this.unseen = false;
         this.rawMode = false;
+        this.exitEditMode();
         this.renderHeader();
         this.loadContent();
         this.syncUi();
     },
 
     close() {
+        this.discardDraft();
         this.isOpen = false;
         this.syncUi();
+    },
+
+    /**
+     * Leave edit mode without saving, warning only when the draft actually
+     * differed from the file (silent for an untouched editor).
+     */
+    discardDraft() {
+        if (!this.editMode) return;
+        const ta = document.getElementById('filePanelEditor');
+        const dirty = ta && this._cache && ta.value !== this._cache.text;
+        this.exitEditMode();
+        if (dirty) showToast('Your unsaved edit was discarded.', { type: 'warning' });
     },
 
     /**
@@ -5949,6 +5985,7 @@ const FilePanel = {
         const inChat = (state.ui.mainView || {}).type === 'chat';
 
         if (inChat && this.conversationId !== state.activeConversationId) {
+            this.discardDraft();
             this.conversationId = state.activeConversationId;
             this.file = this.deriveConversationFile();
             this.isOpen = false;
@@ -5989,9 +6026,11 @@ const FilePanel = {
             elements.filePanelDownload.setAttribute('download', f.fileName || 'file');
         }
         if (elements.filePanelRawToggle) {
-            elements.filePanelRawToggle.hidden = !this.isMarkdown();
+            elements.filePanelRawToggle.hidden = this.editMode || !this.isMarkdown();
             elements.filePanelRawToggle.classList.toggle('active', this.rawMode);
         }
+        // All panel files are text in v1 — editable unless a draft is open.
+        if (elements.filePanelEditBtn) elements.filePanelEditBtn.hidden = this.editMode;
     },
 
     isMarkdown() {
@@ -6005,6 +6044,92 @@ const FilePanel = {
         this.loadContent();
     },
 
+    // ---- User editing (slice 3) ----
+
+    /** Switch the body to a textarea holding the file's full current text. */
+    enterEdit() {
+        if (this.editMode || !this.file) return;
+        if (state.isLoading) {
+            showToast('Wait for the assistant to finish its turn first.', { type: 'warning' });
+            return;
+        }
+        // The full text lives in the fetch cache; without it (load still in
+        // flight or failed) there is nothing safe to edit yet.
+        if (!this._cache || this._cache.url !== this.file.url) {
+            showToast('Still loading the file — try again in a moment.', { type: 'warning' });
+            return;
+        }
+        if (this._cache.text.length > this.MAX_RENDER_CHARS) {
+            showToast('This file is too large to edit here. Download it instead.', { type: 'warning' });
+            return;
+        }
+        this.editMode = true;
+        this.conflict = false;
+        this.renderHeader();
+        if (elements.filePanel) elements.filePanel.classList.add('is-editing');
+        if (elements.filePanelBody) {
+            elements.filePanelBody.innerHTML = '';
+            const ta = document.createElement('textarea');
+            ta.className = 'file-panel-editor';
+            ta.id = 'filePanelEditor';
+            ta.setAttribute('aria-label', `Edit ${this.file.fileName || 'file'}`);
+            ta.value = this._cache.text;
+            elements.filePanelBody.appendChild(ta);
+            ta.focus();
+        }
+        if (elements.filePanelFooter) elements.filePanelFooter.hidden = false;
+        if (elements.filePanelConflict) elements.filePanelConflict.hidden = true;
+    },
+
+    /** Clear edit-mode state + chrome (does not repaint the body). */
+    exitEditMode() {
+        this.editMode = false;
+        this.conflict = false;
+        if (elements.filePanel) elements.filePanel.classList.remove('is-editing');
+        if (elements.filePanelFooter) elements.filePanelFooter.hidden = true;
+        if (elements.filePanelConflict) elements.filePanelConflict.hidden = true;
+    },
+
+    /** Discard the draft and show the file's current content again. */
+    cancelEdit() {
+        if (!this.editMode) return;
+        this.exitEditMode();
+        this.renderHeader();
+        this.loadContent();
+    },
+
+    /** Save the draft to the server, then return to view mode. */
+    async saveEdit() {
+        if (!this.editMode || !this.file) return;
+        if (state.isLoading) {
+            showToast('Wait for the assistant to finish its turn first.', { type: 'warning' });
+            return;
+        }
+        const ta = document.getElementById('filePanelEditor');
+        if (!ta) return;
+        const text = ta.value;
+
+        const saveBtn = elements.filePanelSaveBtn;
+        const cancelBtn = elements.filePanelCancelBtn;
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+        if (cancelBtn) cancelBtn.disabled = true;
+        try {
+            const updated = await API.files.saveText(this.file.url, text);
+            this._cache = { url: this.file.url, text };
+            if (updated && typeof updated.sizeBytes === 'number') this.file.sizeBytes = updated.sizeBytes;
+            this.exitEditMode();
+            this.renderHeader();
+            this.loadContent();
+            showToast('Saved.', { type: 'success' });
+        } catch (err) {
+            console.error('Failed to save file:', err);
+            displayError(err, { action: 'save the file' });
+        } finally {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+            if (cancelBtn) cancelBtn.disabled = false;
+        }
+    },
+
     /**
      * Fetch the file's text (same content URL the download uses, via the
      * api-client so 401s trigger the app's re-auth flow) and render. Serves
@@ -6013,6 +6138,7 @@ const FilePanel = {
      */
     async loadContent() {
         if (!this.file || !elements.filePanelBody) return;
+        if (this.editMode) return; // never repaint over an open draft
         const seq = ++this._fetchSeq;
 
         let text;
@@ -7125,6 +7251,16 @@ function setupEventListeners() {
         elements.filePanelTab.addEventListener('click', () => {
             if (FilePanel.file) FilePanel.open(FilePanel.file);
         });
+    }
+    // File panel (user editing, slice 3): edit / save / cancel.
+    if (elements.filePanelEditBtn) {
+        elements.filePanelEditBtn.addEventListener('click', () => FilePanel.enterEdit());
+    }
+    if (elements.filePanelSaveBtn) {
+        elements.filePanelSaveBtn.addEventListener('click', () => FilePanel.saveEdit());
+    }
+    if (elements.filePanelCancelBtn) {
+        elements.filePanelCancelBtn.addEventListener('click', () => FilePanel.cancelEdit());
     }
     if (elements.accentPicker) {
         elements.accentPicker.addEventListener('input', () => {

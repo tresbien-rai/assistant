@@ -4560,6 +4560,50 @@ body {
     color: var(--error);
 }
 
+/* ---- User editing (slice 3) ---- */
+
+/* The editor fills the body edge-to-edge; the body drops its padding so the
+   textarea's own padding lines up with the view-mode content. */
+.file-panel.is-editing .file-panel-body {
+    padding: 0;
+    display: flex;
+}
+
+.file-panel-editor {
+    flex: 1;
+    width: 100%;
+    padding: 16px;
+    border: none;
+    outline: none;
+    resize: none;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.55;
+}
+
+.file-panel-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.file-panel-footer[hidden] {
+    display: none;
+}
+
+.file-panel-conflict {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-xs);
+    color: var(--warning);
+}
+
 /* The rendered-markdown view reuses the .message-content class (same
    renderer and typography as chat bubbles) — no panel-specific rules. */
 

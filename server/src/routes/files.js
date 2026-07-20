@@ -9,6 +9,7 @@
  * Endpoints:
  * - GET /api/files            - List the user's Downloads files (metadata)
  * - GET /api/files/:id/content - Stream a file's bytes (download)
+ * - PUT /api/files/:id/content - Replace a file's text (file-panel Save)
  *
  * Authentication is applied at the index.js mount level.
  */
@@ -18,6 +19,8 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const dal = require('../db/dal');
 const drive = require('../utils/drive');
 const AppError = require('../utils/AppError');
+const { resolveFileStore } = require('../tools/fileStore');
+const { saveTextOverFile } = require('../tools/storeWriter');
 
 const router = express.Router();
 
@@ -62,6 +65,27 @@ router.get('/:id/content', asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`);
   res.send(bytes);
+}));
+
+/**
+ * PUT /api/files/:id/content
+ * Replace a Downloads file's text with user-edited content (the file panel's
+ * Save). Body: { content: string }. Same write path as the file tools, so
+ * the row id (and download URL) stays stable and read_file sees the new text.
+ */
+router.put('/:id/content', asyncHandler(async (req, res) => {
+  const file = dal.getUserFile(req.params.id, req.user.userId);
+  if (!file || !file.drive_file_id) {
+    throw AppError.notFound('File');
+  }
+
+  const auth = drive.getAuthForUser(req.user.userId);
+  const store = resolveFileStore({ userId: req.user.userId, project: null, workspace: null });
+  const result = await saveTextOverFile(auth, store, file, req.body?.content, req.user.userId);
+  if (!result.ok) {
+    throw AppError.validation(result.reason);
+  }
+  res.json(formatFile(result.record));
 }));
 
 module.exports = router;
