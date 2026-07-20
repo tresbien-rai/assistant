@@ -5888,10 +5888,13 @@ const FilePanel = {
     unseen: false,   // live activity arrived while closed → tab dot pulses
     rawMode: false,  // markdown only: show source instead of rendered
     editMode: false, // user is editing in a textarea (slice 3)
-    conflict: false, // the assistant rewrote the file mid-edit (warn on save)
+    conflict: false, // the assistant rewrote the file mid-edit (Save confirms)
     _fetchSeq: 0,    // ignore stale fetch responses after rapid updates
     _cache: null,    // { url, text } — last fetched content, so raw/rendered
                      // toggles and card re-clicks don't re-download
+    _draftBaseline: null,   // text the open draft started from (dirty check)
+    _pendingActivity: null, // { att, convoId } that arrived mid-edit; re-
+                            // dispatched when the draft closes
 
     MAX_RENDER_CHARS: 500000,
     // Above this size, skip markdown/highlight parsing and show plain text —
@@ -5919,12 +5922,15 @@ const FilePanel = {
         // The file's content just changed server-side — drop the stale cache.
         if (this._cache && this._cache.url === att.url) this._cache = null;
         // Never clobber an in-progress user edit: same file → flag the
-        // conflict so Save warns; different file → leave the editor alone
-        // (its card is in the chat; the user can open it after finishing).
+        // conflict so Save asks before overwriting; a different file is
+        // queued and re-dispatched when the edit ends, so its panel/edge-tab
+        // signal isn't lost.
         if (this.editMode) {
             if (this.file && this.file.url === att.url) {
                 this.conflict = true;
                 if (elements.filePanelConflict) elements.filePanelConflict.hidden = false;
+            } else {
+                this._pendingActivity = { att, convoId };
             }
             return;
         }
@@ -5946,12 +5952,14 @@ const FilePanel = {
             showToast('Finish or cancel your edit first.', { type: 'warning' });
             return;
         }
+        // Re-clicking the edited file's own card leaves edit mode — warn if
+        // the draft had changes (same courtesy as close/switch).
+        this.discardDraft();
         this.file = att;
         this.conversationId = state.activeConversationId;
         this.isOpen = true;
         this.unseen = false;
         this.rawMode = false;
-        this.exitEditMode();
         this.renderHeader();
         this.loadContent();
         this.syncUi();
@@ -5965,12 +5973,14 @@ const FilePanel = {
 
     /**
      * Leave edit mode without saving, warning only when the draft actually
-     * differed from the file (silent for an untouched editor).
+     * differed from its baseline (silent for an untouched editor). The
+     * baseline is captured at enterEdit — deliberately not the fetch cache,
+     * which a mid-edit assistant rewrite invalidates.
      */
     discardDraft() {
         if (!this.editMode) return;
         const ta = document.getElementById('filePanelEditor');
-        const dirty = ta && this._cache && ta.value !== this._cache.text;
+        const dirty = ta && typeof this._draftBaseline === 'string' && ta.value !== this._draftBaseline;
         this.exitEditMode();
         if (dirty) showToast('Your unsaved edit was discarded.', { type: 'warning' });
     },
@@ -6065,6 +6075,9 @@ const FilePanel = {
         }
         this.editMode = true;
         this.conflict = false;
+        // Dirty-detection baseline: what the draft started from. Kept apart
+        // from the fetch cache, which a mid-edit assistant rewrite nulls.
+        this._draftBaseline = this._cache.text;
         this.renderHeader();
         if (elements.filePanel) elements.filePanel.classList.add('is-editing');
         if (elements.filePanelBody) {
@@ -6081,21 +6094,36 @@ const FilePanel = {
         if (elements.filePanelConflict) elements.filePanelConflict.hidden = true;
     },
 
-    /** Clear edit-mode state + chrome (does not repaint the body). */
+    /**
+     * Clear edit-mode state + chrome (does not repaint the body), then
+     * re-dispatch any file activity that arrived while the draft was open so
+     * its panel/edge-tab signal is delivered, not lost.
+     */
     exitEditMode() {
         this.editMode = false;
         this.conflict = false;
+        this._draftBaseline = null;
         if (elements.filePanel) elements.filePanel.classList.remove('is-editing');
         if (elements.filePanelFooter) elements.filePanelFooter.hidden = true;
         if (elements.filePanelConflict) elements.filePanelConflict.hidden = true;
+        const pending = this._pendingActivity;
+        this._pendingActivity = null;
+        // Re-dispatch outside edit mode: normal open/tab-dot behavior, and the
+        // stale-conversation guard drops it if the user has switched chats.
+        if (pending) this.notifyActivity(pending.att, pending.convoId);
+    },
+
+    /** Return the panel to view mode showing the file's current content. */
+    returnToView() {
+        this.exitEditMode();
+        this.renderHeader();
+        this.loadContent();
     },
 
     /** Discard the draft and show the file's current content again. */
     cancelEdit() {
         if (!this.editMode) return;
-        this.exitEditMode();
-        this.renderHeader();
-        this.loadContent();
+        this.returnToView();
     },
 
     /** Save the draft to the server, then return to view mode. */
@@ -6109,17 +6137,40 @@ const FilePanel = {
         if (!ta) return;
         const text = ta.value;
 
+        // Mirrors the server's PROJECT_FILE_MAX_BYTES default — a friendlier
+        // stop than the request bouncing off the body-size limit.
+        if (new TextEncoder().encode(text).length > 10 * 1024 * 1024) {
+            showToast('This is too large to save (limit 10MB). Trim the content or download and edit locally.', { type: 'warning' });
+            return;
+        }
+
+        // The assistant rewrote this file mid-edit — saving is a deliberate
+        // choice to overwrite its version, so ask.
+        if (this.conflict && !window.confirm(
+            'The assistant updated this file while you were editing. Save anyway and overwrite its version with yours?'
+        )) {
+            return;
+        }
+
+        // Pinned: a conversation switch or panel close while the PUT is in
+        // flight reassigns this.file — the result must apply to THIS file.
+        const file = this.file;
         const saveBtn = elements.filePanelSaveBtn;
         const cancelBtn = elements.filePanelCancelBtn;
         if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
         if (cancelBtn) cancelBtn.disabled = true;
         try {
-            const updated = await API.files.saveText(this.file.url, text);
-            this._cache = { url: this.file.url, text };
-            if (updated && typeof updated.sizeBytes === 'number') this.file.sizeBytes = updated.sizeBytes;
-            this.exitEditMode();
-            this.renderHeader();
-            this.loadContent();
+            const updated = await API.files.saveText(file.url, text);
+            if (updated && typeof updated.sizeBytes === 'number') file.sizeBytes = updated.sizeBytes;
+            // The saved text is now the freshest content for this url — cache
+            // it under the PINNED url (url-keyed, so this can never mislabel
+            // another file's content even after a mid-save switch).
+            this._cache = { url: file.url, text };
+            // Only repaint if the panel still shows the file we saved; a
+            // mid-save conversation switch already tore the editor down.
+            if (this.file === file && this.editMode) {
+                this.returnToView();
+            }
             showToast('Saved.', { type: 'success' });
         } catch (err) {
             console.error('Failed to save file:', err);

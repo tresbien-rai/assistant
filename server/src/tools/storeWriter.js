@@ -33,6 +33,13 @@ const { logger } = require('../utils/logger');
  * @returns {Promise<{record: Object, overwritten: boolean}>}
  */
 async function writeContentToStore(auth, store, { filename, mimeType, bytes, userId }) {
+  // Safety net: callers pre-check with friendlier wording, but the shared
+  // write path is where the cap must actually hold — a future writer that
+  // skips its own check still can't upload past the limit.
+  if (bytes.length > config.projectFiles.maxFileBytes) {
+    throw new Error(`File content exceeds the ${config.projectFiles.maxFileBytes / (1024 * 1024)}MB limit.`);
+  }
+
   const folderId = await store.ensureFolder(auth);
 
   const uploaded = await drive.uploadFile(auth, {
@@ -79,6 +86,12 @@ async function writeContentToStore(auth, store, { filename, mimeType, bytes, use
  * panel's Save button). Same write mechanics as the tools (upload-first,
  * stable row id, cache invalidation via the new Drive id), with the checks a
  * route needs mapped to a { ok, reason } result instead of a throw.
+ *
+ * Known v1 limitation (deliberate): there is no revision precondition — a
+ * save is last-write-wins. The client warns about same-session conflicts,
+ * but a second tab/device can silently overwrite. The upgrade path is an
+ * If-Match-style check on the row's drive_file_id (client sends the id it
+ * last read; mismatch → 409) threaded through the GET/PUT content routes.
  *
  * @param {Object} auth - Drive auth for the user
  * @param {Object} store - FileStore for the container the row lives in
