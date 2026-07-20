@@ -17,29 +17,8 @@
 const config = require('../config');
 const { extractFileText } = require('../utils/projectContext');
 const { formatFileSize } = require('../utils/format');
-const { resolveReadStores, resolveToolDriveAuth } = require('./fileStore');
+const { resolveReadStores, findAcrossStores, resolveToolDriveAuth } = require('./fileStore');
 const { logger } = require('../utils/logger');
-
-/**
- * Find a file by exact name across the conversation's read stores (most
- * specific first). Also reports any LESS-specific stores that hold the same
- * name (shadowing) so the caller can disambiguate for the user.
- * @param {Array} stores - resolveReadStores(ctx)
- * @param {string} filename
- * @returns {{file: Object, store: Object, shadowedKinds: string[]}|null}
- */
-function findAcrossStores(stores, filename) {
-  let hit = null;
-  const shadowedKinds = [];
-  for (const store of stores) {
-    const file = store.findByName(filename);
-    if (!file) continue;
-    if (!hit) hit = { file, store };
-    else shadowedKinds.push(store.kind); // same name in a less-specific store
-  }
-  if (!hit) return null;
-  return { ...hit, shadowedKinds };
-}
 
 /**
  * Execute one read_file call.

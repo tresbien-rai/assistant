@@ -5775,11 +5775,13 @@ async function sendMessageFromText(text, attachments = []) {
  * @returns {Object} attachment entry (type 'created_file' or 'tool_event')
  */
 function toolEventToAttachment(ev) {
-    // A download card implies a successful create — require ok AND a url.
-    if (ev.tool === 'create_file' && ev.ok === true && ev.url) {
+    // A download url on a successful event IS the "produced a file" signal —
+    // read/list tools never carry one, and any future file-producing tool
+    // gets a card without touching this list. The tool name is only a label.
+    if (ev.ok === true && ev.url) {
         return {
             type: 'created_file',
-            tool: 'create_file',
+            tool: ev.tool,
             fileName: ev.filename || 'file',
             url: ev.url,
             mimeType: ev.mimeType || '',
@@ -5856,6 +5858,8 @@ function buildToolChip(att) {
         label = 'Listed files';
     } else if (att.tool === 'create_file') {
         label = `Created ${name || 'a file'}`;
+    } else if (att.tool === 'edit_file') {
+        label = `Edited ${name || 'a file'}`;
     } else {
         label = escapeHtml(att.tool || 'Tool used');
     }

@@ -28,10 +28,10 @@
 const path = require('node:path');
 
 const config = require('../config');
-const drive = require('../utils/drive');
-const { ACCEPTED_EXTENSIONS } = require('../utils/fileUploads');
+const { isTextAuthorableExtension } = require('../utils/fileUploads');
 const { formatFileSize } = require('../utils/format');
 const { resolveFileStore, resolveToolDriveAuth } = require('./fileStore');
+const { writeContentToStore } = require('./storeWriter');
 const { logger } = require('../utils/logger');
 
 // A well-formed `type/subtype` MIME (RFC 2045 token chars only). Anything with
@@ -80,9 +80,7 @@ function validateFilename(filename) {
   if (!ext) {
     return { ok: false, reason: 'filename needs a text-type extension, e.g. "notes.md" or "data.csv".' };
   }
-  if (ext === '.pdf' || !ACCEPTED_EXTENSIONS.has(ext)) {
-    // PDFs are accepted as USER uploads but can't be authored from a text
-    // string, so create_file rejects them explicitly.
+  if (!isTextAuthorableExtension(ext)) {
     return { ok: false, reason: `the "${ext}" extension is not supported. Use a text-based type like .md, .txt, .csv, or a code extension.` };
   }
   return { ok: true, ext, name };
@@ -136,48 +134,14 @@ async function executeCreateFile(input, ctx) {
   if (unavailable) return { content: `Cannot create the file: ${unavailable}`, isError: true };
 
   const store = resolveFileStore(ctx);
-  const folderId = await store.ensureFolder(auth);
 
-  // Upload the new bytes FIRST — if this fails, an existing same-name file is
-  // left untouched.
-  const uploaded = await drive.uploadFile(auth, {
-    name: filename,
+  // Overwrite-on-duplicate (decision 6) via the shared write path.
+  const { record, overwritten } = await writeContentToStore(auth, store, {
+    filename,
     mimeType,
-    parentId: folderId,
-    data: bytes,
+    bytes,
+    userId: ctx.userId,
   });
-
-  // Overwrite-on-duplicate (decision 6): repoint the existing row (its id —
-  // and therefore any previously shared download link — keeps working), then
-  // drop the old Drive file best-effort.
-  const existing = store.findByName(filename);
-  let record;
-  let overwritten = false;
-  if (existing) {
-    record = store.updateContent(existing.id, {
-      mimeType,
-      sizeBytes: bytes.length,
-      driveFileId: uploaded.id,
-    });
-    overwritten = true;
-    if (existing.drive_file_id && existing.drive_file_id !== uploaded.id) {
-      try {
-        await drive.deleteFile(auth, existing.drive_file_id);
-      } catch (err) {
-        logger.warn(
-          { userId: ctx.userId, fileId: existing.id, msg: err.message },
-          'Failed to delete replaced Drive file; orphan left on Drive'
-        );
-      }
-    }
-  } else {
-    record = store.add({
-      filename,
-      mimeType,
-      sizeBytes: bytes.length,
-      driveFileId: uploaded.id,
-    });
-  }
 
   const url = store.urlFor(record.id);
   const sizeLabel = formatFileSize(bytes.length);

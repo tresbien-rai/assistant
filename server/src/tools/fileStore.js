@@ -103,6 +103,28 @@ function resolveReadStores(ctx) {
 }
 
 /**
+ * Find a file by exact name across an ordered store list (most specific
+ * first). Also reports any LESS-specific stores that hold the same name
+ * (shadowing) so callers can disambiguate for the user. Shared by read_file
+ * and edit_file so both resolve a filename to the same store the same way.
+ * @param {FileStore[]} stores - resolveReadStores(ctx)
+ * @param {string} filename
+ * @returns {{file: Object, store: FileStore, shadowedKinds: string[]}|null}
+ */
+function findAcrossStores(stores, filename) {
+  let hit = null;
+  const shadowedKinds = [];
+  for (const store of stores) {
+    const file = store.findByName(filename);
+    if (!file) continue;
+    if (!hit) hit = { file, store };
+    else shadowedKinds.push(store.kind); // same name in a less-specific store
+  }
+  if (!hit) return null;
+  return { ...hit, shadowedKinds };
+}
+
+/**
  * Resolve the user's Drive auth for a tool, converting the "not connected"
  * case (e.g. dev login) into a reusable reason string instead of a throw —
  * so create_file / read_file can return a friendly isError result. The
@@ -118,4 +140,4 @@ function resolveToolDriveAuth(userId) {
   }
 }
 
-module.exports = { resolveFileStore, resolveReadStores, resolveToolDriveAuth };
+module.exports = { resolveFileStore, resolveReadStores, findAcrossStores, resolveToolDriveAuth };

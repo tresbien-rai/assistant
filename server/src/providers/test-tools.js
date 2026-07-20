@@ -35,10 +35,10 @@ console.log('='.repeat(60));
 // ---------------------------------------------------------------------------
 console.log('\n1. Definitions sanity...');
 
-check('three tools defined: create_file, read_file, list_files', () => {
+check('four tools defined: create_file, edit_file, read_file, list_files', () => {
   assert.deepStrictEqual(
     TOOL_DEFINITIONS.map((t) => t.name),
-    ['create_file', 'read_file', 'list_files']
+    ['create_file', 'edit_file', 'read_file', 'list_files']
   );
 });
 
@@ -54,12 +54,18 @@ check('create_file requires filename + content', () => {
   assert.deepStrictEqual(cf.input_schema.required, ['filename', 'content']);
 });
 
+check('edit_file requires filename + old_text + new_text (replace_all optional)', () => {
+  const ef = TOOL_DEFINITIONS.find((t) => t.name === 'edit_file');
+  assert.deepStrictEqual(ef.input_schema.required, ['filename', 'old_text', 'new_text']);
+  assert.strictEqual(ef.input_schema.properties.replace_all.type, 'boolean');
+});
+
 // ---------------------------------------------------------------------------
 console.log('\n2. Anthropic formatTools + buildRequestBody threading...');
 
 check('formatTools passes the native shape through', () => {
   const tools = anthropic.formatTools(TOOL_DEFINITIONS);
-  assert.strictEqual(tools.length, 3);
+  assert.strictEqual(tools.length, 4);
   assert.strictEqual(tools[0].name, 'create_file');
   assert.strictEqual(tools[0].input_schema.properties.filename.type, 'string');
 });
@@ -67,7 +73,7 @@ check('formatTools passes the native shape through', () => {
 check('buildRequestBody includes tools when passed, omits otherwise', () => {
   const base = { model: 'claude-x', messages: [{ role: 'user', content: 'hi' }] };
   const withTools = anthropic.buildRequestBody({ ...base, tools: TOOL_DEFINITIONS });
-  assert.strictEqual(withTools.tools.length, 3);
+  assert.strictEqual(withTools.tools.length, 4);
   const without = anthropic.buildRequestBody(base);
   assert.strictEqual(without.tools, undefined);
 });
@@ -152,10 +158,13 @@ check('formatTools emits functionDeclarations with proto-enum types', () => {
   const tools = gemini.formatTools(TOOL_DEFINITIONS);
   assert.strictEqual(tools.length, 1);
   const decls = tools[0].functionDeclarations;
-  assert.strictEqual(decls.length, 3);
+  assert.strictEqual(decls.length, 4);
   assert.strictEqual(decls[0].parameters.type, 'OBJECT');
   assert.strictEqual(decls[0].parameters.properties.filename.type, 'STRING');
   assert.deepStrictEqual(decls[0].parameters.required, ['filename', 'content']);
+  // edit_file's boolean param must translate to the proto-enum type.
+  const editFile = decls.find((d) => d.name === 'edit_file');
+  assert.strictEqual(editFile.parameters.properties.replace_all.type, 'BOOLEAN');
 });
 
 check('no-argument tool (list_files) omits parameters entirely', () => {
@@ -167,7 +176,7 @@ check('no-argument tool (list_files) omits parameters entirely', () => {
 check('buildRequestBody includes tools when passed, omits otherwise', () => {
   const base = { model: 'gemini-x', messages: [{ role: 'user', content: 'hi' }] };
   const withTools = gemini.buildRequestBody({ ...base, tools: TOOL_DEFINITIONS });
-  assert.strictEqual(withTools.tools[0].functionDeclarations.length, 3);
+  assert.strictEqual(withTools.tools[0].functionDeclarations.length, 4);
   const without = gemini.buildRequestBody(base);
   assert.strictEqual(without.tools, undefined);
 });
