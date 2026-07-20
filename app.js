@@ -5775,16 +5775,16 @@ async function sendMessageFromText(text, attachments = []) {
  * @returns {Object} attachment entry (type 'created_file' or 'tool_event')
  */
 function toolEventToAttachment(ev) {
-    // A download card implies a successful create — require ok AND a url.
-    if (ev.tool === 'create_file' && ev.ok === true && ev.url) {
+    // A download card implies a successful create/edit — require ok AND a url.
+    if ((ev.tool === 'create_file' || ev.tool === 'edit_file') && ev.ok === true && ev.url) {
         return {
             type: 'created_file',
-            tool: 'create_file',
+            tool: ev.tool,
             fileName: ev.filename || 'file',
             url: ev.url,
             mimeType: ev.mimeType || '',
             sizeBytes: ev.sizeBytes || 0,
-            overwritten: !!ev.overwritten,
+            overwritten: !!ev.overwritten || ev.tool === 'edit_file',
         };
     }
     return { type: 'tool_event', tool: ev.tool, filename: ev.filename || null, ok: ev.ok !== false };
@@ -5856,6 +5856,8 @@ function buildToolChip(att) {
         label = 'Listed files';
     } else if (att.tool === 'create_file') {
         label = `Created ${name || 'a file'}`;
+    } else if (att.tool === 'edit_file') {
+        label = `Edited ${name || 'a file'}`;
     } else {
         label = escapeHtml(att.tool || 'Tool used');
     }

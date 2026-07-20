@@ -105,6 +105,63 @@ function resolveMime(inputMime, ext) {
 }
 
 /**
+ * Write text content into a store under a filename, overwriting any existing
+ * same-name file. Shared by create_file and edit_file so there is ONE write
+ * path: upload the new bytes FIRST (a failure leaves any existing file
+ * untouched), repoint the existing row or add a new one (the row id — and
+ * thus any shared download link — stays stable), then delete the replaced
+ * Drive file best-effort. Minting a new Drive file id on every write is also
+ * what invalidates projectContext's per-Drive-id text cache, so read_file
+ * never serves stale content after an overwrite or edit.
+ *
+ * @param {Object} auth - Drive auth for the user
+ * @param {Object} store - FileStore (resolveFileStore / resolveReadStores)
+ * @param {{filename: string, mimeType: string, bytes: Buffer, userId: string}} params
+ * @returns {Promise<{record: Object, overwritten: boolean}>}
+ */
+async function writeContentToStore(auth, store, { filename, mimeType, bytes, userId }) {
+  const folderId = await store.ensureFolder(auth);
+
+  const uploaded = await drive.uploadFile(auth, {
+    name: filename,
+    mimeType,
+    parentId: folderId,
+    data: bytes,
+  });
+
+  const existing = store.findByName(filename);
+  let record;
+  let overwritten = false;
+  if (existing) {
+    record = store.updateContent(existing.id, {
+      mimeType,
+      sizeBytes: bytes.length,
+      driveFileId: uploaded.id,
+    });
+    overwritten = true;
+    if (existing.drive_file_id && existing.drive_file_id !== uploaded.id) {
+      try {
+        await drive.deleteFile(auth, existing.drive_file_id);
+      } catch (err) {
+        logger.warn(
+          { userId, fileId: existing.id, msg: err.message },
+          'Failed to delete replaced Drive file; orphan left on Drive'
+        );
+      }
+    }
+  } else {
+    record = store.add({
+      filename,
+      mimeType,
+      sizeBytes: bytes.length,
+      driveFileId: uploaded.id,
+    });
+  }
+
+  return { record, overwritten };
+}
+
+/**
  * Execute one create_file call.
  * @param {{filename?: string, content?: string, mime_type?: string}} input
  * @param {Object} ctx - ToolContext ({ userId, workspace, project, conversationId })
@@ -136,48 +193,14 @@ async function executeCreateFile(input, ctx) {
   if (unavailable) return { content: `Cannot create the file: ${unavailable}`, isError: true };
 
   const store = resolveFileStore(ctx);
-  const folderId = await store.ensureFolder(auth);
 
-  // Upload the new bytes FIRST — if this fails, an existing same-name file is
-  // left untouched.
-  const uploaded = await drive.uploadFile(auth, {
-    name: filename,
+  // Overwrite-on-duplicate (decision 6) via the shared write path.
+  const { record, overwritten } = await writeContentToStore(auth, store, {
+    filename,
     mimeType,
-    parentId: folderId,
-    data: bytes,
+    bytes,
+    userId: ctx.userId,
   });
-
-  // Overwrite-on-duplicate (decision 6): repoint the existing row (its id —
-  // and therefore any previously shared download link — keeps working), then
-  // drop the old Drive file best-effort.
-  const existing = store.findByName(filename);
-  let record;
-  let overwritten = false;
-  if (existing) {
-    record = store.updateContent(existing.id, {
-      mimeType,
-      sizeBytes: bytes.length,
-      driveFileId: uploaded.id,
-    });
-    overwritten = true;
-    if (existing.drive_file_id && existing.drive_file_id !== uploaded.id) {
-      try {
-        await drive.deleteFile(auth, existing.drive_file_id);
-      } catch (err) {
-        logger.warn(
-          { userId: ctx.userId, fileId: existing.id, msg: err.message },
-          'Failed to delete replaced Drive file; orphan left on Drive'
-        );
-      }
-    }
-  } else {
-    record = store.add({
-      filename,
-      mimeType,
-      sizeBytes: bytes.length,
-      driveFileId: uploaded.id,
-    });
-  }
 
   const url = store.urlFor(record.id);
   const sizeLabel = formatFileSize(bytes.length);
@@ -200,4 +223,4 @@ async function executeCreateFile(input, ctx) {
   };
 }
 
-module.exports = { executeCreateFile, _validateFilename: validateFilename };
+module.exports = { executeCreateFile, writeContentToStore, validateFilename, _validateFilename: validateFilename };

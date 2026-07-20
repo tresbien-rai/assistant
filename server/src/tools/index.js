@@ -6,9 +6,9 @@
  * provider-neutral result { content: string, isError?: boolean } for
  * buildToolResultMessage().
  *
- * All three file tools are implemented (create_file: P2-03; read_file +
- * list_files: P2-04). The tools toggle is off for everyone until the frontend
- * exposes it (P2-05b), so these are unreachable in normal use for now.
+ * File tools: create_file (P2-03), read_file + list_files (P2-04), and
+ * edit_file (edit-in-context slice 2). Reachable when the conversation's
+ * file-tools toggle is on (persona base + per-conversation override).
  *
  * Executor errors must NEVER break the conversation: the loop converts a
  * thrown error into an isError result so the model can explain the failure.
@@ -22,6 +22,7 @@
 
 const { logger } = require('../utils/logger');
 const { executeCreateFile } = require('./createFile');
+const { executeEditFile } = require('./editFile');
 const { executeReadFile, executeListFiles } = require('./readFiles');
 
 /**
@@ -30,6 +31,7 @@ const { executeReadFile, executeListFiles } = require('./readFiles');
  */
 const EXECUTORS = {
   create_file: (input, ctx) => executeCreateFile(input, ctx),
+  edit_file: (input, ctx) => executeEditFile(input, ctx),
   read_file: (input, ctx) => executeReadFile(input, ctx),
   list_files: (input, ctx) => executeListFiles(input, ctx),
 };

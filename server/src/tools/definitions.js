@@ -23,7 +23,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'create_file',
     description:
-      "Create a text file for the user, saved to their Google Drive in the current project or workspace folder (or their Downloads folder when the chat is not in a project). If a file with the same name already exists there, it is overwritten — use this to update files you created earlier. Only text-based files are supported (code, markdown, csv, json, and similar; no binary formats). Returns the saved file's name and a download link you can reference in your reply.",
+      "Create a text file for the user, saved to their Google Drive in the current project or workspace folder (or their Downloads folder when the chat is not in a project). If a file with the same name already exists there, it is overwritten — but for changing part of an existing file, prefer edit_file, which does not require resending the whole content. Only text-based files are supported (code, markdown, csv, json, and similar; no binary formats). Returns the saved file's name and a download link you can reference in your reply.",
     input_schema: {
       type: 'object',
       properties: {
@@ -43,6 +43,33 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ['filename', 'content'],
+    },
+  },
+  {
+    name: 'edit_file',
+    description:
+      "Edit an existing text file by replacing an exact snippet of its current content, without resending the whole file. old_text must match the file's current content exactly (including whitespace and line breaks) and, unless replace_all is true, must appear exactly once — include enough surrounding context to make it unique. Use read_file first if you are unsure of the exact current content. Returns the updated file's name and download link.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        filename: {
+          type: 'string',
+          description: 'Exact file name as shown by list_files, e.g. "notes.md".',
+        },
+        old_text: {
+          type: 'string',
+          description: 'The exact text to replace, copied verbatim from the current file content.',
+        },
+        new_text: {
+          type: 'string',
+          description: 'The replacement text. May be empty to delete old_text.',
+        },
+        replace_all: {
+          type: 'boolean',
+          description: 'Replace every occurrence of old_text instead of requiring it to be unique. Default false.',
+        },
+      },
+      required: ['filename', 'old_text', 'new_text'],
     },
   },
   {
