@@ -9,7 +9,10 @@
     --accent: #6c63ff;
     --accent-hover: #5a52d9;
     --accent-subtle: rgba(108, 99, 255, 0.2);
-    --user-bubble: var(--accent); /* follows the accent color */
+    --accent-light: #8b85ff;   /* link color on themed surfaces (lighter on dark themes, darker on light ones) */
+    --on-accent: #ffffff;      /* text/icons sitting on an accent-colored background */
+    --user-bubble: var(--accent); /* follows the accent color (may be a deeper shade in some themes) */
+    --user-bubble-text: #ffffff;  /* always chosen to contrast with --user-bubble */
     --assistant-bubble: #2d2d44;
     --border-color: #2d2d44;
     --error: #ff6b6b;
@@ -69,8 +72,10 @@
 }
 
 /* ===== Themes (device-local; applied via data-theme on <html>) ===== */
-/* Midnight is the default (:root above). Light and Slate override the palette;
-   --accent stays unless the user picks a custom accent (set inline by JS). */
+/* Midnight is the default (:root above). Each theme overrides the palette,
+   including its own default accent; a custom accent picked by the user is set
+   inline by JS and wins over all of these. Every theme must keep the
+   --user-bubble / --user-bubble-text pair readable (>= ~4.5:1). */
 [data-theme="light"] {
     --bg-primary: #f4f6fb;
     --bg-secondary: #ffffff;
@@ -79,6 +84,7 @@
     --text-secondary: #565a6e;
     --text-muted: #8a8fa3;
     --accent-subtle: rgba(108, 99, 255, 0.12);
+    --accent-light: #5a52d9; /* links darken (not lighten) on light surfaces */
     --assistant-bubble: #eceefb;
     --border-color: #d9dded;
     --shadow-sm: 0 1px 3px rgba(20, 22, 40, 0.06);
@@ -103,6 +109,9 @@
     }
 }
 
+/* Slate — graphite neutrals with a cool steel-blue accent. The accent is a
+   bright pastel (dark text on it); user bubbles use a deeper steel shade so
+   white text stays readable. */
 [data-theme="slate"] {
     --bg-primary: #1e2229;
     --bg-secondary: #262b33;
@@ -110,10 +119,111 @@
     --text-primary: #e6e8ec;
     --text-secondary: #9aa1ad;
     --text-muted: #6b7280;
+    --accent: #7aa2f7;
+    --accent-hover: #6690e8;
+    --accent-subtle: rgba(122, 162, 247, 0.16);
+    --accent-light: #8fb3f9;
+    --on-accent: #10161f;
+    --user-bubble: #3b5b8c;
+    --user-bubble-text: #ffffff;
     --assistant-bubble: #2b313b;
     --border-color: #343a45;
     --scrollbar-thumb: #3a414d;
     --scrollbar-thumb-hover: #4b5360;
+}
+
+/* Forest — deep evergreen dark theme with a moss/emerald accent. */
+[data-theme="forest"] {
+    --bg-primary: #17211a;
+    --bg-secondary: #1d2a21;
+    --bg-tertiary: #101812;
+    --text-primary: #e3ebe4;
+    --text-secondary: #9db2a2;
+    --text-muted: #6a7d6f;
+    --accent: #52b788;
+    --accent-hover: #429b72;
+    --accent-subtle: rgba(82, 183, 136, 0.16);
+    --accent-light: #74c9a0;
+    --on-accent: #0c1810;
+    --user-bubble: #2d6a4f;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #223227;
+    --border-color: #2e4234;
+    --scrollbar-thumb: #3a5243;
+    --scrollbar-thumb-hover: #4a6754;
+}
+
+/* Ocean — deep sea navy-teal dark theme with a bright cyan accent. */
+[data-theme="ocean"] {
+    --bg-primary: #0f1c26;
+    --bg-secondary: #142838;
+    --bg-tertiary: #0a141c;
+    --text-primary: #dce8f0;
+    --text-secondary: #92a7b8;
+    --text-muted: #5f7383;
+    --accent: #35c0ce;
+    --accent-hover: #2ba9b6;
+    --accent-subtle: rgba(53, 192, 206, 0.15);
+    --accent-light: #64d2dd;
+    --on-accent: #07181c;
+    --user-bubble: #175f75;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #182f3d;
+    --border-color: #233a49;
+    --scrollbar-thumb: #2e4a5c;
+    --scrollbar-thumb-hover: #3c5d72;
+}
+
+/* Parchment — warm cream reading theme with a terracotta accent. */
+[data-theme="parchment"] {
+    --bg-primary: #f3ecdd;
+    --bg-secondary: #faf5ea;
+    --bg-tertiary: #e9dfc9;
+    --text-primary: #3b3021;
+    --text-secondary: #71624b;
+    --text-muted: #9d8f74;
+    --accent: #9c4a2f;
+    --accent-hover: #863f28;
+    --accent-subtle: rgba(156, 74, 47, 0.12);
+    --accent-light: #8a4229;
+    --on-accent: #ffffff;
+    --user-bubble: #9c4a2f;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #ece3cd;
+    --border-color: #dcd0b6;
+    --shadow-sm: 0 1px 3px rgba(75, 60, 35, 0.08);
+    --shadow: 0 4px 6px rgba(75, 60, 35, 0.1);
+    --shadow-lg: 0 8px 32px rgba(75, 60, 35, 0.16);
+    --code-bg: #ece4d0;
+    --code-inline-bg: rgba(59, 48, 33, 0.07);
+    --scrollbar-thumb: #cbbc9c;
+    --scrollbar-thumb-hover: #b5a583;
+}
+
+/* Rosé — soft blush light theme with a deep rose accent. */
+[data-theme="rose"] {
+    --bg-primary: #f9f1f3;
+    --bg-secondary: #fffafb;
+    --bg-tertiary: #f0e3e7;
+    --text-primary: #38262f;
+    --text-secondary: #6f5a64;
+    --text-muted: #a18d96;
+    --accent: #b02a5b;
+    --accent-hover: #96234d;
+    --accent-subtle: rgba(176, 42, 91, 0.11);
+    --accent-light: #9c2451;
+    --on-accent: #ffffff;
+    --user-bubble: #b02a5b;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #f3e1e8;
+    --border-color: #e6d2da;
+    --shadow-sm: 0 1px 3px rgba(60, 30, 45, 0.06);
+    --shadow: 0 4px 6px rgba(60, 30, 45, 0.08);
+    --shadow-lg: 0 8px 32px rgba(60, 30, 45, 0.14);
+    --code-bg: #f3e7eb;
+    --code-inline-bg: rgba(56, 38, 47, 0.07);
+    --scrollbar-thumb: #d8c2cb;
+    --scrollbar-thumb-hover: #c5aab6;
 }
 
 /* ===== Appearance controls (theme / accent / chat width) ===== */
@@ -147,6 +257,34 @@
     border-color: var(--accent);
     color: var(--accent);
 }
+
+/* Theme buttons preview their own palette: a small dot split between the
+   theme's background and its accent. Colors are hardcoded per theme because
+   each button shows a palette other than the active one. */
+#themeOptions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+}
+
+#themeOptions button::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+    background: linear-gradient(135deg, var(--swatch-bg) 50%, var(--swatch-accent) 50%);
+}
+
+#themeOptions button[data-theme-name="midnight"]  { --swatch-bg: #1a1a2e; --swatch-accent: #6c63ff; }
+#themeOptions button[data-theme-name="slate"]     { --swatch-bg: #1e2229; --swatch-accent: #7aa2f7; }
+#themeOptions button[data-theme-name="forest"]    { --swatch-bg: #17211a; --swatch-accent: #52b788; }
+#themeOptions button[data-theme-name="ocean"]     { --swatch-bg: #0f1c26; --swatch-accent: #35c0ce; }
+#themeOptions button[data-theme-name="light"]     { --swatch-bg: #f4f6fb; --swatch-accent: #6c63ff; }
+#themeOptions button[data-theme-name="parchment"] { --swatch-bg: #f3ecdd; --swatch-accent: #9c4a2f; }
+#themeOptions button[data-theme-name="rose"]      { --swatch-bg: #f9f1f3; --swatch-accent: #b02a5b; }
 
 .accent-row {
     display: flex;
@@ -456,7 +594,7 @@ body {
     border: 1px solid var(--accent);
     border-radius: var(--radius-md);
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: var(--text-sm);
     cursor: pointer;
     transition: background-color 0.15s;
@@ -595,7 +733,7 @@ body {
     background-color: var(--accent);
     border: none;
     border-radius: var(--radius-md);
-    color: white;
+    color: var(--on-accent);
     font-size: var(--text-sm);
     font-weight: 500;
     cursor: pointer;
@@ -2072,7 +2210,7 @@ body {
     border: 1px solid var(--accent);
     border-radius: var(--radius-md);
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: var(--text-sm);
     cursor: pointer;
     transition: background-color 0.15s, opacity 0.15s;
@@ -2190,8 +2328,28 @@ body {
 
 .message.user {
     background-color: var(--user-bubble);
+    color: var(--user-bubble-text);
     padding-left: 32px;
     margin-left: 1%;
+}
+
+/* Links and secondary bits inside the colored user bubble can't use the
+   theme-wide accent/secondary colors (no contrast against the bubble) — they
+   inherit the bubble's text color instead. */
+.message.user .message-content a {
+    color: var(--user-bubble-text);
+    text-decoration: underline;
+}
+
+.message.user .message-action-btn {
+    color: var(--user-bubble-text);
+    opacity: 0.7;
+}
+
+.message.user .message-action-btn:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.18);
+    color: var(--user-bubble-text);
 }
 
 .message.assistant {
@@ -2215,7 +2373,8 @@ body {
 }
 
 .message.user .message-label {
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--user-bubble-text);
+    opacity: 0.85;
 }
 
 .message-content {
@@ -2521,7 +2680,7 @@ body {
 
 .message-edit-save {
     background: var(--accent);
-    color: white;
+    color: var(--on-accent);
 }
 
 .message-edit-save:hover {
@@ -2738,7 +2897,7 @@ body {
     top: 4px;
     left: 4px;
     background: var(--accent);
-    color: white;
+    color: var(--on-accent);
     font-size: var(--text-xs);
     padding: 2px 6px;
     border-radius: var(--radius-sm);
@@ -2999,7 +3158,7 @@ body {
 }
 
 .avatar-emoji {
-    color: white;
+    color: var(--on-accent); /* sits on the accent-gradient avatar circle */
 }
 
 .avatar-img {
@@ -3168,7 +3327,7 @@ body {
     background-color: var(--accent);
     border: none;
     border-radius: 50%;
-    color: white;
+    color: var(--on-accent);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -3318,7 +3477,7 @@ body {
 
 .modal-btn.primary {
     background-color: var(--accent);
-    color: white;
+    color: var(--on-accent);
 }
 
 .modal-btn.primary:hover {
@@ -3550,7 +3709,7 @@ body {
     background-color: var(--accent);
     border: none;
     border-radius: var(--radius-md);
-    color: white;
+    color: var(--on-accent);
     font-size: var(--text-sm);
     font-weight: 500;
     cursor: pointer;
@@ -3615,7 +3774,7 @@ body {
     background-color: var(--accent);
     border: none;
     border-radius: var(--radius-sm);
-    color: white;
+    color: var(--on-accent);
     font-size: var(--text-xs);
     cursor: pointer;
     transition: all 0.2s;
@@ -3662,7 +3821,7 @@ body {
     background-color: var(--accent);
     border: none;
     border-radius: var(--radius-md);
-    color: white;
+    color: var(--on-accent);
     font-size: var(--text-sm);
     font-weight: 500;
     cursor: pointer;
@@ -3920,7 +4079,7 @@ body {
     display: inline-flex;
     align-items: center;
     background: var(--accent);
-    color: white;
+    color: var(--on-accent);
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     font-size: var(--text-sm);

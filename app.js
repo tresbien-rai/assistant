@@ -141,7 +141,7 @@ const UiPrefs = {
     KEY: 'ai_assistant_ui_prefs',
     defaults: {
         sidebarWidth: 320,        // px; desktop sidebar column width
-        theme: 'midnight',        // midnight | light | slate
+        theme: 'midnight',        // any key of THEME_ACCENTS (midnight | slate | forest | ocean | light | parchment | rose)
         accent: '',               // '' = use the theme's default accent
         chatWidth: 'comfortable', // narrow | comfortable | wide
         activeProject: null,      // id of the entered workspace, or null (home)
@@ -176,7 +176,20 @@ const UiPrefs = {
 };
 
 // ===== Appearance: themes, accent color, chat width (device-local) =====
-const THEMES = ['midnight', 'light', 'slate'];
+// Each theme ships its own default accent (shown in the picker when no custom
+// accent is set). Palette values live in styles.css; this map only mirrors the
+// accents so the UI can display them.
+const THEME_ACCENTS = {
+    midnight: '#6c63ff',
+    slate: '#7aa2f7',
+    forest: '#52b788',
+    ocean: '#35c0ce',
+    light: '#6c63ff',
+    parchment: '#9c4a2f',
+    rose: '#b02a5b',
+};
+const THEMES = Object.keys(THEME_ACCENTS);
+const LIGHT_THEMES = new Set(['light', 'parchment', 'rose']);
 const CHAT_WIDTHS = { narrow: 620, comfortable: 780, wide: 1040 };
 const DEFAULT_ACCENT = '#6c63ff';
 
@@ -202,13 +215,13 @@ function applyTheme(name) {
     applyCodeTheme(theme);
 }
 
-// Swap the highlight.js syntax theme: light tokens for the Light theme, dark
+// Swap the highlight.js syntax theme: light tokens for light themes, dark
 // tokens otherwise. Both stylesheets are preloaded; we just toggle `disabled`.
 function applyCodeTheme(theme) {
     const dark = document.getElementById('hljsDark');
     const light = document.getElementById('hljsLight');
     if (!dark || !light) return;
-    const useLight = theme === 'light';
+    const useLight = LIGHT_THEMES.has(theme);
     dark.disabled = useLight;
     light.disabled = !useLight;
 }
@@ -225,20 +238,39 @@ function withThemeTransition(fn) {
     withThemeTransition._t = setTimeout(() => root.classList.remove('theme-transition'), 480);
 }
 
+// WCAG relative luminance (0 = black, 1 = white); used to keep text readable
+// on top of whatever accent color the user picks.
+function relativeLuminance({ r, g, b }) {
+    const lin = (v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
 // Apply a custom accent (overrides the theme). Empty/invalid clears the override
-// so the theme's default accent applies.
+// so the theme's default accent applies. Derived colors (text-on-accent, user
+// bubble, link tint) are recomputed so a light accent gets dark text instead of
+// the old unreadable white-on-light combination.
 function applyAccent(hex) {
     const root = document.documentElement;
     const rgb = hex ? hexToRgb(hex) : null;
+    const derived = ['--accent', '--accent-hover', '--accent-subtle', '--accent-light',
+                     '--on-accent', '--user-bubble', '--user-bubble-text'];
     if (!rgb) {
-        root.style.removeProperty('--accent');
-        root.style.removeProperty('--accent-hover');
-        root.style.removeProperty('--accent-subtle');
+        derived.forEach(p => root.style.removeProperty(p));
         return;
     }
+    const lum = relativeLuminance(rgb);
+    const onAccent = lum > 0.2 ? '#14181f' : '#ffffff';
+    const themeIsLight = LIGHT_THEMES.has(root.getAttribute('data-theme'));
     root.style.setProperty('--accent', hex);
     root.style.setProperty('--accent-hover', shadeHex(hex, -0.15));
-    root.style.setProperty('--accent-subtle', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`);
+    root.style.setProperty('--accent-subtle', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${themeIsLight ? 0.13 : 0.2})`);
+    root.style.setProperty('--accent-light', shadeHex(hex, themeIsLight ? -0.2 : 0.25));
+    root.style.setProperty('--on-accent', onAccent);
+    root.style.setProperty('--user-bubble', hex);
+    root.style.setProperty('--user-bubble-text', onAccent);
 }
 
 function applyChatWidth(name) {
@@ -261,7 +293,7 @@ function syncAppearanceControls() {
     document.querySelectorAll('#filePanelModeOptions button').forEach(b => {
         b.classList.toggle('active', b.dataset.filePanelMode === panelMode);
     });
-    if (elements.accentPicker) elements.accentPicker.value = d.accent || DEFAULT_ACCENT;
+    if (elements.accentPicker) elements.accentPicker.value = d.accent || THEME_ACCENTS[theme] || DEFAULT_ACCENT;
 }
 
 // ===== IndexedDB Image Store =====
@@ -7288,7 +7320,12 @@ function setupEventListeners() {
     document.querySelectorAll('#themeOptions button').forEach(btn => {
         btn.addEventListener('click', () => {
             UiPrefs.set('theme', btn.dataset.themeName);
-            withThemeTransition(() => applyTheme(btn.dataset.themeName));
+            withThemeTransition(() => {
+                applyTheme(btn.dataset.themeName);
+                // Re-derive custom-accent colors (or clear them) for the new
+                // theme — e.g. link tints go darker on light themes.
+                applyAccent(UiPrefs.get('accent'));
+            });
             syncAppearanceControls();
         });
     });
