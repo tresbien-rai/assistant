@@ -17,6 +17,18 @@ const AppError = require('./AppError');
 // Accepted upload extensions as a lowercase Set for O(1) lookup.
 const ACCEPTED_EXTENSIONS = new Set(config.projectFiles.acceptedExtensions);
 
+/**
+ * Whether a file with this extension can be authored/edited as a text string
+ * by the file tools. PDFs are accepted as USER uploads (readable via
+ * read_file's extraction) but cannot be written from text — the single
+ * policy shared by create_file and edit_file.
+ * @param {string} ext - lowercased extension including the leading dot
+ * @returns {boolean}
+ */
+function isTextAuthorableExtension(ext) {
+  return ext !== '.pdf' && ACCEPTED_EXTENSIONS.has(ext);
+}
+
 // In-memory storage — bytes are streamed on to Drive, not persisted to disk.
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -48,4 +60,4 @@ function handleUploadError(err, req, res, next) {
   return next(err);
 }
 
-module.exports = { upload, handleUploadError, ACCEPTED_EXTENSIONS };
+module.exports = { upload, handleUploadError, ACCEPTED_EXTENSIONS, isTextAuthorableExtension };

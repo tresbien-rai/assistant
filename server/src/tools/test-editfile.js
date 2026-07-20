@@ -55,9 +55,12 @@ function installDriveMock() {
     contents.set(id, Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
     return { id, name };
   };
-  drive.downloadFileText = async (auth, fileId) => {
+  // edit_file reads via projectContext.extractFileText, which downloads
+  // through downloadFileBytes (and caches by Drive id — safe here too, since
+  // every mock write mints a new id).
+  drive.downloadFileBytes = async (auth, fileId) => {
     if (!contents.has(fileId)) throw new Error(`no such mock file ${fileId}`);
-    return contents.get(fileId);
+    return Buffer.from(contents.get(fileId), 'utf8');
   };
   drive.deleteFile = async (auth, fileId) => { deletedIds.push(fileId); return true; };
 }
@@ -99,7 +102,7 @@ function restoreDrive() {
         projectCtx
       );
       assert.ok(!res.isError, res.content);
-      assert.strictEqual(res.display.edited, true);
+      assert.strictEqual(res.display.overwritten, true);
       assert.strictEqual(res.display.destination, 'project');
       // Same row id → same download URL as the created file.
       assert.strictEqual(res.display.fileId, created.display.fileId);
@@ -141,6 +144,15 @@ function restoreDrive() {
       assert.strictEqual(res.display.replacements, 3);
       const row = dal.getProjectFileByName(project.id, 'dup.txt');
       assert.strictEqual(contents.get(row.drive_file_id), 'X bbb X bbb X');
+    });
+
+    await check('overlapping occurrences are counted for the uniqueness guard', async () => {
+      await executeCreateFile({ filename: 'fruit.txt', content: 'banana' }, projectCtx);
+      // "ana" occurs twice in "banana" (overlapping) — split-based counting
+      // would report 1 and silently half-edit; the guard must reject.
+      const res = await executeEditFile({ filename: 'fruit.txt', old_text: 'ana', new_text: 'X' }, projectCtx);
+      assert.ok(res.isError);
+      assert.ok(res.content.includes('2 times'), res.content);
     });
 
     await check('old_text not found is an isError telling the model to re-read', async () => {

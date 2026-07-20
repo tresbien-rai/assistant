@@ -15,9 +15,9 @@
  *   results with actionable guidance (the model re-reads and retries).
  * - Only text-editable files (the create_file extension allow-list) can be
  *   edited — PDFs are readable but not editable.
- * - The write goes through createFile's shared writeContentToStore, so the
- *   overwrite mechanics (upload-first, stable row id, old-Drive-file cleanup,
- *   implicit text-cache invalidation) stay identical to create_file's.
+ * - The write goes through the shared storeWriter path, so the overwrite
+ *   mechanics (upload-first, stable row id, old-Drive-file cleanup, implicit
+ *   text-cache invalidation) stay identical to create_file's.
  *
  * Returns { content, isError?, display? } like the other executors:
  * validation/miss failures RETURN isError results; unexpected failures
@@ -27,16 +27,27 @@
 const path = require('node:path');
 
 const config = require('../config');
-const drive = require('../utils/drive');
-const { ACCEPTED_EXTENSIONS } = require('../utils/fileUploads');
+const { isTextAuthorableExtension } = require('../utils/fileUploads');
+const { extractFileText } = require('../utils/projectContext');
 const { formatFileSize } = require('../utils/format');
-const { resolveReadStores, resolveToolDriveAuth } = require('./fileStore');
-const { writeContentToStore } = require('./createFile');
+const { resolveReadStores, findAcrossStores, resolveToolDriveAuth } = require('./fileStore');
+const { writeContentToStore } = require('./storeWriter');
 const { logger } = require('../utils/logger');
 
-/** Count non-overlapping occurrences of `needle` in `haystack`. */
+/**
+ * Count occurrences of `needle` in `haystack`, INCLUDING overlapping ones
+ * (e.g. "ana" occurs twice in "banana"). The uniqueness guard uses this so a
+ * self-overlapping old_text can't slip past as "unique" and leave a silent
+ * half-edit — String.replace would only touch the first overlap.
+ */
 function countOccurrences(haystack, needle) {
-  return haystack.split(needle).length - 1;
+  let count = 0;
+  let idx = haystack.indexOf(needle);
+  while (idx !== -1) {
+    count++;
+    idx = haystack.indexOf(needle, idx + 1);
+  }
+  return count;
 }
 
 /**
@@ -62,15 +73,7 @@ async function executeEditFile(input, ctx) {
   const replaceAll = input.replace_all === true;
 
   // Same search as read_file: most specific store first, note shadowed copies.
-  const stores = resolveReadStores(ctx);
-  let hit = null;
-  const shadowedKinds = [];
-  for (const store of stores) {
-    const file = store.findByName(filename);
-    if (!file) continue;
-    if (!hit) hit = { file, store };
-    else shadowedKinds.push(store.kind);
-  }
+  const hit = findAcrossStores(resolveReadStores(ctx), filename);
   if (!hit) {
     return {
       content: `No file named "${filename}" is available in this conversation. Use list_files to see the exact names, or create_file to make it.`,
@@ -81,10 +84,9 @@ async function executeEditFile(input, ctx) {
     return { content: `"${filename}" has no stored content to edit.`, isError: true };
   }
 
-  // Editable = text-authorable, same rule as create_file (PDFs are readable
-  // via read_file but cannot be edited as text).
-  const ext = path.extname(filename).toLowerCase();
-  if (ext === '.pdf' || !ACCEPTED_EXTENSIONS.has(ext)) {
+  // Editable = text-authorable, the same single policy create_file enforces
+  // (PDFs are readable via read_file but cannot be edited as text).
+  if (!isTextAuthorableExtension(path.extname(filename).toLowerCase())) {
     return { content: `"${filename}" is not a text-editable file type. Only text-based files (like .md, .txt, .csv, or code files) can be edited.`, isError: true };
   }
 
@@ -92,9 +94,13 @@ async function executeEditFile(input, ctx) {
   const { auth, unavailable } = resolveToolDriveAuth(ctx.userId);
   if (unavailable) return { content: `Cannot edit the file: ${unavailable}`, isError: true };
 
+  // extractFileText = the same cached read path read_file uses (keyed by the
+  // immutable Drive file id, so a hit can never be stale — every write mints
+  // a new id). For the non-PDF files that reach here it returns the raw
+  // UTF-8 content, and the read-then-edit flow costs one download, not two.
   let content;
   try {
-    content = await drive.downloadFileText(auth, hit.file.drive_file_id);
+    content = await extractFileText(auth, hit.file);
   } catch (err) {
     logger.warn({ userId: ctx.userId, fileId: hit.file.id, msg: err.message }, 'edit_file download failed');
     return { content: `Could not read the current content of "${filename}": ${err.message}`, isError: true };
@@ -114,11 +120,20 @@ async function executeEditFile(input, ctx) {
     };
   }
 
-  // split/join replaces without interpreting `$` patterns the way
-  // String.replace would — new_text is inserted verbatim.
-  const updated = replaceAll
-    ? content.split(input.old_text).join(input.new_text)
-    : content.replace(input.old_text, () => input.new_text);
+  // split/join and the function replacer both insert new_text verbatim,
+  // without interpreting the `$` patterns String.replace(string) would.
+  // replace_all replaces the non-overlapping occurrences (a second overlap
+  // disappears when the first is rewritten), so its reported count comes
+  // from the split, not the overlap-aware guard count.
+  let updated;
+  let replacements = 1;
+  if (replaceAll) {
+    const parts = content.split(input.old_text);
+    replacements = parts.length - 1;
+    updated = parts.join(input.new_text);
+  } else {
+    updated = content.replace(input.old_text, () => input.new_text);
+  }
 
   const bytes = Buffer.from(updated, 'utf8');
   if (bytes.length > config.projectFiles.maxFileBytes) {
@@ -138,13 +153,13 @@ async function executeEditFile(input, ctx) {
   });
 
   const url = hit.store.urlFor(record.id);
-  const replacedNote = replaceAll && occurrences > 1 ? ` (${occurrences} occurrences replaced)` : '';
-  const shadowNote = shadowedKinds.length > 0
-    ? ` Note: this edited the ${hit.store.kind} copy; a different file with this name also exists in the ${shadowedKinds.join(' and ')}.`
+  const replacedNote = replaceAll && replacements > 1 ? ` (${replacements} occurrences replaced)` : '';
+  const shadowNote = hit.shadowedKinds.length > 0
+    ? ` Note: this edited the ${hit.store.kind} copy; a different file with this name also exists in the ${hit.shadowedKinds.join(' and ')}.`
     : '';
 
   logger.info(
-    { userId: ctx.userId, destination: hit.store.kind, fileId: record.id, sizeBytes: bytes.length, occurrences, replaceAll },
+    { userId: ctx.userId, destination: hit.store.kind, fileId: record.id, sizeBytes: bytes.length, replacements, replaceAll },
     'edit_file executed'
   );
 
@@ -156,8 +171,10 @@ async function executeEditFile(input, ctx) {
       destination: hit.store.kind,
       sizeBytes: bytes.length,
       mimeType,
-      edited: true,
-      ...(replaceAll ? { replacements: occurrences } : {}),
+      // An edit is by definition an overwrite of the existing file — the
+      // generic marker the frontend reads (no tool-specific fields).
+      overwritten: true,
+      ...(replaceAll ? { replacements } : {}),
     },
   };
 }
