@@ -147,6 +147,7 @@ const UiPrefs = {
         activeProject: null,      // id of the entered workspace, or null (home)
         devMode: false,           // show developer tools (e.g. request inspector)
         textareaHeights: {},      // dragged heights by textarea id, px
+        filePanelMode: 'auto',    // auto (open on file creation) | click (edge-tab alert only)
     },
     _data: null,
     load() {
@@ -255,6 +256,10 @@ function syncAppearanceControls() {
     });
     document.querySelectorAll('#chatWidthOptions button').forEach(b => {
         b.classList.toggle('active', b.dataset.chatWidth === width);
+    });
+    const panelMode = d.filePanelMode === 'click' ? 'click' : 'auto';
+    document.querySelectorAll('#filePanelModeOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.filePanelMode === panelMode);
     });
     if (elements.accentPicker) elements.accentPicker.value = d.accent || DEFAULT_ACCENT;
 }
@@ -1178,6 +1183,17 @@ const elements = {
     requestInspectorJson: document.getElementById('requestInspectorJson'),
     requestInspectorMeta: document.getElementById('requestInspectorMeta'),
     copyRequestBtn: document.getElementById('copyRequestBtn'),
+
+    // File panel (edit-in-context slice 1: viewer)
+    filePanel: document.getElementById('filePanel'),
+    filePanelBadge: document.getElementById('filePanelBadge'),
+    filePanelName: document.getElementById('filePanelName'),
+    filePanelRawToggle: document.getElementById('filePanelRawToggle'),
+    filePanelDownload: document.getElementById('filePanelDownload'),
+    filePanelClose: document.getElementById('filePanelClose'),
+    filePanelBody: document.getElementById('filePanelBody'),
+    filePanelTab: document.getElementById('filePanelTab'),
+    filePanelTabDot: document.getElementById('filePanelTabDot'),
 
     // Name-only create modal (shared by workspace + project creation; the full
     // edit UI lives inline on the container page — WR-05).
@@ -4294,6 +4310,8 @@ function syncChatChrome() {
     }
     // Reflect this chat's effective file-tools state on the composer toggle.
     if (inChat) syncToolsToggle();
+    // File panel + edge tab follow the active chat (hidden while browsing).
+    FilePanel.syncUi();
 }
 
 /**
@@ -5795,21 +5813,33 @@ function appendFileCardParts(el, fileName, mimeType) {
     el.appendChild(nameDiv);
 }
 
-/** Build a downloadable card for a model-created file (Track A). */
+/**
+ * Build a card for a model-created file (Track A). The card body is a real
+ * <button> that opens the file in the file panel; the corner arrow is the
+ * download link. They are DOM siblings (never nested interactives), so
+ * keyboard activation and screen readers treat them as two distinct controls.
+ */
 function buildCreatedFileCard(att) {
-    const a = document.createElement('a');
-    a.className = 'message-attachment message-attachment--file tool-file-card';
-    a.href = att.url;
-    a.setAttribute('download', att.fileName || 'file');
-    a.title = `Download ${att.fileName || 'file'}`;
+    const el = document.createElement('div');
+    el.className = 'message-attachment message-attachment--file tool-file-card';
 
-    appendFileCardParts(a, att.fileName, att.mimeType);
+    const view = document.createElement('button');
+    view.type = 'button';
+    view.className = 'tool-file-view';
+    view.title = `View ${att.fileName || 'file'}`;
+    appendFileCardParts(view, att.fileName, att.mimeType);
+    view.addEventListener('click', () => FilePanel.open(att));
+    el.appendChild(view);
 
-    const dl = document.createElement('span');
+    const dl = document.createElement('a');
     dl.className = 'tool-file-dl';
+    dl.href = att.url;
+    dl.setAttribute('download', att.fileName || 'file');
+    dl.title = `Download ${att.fileName || 'file'}`;
     dl.innerHTML = '&#8681;'; // down arrow
-    a.appendChild(dl);
-    return a;
+    el.appendChild(dl);
+
+    return el;
 }
 
 /** Build a compact chip describing a tool action (read/list, or a failure). */
@@ -5833,12 +5863,237 @@ function buildToolChip(att) {
     return chip;
 }
 
+// ===== File Panel (edit-in-context slice 1: viewer) =====
+// Shows a model-created file beside the chat instead of only as a download
+// card. Device-local filePanelMode picks between auto-opening on create_file
+// activity and a quiet edge-tab alert; small screens never auto-open (the
+// panel is a full-screen overlay there).
+const FilePanel = {
+    // File currently associated with the panel: { fileName, url, mimeType,
+    // sizeBytes } (the created_file attachment shape). Kept even while the
+    // panel is closed so the edge tab can reopen it.
+    file: null,
+    // Which conversation `file` belongs to — syncUi re-derives on mismatch.
+    conversationId: null,
+    isOpen: false,
+    unseen: false,   // live activity arrived while closed → tab dot pulses
+    rawMode: false,  // markdown only: show source instead of rendered
+    _fetchSeq: 0,    // ignore stale fetch responses after rapid updates
+    _cache: null,    // { url, text } — last fetched content, so raw/rendered
+                     // toggles and card re-clicks don't re-download
+
+    MAX_RENDER_CHARS: 500000,
+    // Above this size, skip markdown/highlight parsing and show plain text —
+    // a synchronous parse of hundreds of KB visibly janks the main thread.
+    MAX_RICH_RENDER_CHARS: 150000,
+
+    isMobile() {
+        return window.matchMedia('(max-width: 768px)').matches;
+    },
+
+    mode() {
+        return UiPrefs.get('filePanelMode') === 'click' ? 'click' : 'auto';
+    },
+
+    /**
+     * Live create_file activity. `convoId` is the conversation the turn was
+     * sent in, pinned at request time — if the user switched chats while the
+     * turn was in flight, the event is ignored here (the file still persists
+     * in that chat's message attachments, so its edge tab reappears on
+     * return via syncUi's re-derivation).
+     */
+    notifyActivity(att, convoId) {
+        if (!att || att.type !== 'created_file' || !att.url) return;
+        if (convoId && convoId !== state.activeConversationId) return;
+        // The file's content just changed server-side — drop the stale cache.
+        if (this._cache && this._cache.url === att.url) this._cache = null;
+        if (this.isOpen || (this.mode() === 'auto' && !this.isMobile())) {
+            this.open(att);
+        } else {
+            this.file = att;
+            this.conversationId = state.activeConversationId;
+            this.unseen = true;
+            this.syncUi();
+        }
+    },
+
+    /** Open the panel on a file (from activity, a card click, or the tab). */
+    open(att) {
+        if (!att || !att.url) return;
+        this.file = att;
+        this.conversationId = state.activeConversationId;
+        this.isOpen = true;
+        this.unseen = false;
+        this.rawMode = false;
+        this.renderHeader();
+        this.loadContent();
+        this.syncUi();
+    },
+
+    close() {
+        this.isOpen = false;
+        this.syncUi();
+    },
+
+    /**
+     * Central visibility sync, called from syncChatChrome on every navigation.
+     * Panel + tab exist only in a chat view; when the active conversation
+     * changed underneath us, re-derive the file from its messages.
+     */
+    syncUi() {
+        if (!elements.filePanel || !elements.filePanelTab) return;
+        const inChat = (state.ui.mainView || {}).type === 'chat';
+
+        if (inChat && this.conversationId !== state.activeConversationId) {
+            this.conversationId = state.activeConversationId;
+            this.file = this.deriveConversationFile();
+            this.isOpen = false;
+            this.unseen = false;
+        }
+
+        const showPanel = inChat && this.isOpen && !!this.file;
+        const showTab = inChat && !showPanel && !!this.file;
+        elements.filePanel.hidden = !showPanel;
+        elements.filePanelTab.hidden = !showTab;
+        if (elements.filePanelTabDot) elements.filePanelTabDot.hidden = !(showTab && this.unseen);
+    },
+
+    /** Most recent created_file attachment in the active conversation, if any. */
+    deriveConversationFile() {
+        const convo = state.conversations[state.activeConversationId];
+        if (!convo || !Array.isArray(convo.messages)) return null;
+        for (let i = convo.messages.length - 1; i >= 0; i--) {
+            const atts = convo.messages[i].attachments;
+            if (!Array.isArray(atts)) continue;
+            for (let j = atts.length - 1; j >= 0; j--) {
+                if (atts[j] && atts[j].type === 'created_file' && atts[j].url) return atts[j];
+            }
+        }
+        return null;
+    },
+
+    renderHeader() {
+        const f = this.file;
+        if (!f) return;
+        if (elements.filePanelBadge) elements.filePanelBadge.textContent = getFileTypeLabel(f.fileName, f.mimeType);
+        if (elements.filePanelName) {
+            elements.filePanelName.textContent = f.fileName || 'File';
+            elements.filePanelName.title = f.fileName || 'File';
+        }
+        if (elements.filePanelDownload) {
+            elements.filePanelDownload.href = f.url;
+            elements.filePanelDownload.setAttribute('download', f.fileName || 'file');
+        }
+        if (elements.filePanelRawToggle) {
+            elements.filePanelRawToggle.hidden = !this.isMarkdown();
+            elements.filePanelRawToggle.classList.toggle('active', this.rawMode);
+        }
+    },
+
+    isMarkdown() {
+        const name = (this.file && this.file.fileName || '').toLowerCase();
+        return name.endsWith('.md') || name.endsWith('.markdown');
+    },
+
+    toggleRaw() {
+        this.rawMode = !this.rawMode;
+        this.renderHeader();
+        this.loadContent();
+    },
+
+    /**
+     * Fetch the file's text (same content URL the download uses, via the
+     * api-client so 401s trigger the app's re-auth flow) and render. Serves
+     * from the in-memory cache when the content hasn't changed — raw/rendered
+     * toggles and repeat card clicks cost no network round-trip.
+     */
+    async loadContent() {
+        if (!this.file || !elements.filePanelBody) return;
+        const seq = ++this._fetchSeq;
+
+        let text;
+        if (this._cache && this._cache.url === this.file.url) {
+            text = this._cache.text;
+        } else {
+            elements.filePanelBody.innerHTML = '<div class="file-panel-loading">Loading…</div>';
+            try {
+                text = await API.files.fetchText(this.file.url);
+            } catch (err) {
+                if (seq !== this._fetchSeq) return;
+                elements.filePanelBody.innerHTML =
+                    '<div class="file-panel-error">Could not load the file. It may have been deleted — try the download button, or ask the assistant to recreate it.</div>';
+                return;
+            }
+            if (seq !== this._fetchSeq) return;
+            this._cache = { url: this.file.url, text };
+        }
+
+        let truncated = false;
+        if (text.length > this.MAX_RENDER_CHARS) {
+            text = text.slice(0, this.MAX_RENDER_CHARS);
+            truncated = true;
+        }
+        this.renderContent(text, truncated);
+    },
+
+    renderContent(text, truncated) {
+        const body = elements.filePanelBody;
+        body.innerHTML = '';
+
+        // Oversized content renders as plain text: parsing it would jank, and
+        // a mid-source truncation would corrupt rendered markdown anyway.
+        const plainOnly = text.length > this.MAX_RICH_RENDER_CHARS;
+
+        if (this.isMarkdown() && !this.rawMode && !plainOnly) {
+            const div = document.createElement('div');
+            div.className = 'message-content';
+            div.innerHTML = renderMarkdown(text);
+            body.appendChild(div);
+        } else {
+            const pre = document.createElement('pre');
+            pre.className = 'file-panel-raw';
+            const code = document.createElement('code');
+            const lang = plainOnly ? null : this.hljsLanguage();
+            if (lang) {
+                try {
+                    code.innerHTML = hljs.highlight(text, { language: lang }).value;
+                } catch {
+                    code.textContent = text;
+                }
+            } else {
+                code.textContent = text;
+            }
+            pre.appendChild(code);
+            body.appendChild(pre);
+        }
+
+        if (truncated) {
+            const note = document.createElement('div');
+            note.className = 'file-panel-error';
+            note.textContent = 'File is large — showing the beginning only. Use download for the full content.';
+            body.appendChild(note);
+        }
+    },
+
+    /**
+     * hljs language for the file's extension, or null for plain text. hljs
+     * resolves common extensions as aliases itself (js, ts, py, yml, html,
+     * md, …), so the extension is the language id — no mapping table.
+     */
+    hljsLanguage() {
+        const name = (this.file && this.file.fileName || '').toLowerCase();
+        const ext = name.slice(name.lastIndexOf('.') + 1);
+        return ext && hljs.getLanguage(ext) ? ext : null;
+    },
+};
+
 /**
  * Append a live tool-activity chip/card to the in-progress streaming message
  * (converted to the same attachment shape used at reload, so live and reload
- * render identically).
+ * render identically). `convoId` is the conversation the stream was started
+ * in, so the file panel ignores events from a chat the user has left.
  */
-function renderLiveToolActivity(payload) {
+function renderLiveToolActivity(payload, convoId) {
     if (!state.streamingMessageDiv) return;
     let area = state.streamingMessageDiv.querySelector('.message-attachments');
     if (!area) {
@@ -5847,7 +6102,9 @@ function renderLiveToolActivity(payload) {
         const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
         state.streamingMessageDiv.insertBefore(area, contentDiv);
     }
-    renderMessageAttachments([toolEventToAttachment(payload)], area);
+    const att = toolEventToAttachment(payload);
+    renderMessageAttachments([att], area);
+    FilePanel.notifyActivity(att, convoId);
     scrollToBottom();
 }
 
@@ -6179,11 +6436,18 @@ async function callAPI(userMessage, attachments = []) {
         }
     }
 
+    // Pinned before the await: if the user switches chats while the request
+    // is in flight, the file panel must not react in the wrong conversation.
+    const convoId = state.activeConversationId;
     const res = await API.chat.send(params);
     if (res.contextWarning) showProjectContextWarning(res.contextWarning);
     // Track A: a tools-on non-streaming turn returns the tool-event list; turn
     // it into chip/card attachments (same shape as the streaming path).
     const toolAttachments = (res.toolEvents || []).map(toolEventToAttachment);
+    // Only the turn's last created file opens/alerts the panel — notifying
+    // each one would fetch files that are immediately replaced on screen.
+    const lastCreated = [...toolAttachments].reverse().find(a => a.type === 'created_file');
+    if (lastCreated) FilePanel.notifyActivity(lastCreated, convoId);
     const generatedAttachments = res.generatedImages
         ? await storeGeneratedImages(res.generatedImages)
         : [];
@@ -6219,6 +6483,10 @@ async function callAPIStreaming(userMessage, attachments = []) {
     state.streamingGeneratedImages = [];
     state.streamingToolEvents = [];
 
+    // Pinned for the file panel: tool events arriving after the user switches
+    // chats mid-stream must not open the panel in the wrong conversation.
+    const convoId = state.activeConversationId;
+
     await API.chat.stream(params, (ev) => {
         // Synthetic event from the client (not provider SSE): project-context
         // budget/Drive warning surfaced from the response header.
@@ -6237,7 +6505,7 @@ async function callAPIStreaming(userMessage, attachments = []) {
         // already collected, so finalize persists state.streamingToolEvents.
         if (payload.type === 'tool_activity') {
             state.streamingToolEvents.push(payload);
-            renderLiveToolActivity(payload);
+            renderLiveToolActivity(payload, convoId);
             return;
         }
         if (payload.type === 'tool_loop_done') {
@@ -6835,6 +7103,25 @@ function setupEventListeners() {
             syncAppearanceControls();
         });
     });
+    document.querySelectorAll('#filePanelModeOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('filePanelMode', btn.dataset.filePanelMode);
+            syncAppearanceControls();
+        });
+    });
+
+    // File panel (viewer): close, raw/rendered toggle, and the edge tab.
+    if (elements.filePanelClose) {
+        elements.filePanelClose.addEventListener('click', () => FilePanel.close());
+    }
+    if (elements.filePanelRawToggle) {
+        elements.filePanelRawToggle.addEventListener('click', () => FilePanel.toggleRaw());
+    }
+    if (elements.filePanelTab) {
+        elements.filePanelTab.addEventListener('click', () => {
+            if (FilePanel.file) FilePanel.open(FilePanel.file);
+        });
+    }
     if (elements.accentPicker) {
         elements.accentPicker.addEventListener('input', () => {
             UiPrefs.set('accent', elements.accentPicker.value);
