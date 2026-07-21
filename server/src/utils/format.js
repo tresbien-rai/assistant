@@ -34,6 +34,9 @@ function formatFileRevision(rev) {
     diff: rev.diff,
     sizeBytes: rev.size_bytes,
     turn: rev.turn,
+    // Whether this version's full content is still stored (FC-06b) — i.e. it can
+    // be restored. The snapshot itself is not sent in the list (it can be large).
+    hasSnapshot: rev.content != null,
     createdAt: rev.created_at,
   };
 }

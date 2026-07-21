@@ -20,7 +20,7 @@ const dal = require('../db/dal');
 const drive = require('../utils/drive');
 const AppError = require('../utils/AppError');
 const { resolveFileStore } = require('../tools/fileStore');
-const { saveTextOverFile } = require('../tools/storeWriter');
+const { saveTextOverFile, restoreFileRevision } = require('../tools/storeWriter');
 const { formatFileRevision } = require('../utils/format');
 
 const router = express.Router();
@@ -101,6 +101,25 @@ router.get('/:id/revisions', asyncHandler(async (req, res) => {
   }
   const revisions = dal.listFileRevisions('downloads', req.params.id);
   res.json(revisions.map(formatFileRevision));
+}));
+
+/**
+ * POST /api/files/:id/revisions/:revId/restore
+ * Restore a Downloads file to a stored version (File Collaboration, FC-06b).
+ */
+router.post('/:id/revisions/:revId/restore', asyncHandler(async (req, res) => {
+  const file = dal.getUserFile(req.params.id, req.user.userId);
+  if (!file || !file.drive_file_id) {
+    throw AppError.notFound('File');
+  }
+  const auth = drive.getAuthForUser(req.user.userId);
+  const store = resolveFileStore({ userId: req.user.userId, project: null, workspace: null });
+  const result = await restoreFileRevision(auth, store, file, req.params.revId, req.user.userId, {});
+  if (!result.ok) {
+    if (result.notFound) throw AppError.notFound('Revision');
+    throw AppError.validation(result.reason);
+  }
+  res.json(formatFile(result.record));
 }));
 
 module.exports = router;

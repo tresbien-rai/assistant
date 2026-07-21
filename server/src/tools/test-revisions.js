@@ -18,7 +18,7 @@ const { unifiedDiff } = require('../utils/diff');
 const { executeCreateFile } = require('./createFile');
 const { executeEditFile } = require('./editFile');
 const { resolveFileStore } = require('./fileStore');
-const { saveTextOverFile } = require('./storeWriter');
+const { saveTextOverFile, restoreFileRevision } = require('./storeWriter');
 
 let failures = 0;
 async function check(label, fn) {
@@ -201,6 +201,30 @@ function restoreDrive() {
       const removed = dal.deleteFileRevisions('project', prow.id);
       assert.strictEqual(removed, 1);
       assert.strictEqual(dal.listFileRevisions('project', prow.id).length, 0);
+    });
+
+    console.log('\n10. FC-06b: restore a file to a stored version...');
+    await check('restore writes the snapshot back as a new revision', async () => {
+      const conv2 = dal.createConversation(userId, { title: 'R' });
+      const rctx = (t) => ({ userId, workspace: null, project: null, conversationId: conv2.id, turnOrdinal: t });
+      await executeCreateFile({ filename: 'r.md', content: 'first' }, rctx(1));
+      await executeEditFile({ filename: 'r.md', old_text: 'first', new_text: 'second' }, rctx(2));
+      const fileRow = dal.getConversationFileByName(conv2.id, 'r.md');
+      const revs = dal.listFileRevisions('conversation', fileRow.id); // create(first), edit(second)
+      const createRev = revs[0];
+      const store = resolveFileStore({ userId, conversationId: conv2.id });
+
+      const res = await restoreFileRevision(drive.getAuthForUser(userId), store, fileRow, createRev.id, userId, { conversationId: conv2.id, turn: 2 });
+      assert.strictEqual(res.ok, true, res.reason);
+      // Current content is back to the restored version...
+      const now = dal.getConversationFileByName(conv2.id, 'r.md');
+      assert.strictEqual(contents.get(now.drive_file_id), 'first', 'content restored');
+      // ...and history GREW (append-only) rather than being rewritten.
+      assert.strictEqual(dal.listFileRevisions('conversation', fileRow.id).length, 3, 'restore appended a revision');
+
+      const bad = await restoreFileRevision(drive.getAuthForUser(userId), store, fileRow, 'no-such-rev', userId, {});
+      assert.strictEqual(bad.ok, false);
+      assert.strictEqual(bad.notFound, true);
     });
 
   } catch (err) {

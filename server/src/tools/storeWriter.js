@@ -215,4 +215,28 @@ async function saveTextOverFile(auth, store, file, content, userId, revisionMeta
   return { ok: true, record };
 }
 
-module.exports = { writeContentToStore, saveTextOverFile };
+/**
+ * Restore a file to the content of one of its stored revisions (File
+ * Collaboration, FC-06b). Writes the snapshot back as the current content
+ * through the shared save path, so it lands as a new revision (the history is
+ * append-only — restoring is itself a change, never a rewrite of the past).
+ * @param {Object} auth - Drive auth for the user
+ * @param {Object} store - FileStore for the file's scope
+ * @param {Object} file - the file row being restored
+ * @param {string} revId - the revision id to restore
+ * @param {string} userId
+ * @param {Object} [revisionMeta] - forwarded to saveTextOverFile (chat context)
+ * @returns {Promise<{ok: true, record: Object} | {ok: false, reason: string, notFound?: boolean}>}
+ */
+async function restoreFileRevision(auth, store, file, revId, userId, revisionMeta = null) {
+  const rev = dal.getFileRevisionById(revId);
+  if (!rev || rev.scope !== store.kind || rev.file_id !== file.id) {
+    return { ok: false, reason: 'That version was not found for this file.', notFound: true };
+  }
+  if (rev.content == null) {
+    return { ok: false, reason: 'That version is no longer stored, so it can’t be restored.' };
+  }
+  return saveTextOverFile(auth, store, file, rev.content, userId, revisionMeta);
+}
+
+module.exports = { writeContentToStore, saveTextOverFile, restoreFileRevision };
