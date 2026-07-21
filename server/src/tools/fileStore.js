@@ -71,13 +71,32 @@ function downloadsStore(ctx) {
   };
 }
 
+function conversationStore(ctx) {
+  const conversationId = ctx.conversationId;
+  return {
+    kind: 'conversation',
+    label: 'this chat',
+    ensureFolder: (auth) => drive.ensureConversationFolder(auth, conversationId),
+    findByName: (name) => dal.getConversationFileByName(conversationId, name),
+    list: () => dal.listConversationFiles(conversationId),
+    add: (data) => dal.addConversationFile(conversationId, data),
+    updateContent: (fileId, data) => dal.updateConversationFileContent(fileId, conversationId, data),
+    urlFor: (fileId) => `/api/conversations/${conversationId}/files/${fileId}/content`,
+  };
+}
+
 /**
- * The single WRITE destination for this conversation (create_file), by
- * precedence: active project → active workspace → the user's Downloads.
- * @param {Object} ctx - ToolContext ({ userId, workspace, project })
+ * The single WRITE destination for a create_file call (File Collaboration,
+ * FC-01): files a chat creates land in the CHAT's own scope, regardless of its
+ * home, so scratch output never joins the always-injected project/workspace
+ * knowledge base. The container-precedence fallback (project → workspace →
+ * Downloads) is retained ONLY for callers without a conversation — e.g. the
+ * `/api/files` Downloads save route, which passes no conversationId.
+ * @param {Object} ctx - ToolContext ({ userId, workspace, project, conversationId })
  * @returns {FileStore}
  */
 function resolveFileStore(ctx) {
+  if (ctx.conversationId) return conversationStore(ctx);
   if (ctx.project) return projectStore(ctx);
   if (ctx.workspace) return workspaceStore(ctx);
   return downloadsStore(ctx);
@@ -85,21 +104,28 @@ function resolveFileStore(ctx) {
 
 /**
  * The ordered READ search list for this conversation (read_file / list_files),
- * mirroring context inheritance: a project chat sees BOTH its project and its
- * (inherited) workspace files; a workspace chat sees the workspace; an unfiled
- * chat sees Downloads. Crucially, callers use `findByName`/`list` only — never
+ * most-specific first. Since FC-01 the chat's own `conversation` scope is
+ * searched FIRST (files it created live there), then the inherited container
+ * chain: a project chat also sees its project AND its (inherited) workspace
+ * files; a workspace chat also sees the workspace; an unfiled chat also sees
+ * Downloads (retained so files created in unfiled chats before FC-01 stay
+ * readable). Crucially, callers use `findByName`/`list` only — never
  * `ensureFolder` — so a read never creates a Drive folder as a side effect.
- * @param {Object} ctx - ToolContext ({ userId, workspace, project })
+ * @param {Object} ctx - ToolContext ({ userId, workspace, project, conversationId })
  * @returns {FileStore[]} search order (most specific first)
  */
 function resolveReadStores(ctx) {
+  const stores = [];
+  if (ctx.conversationId) stores.push(conversationStore(ctx));
   if (ctx.project) {
-    const stores = [projectStore(ctx)];
+    stores.push(projectStore(ctx));
     if (ctx.workspace) stores.push(workspaceStore(ctx));
-    return stores;
+  } else if (ctx.workspace) {
+    stores.push(workspaceStore(ctx));
+  } else {
+    stores.push(downloadsStore(ctx));
   }
-  if (ctx.workspace) return [workspaceStore(ctx)];
-  return [downloadsStore(ctx)];
+  return stores;
 }
 
 /**

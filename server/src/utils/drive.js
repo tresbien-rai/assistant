@@ -268,6 +268,26 @@ async function ensureDownloadsFolder(auth) {
   return ensureFolder(auth, 'Downloads', rootId);
 }
 
+/**
+ * Ensure the per-conversation folder `{driveRootFolder}/Chats/<conversationId>/`
+ * exists and return its id (File Collaboration, FC-01): the destination for
+ * files a chat creates, kept apart from the curated project/workspace folders so
+ * chat scratch output never clutters the knowledge base. Idempotent via
+ * find-or-create, so no `drive_folder_id` column is needed on conversations —
+ * the conversation id is a stable, unique folder name.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} conversationId
+ * @returns {Promise<string>} The conversation folder's id
+ */
+async function ensureConversationFolder(auth, conversationId) {
+  if (!conversationId) {
+    throw AppError.validation('A conversation is required to store chat files.');
+  }
+  const rootId = await ensureFolder(auth, APP_ROOT_FOLDER, null);
+  const chatsId = await ensureFolder(auth, 'Chats', rootId);
+  return ensureFolder(auth, String(conversationId), chatsId);
+}
+
 // =============================================================================
 // Row-aware folder helpers (shared by the project/workspace routes and the
 // Track A tool executors — moved here from routes/projects.js in P2-01)
@@ -437,6 +457,7 @@ module.exports = {
   ensureWorkspaceFolderId,
   ensureProjectFolderId,
   ensureDownloadsFolder,
+  ensureConversationFolder,
   createFolder,
   uploadFile,
   downloadFileText,

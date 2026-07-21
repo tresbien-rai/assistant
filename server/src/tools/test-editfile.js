@@ -50,6 +50,7 @@ function installDriveMock() {
   drive.ensureProjectFolderId = async () => 'folder_project';
   drive.ensureWorkspaceFolderId = async () => 'folder_workspace';
   drive.ensureDownloadsFolder = async () => 'folder_downloads';
+  drive.ensureConversationFolder = async () => 'folder_conversation';
   drive.uploadFile = async (auth, { name, data }) => {
     const id = `drive_${++uploadSeq}`;
     contents.set(id, Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
@@ -83,9 +84,16 @@ function restoreDrive() {
     const workspace = dal.createWorkspace(userId, { name: 'WS', instructions: '' });
     const project = dal.createProject(userId, { workspaceId: workspace.id, name: 'PROJ', instructions: '' });
 
-    const projectCtx = { userId, workspace, project, conversationId: 'c1' };
-    const workspaceCtx = { userId, workspace, project: null, conversationId: 'c2' };
-    const unfiledCtx = { userId, workspace: null, project: null, conversationId: 'c3' };
+    // FC-01: create_file writes to the CHAT's conversation scope, so ctx needs a
+    // real conversation id (conversation_files has an FK). edit_file still finds
+    // inherited project/workspace files via the read-store search.
+    const convProject = dal.createConversation(userId, { title: 'P', projectId: project.id, workspaceId: workspace.id });
+    const convWorkspace = dal.createConversation(userId, { title: 'W', workspaceId: workspace.id });
+    const convUnfiled = dal.createConversation(userId, { title: 'U' });
+
+    const projectCtx = { userId, workspace, project, conversationId: convProject.id };
+    const workspaceCtx = { userId, workspace, project: null, conversationId: convWorkspace.id };
+    const unfiledCtx = { userId, workspace: null, project: null, conversationId: convUnfiled.id };
 
     console.log('\n1. Basic edit (unique match)...');
 
@@ -103,12 +111,12 @@ function restoreDrive() {
       );
       assert.ok(!res.isError, res.content);
       assert.strictEqual(res.display.overwritten, true);
-      assert.strictEqual(res.display.destination, 'project');
+      assert.strictEqual(res.display.destination, 'conversation');
       // Same row id → same download URL as the created file.
       assert.strictEqual(res.display.fileId, created.display.fileId);
       assert.strictEqual(res.display.url, created.display.url);
       // New Drive file holds the edited content; the old one was deleted.
-      const row = dal.getProjectFile(res.display.fileId, project.id);
+      const row = dal.getConversationFile(res.display.fileId, convProject.id);
       assert.strictEqual(contents.get(row.drive_file_id), '# Title\n\nThe slow green turtle.\nThe end.');
       assert.ok(deletedIds.includes(createdDriveId), 'replaced Drive file should be deleted');
       // Row size matches the new content.
@@ -122,7 +130,7 @@ function restoreDrive() {
         projectCtx
       );
       assert.ok(!res.isError, res.content);
-      const row = dal.getProjectFileByName(project.id, 'money.txt');
+      const row = dal.getConversationFileByName(convProject.id, 'money.txt');
       assert.strictEqual(contents.get(row.drive_file_id), "price: $& costs $$5 or $'");
     });
 
@@ -142,7 +150,7 @@ function restoreDrive() {
       );
       assert.ok(!res.isError, res.content);
       assert.strictEqual(res.display.replacements, 3);
-      const row = dal.getProjectFileByName(project.id, 'dup.txt');
+      const row = dal.getConversationFileByName(convProject.id, 'dup.txt');
       assert.strictEqual(contents.get(row.drive_file_id), 'X bbb X bbb X');
     });
 
@@ -164,7 +172,14 @@ function restoreDrive() {
     console.log('\n3. Read-store search (project chat edits inherited workspace file)...');
 
     await check('file living only in the workspace is edited there from a project chat', async () => {
-      await executeCreateFile({ filename: 'shared.md', content: 'workspace copy v1' }, workspaceCtx);
+      // Seed a curated workspace file directly (create_file now targets the
+      // chat scope, so it can't place a file in the workspace). edit_file must
+      // still reach it via the inherited read-store search from a project chat.
+      contents.set('d_shared', 'workspace copy v1');
+      dal.addWorkspaceFile(workspace.id, {
+        filename: 'shared.md', mimeType: 'text/markdown',
+        sizeBytes: Buffer.byteLength('workspace copy v1'), driveFileId: 'd_shared',
+      });
       const res = await executeEditFile({ filename: 'shared.md', old_text: 'v1', new_text: 'v2' }, projectCtx);
       assert.ok(!res.isError, res.content);
       assert.strictEqual(res.display.destination, 'workspace');
@@ -205,7 +220,7 @@ function restoreDrive() {
       const huge = 'x'.repeat(config.projectFiles.maxFileBytes + 10);
       const res = await executeEditFile({ filename: 'small.txt', old_text: 'seed', new_text: huge }, projectCtx);
       assert.ok(res.isError);
-      const row = dal.getProjectFileByName(project.id, 'small.txt');
+      const row = dal.getConversationFileByName(convProject.id, 'small.txt');
       assert.strictEqual(contents.get(row.drive_file_id), 'seed');
     });
 

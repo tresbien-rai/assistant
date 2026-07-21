@@ -153,6 +153,28 @@ CREATE TABLE IF NOT EXISTS user_files (
 
 CREATE INDEX IF NOT EXISTS idx_user_files_user_id ON user_files(user_id);
 
+-- Conversation files (File Collaboration, FC-01): tool-created files are scoped
+-- to the CHAT that made them, regardless of the chat's home (unfiled, workspace,
+-- or project). This keeps chat scratch output out of the always-injected
+-- project/workspace knowledge base. Bytes live in Drive under
+-- `Tessera/Chats/<conversationId>/`. Mirrors user_files but scoped to a
+-- conversation. New table => created by CREATE TABLE IF NOT EXISTS on boot; no
+-- migration needed (user_files/WR-02b precedent).
+-- `last_touched_turn` is reserved for FC-03 (recency-scoped live injection); it
+-- is written now so no later migration is needed, and stays NULL until FC-03.
+CREATE TABLE IF NOT EXISTS conversation_files (
+    id                TEXT PRIMARY KEY,
+    conversation_id   TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    filename          TEXT NOT NULL,
+    mime_type         TEXT DEFAULT '',
+    size_bytes        INTEGER DEFAULT 0,
+    drive_file_id     TEXT DEFAULT '',
+    last_touched_turn INTEGER,
+    created_at        INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_files_conversation_id ON conversation_files(conversation_id);
+
 -- Settings table
 -- Per-user application settings
 CREATE TABLE IF NOT EXISTS settings (

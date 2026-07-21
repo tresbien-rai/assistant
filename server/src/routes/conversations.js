@@ -17,9 +17,12 @@
 
 const express = require('express');
 const dal = require('../db/dal');
+const drive = require('../utils/drive');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
+const { resolveFileStore } = require('../tools/fileStore');
+const { saveTextOverFile } = require('../tools/storeWriter');
 
 const router = express.Router();
 
@@ -401,6 +404,96 @@ router.delete('/:id/messages/:messageId', asyncHandler(async (req, res) => {
   }
 
   res.json({ deleted: true });
+}));
+
+// =============================================================================
+// CONVERSATION FILES (File Collaboration, FC-01)
+// =============================================================================
+//
+// Files created by the file tools inside a chat live in this chat's own scope
+// (conversation_files). These endpoints mirror the Downloads endpoints in
+// routes/files.js, but scoped to a conversation the user owns, so a chat-created
+// file is just as listable / downloadable / editable as the others. Every
+// handler first verifies the conversation belongs to the user, then the file
+// belongs to the conversation.
+
+/**
+ * Format a conversation_files record for API response (snake_case → camelCase).
+ * @param {Object} file - conversation_files row
+ * @returns {Object}
+ */
+function formatConversationFile(file) {
+  return {
+    id: file.id,
+    filename: file.filename,
+    mimeType: file.mime_type,
+    sizeBytes: file.size_bytes,
+    createdAt: file.created_at,
+  };
+}
+
+/**
+ * Load a conversation file after verifying both ownerships (user→conversation,
+ * conversation→file). Throws NOT_FOUND if either check fails.
+ * @returns {Object} the conversation_files row
+ */
+function requireConversationFile(userId, conversationId, fileId) {
+  const conversation = dal.getConversationMeta(conversationId, userId);
+  if (!conversation) {
+    throw AppError.notFound('Conversation');
+  }
+  const file = dal.getConversationFile(fileId, conversationId);
+  if (!file || !file.drive_file_id) {
+    throw AppError.notFound('File');
+  }
+  return file;
+}
+
+/**
+ * GET /api/conversations/:id/files
+ * List a chat's created files (metadata only, no Drive calls).
+ */
+router.get('/:id/files', asyncHandler(async (req, res) => {
+  const conversation = dal.getConversationMeta(req.params.id, req.user.userId);
+  if (!conversation) {
+    throw AppError.notFound('Conversation');
+  }
+  const files = dal.listConversationFiles(req.params.id);
+  res.json(files.map(formatConversationFile));
+}));
+
+/**
+ * GET /api/conversations/:id/files/:fileId/content
+ * Stream a chat file's bytes with a download disposition (so the URL works as
+ * an <a href download> and as the file panel's fetch source).
+ */
+router.get('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
+  const file = requireConversationFile(req.user.userId, req.params.id, req.params.fileId);
+
+  const auth = drive.getAuthForUser(req.user.userId);
+  const bytes = await drive.downloadFileBytes(auth, file.drive_file_id);
+
+  res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`);
+  res.send(bytes);
+}));
+
+/**
+ * PUT /api/conversations/:id/files/:fileId/content
+ * Replace a chat file's text with user-edited content (the file panel's Save).
+ * Body: { content: string }. Same write path as the file tools, so the row id
+ * (and download URL) stays stable and read_file sees the new text.
+ */
+router.put('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
+  const file = requireConversationFile(req.user.userId, req.params.id, req.params.fileId);
+
+  const auth = drive.getAuthForUser(req.user.userId);
+  const store = resolveFileStore({ userId: req.user.userId, conversationId: req.params.id });
+  const result = await saveTextOverFile(auth, store, file, req.body?.content, req.user.userId);
+  if (!result.ok) {
+    throw AppError.validation(result.reason);
+  }
+  res.json(formatConversationFile(result.record));
 }));
 
 module.exports = router;

@@ -2,10 +2,11 @@
  * saveTextOverFile Test (edit-in-context slice 3)
  *
  * Runs the shared user-save write path against the app DB with the Drive
- * module monkeypatched (no network): saving over project / workspace / user
- * files (row id + URL stable, old Drive file replaced), and the validation
- * failures the PUT routes map to 400s (non-string content, non-editable
- * type, size cap). Cleans up after itself.
+ * module monkeypatched (no network): saving over conversation / project /
+ * workspace / user files (row id + URL stable, old Drive file replaced), and
+ * the validation failures the PUT routes map to 400s (non-string content,
+ * non-editable type, size cap). Each store kind is built exactly as its route
+ * builds it (resolveFileStore with the matching ctx). Cleans up after itself.
  *
  * Run with: node src/tools/test-filesave.js
  */
@@ -17,7 +18,6 @@ const drive = require('../utils/drive');
 const config = require('../config');
 const { resolveFileStore } = require('./fileStore');
 const { saveTextOverFile } = require('./storeWriter');
-const { executeCreateFile } = require('./createFile');
 
 let failures = 0;
 async function check(label, fn) {
@@ -42,6 +42,7 @@ function installDriveMock() {
   drive.ensureProjectFolderId = async () => 'folder_project';
   drive.ensureWorkspaceFolderId = async () => 'folder_workspace';
   drive.ensureDownloadsFolder = async () => 'folder_downloads';
+  drive.ensureConversationFolder = async () => 'folder_conversation';
   drive.uploadFile = async (auth, { name, data }) => {
     const id = `drive_${++uploadSeq}`;
     contents.set(id, Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
@@ -69,28 +70,36 @@ function restoreDrive() {
     const project = dal.createProject(userId, { workspaceId: workspace.id, name: 'PROJ', instructions: '' });
     const auth = { mock: true };
 
-    const projectCtx = { userId, workspace, project, conversationId: 'c1' };
-    const workspaceCtx = { userId, workspace, project: null, conversationId: 'c2' };
-    const unfiledCtx = { userId, workspace: null, project: null, conversationId: 'c3' };
+    const conv = dal.createConversation(userId, { title: 'C', projectId: project.id, workspaceId: workspace.id });
+
+    // Build each store kind the way its route does: conversation saves pass a
+    // conversationId (FC-01), while project/workspace/Downloads saves pass the
+    // container (and no conversationId).
+    const stores = [
+      ['conversation', resolveFileStore({ userId, conversationId: conv.id })],
+      ['project', resolveFileStore({ userId, project, workspace: null })],
+      ['workspace', resolveFileStore({ userId, workspace, project: null })],
+      ['downloads', resolveFileStore({ userId })],
+    ];
 
     console.log('\n1. Saving over each store kind...');
 
-    for (const [label, ctx, getByName] of [
-      ['project', projectCtx, () => dal.getProjectFileByName(project.id, 'save.md')],
-      ['workspace', workspaceCtx, () => dal.getWorkspaceFileByName(workspace.id, 'save.md')],
-      ['downloads', unfiledCtx, () => dal.getUserFileByName(userId, 'save.md')],
-    ]) {
+    for (const [label, store] of stores) {
       await check(`${label}: save replaces content, keeps row id, deletes old Drive file`, async () => {
-        const created = await executeCreateFile({ filename: 'save.md', content: 'model version' }, ctx);
-        assert.ok(!created.isError, created.content);
-        const before = getByName();
+        // Seed an initial file directly in this store (stands in for a prior
+        // write), then save user text over it via the shared path.
+        const seedDriveId = `seed_${label}`;
+        contents.set(seedDriveId, 'model version');
+        const before = store.add({
+          filename: 'save.md', mimeType: 'text/markdown',
+          sizeBytes: Buffer.byteLength('model version'), driveFileId: seedDriveId,
+        });
         const oldDriveId = before.drive_file_id;
 
-        const store = resolveFileStore(ctx);
         const result = await saveTextOverFile(auth, store, before, 'user version', userId);
         assert.strictEqual(result.ok, true, result.reason);
 
-        const after = getByName();
+        const after = store.findByName('save.md');
         assert.strictEqual(after.id, before.id, 'row id must be stable');
         assert.notStrictEqual(after.drive_file_id, oldDriveId, 'a new Drive id must be minted');
         assert.strictEqual(contents.get(after.drive_file_id), 'user version');
@@ -101,7 +110,7 @@ function restoreDrive() {
 
     console.log('\n2. Validation failures (mapped to 400s by the routes)...');
 
-    const store = resolveFileStore(projectCtx);
+    const store = resolveFileStore({ userId, project, workspace: null });
     const row = dal.getProjectFileByName(project.id, 'save.md');
 
     await check('non-string content is rejected', async () => {
