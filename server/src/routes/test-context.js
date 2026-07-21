@@ -2,16 +2,18 @@
  * Context Layering Test (Workspace Restructure, WR-02a)
  *
  * Verifies that a chat request assembles workspace + project context in the
- * right order (workspace first, then project, then the persona prompt) and that
- * each chat "home" inherits the correct layers. Instructions-only, so no Google
- * Drive is needed. Runs against the app DB and cleans up after itself.
+ * right order (workspace first, then project) and that each chat "home" inherits
+ * the correct layers. Since FC-03a that context is injected as a synthetic
+ * leading user turn (not the system prompt); the assembly checks live here too.
+ * Instructions-only, so no Google Drive is needed. Runs against the app DB and
+ * cleans up after itself.
  *
  * Run with: node src/routes/test-context.js
  */
 
 const { getDb, closeDb } = require('../db/connection');
 const dal = require('../db/dal');
-const { resolveRequestContext, applyRequestContext } = require('./chat');
+const { resolveRequestContext, assembleProviderInput } = require('./chat');
 
 let failures = 0;
 function check(label, cond) {
@@ -62,8 +64,18 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
     check('has <workspace_context> wrapper', pCtx.text.includes('<workspace_context>'));
     check('has <project_context> wrapper', pCtx.text.includes('<project_context>'));
 
-    const sys = applyRequestContext(pCtx, 'PERSONA_PROMPT');
-    check('persona prompt comes last', sys.indexOf('PERSONA_PROMPT') > sys.indexOf('PROJ_INSTRUCTIONS'));
+    // FC-03a: the KB no longer rides in the system prompt — it becomes a
+    // synthetic user turn + an assistant ack prepended to the messages, and
+    // `system` is the persona prompt alone.
+    const assembled = assembleProviderInput(pCtx, 'PERSONA_PROMPT', [{ role: 'user', content: 'HELLO_TURN' }]);
+    check('system is the persona prompt alone (KB not in system)', assembled.system === 'PERSONA_PROMPT');
+    check('KB is the leading synthetic user turn',
+      assembled.messages[0].role === 'user'
+      && assembled.messages[0].content.includes('WS_INSTRUCTIONS')
+      && assembled.messages[0].content.includes('PROJ_INSTRUCTIONS'));
+    check('a synthetic assistant ack follows the KB', assembled.messages[1].role === 'assistant');
+    check('the real user message follows the synthetic pair',
+      assembled.messages[2].role === 'user' && assembled.messages[2].content === 'HELLO_TURN');
 
     // --- Workspace-level chat: workspace only -------------------------------
     console.log('\n2. Workspace-level chat inherits workspace only...');
@@ -75,6 +87,9 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
     console.log('\n3. Unfiled chat inherits nothing...');
     const uCtx = await resolveRequestContext(reqFor(userId, { conversationId: unfiledChat.id }));
     check('no context block', uCtx === null);
+    const uAssembled = assembleProviderInput(uCtx, 'PERSONA_PROMPT', [{ role: 'user', content: 'X' }]);
+    check('no context → messages passed through unchanged', uAssembled.messages.length === 1 && uAssembled.messages[0].content === 'X');
+    check('no context → system is still the persona prompt', uAssembled.system === 'PERSONA_PROMPT');
 
     // --- New (unsaved) chat via explicit ids; project derives its workspace --
     console.log('\n4. Explicit projectId derives its workspace...');

@@ -163,9 +163,10 @@ function resolveRequestContainers(req) {
 /**
  * Assemble the layered context block for a chat request (workspace first,
  * then project — see WORKSPACE_RESTRUCTURE.md). Layering: workspace context
- * frames everything, then project context, then the persona system prompt
- * (added by applyRequestContext). A project-level chat inherits both; a
- * workspace-level chat only the workspace; an unfiled chat neither.
+ * frames everything, then project context. Since FC-03a this block is injected
+ * as a synthetic user turn (not the system prompt) by assembleProviderInput.
+ * A project-level chat inherits both; a workspace-level chat only the
+ * workspace; an unfiled chat neither.
  *
  * @param {Object} req - Express request (req.user, req.body)
  * @param {Object} [containers] - resolveRequestContainers(req) result, when
@@ -195,16 +196,37 @@ async function resolveRequestContext(req, containers = null) {
   return { text: blocks.join('\n\n'), warning: warnings.length > 0 ? warnings.join(' ') : null };
 }
 
+// The synthetic assistant turn that follows the injected knowledge base, so the
+// model treats the reference material as already-received context and replies to
+// the real latest user message instead of to the KB block.
+const CONTEXT_ACK = "Understood — I'll use the reference material above as background for our conversation.";
+
 /**
- * Combine the assembled workspace+project context (if any) with the persona's
- * system prompt. Container context goes FIRST so it frames the persona.
- * @param {{text: string}|null} requestContext
- * @param {string} [systemPrompt]
- * @returns {string|undefined}
+ * Assemble the final (system, messages) for a provider call (File Collaboration,
+ * FC-03a). The workspace/project knowledge base no longer rides in the system
+ * prompt; it becomes a synthetic **user** turn carrying the context blocks plus
+ * a short **assistant** acknowledgement, prepended to the messages. This keeps
+ * the persona system prompt stable and cacheable across conversations, and keeps
+ * user-uploaded file *data* in the lower-authority user role rather than the
+ * system role (better instruction-hierarchy hygiene). The synthetic turns are
+ * assembled per request and are never persisted.
+ *
+ * @param {{text: string}|null} requestContext - resolveRequestContext result
+ * @param {string} [systemPrompt] - the persona prompt (used as-is for `system`)
+ * @param {Array} [messages] - the raw conversation messages
+ * @returns {{ system: string|undefined, messages: Array }}
  */
-function applyRequestContext(requestContext, systemPrompt) {
-  if (!requestContext?.text) return systemPrompt;
-  return `${requestContext.text}\n\n${systemPrompt || ''}`.trim();
+function assembleProviderInput(requestContext, systemPrompt, messages = []) {
+  const contextMessages = requestContext?.text
+    ? [
+        { role: 'user', content: requestContext.text },
+        { role: 'assistant', content: CONTEXT_ACK },
+      ]
+    : [];
+  return {
+    system: systemPrompt,
+    messages: [...contextMessages, ...messages],
+  };
 }
 
 /**
@@ -380,10 +402,13 @@ router.post('/', asyncHandler(async (req, res) => {
   // Get provider module
   const providerModule = getProvider(provider);
 
-  // Inject workspace + project context (instructions + files) before the persona prompt.
+  // Assemble the request: workspace + project context becomes a synthetic
+  // user+assistant pair at the front of the messages (FC-03a); `system` stays
+  // the persona prompt alone.
   const containers = resolveRequestContainers(req);
   const requestContext = await resolveRequestContext(req, containers);
-  const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
+  const { system: effectiveSystemPrompt, messages: effectiveMessages } =
+    assembleProviderInput(requestContext, systemPrompt, messages);
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   logger.info({
@@ -403,7 +428,7 @@ router.post('/', asyncHandler(async (req, res) => {
     req.on('close', () => abortController.abort());
 
     const { params: loopParams, toolContext } = buildToolLoopInvocation(req, containers, {
-      model, messages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
+      model, messages: effectiveMessages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
     });
     const { result: loopResult, toolEvents, aborted } = await runToolLoop({
       providerModule,
@@ -421,7 +446,7 @@ router.post('/', asyncHandler(async (req, res) => {
     // Call provider's chat method
     result = await providerModule.chat(apiKey, {
       model,
-      messages,
+      messages: effectiveMessages,
       systemPrompt: effectiveSystemPrompt,
       modelParams,
       prefill,
@@ -459,11 +484,13 @@ router.post('/stream', asyncHandler(async (req, res) => {
     throw AppError.validation(`Streaming not supported for provider: ${provider}`);
   }
 
-  // Inject workspace + project context before the persona prompt.
+  // Assemble the request: KB becomes a synthetic user+assistant pair at the
+  // front of the messages (FC-03a); `system` stays the persona prompt alone.
   // Resolved before any SSE headers are sent so the warning header is valid.
   const containers = resolveRequestContainers(req);
   const requestContext = await resolveRequestContext(req, containers);
-  const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
+  const { system: effectiveSystemPrompt, messages: effectiveMessages } =
+    assembleProviderInput(requestContext, systemPrompt, messages);
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   if (requestContext?.warning) {
@@ -506,7 +533,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
 
     try {
       const { params: loopParams, toolContext } = buildToolLoopInvocation(req, containers, {
-        model, messages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
+        model, messages: effectiveMessages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
       });
       const { result, toolEvents, aborted } = await runToolLoop({
         providerModule,
@@ -542,7 +569,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
   // Call provider's stream method
   await providerModule.stream(apiKey, {
     model,
-    messages,
+    messages: effectiveMessages,
     systemPrompt: effectiveSystemPrompt,
     modelParams,
     prefill,
@@ -586,12 +613,13 @@ router.post('/preview', asyncHandler(async (req, res) => {
   // prefill) exactly as a real tools-on send would build them.
   const containers = resolveRequestContainers(req);
   const requestContext = await resolveRequestContext(req, containers);
-  const effectiveSystemPrompt = applyRequestContext(requestContext, systemPrompt);
+  const { system: effectiveSystemPrompt, messages: effectiveMessages } =
+    assembleProviderInput(requestContext, systemPrompt, messages);
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   const body = providerModule.buildRequestBody({
     model,
-    messages,
+    messages: effectiveMessages,
     systemPrompt: effectiveSystemPrompt,
     modelParams,
     prefill: toolsEnabled ? undefined : prefill,
@@ -655,7 +683,7 @@ module.exports = {
   modelsRouter,
   // Exported for headless context-layering tests.
   resolveRequestContext,
-  applyRequestContext,
+  assembleProviderInput,
   // Exported for headless tool-loop tests (P2-02).
   resolveRequestContainers,
   resolveToolsEnabled,

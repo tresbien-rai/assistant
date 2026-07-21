@@ -31,6 +31,17 @@ hierarchy this layers onto).
 > total, green). User saves on project/workspace/Downloads files stay unlogged
 > until FC-04 threads a conversationId (revision recording is gated on chat
 > context).
+>
+> **FC-03 split into two sub-slices** (it was the largest). **FC-03a ✅ built**
+> (KB relocation): the workspace/project context no longer rides in the system
+> prompt — `assembleProviderInput` (routes/chat.js) prepends it as a synthetic
+> **user** turn + a short **assistant** ack, and `system` is the persona prompt
+> alone. Applied to all three endpoints (`/`, `/stream`, `/preview`). Verified
+> against the real Anthropic + Gemini body builders (system=persona; messages
+> user→assistant→user). test-context.js updated; suite 190 assertions green.
+> **FC-03b (next):** recency-scoped active-file + latest-diff injection at the
+> tail of the messages, turn stamping (file_revisions), and the Advanced
+> `activeFileTurns` setting (default 1) with UI.
 
 ---
 
@@ -219,7 +230,14 @@ column precedent in `settings`).
 - Tests: a create then two edits produce three ordered revisions with correct
   diffs and authors.
 
-### FC-03 — Live injection + Advanced setting
+### FC-03a — KB relocation (system prompt → synthetic messages) ✅ DONE
+- `assembleProviderInput(requestContext, systemPrompt, messages)` in
+  routes/chat.js: `system` = persona only; KB becomes `messages[0]` (user) +
+  `messages[1]` (assistant ack) prepended to the raw messages. Wired through the
+  JSON, SSE, and preview endpoints. Verified against the Anthropic + Gemini body
+  builders; test-context.js covers the new assembly.
+
+### FC-03b — Live injection + Advanced setting
 - `active_file_turns` setting (migration, DAL, `settings.js` route,
   `api-client.js`, Advanced sub-group in the settings UI, default 1).
 - Turn accounting + `last_touched` stamping (derive-from-revisions decision).
