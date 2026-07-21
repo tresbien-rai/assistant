@@ -24,6 +24,7 @@ const { logger } = require('../utils/logger');
 const { executeCreateFile } = require('./createFile');
 const { executeEditFile } = require('./editFile');
 const { executeReadFile, executeListFiles } = require('./readFiles');
+const { executeMoveFile } = require('./moveFile');
 
 /**
  * Executor dispatch table. Each entry runs one tool's real work and returns a
@@ -34,6 +35,7 @@ const EXECUTORS = {
   edit_file: (input, ctx) => executeEditFile(input, ctx),
   read_file: (input, ctx) => executeReadFile(input, ctx),
   list_files: (input, ctx) => executeListFiles(input, ctx),
+  move_file: (input, ctx) => executeMoveFile(input, ctx),
 };
 
 /**

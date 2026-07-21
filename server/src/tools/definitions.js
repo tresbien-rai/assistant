@@ -96,6 +96,26 @@ const TOOL_DEFINITIONS = [
       properties: {},
     },
   },
+  {
+    name: 'move_file',
+    description:
+      "Move a file into a different scope — mainly to PROMOTE a file created in this chat into the shared knowledge base so it persists beyond the conversation. Use \"project\" or \"workspace\" to add a chat file to the shared files, or \"downloads\" to save it to the user's Downloads folder. The file keeps its content; it just changes where it lives (and its download link). A same-name file already in the destination is overwritten. Only destinations the chat can reach are valid (e.g. \"project\" only from a project chat).",
+    input_schema: {
+      type: 'object',
+      properties: {
+        filename: {
+          type: 'string',
+          description: 'Exact file name as shown by list_files, e.g. "notes.md".',
+        },
+        destination: {
+          type: 'string',
+          enum: ['project', 'workspace', 'downloads'],
+          description: 'Where to move the file: "project" or "workspace" to promote it into the shared files, or "downloads" for the user\'s Downloads folder.',
+        },
+      },
+      required: ['filename', 'destination'],
+    },
+  },
 ];
 
 module.exports = { TOOL_DEFINITIONS };

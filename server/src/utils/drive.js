@@ -432,6 +432,31 @@ function deleteFile(auth, fileId) {
 }
 
 /**
+ * Move a file into a different folder (File Collaboration, FC-05): reparent it
+ * onto `destFolderId`, detaching it from its current parent(s). Keeps the same
+ * Drive file id. Used by move_file to relocate a file's bytes when it is
+ * promoted between scopes, so e.g. deleting the source chat later can't trash a
+ * file that now lives in a project.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} fileId
+ * @param {string} destFolderId
+ * @returns {Promise<boolean>}
+ */
+function moveFileToFolder(auth, fileId, destFolderId) {
+  return execute(auth, 'moveFileToFolder', async (drive) => {
+    const cur = await drive.files.get({ fileId, fields: 'parents' });
+    const removeParents = (cur.data.parents || []).join(',');
+    await drive.files.update({
+      fileId,
+      addParents: destFolderId,
+      removeParents: removeParents || undefined,
+      fields: 'id, parents',
+    });
+    return true;
+  });
+}
+
+/**
  * Move a file/folder to the trash (recoverable). Used when deleting a project,
  * so the user can recover its files from Drive's trash.
  * @param {import('google-auth-library').OAuth2Client} auth
@@ -486,5 +511,6 @@ module.exports = {
   downloadFileBytes,
   deleteFile,
   trashFile,
+  moveFileToFolder,
   listFiles,
 };
