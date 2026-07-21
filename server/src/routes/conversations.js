@@ -23,6 +23,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { resolveFileStore } = require('../tools/fileStore');
 const { saveTextOverFile } = require('../tools/storeWriter');
+const { revertConversationFiles } = require('../tools/revertFiles');
 const { formatFileRevision } = require('../utils/format');
 const { trashConversationFiles } = require('../tools/conversationCleanup');
 
@@ -487,6 +488,41 @@ router.get('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`);
   res.send(bytes);
+}));
+
+/**
+ * POST /api/conversations/:id/files/revert
+ * Roll back model-authored file changes at/after a turn (File Collaboration,
+ * FC-06a) — called by the client BEFORE it re-rolls / edits-and-resends a turn,
+ * so the re-run operates on the pre-turn file state. Body: { fromTurn: number }.
+ */
+router.post('/:id/files/revert', asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const conversation = dal.getConversationMeta(req.params.id, userId);
+  if (!conversation) {
+    throw AppError.notFound('Conversation');
+  }
+
+  const fromTurn = Number(req.body?.fromTurn);
+  if (!Number.isInteger(fromTurn) || fromTurn < 1) {
+    throw AppError.validation('fromTurn must be a positive integer.');
+  }
+
+  // Resolve the conversation's containers so project/workspace-scoped edits made
+  // from this chat can be rolled back too (mirrors the chat route's resolution).
+  let project = null;
+  let workspace = null;
+  if (conversation.project_id) project = dal.getProjectById(conversation.project_id, userId);
+  if (conversation.workspace_id) workspace = dal.getWorkspaceById(conversation.workspace_id, userId);
+  if (project && !workspace && project.workspace_id) {
+    workspace = dal.getWorkspaceById(project.workspace_id, userId);
+  }
+
+  const result = await revertConversationFiles(
+    { userId, conversationId: req.params.id, project, workspace },
+    fromTurn
+  );
+  res.json(result);
 }));
 
 /**

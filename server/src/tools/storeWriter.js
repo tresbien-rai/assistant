@@ -43,10 +43,14 @@ const { logger } = require('../utils/logger');
  */
 function recordRevision({ store, record, bytes, overwritten, revision }) {
   try {
+    const newText = bytes.toString('utf8');
     const op = revision.op || (overwritten ? 'overwrite' : 'create');
-    const diff = unifiedDiff(revision.oldText || '', bytes.toString('utf8'), {
+    const diff = unifiedDiff(revision.oldText || '', newText, {
       maxChars: config.projectFiles.revisionDiffMaxChars,
     });
+    // Snapshot the full content (FC-06a) unless the file is too big; kept only
+    // for the most recent N revisions per file (pruned below).
+    const content = bytes.length <= config.projectFiles.revisionSnapshotMaxBytes ? newText : null;
     dal.addFileRevision({
       scope: store.kind,
       fileId: record.id,
@@ -58,7 +62,9 @@ function recordRevision({ store, record, bytes, overwritten, revision }) {
       sizeBytes: bytes.length,
       driveFileId: record.drive_file_id,
       turn: revision.turn == null ? null : revision.turn,
+      content,
     });
+    dal.pruneRevisionSnapshots(store.kind, record.id, config.projectFiles.revisionSnapshotKeep);
   } catch (err) {
     logger.warn({ fileId: record?.id, msg: err.message }, 'Failed to record file revision; write itself succeeded');
   }

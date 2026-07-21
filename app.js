@@ -5841,6 +5841,13 @@ async function rerunFromMessage(msgIndex) {
 
     const msg = activeConvo.messages[msgIndex];
 
+    // The turn being re-rolled = the user-message count up to (and including) it.
+    // Any file the model changed at that turn or later is rolled back first
+    // (FC-06a), so the re-run starts from the pre-turn file state rather than the
+    // already-edited one.
+    const fromTurn = activeConvo.messages.slice(0, msgIndex + 1).filter(m => m.role === 'user').length;
+    await revertConversationFilesForRerun(activeConvo.id, fromTurn);
+
     if (msg.role === 'user') {
         // Truncate everything from this index onward, resend this user message.
         const textToResend = msg.content;
@@ -5856,6 +5863,22 @@ async function rerunFromMessage(msgIndex) {
         await truncateMessagesFrom(activeConvo, msgIndex);
         renderConversation();
         sendMessageFromText(precedingUserMsg.content, precedingUserMsg.attachments || []);
+    }
+}
+
+/**
+ * Roll back model file changes before a re-roll (FC-06a). Best-effort: a failure
+ * must not block the re-run, and any files that couldn't be rolled back (e.g.
+ * older than the stored snapshots) are surfaced as a warning toast.
+ */
+async function revertConversationFilesForRerun(conversationId, fromTurn) {
+    try {
+        const res = await API.conversations.revertFiles(conversationId, fromTurn);
+        if (res && Array.isArray(res.warnings) && res.warnings.length > 0) {
+            showToast(res.warnings.join(' '), { type: 'warning' });
+        }
+    } catch (err) {
+        console.error('Failed to roll back files before re-roll:', err);
     }
 }
 
