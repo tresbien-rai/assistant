@@ -1329,6 +1329,107 @@ function deleteUserFile(fileId, userId) {
 }
 
 // =============================================================================
+// CONVERSATION FILES (File Collaboration, FC-01)
+// =============================================================================
+//
+// Tool-created files scoped to the CHAT that made them, stored in the user's
+// Tessera/Chats/<conversationId>/ Drive folder. Scoped by conversationId (like
+// project/workspace files are scoped by their container id). Callers reach these
+// only through a ToolContext whose conversationId came from a user-scoped
+// conversation lookup, or through a route that first verifies the conversation
+// belongs to the user (getConversationMeta), so there is no user_id column here.
+// Mirrors the USER FILES functions above.
+
+/**
+ * Record a conversation file's metadata (the bytes live on Drive).
+ * @param {string} conversationId - The conversation's UUID
+ * @param {{filename: string, mimeType?: string, sizeBytes?: number, driveFileId?: string}} data
+ * @returns {Object} The created conversation_files record
+ */
+function addConversationFile(conversationId, { filename, mimeType, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+
+  db.prepare(`
+    INSERT INTO conversation_files (id, conversation_id, filename, mime_type, size_bytes, drive_file_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, conversationId, filename, mimeType || '', sizeBytes || 0, driveFileId || '', timestamp);
+
+  return db.prepare('SELECT * FROM conversation_files WHERE id = ?').get(id);
+}
+
+/**
+ * List a conversation's files (metadata only, from SQLite — no Drive calls).
+ * @param {string} conversationId - The conversation's UUID
+ * @returns {Array} Array of conversation_files records
+ */
+function listConversationFiles(conversationId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM conversation_files WHERE conversation_id = ? ORDER BY created_at ASC
+  `).all(conversationId);
+}
+
+/**
+ * Get a single conversation file (scoped to its conversation).
+ * @param {string} fileId - The file's UUID
+ * @param {string} conversationId - The conversation's UUID
+ * @returns {Object|undefined}
+ */
+function getConversationFile(fileId, conversationId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM conversation_files WHERE id = ? AND conversation_id = ?
+  `).get(fileId, conversationId);
+}
+
+/**
+ * Find a conversation file by exact filename (scoped to its conversation).
+ * @param {string} conversationId
+ * @param {string} filename
+ * @returns {Object|undefined}
+ */
+function getConversationFileByName(conversationId, filename) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM conversation_files WHERE conversation_id = ? AND filename = ?
+    ORDER BY created_at DESC LIMIT 1
+  `).get(conversationId, filename);
+}
+
+/**
+ * Repoint a conversation file row at replacement content (overwrite semantics).
+ * Scoped by conversationId so the UPDATE can't touch another chat's row.
+ * @param {string} fileId
+ * @param {string} conversationId
+ * @param {{mimeType?: string, sizeBytes?: number, driveFileId: string}} data
+ * @returns {Object|undefined} The updated row, or undefined if not in scope
+ */
+function updateConversationFileContent(fileId, conversationId, { mimeType, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const res = db.prepare(`
+    UPDATE conversation_files SET mime_type = ?, size_bytes = ?, drive_file_id = ?
+    WHERE id = ? AND conversation_id = ?
+  `).run(mimeType || '', sizeBytes || 0, driveFileId || '', fileId, conversationId);
+  if (res.changes === 0) return undefined;
+  return db.prepare('SELECT * FROM conversation_files WHERE id = ?').get(fileId);
+}
+
+/**
+ * Delete a conversation file's metadata row (scoped to its conversation).
+ * Removing the file from Drive is the caller's responsibility.
+ * @param {string} fileId - The file's UUID
+ * @param {string} conversationId - The conversation's UUID
+ * @returns {boolean} True if deleted, false if not found
+ */
+function deleteConversationFile(fileId, conversationId) {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM conversation_files WHERE id = ? AND conversation_id = ?').run(fileId, conversationId);
+  return result.changes > 0;
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
@@ -1411,4 +1512,12 @@ module.exports = {
   getUserFileByName,
   updateUserFileContent,
   deleteUserFile,
+
+  // Conversation Files (File Collaboration, FC-01 — per-chat scope)
+  addConversationFile,
+  listConversationFiles,
+  getConversationFile,
+  getConversationFileByName,
+  updateConversationFileContent,
+  deleteConversationFile,
 };

@@ -2,9 +2,9 @@
  * create_file Executor Test (Track A, P2-03)
  *
  * Runs the real executor against the app DB with the Drive module
- * monkeypatched (no network): destination routing (project / workspace /
- * Downloads), overwrite-on-duplicate, validation failures, and the
- * Drive-less degrade. Cleans up after itself.
+ * monkeypatched (no network): destination routing (all chats -> the chat's own
+ * conversation scope, FC-01), overwrite-on-duplicate, validation failures, and
+ * the Drive-less degrade. Cleans up after itself.
  *
  * Run with: node src/tools/test-createfile.js
  */
@@ -46,6 +46,7 @@ function installDriveMock() {
   drive.ensureProjectFolderId = async () => 'folder_project';
   drive.ensureWorkspaceFolderId = async () => 'folder_workspace';
   drive.ensureDownloadsFolder = async () => 'folder_downloads';
+  drive.ensureConversationFolder = async () => 'folder_conversation';
   drive.uploadFile = async ({ name }) => ({ id: `drive_${++uploadSeq}`, name });
   drive.deleteFile = async (auth, fileId) => { deletedIds.push(fileId); return true; };
 }
@@ -68,48 +69,59 @@ function restoreDrive() {
     const workspace = dal.createWorkspace(userId, { name: 'WS', instructions: '' });
     const project = dal.createProject(userId, { workspaceId: workspace.id, name: 'PROJ', instructions: '' });
 
-    const projectCtx = { userId, workspace, project, conversationId: 'c1' };
-    const workspaceCtx = { userId, workspace, project: null, conversationId: 'c2' };
-    const unfiledCtx = { userId, workspace: null, project: null, conversationId: 'c3' };
+    // FC-01: created files land in the CHAT's own scope, so the ToolContext
+    // needs a real conversation id (conversation_files has an FK to it). One
+    // conversation per chat home so the "regardless of home" claim is exercised.
+    const convProject = dal.createConversation(userId, { title: 'P', projectId: project.id, workspaceId: workspace.id });
+    const convWorkspace = dal.createConversation(userId, { title: 'W', workspaceId: workspace.id });
+    const convUnfiled = dal.createConversation(userId, { title: 'U' });
 
-    console.log('\n1. Destination routing...');
+    const projectCtx = { userId, workspace, project, conversationId: convProject.id };
+    const workspaceCtx = { userId, workspace, project: null, conversationId: convWorkspace.id };
+    const unfiledCtx = { userId, workspace: null, project: null, conversationId: convUnfiled.id };
 
-    await check('project chat -> project_files + project url', async () => {
+    console.log('\n1. Destination routing (all chats -> conversation scope)...');
+
+    await check('project chat -> conversation_files + conversation url', async () => {
       const res = await executeCreateFile({ filename: 'notes.md', content: '# Hi' }, projectCtx);
       assert.ok(!res.isError, 'should succeed');
-      assert.strictEqual(res.display.destination, 'project');
-      const files = dal.listProjectFiles(project.id);
+      assert.strictEqual(res.display.destination, 'conversation');
+      const files = dal.listConversationFiles(convProject.id);
       assert.strictEqual(files.length, 1);
       assert.strictEqual(files[0].filename, 'notes.md');
       assert.strictEqual(files[0].mime_type, 'text/markdown');
-      assert.strictEqual(res.display.url, `/api/projects/${project.id}/files/${files[0].id}/content`);
+      assert.strictEqual(res.display.url, `/api/conversations/${convProject.id}/files/${files[0].id}/content`);
+      // NOT the curated project knowledge base.
+      assert.strictEqual(dal.listProjectFiles(project.id).length, 0, 'project files untouched');
     });
 
-    await check('workspace chat (no project) -> workspace_files', async () => {
+    await check('workspace chat -> conversation_files (not workspace files)', async () => {
       const res = await executeCreateFile({ filename: 'shared.txt', content: 'x' }, workspaceCtx);
-      assert.strictEqual(res.display.destination, 'workspace');
-      const files = dal.listWorkspaceFiles(workspace.id);
+      assert.strictEqual(res.display.destination, 'conversation');
+      const files = dal.listConversationFiles(convWorkspace.id);
       assert.strictEqual(files.length, 1);
-      assert.strictEqual(res.display.url, `/api/workspaces/${workspace.id}/files/${files[0].id}/content`);
+      assert.strictEqual(res.display.url, `/api/conversations/${convWorkspace.id}/files/${files[0].id}/content`);
+      assert.strictEqual(dal.listWorkspaceFiles(workspace.id).length, 0, 'workspace files untouched');
     });
 
-    await check('unfiled chat -> user_files + /api/files url', async () => {
+    await check('unfiled chat -> conversation_files (not user/Downloads files)', async () => {
       const res = await executeCreateFile({ filename: 'draft.md', content: 'y' }, unfiledCtx);
-      assert.strictEqual(res.display.destination, 'downloads');
-      const files = dal.listUserFiles(userId);
+      assert.strictEqual(res.display.destination, 'conversation');
+      const files = dal.listConversationFiles(convUnfiled.id);
       assert.strictEqual(files.length, 1);
-      assert.strictEqual(res.display.url, `/api/files/${files[0].id}/content`);
+      assert.strictEqual(res.display.url, `/api/conversations/${convUnfiled.id}/files/${files[0].id}/content`);
+      assert.strictEqual(dal.listUserFiles(userId).length, 0, 'Downloads files untouched');
     });
 
-    console.log('\n2. Overwrite-on-duplicate...');
+    console.log('\n2. Overwrite-on-duplicate (within the same chat)...');
 
     await check('same filename repoints the SAME row + deletes old Drive file', async () => {
-      const first = dal.getProjectFileByName(project.id, 'notes.md');
+      const first = dal.getConversationFileByName(convProject.id, 'notes.md');
       const firstDriveId = first.drive_file_id;
       deletedIds.length = 0;
       const res = await executeCreateFile({ filename: 'notes.md', content: '# Updated' }, projectCtx);
       assert.ok(res.display.overwritten, 'flagged overwritten');
-      const rows = dal.listProjectFiles(project.id).filter((f) => f.filename === 'notes.md');
+      const rows = dal.listConversationFiles(convProject.id).filter((f) => f.filename === 'notes.md');
       assert.strictEqual(rows.length, 1, 'still exactly one row for the name');
       assert.strictEqual(rows[0].id, first.id, 'row id preserved (download links keep working)');
       assert.notStrictEqual(rows[0].drive_file_id, firstDriveId, 'points at new Drive file');

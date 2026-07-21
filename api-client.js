@@ -350,8 +350,9 @@
       },
       /**
        * Fetch a content URL's body as text (for the in-app file panel).
-       * Accepts any of the three content-endpoint URLs (user/workspace/project
-       * files) so callers can pass the URL already carried on an attachment.
+       * Accepts any of the content-endpoint URLs (conversation/user/workspace/
+       * project files) so callers can pass the URL already carried on an
+       * attachment — since FC-01 chat-created files carry a conversation URL.
        * Goes through request() for session-expiry (401) and network-error
        * handling.
        */

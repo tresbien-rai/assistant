@@ -2,10 +2,10 @@
  * read_file + list_files Executor Test (Track A, P2-04)
  *
  * Runs the real executors against the app DB with Drive's byte download
- * monkeypatched (no network). Exercises: read scope (project chat spans
- * project + inherited workspace), Downloads scope for unfiled chats, the
- * budget truncation, not-found / no-content / Drive-less results, and the
- * list_files formatting incl. the cross-store "in <source>" hint.
+ * monkeypatched (no network). Exercises: read scope (chat's own conversation
+ * scope searched first, then project + inherited workspace), Downloads scope for
+ * unfiled chats, the budget truncation, not-found / no-content / Drive-less
+ * results, and the list_files formatting incl. the cross-store "in <source>" hint.
  *
  * Run with: node src/tools/test-readfiles.js
  */
@@ -78,9 +78,18 @@ function restoreDrive() {
     const uFile = dal.addUserFile(userId, { filename: 'draft.txt', mimeType: 'text/plain', sizeBytes: 3, driveFileId: 'd_dl' });
     driveBytes.set('d_dl', Buffer.from('DOWNLOADS DRAFT', 'utf8'));
 
-    const projectCtx = { userId, workspace, project, conversationId: 'c1' };
-    const workspaceCtx = { userId, workspace, project: null, conversationId: 'c2' };
-    const unfiledCtx = { userId, workspace: null, project: null, conversationId: 'c3' };
+    // FC-01: real conversations (conversation_files rows need a valid FK), plus
+    // a file that lives in the project chat's OWN scope to exercise the
+    // conversation-first read order.
+    const convProject = dal.createConversation(userId, { title: 'P', projectId: project.id, workspaceId: workspace.id });
+    const convWorkspace = dal.createConversation(userId, { title: 'W', workspaceId: workspace.id });
+    const convUnfiled = dal.createConversation(userId, { title: 'U' });
+    dal.addConversationFile(convProject.id, { filename: 'chatnote.md', mimeType: 'text/markdown', sizeBytes: 4, driveFileId: 'd_chat' });
+    driveBytes.set('d_chat', Buffer.from('CHAT NOTE BODY', 'utf8'));
+
+    const projectCtx = { userId, workspace, project, conversationId: convProject.id };
+    const workspaceCtx = { userId, workspace, project: null, conversationId: convWorkspace.id };
+    const unfiledCtx = { userId, workspace: null, project: null, conversationId: convUnfiled.id };
 
     // Files are immutable per Drive id, but the executor caches by that id;
     // clear between assertions so a truncation test re-reads fresh bytes.
@@ -134,6 +143,31 @@ function restoreDrive() {
       assert.match(res.content, /also exists in the workspace/);
       dal.deleteProjectFile(dupP.id, project.id);
       dal.deleteWorkspaceFile(dupW.id, workspace.id);
+    });
+
+    console.log('\n1b. conversation scope is searched first (FC-01)...');
+
+    await check('reads a file created in this chat (conversation scope)', async () => {
+      const res = await executeReadFile({ filename: 'chatnote.md' }, projectCtx);
+      assert.ok(!res.isError, res.content);
+      assert.match(res.content, /CHAT NOTE BODY/);
+      assert.strictEqual(res.display.source, 'conversation');
+    });
+
+    await check('a chat file shadows an inherited project file of the same name', async () => {
+      const twinP = dal.addProjectFile(project.id, { filename: 'twin.md', driveFileId: 'd_twinp' });
+      driveBytes.set('d_twinp', Buffer.from('PROJECT TWIN', 'utf8'));
+      dal.addConversationFile(convProject.id, { filename: 'twin.md', driveFileId: 'd_twinc' });
+      driveBytes.set('d_twinc', Buffer.from('CHAT TWIN', 'utf8'));
+      clearCache();
+      const res = await executeReadFile({ filename: 'twin.md' }, projectCtx);
+      assert.ok(!res.isError, res.content);
+      assert.match(res.content, /CHAT TWIN/, 'reads the chat copy');
+      assert.strictEqual(res.display.source, 'conversation');
+      assert.deepStrictEqual(res.display.shadowedBy, ['project']);
+      // Clean up so the later list_files assertions stay focused.
+      dal.deleteProjectFile(twinP.id, project.id);
+      dal.deleteConversationFile(dal.getConversationFileByName(convProject.id, 'twin.md').id, convProject.id);
     });
 
     console.log('\n2. read_file error results...');
@@ -193,11 +227,13 @@ function restoreDrive() {
       assert.match(res.content, /in workspace/);
     });
 
-    await check('unfiled chat lists only Downloads, no source hint', async () => {
+    await check('unfiled chat lists its chat scope + Downloads, not project files', async () => {
+      // An unfiled chat now spans two read stores (its own conversation scope +
+      // legacy Downloads), so source hints ARE shown to tell them apart.
       const res = await executeListFiles({}, unfiledCtx);
       assert.match(res.content, /draft\.txt/);
+      assert.match(res.content, /in downloads/);
       assert.doesNotMatch(res.content, /spec\.md/);
-      assert.doesNotMatch(res.content, /in downloads/);
     });
 
     await check('empty scope lists nothing (workspace with no files)', async () => {
