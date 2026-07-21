@@ -288,6 +288,27 @@ async function ensureConversationFolder(auth, conversationId) {
   return ensureFolder(auth, String(conversationId), chatsId);
 }
 
+/**
+ * Find (without creating) the per-conversation folder
+ * `{driveRootFolder}/Chats/<conversationId>/` and return its id, or null if any
+ * segment of the path is absent. The find-only counterpart to
+ * `ensureConversationFolder`, used to trash a chat's Drive folder when the
+ * conversation is deleted (File Collaboration cleanup) — deletion must never
+ * create folders as a side effect.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} conversationId
+ * @returns {Promise<string|null>} The conversation folder's id, or null
+ */
+async function findConversationFolder(auth, conversationId) {
+  if (!conversationId) return null;
+  const root = await findFolder(auth, APP_ROOT_FOLDER, null);
+  if (!root) return null;
+  const chats = await findFolder(auth, 'Chats', root.id);
+  if (!chats) return null;
+  const folder = await findFolder(auth, String(conversationId), chats.id);
+  return folder ? folder.id : null;
+}
+
 // =============================================================================
 // Row-aware folder helpers (shared by the project/workspace routes and the
 // Track A tool executors — moved here from routes/projects.js in P2-01)
@@ -458,6 +479,7 @@ module.exports = {
   ensureProjectFolderId,
   ensureDownloadsFolder,
   ensureConversationFolder,
+  findConversationFolder,
   createFolder,
   uploadFile,
   downloadFileText,
