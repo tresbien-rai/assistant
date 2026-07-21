@@ -1430,6 +1430,61 @@ function deleteConversationFile(fileId, conversationId) {
 }
 
 // =============================================================================
+// FILE REVISIONS (File Collaboration, FC-02)
+// =============================================================================
+//
+// Append-only change log across every file scope. Rows are written by the
+// shared store-write path (storeWriter) whenever a file is created or edited by
+// a tool or a user save. `scope` is the FileStore kind and `file_id` the row id
+// in the matching *_files table; `conversation_id` (when set) carries an FK so a
+// deleted chat's revisions cascade away.
+
+/**
+ * Append a revision to the log.
+ * @param {Object} data
+ * @param {string} data.scope - FileStore kind ('conversation'|'project'|'workspace'|'downloads')
+ * @param {string} data.fileId - row id in the matching *_files table
+ * @param {string} [data.conversationId] - the chat it happened in (nullable)
+ * @param {string} [data.messageId] - the message it is tied to (nullable, FC-03)
+ * @param {string} data.author - 'model' | 'user'
+ * @param {string} data.op - 'create' | 'overwrite' | 'edit'
+ * @param {string} [data.diff] - bounded unified diff
+ * @param {number} [data.sizeBytes] - resulting file size
+ * @param {string} [data.driveFileId] - the new blob's Drive id
+ * @returns {Object} The created file_revisions record
+ */
+function addFileRevision({ scope, fileId, conversationId, messageId, author, op, diff, sizeBytes, driveFileId }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+
+  db.prepare(`
+    INSERT INTO file_revisions
+      (id, scope, file_id, conversation_id, message_id, author, op, diff, size_bytes, drive_file_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, scope, fileId, conversationId || null, messageId || null,
+    author, op, diff || '', sizeBytes || 0, driveFileId || '', timestamp
+  );
+
+  return db.prepare('SELECT * FROM file_revisions WHERE id = ?').get(id);
+}
+
+/**
+ * List a file's revisions oldest-first (a file is identified by scope + id,
+ * since ids are only unique within their scope's table).
+ * @param {string} scope - FileStore kind
+ * @param {string} fileId - row id in the matching *_files table
+ * @returns {Array} Array of file_revisions records
+ */
+function listFileRevisions(scope, fileId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM file_revisions WHERE scope = ? AND file_id = ? ORDER BY created_at ASC
+  `).all(scope, fileId);
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
@@ -1520,4 +1575,8 @@ module.exports = {
   getConversationFileByName,
   updateConversationFileContent,
   deleteConversationFile,
+
+  // File Revisions (File Collaboration, FC-02 — change log)
+  addFileRevision,
+  listFileRevisions,
 };

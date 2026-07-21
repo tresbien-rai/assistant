@@ -175,6 +175,34 @@ CREATE TABLE IF NOT EXISTS conversation_files (
 
 CREATE INDEX IF NOT EXISTS idx_conversation_files_conversation_id ON conversation_files(conversation_id);
 
+-- File revisions (File Collaboration, FC-02): an append-only change log across
+-- every file scope. Each create_file / edit_file / user panel Save appends one
+-- row with a bounded unified diff, who made it, and the message/turn it belongs
+-- to. Feeds the change history the user browses AND (FC-03) the diff injected
+-- alongside the active file. New table => created on boot; no migration needed.
+--
+-- `scope` is the FileStore kind ('conversation'|'project'|'workspace'|'downloads');
+-- `file_id` is the row id in the matching *_files table. There is no single FK
+-- for file_id (it spans four tables), but `conversation_id` carries an FK so a
+-- deleted chat's revisions cascade away — it is nullable for future
+-- (FC-04) panel edits made outside any chat, which simply won't cascade.
+CREATE TABLE IF NOT EXISTS file_revisions (
+    id              TEXT PRIMARY KEY,
+    scope           TEXT NOT NULL,
+    file_id         TEXT NOT NULL,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id      TEXT,
+    author          TEXT NOT NULL,      -- 'model' | 'user'
+    op              TEXT NOT NULL,      -- 'create' | 'overwrite' | 'edit'
+    diff            TEXT DEFAULT '',    -- bounded unified diff (old -> new)
+    size_bytes      INTEGER DEFAULT 0,
+    drive_file_id   TEXT DEFAULT '',
+    created_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_revisions_file ON file_revisions(scope, file_id);
+CREATE INDEX IF NOT EXISTS idx_file_revisions_conversation_id ON file_revisions(conversation_id);
+
 -- Settings table
 -- Per-user application settings
 CREATE TABLE IF NOT EXISTS settings (

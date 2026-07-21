@@ -489,7 +489,12 @@ router.put('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
 
   const auth = drive.getAuthForUser(req.user.userId);
   const store = resolveFileStore({ userId: req.user.userId, conversationId: req.params.id });
-  const result = await saveTextOverFile(auth, store, file, req.body?.content, req.user.userId);
+  // Log this as a user-authored revision in the chat (FC-02) so the model sees
+  // the diff of what the user changed on its next turn.
+  const result = await saveTextOverFile(
+    auth, store, file, req.body?.content, req.user.userId,
+    { conversationId: req.params.id }
+  );
   if (!result.ok) {
     throw AppError.validation(result.reason);
   }

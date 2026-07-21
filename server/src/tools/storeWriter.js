@@ -20,19 +20,64 @@
 const path = require('node:path');
 
 const config = require('../config');
+const dal = require('../db/dal');
 const drive = require('../utils/drive');
 const { isTextAuthorableExtension } = require('../utils/fileUploads');
+const { unifiedDiff } = require('../utils/diff');
 const { logger } = require('../utils/logger');
+
+/**
+ * Append a file_revisions row for a write, best-effort (File Collaboration,
+ * FC-02). The diff is computed from `revision.oldText` (the caller passes it
+ * when it already has the prior content — edit_file does; create_file passes ''
+ * so a new file reads as all-additions). Op precedence: an explicit
+ * `revision.op` wins; otherwise a same-name overwrite is 'overwrite' and a fresh
+ * write is 'create'. A logging failure must NEVER break the write, so this
+ * swallows its own errors.
+ * @param {Object} params
+ * @param {Object} params.store - the FileStore written to (kind + row id)
+ * @param {Object} params.record - the *_files row that was written
+ * @param {Buffer} params.bytes - the bytes written (UTF-8 text)
+ * @param {boolean} params.overwritten - whether a same-name row was repointed
+ * @param {Object} params.revision - { author, op?, conversationId?, messageId?, oldText? }
+ */
+function recordRevision({ store, record, bytes, overwritten, revision }) {
+  try {
+    const op = revision.op || (overwritten ? 'overwrite' : 'create');
+    const diff = unifiedDiff(revision.oldText || '', bytes.toString('utf8'), {
+      maxChars: config.projectFiles.revisionDiffMaxChars,
+    });
+    dal.addFileRevision({
+      scope: store.kind,
+      fileId: record.id,
+      conversationId: revision.conversationId || null,
+      messageId: revision.messageId || null,
+      author: revision.author,
+      op,
+      diff,
+      sizeBytes: bytes.length,
+      driveFileId: record.drive_file_id,
+    });
+  } catch (err) {
+    logger.warn({ fileId: record?.id, msg: err.message }, 'Failed to record file revision; write itself succeeded');
+  }
+}
 
 /**
  * Write text content into a store under a filename, overwriting any existing
  * same-name file.
  * @param {Object} auth - Drive auth for the user
  * @param {Object} store - FileStore (resolveFileStore / resolveReadStores)
- * @param {{filename: string, mimeType: string, bytes: Buffer, userId: string}} params
+ * @param {Object} params
+ * @param {string} params.filename
+ * @param {string} params.mimeType
+ * @param {Buffer} params.bytes
+ * @param {string} params.userId
+ * @param {Object} [params.revision] - when set, append a file_revisions row
+ *   (FC-02): { author, op?, conversationId?, messageId?, oldText? }
  * @returns {Promise<{record: Object, overwritten: boolean}>}
  */
-async function writeContentToStore(auth, store, { filename, mimeType, bytes, userId }) {
+async function writeContentToStore(auth, store, { filename, mimeType, bytes, userId, revision }) {
   // Safety net: callers pre-check with friendlier wording, but the shared
   // write path is where the cap must actually hold — a future writer that
   // skips its own check still can't upload past the limit.
@@ -78,6 +123,8 @@ async function writeContentToStore(auth, store, { filename, mimeType, bytes, use
     });
   }
 
+  if (revision) recordRevision({ store, record, bytes, overwritten, revision });
+
   return { record, overwritten };
 }
 
@@ -95,12 +142,14 @@ async function writeContentToStore(auth, store, { filename, mimeType, bytes, use
  *
  * @param {Object} auth - Drive auth for the user
  * @param {Object} store - FileStore for the container the row lives in
- * @param {Object} file - the existing file row (project/workspace/user_files)
+ * @param {Object} file - the existing file row (conversation/project/workspace/user_files)
  * @param {*} content - user-supplied replacement text
  * @param {string} userId
+ * @param {Object} [revisionMeta] - when it carries a conversationId, log a
+ *   user-authored file_revisions row for this save (FC-02): { conversationId, messageId? }
  * @returns {Promise<{ok: true, record: Object} | {ok: false, reason: string}>}
  */
-async function saveTextOverFile(auth, store, file, content, userId) {
+async function saveTextOverFile(auth, store, file, content, userId, revisionMeta = null) {
   if (typeof content !== 'string') {
     return { ok: false, reason: 'content must be a string of the complete file text.' };
   }
@@ -114,11 +163,38 @@ async function saveTextOverFile(auth, store, file, content, userId) {
     return { ok: false, reason: `Content is too large (limit ${mb}MB).` };
   }
 
+  // A user save is a first-class change (FC-02 decision 7): capture the prior
+  // content so the revision carries a real old→new diff the model will see.
+  // Best-effort — a failed download degrades to an all-additions diff, never a
+  // failed save. Only logged when the save happens in a chat (conversationId).
+  let revision;
+  if (revisionMeta && revisionMeta.conversationId) {
+    let oldText = '';
+    if (file.drive_file_id) {
+      try {
+        // Read via downloadFileBytes (same entry the read/context path uses) so
+        // the prior content is captured for the diff.
+        const priorBytes = await drive.downloadFileBytes(auth, file.drive_file_id);
+        oldText = priorBytes.toString('utf8');
+      } catch (err) {
+        logger.warn({ userId, fileId: file.id, msg: err.message }, 'Could not read prior content for revision diff');
+      }
+    }
+    revision = {
+      author: 'user',
+      op: 'edit',
+      conversationId: revisionMeta.conversationId,
+      messageId: revisionMeta.messageId || null,
+      oldText,
+    };
+  }
+
   const { record } = await writeContentToStore(auth, store, {
     filename: file.filename,
     mimeType: file.mime_type || 'text/plain',
     bytes,
     userId,
+    revision,
   });
 
   logger.info(

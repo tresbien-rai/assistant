@@ -20,6 +20,17 @@ hierarchy this layers onto).
 > passing: project/workspace file **save** endpoints already exist
 > (`routes/projects.js`, `routes/workspaces.js`), so FC-04 is only the FilePanel
 > open-from-list wiring + History, not new save routes.
+>
+> **FC-02 ✅ built** (revision log): `file_revisions` table (conversation_id FK
+> ON DELETE CASCADE, so a deleted chat's revisions clean up), `utils/diff.js`
+> (dependency-free bounded unified diff), and revision recording funnelled
+> through `storeWriter` — create_file logs create/overwrite, edit_file logs a
+> real old→new edit diff for free, and conversation-file panel Saves log a
+> user-authored edit (prior content fetched for the diff). Best-effort: a
+> logging failure never breaks the write. New `test-revisions.js` (185 assertions
+> total, green). User saves on project/workspace/Downloads files stay unlogged
+> until FC-04 threads a conversationId (revision recording is gated on chat
+> context).
 
 ---
 
@@ -199,7 +210,7 @@ column precedent in `settings`).
 - Tests: create in each chat type → lands in `conversation_files`; read/edit
   still resolve inherited project/workspace files; existing Track A tests green.
 
-### FC-02 — Revision log (foundation)
+### FC-02 — Revision log (foundation) ✅ DONE
 - `file_revisions` table + DAL (`addRevision`, `listRevisions(scope, fileId)`).
 - Unified-diff helper (bounded output; for oversized files store a truncated
   diff + a note rather than the whole thing).
