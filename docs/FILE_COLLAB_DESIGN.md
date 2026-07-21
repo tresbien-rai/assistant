@@ -39,9 +39,15 @@ hierarchy this layers onto).
 > alone. Applied to all three endpoints (`/`, `/stream`, `/preview`). Verified
 > against the real Anthropic + Gemini body builders (system=persona; messages
 > user→assistant→user). test-context.js updated; suite 190 assertions green.
-> **FC-03b (next):** recency-scoped active-file + latest-diff injection at the
-> tail of the messages, turn stamping (file_revisions), and the Advanced
-> `activeFileTurns` setting (default 1) with UI.
+> **FC-03b ✅ built** (active-file injection + setting): `file_revisions.turn`
+> (migration 005) stamped with the user-message count at write time; a new
+> `utils/activeFiles.js` injects each conversation-scoped file touched within the
+> window (full current content + latest diff) onto the LAST user message, gated
+> by the `activeFileTurns` setting (migration 006, default 1, 0 disables). Wired
+> through all three endpoints via a shared `assembleChatRequest`. Frontend: a
+> "Files in Context" settings section (server-backed) — verified in the browser
+> (input → PUT → server round-trips the value). New `test-activefiles.js`; suite
+> 206 assertions green. **FC-03 COMPLETE. Next: FC-04.**
 
 ---
 
@@ -237,7 +243,7 @@ column precedent in `settings`).
   JSON, SSE, and preview endpoints. Verified against the Anthropic + Gemini body
   builders; test-context.js covers the new assembly.
 
-### FC-03b — Live injection + Advanced setting
+### FC-03b — Live injection + Advanced setting ✅ DONE
 - `active_file_turns` setting (migration, DAL, `settings.js` route,
   `api-client.js`, Advanced sub-group in the settings UI, default 1).
 - Turn accounting + `last_touched` stamping (derive-from-revisions decision).

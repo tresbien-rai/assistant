@@ -152,7 +152,7 @@ async function executeEditFile(input, ctx) {
     userId: ctx.userId,
     // edit_file already downloaded the prior content, so the revision (FC-02)
     // carries a real old→new diff for free — no extra Drive read.
-    revision: { author: 'model', op: 'edit', conversationId: ctx.conversationId || null, oldText: content },
+    revision: { author: 'model', op: 'edit', conversationId: ctx.conversationId || null, oldText: content, turn: ctx.turnOrdinal },
   });
 
   const url = hit.store.urlFor(record.id);

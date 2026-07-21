@@ -144,7 +144,7 @@ async function executeCreateFile(input, ctx) {
     mimeType,
     bytes,
     userId: ctx.userId,
-    revision: { author: 'model', conversationId: ctx.conversationId || null },
+    revision: { author: 'model', conversationId: ctx.conversationId || null, turn: ctx.turnOrdinal },
   });
 
   const url = store.urlFor(record.id);
