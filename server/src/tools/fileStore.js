@@ -40,6 +40,7 @@ function projectStore(ctx) {
     add: (data) => dal.addProjectFile(projectId, data),
     updateContent: (fileId, data) => dal.updateProjectFileContent(fileId, projectId, data),
     remove: (fileId) => dal.deleteProjectFile(fileId, projectId),
+    get: (fileId) => dal.getProjectFile(fileId, projectId),
     urlFor: (fileId) => `/api/projects/${projectId}/files/${fileId}/content`,
   };
 }
@@ -55,6 +56,7 @@ function workspaceStore(ctx) {
     add: (data) => dal.addWorkspaceFile(workspaceId, data),
     updateContent: (fileId, data) => dal.updateWorkspaceFileContent(fileId, workspaceId, data),
     remove: (fileId) => dal.deleteWorkspaceFile(fileId, workspaceId),
+    get: (fileId) => dal.getWorkspaceFile(fileId, workspaceId),
     urlFor: (fileId) => `/api/workspaces/${workspaceId}/files/${fileId}/content`,
   };
 }
@@ -70,6 +72,7 @@ function downloadsStore(ctx) {
     add: (data) => dal.addUserFile(userId, data),
     updateContent: (fileId, data) => dal.updateUserFileContent(fileId, userId, data),
     remove: (fileId) => dal.deleteUserFile(fileId, userId),
+    get: (fileId) => dal.getUserFile(fileId, userId),
     urlFor: (fileId) => `/api/files/${fileId}/content`,
   };
 }
@@ -85,6 +88,7 @@ function conversationStore(ctx) {
     add: (data) => dal.addConversationFile(conversationId, data),
     updateContent: (fileId, data) => dal.updateConversationFileContent(fileId, conversationId, data),
     remove: (fileId) => dal.deleteConversationFile(fileId, conversationId),
+    get: (fileId) => dal.getConversationFile(fileId, conversationId),
     urlFor: (fileId) => `/api/conversations/${conversationId}/files/${fileId}/content`,
   };
 }

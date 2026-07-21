@@ -295,9 +295,30 @@ column precedent in `settings`).
   existing "any file-producing tool gets a card" path renders it. New
   `test-movefile.js`; suite 215 assertions green.
 
-### FC-06 — Rich diff renderer (deferred, nice-to-have)
-- Human-facing visual diff in the FilePanel History: changed-line highlighting,
-  hover/click to see the before/after of a hunk.
+### FC-06a — Snapshot foundation + re-roll file integrity ✅ DONE
+Surfaced while planning FC-06: re-rolling/regenerating a turn that edited a file
+left the file mutated on Drive (an active bug — `rerunFromMessage` deleted
+messages but never touched files), so the re-run ran against the wrong content.
+Fix + foundation for versions:
+- `file_revisions.content` (migration 007): a full-text snapshot per revision,
+  kept for the most recent N (`revisionSnapshotKeep`, default 10) per file and
+  skipped above `revisionSnapshotMaxBytes` (256 KB); pruned on each write.
+- `tools/revertFiles.js` + `POST /api/conversations/:id/files/revert`: keyed on
+  the FC-03b `turn` stamp, undo model-authored revisions with `turn >= fromTurn`
+  — restore the pre-turn snapshot, or delete files created in the undone span —
+  then drop the undone revisions. Model-only (user panel edits preserved);
+  restores write WITHOUT logging a revision; a missing snapshot / Drive-less
+  degrades to a warning, never a wrong result.
+- Frontend: `rerunFromMessage` computes the re-rolled turn and calls the revert
+  endpoint before truncating + resending; warnings surface as a toast.
+- Stores gained `get(fileId)`. New `test-revertfiles.js` (8 scenarios); suite
+  223 assertions green; endpoint contract smoke-tested in-browser.
+
+### FC-06b — Rich diff renderer (next, nice-to-have)
+- Version-centric History viewer built on the FC-06a snapshots: version chips/
+  rail + a detail pane showing a version's diff or a two-version compare, with
+  word-level intra-line highlighting, "editorial minimal" styling, and
+  restore-to-version. (Was FC-06; snapshots now make versions first-class.)
 
 ### Later — search & additional tools (separate plan)
 - `search_files` and the broader tool family get their own design pass; out of

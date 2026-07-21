@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node src/db/test-migration.js && node src/db/test-dal.js && node src/routes/test-context.js && node src/providers/test-tools.js && node src/routes/test-toolloop.js && node src/tools/test-createfile.js && node src/tools/test-readfiles.js && node src/tools/test-editfile.js && node src/tools/test-filesave.js && node src/tools/test-revisions.js && node src/tools/test-convdelete.js && node src/utils/test-activefiles.js && node src/tools/test-movefile.js",
+    "test": "node src/db/test-migration.js && node src/db/test-dal.js && node src/routes/test-context.js && node src/providers/test-tools.js && node src/routes/test-toolloop.js && node src/tools/test-createfile.js && node src/tools/test-readfiles.js && node src/tools/test-editfile.js && node src/tools/test-filesave.js && node src/tools/test-revisions.js && node src/tools/test-convdelete.js && node src/utils/test-activefiles.js && node src/tools/test-movefile.js && node src/tools/test-revertfiles.js",
     "test:dal": "node src/db/test-dal.js",
     "test:migration": "node src/db/test-migration.js",
     "test:context": "node src/routes/test-context.js",

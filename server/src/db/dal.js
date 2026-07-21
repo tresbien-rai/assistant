@@ -1463,22 +1463,92 @@ function deleteConversationFile(fileId, conversationId) {
  * @param {number} [data.turn] - conversation turn (user-msg count) at write time (FC-03b)
  * @returns {Object} The created file_revisions record
  */
-function addFileRevision({ scope, fileId, conversationId, messageId, author, op, diff, sizeBytes, driveFileId, turn }) {
+function addFileRevision({ scope, fileId, conversationId, messageId, author, op, diff, sizeBytes, driveFileId, turn, content }) {
   const db = getDb();
   const id = generateId();
   const timestamp = now();
 
   db.prepare(`
     INSERT INTO file_revisions
-      (id, scope, file_id, conversation_id, message_id, author, op, diff, size_bytes, drive_file_id, turn, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, scope, file_id, conversation_id, message_id, author, op, diff, size_bytes, drive_file_id, turn, content, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, scope, fileId, conversationId || null, messageId || null,
     author, op, diff || '', sizeBytes || 0, driveFileId || '',
-    turn == null ? null : turn, timestamp
+    turn == null ? null : turn, content == null ? null : content, timestamp
   );
 
   return db.prepare('SELECT * FROM file_revisions WHERE id = ?').get(id);
+}
+
+/**
+ * Keep full-text snapshots only for the most recent `keep` revisions of a file
+ * (File Collaboration, FC-06a); null out `content` on older ones so stored
+ * snapshots stay bounded. The diff + metadata of pruned revisions is retained.
+ * @param {string} scope
+ * @param {string} fileId
+ * @param {number} keep
+ */
+function pruneRevisionSnapshots(scope, fileId, keep) {
+  const db = getDb();
+  db.prepare(`
+    UPDATE file_revisions SET content = NULL
+    WHERE scope = ? AND file_id = ? AND content IS NOT NULL
+      AND id NOT IN (
+        SELECT id FROM file_revisions
+        WHERE scope = ? AND file_id = ?
+        ORDER BY created_at DESC, rowid DESC LIMIT ?
+      )
+  `).run(scope, fileId, scope, fileId, keep);
+}
+
+/**
+ * Model-authored revisions in a conversation at or after a turn (File
+ * Collaboration, FC-06a) — the file changes to undo when that turn is
+ * re-rolled. Newest first.
+ * @param {string} conversationId
+ * @param {number} fromTurn
+ * @returns {Array}
+ */
+function listModelRevisionsFromTurn(conversationId, fromTurn) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM file_revisions
+    WHERE conversation_id = ? AND author = 'model' AND turn IS NOT NULL AND turn >= ?
+    ORDER BY created_at DESC
+  `).all(conversationId, fromTurn);
+}
+
+/**
+ * The newest revision of a file strictly BEFORE a turn that still has a content
+ * snapshot — the state to roll a file back to (File Collaboration, FC-06a).
+ * @param {string} scope
+ * @param {string} fileId
+ * @param {number} turn
+ * @returns {Object|undefined}
+ */
+function getSnapshotBeforeTurn(scope, fileId, turn) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM file_revisions
+    WHERE scope = ? AND file_id = ? AND content IS NOT NULL AND turn IS NOT NULL AND turn < ?
+    ORDER BY created_at DESC, rowid DESC LIMIT 1
+  `).get(scope, fileId, turn);
+}
+
+/**
+ * Delete a file's revisions at or after a turn (File Collaboration, FC-06a):
+ * used after a re-roll rolls the file back, to drop the undone history.
+ * @param {string} scope
+ * @param {string} fileId
+ * @param {number} fromTurn
+ * @returns {number} rows deleted
+ */
+function deleteRevisionsFromTurn(scope, fileId, fromTurn) {
+  const db = getDb();
+  return db.prepare(
+    'DELETE FROM file_revisions WHERE scope = ? AND file_id = ? AND turn IS NOT NULL AND turn >= ?'
+  ).run(scope, fileId, fromTurn).changes;
 }
 
 /**
@@ -1639,4 +1709,9 @@ module.exports = {
   listConversationFileRevisions,
   countUserMessages,
   deleteFileRevisions,
+  // Snapshots + re-roll rollback (FC-06a)
+  pruneRevisionSnapshots,
+  listModelRevisionsFromTurn,
+  getSnapshotBeforeTurn,
+  deleteRevisionsFromTurn,
 };

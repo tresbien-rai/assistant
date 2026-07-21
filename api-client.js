@@ -334,6 +334,13 @@
       delete(id) {
         return request('DELETE', `/api/conversations/${encodeURIComponent(id)}`);
       },
+      /**
+       * Roll back model-authored file changes at/after a turn (FC-06a), before
+       * re-rolling that turn. Returns { reverted, deleted, warnings }.
+       */
+      revertFiles(id, fromTurn) {
+        return request('POST', `/api/conversations/${encodeURIComponent(id)}/files/revert`, { body: { fromTurn } });
+      },
     },
 
     // -------------------------------------------------------------------------

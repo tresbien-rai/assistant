@@ -65,6 +65,12 @@ const config = {
     // tight because FC-03 injects the latest diff into the prompt; oversized
     // diffs are truncated with a note. ~20k chars ≈ ~5k tokens.
     revisionDiffMaxChars: parseInt(process.env.REVISION_DIFF_MAX_CHARS, 10) || 20000,
+    // Full-text snapshots per revision (File Collaboration, FC-06a): how many of
+    // the most recent revisions per file keep their content (older ones prune to
+    // NULL), and the per-file size above which no snapshot is stored (diff-only).
+    // Snapshots power re-roll rollback + version compare/restore.
+    revisionSnapshotKeep: parseInt(process.env.REVISION_SNAPSHOT_KEEP, 10) || 10,
+    revisionSnapshotMaxBytes: parseInt(process.env.REVISION_SNAPSHOT_MAX_BYTES, 10) || 256 * 1024,
     // Accepted file extensions: text/code + PDF (Phase 1 decision #2). Lowercase,
     // leading dot. Anything else is rejected on upload. Extension is the reliable
     // signal here because browsers send inconsistent MIME types for source files.

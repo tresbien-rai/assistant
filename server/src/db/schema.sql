@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS file_revisions (
     size_bytes      INTEGER DEFAULT 0,
     drive_file_id   TEXT DEFAULT '',
     turn            INTEGER,            -- conversation turn (user-msg count) at write time (FC-03b)
+    content         TEXT,               -- full-text snapshot as of this revision, last N kept (FC-06a)
     created_at      INTEGER NOT NULL
 );
 
