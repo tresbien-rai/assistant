@@ -4802,8 +4802,11 @@ body {
 pre.file-panel-diff {
     margin: 0;
     padding: 8px 10px;
-    overflow-x: auto;
-    white-space: pre;
+    /* Wrap by default — long diff lines flow to the next line rather than
+       scrolling sideways (UI principle: content wraps, only vertical scroll). */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     line-height: 1.5;

@@ -210,6 +210,13 @@ All styles in styles.css. CSS variables at top:
 - `--bg-primary/secondary/tertiary`: Background shades
 - `--avatar-small/medium/large/xlarge`: Avatar sizes
 
+**UI principle — content wraps by default.** Text content should wrap and scroll
+only vertically; avoid horizontal scrollbars. Prefer `white-space: pre-wrap` +
+`overflow-wrap: anywhere` over `white-space: pre` + `overflow-x: auto` for code,
+diffs, and other long-line content. The rare exception is content that genuinely
+can't wrap (e.g. a wide data table); confine that scroll to the element itself,
+never the page/panel.
+
 ## Development Commands
 
 ```bash
