@@ -368,6 +368,15 @@
       saveText(contentUrl, content) {
         return request('PUT', contentUrl, { body: { content } });
       },
+      /**
+       * Fetch a file's change history (FC-04). Takes the file's content URL and
+       * swaps the trailing /content for /revisions — works for every scope
+       * (conversation/project/workspace/Downloads). Returns
+       * [{ id, author, op, diff, sizeBytes, turn, createdAt }] oldest-first.
+       */
+      revisions(contentUrl) {
+        return request('GET', contentUrl.replace(/\/content$/, '/revisions'));
+      },
     },
 
     // -------------------------------------------------------------------------

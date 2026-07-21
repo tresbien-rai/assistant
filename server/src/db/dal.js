@@ -1496,6 +1496,19 @@ function listFileRevisions(scope, fileId) {
 }
 
 /**
+ * Delete all revisions for a file (File Collaboration, FC-04). Called when a
+ * file is deleted from a scope with no cascading FK (project/workspace/user
+ * files, and any null-conversation revisions), so the log doesn't orphan.
+ * @param {string} scope
+ * @param {string} fileId
+ * @returns {number} rows deleted
+ */
+function deleteFileRevisions(scope, fileId) {
+  const db = getDb();
+  return db.prepare('DELETE FROM file_revisions WHERE scope = ? AND file_id = ?').run(scope, fileId).changes;
+}
+
+/**
  * Conversation-scoped revisions for a chat, newest first (File Collaboration,
  * FC-03b). The active-file injection uses these to find files touched recently
  * (dedupes to the latest per file and filters by the turn window). Limited to
@@ -1625,4 +1638,5 @@ module.exports = {
   listFileRevisions,
   listConversationFileRevisions,
   countUserMessages,
+  deleteFileRevisions,
 };

@@ -165,11 +165,13 @@ async function saveTextOverFile(auth, store, file, content, userId, revisionMeta
   }
 
   // A user save is a first-class change (FC-02 decision 7): capture the prior
-  // content so the revision carries a real old→new diff the model will see.
-  // Best-effort — a failed download degrades to an all-additions diff, never a
-  // failed save. Only logged when the save happens in a chat (conversationId).
+  // content so the revision carries a real old→new diff. Best-effort — a failed
+  // download degrades to an all-additions diff, never a failed save. Logged
+  // whenever the caller opts in with a revisionMeta: chat saves pass a
+  // conversationId + turn (so FC-03b injection sees them); project/workspace/
+  // Downloads list-edits (FC-04) pass an empty meta and log with a null chat.
   let revision;
-  if (revisionMeta && revisionMeta.conversationId) {
+  if (revisionMeta) {
     let oldText = '';
     if (file.drive_file_id) {
       try {
@@ -184,7 +186,7 @@ async function saveTextOverFile(auth, store, file, content, userId, revisionMeta
     revision = {
       author: 'user',
       op: 'edit',
-      conversationId: revisionMeta.conversationId,
+      conversationId: revisionMeta.conversationId || null,
       messageId: revisionMeta.messageId || null,
       turn: revisionMeta.turn == null ? null : revisionMeta.turn,
       oldText,

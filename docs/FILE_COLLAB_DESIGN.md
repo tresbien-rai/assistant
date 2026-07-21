@@ -47,7 +47,22 @@ hierarchy this layers onto).
 > through all three endpoints via a shared `assembleChatRequest`. Frontend: a
 > "Files in Context" settings section (server-backed) — verified in the browser
 > (input → PUT → server round-trips the value). New `test-activefiles.js`; suite
-> 206 assertions green. **FC-03 COMPLETE. Next: FC-04.**
+> 206 assertions green. **FC-03 COMPLETE.**
+>
+> **FC-04 ✅ built** (panel from lists + History): the FilePanel gained a
+> `standalone` mode (`openStandalone`) so a text file opens from the
+> project/workspace file lists (not just chat), decoupled from conversation
+> plumbing and dismissed on navigation; a History toggle fetches `/revisions`
+> (new GET endpoints on every scope, derived from the content URL) and renders
+> the change log newest-first with a colorized diff per entry. User list-edits
+> are now logged too (revision recording ungated from requiring a chat;
+> project/workspace/Downloads saves log a null-conversation user revision), with
+> `deleteFileRevisions` cleanup on delete for the non-cascading scopes. New
+> `test-revisions.js` §9; suite 207 green; frontend verified in-browser
+> (list→panel→History→toggle→dismiss). **FC-03 + FC-04 done → the File
+> Collaboration plan is COMPLETE.** Remaining items are the deferred FC-05
+> (move/promote tool), FC-06 (rich diff renderer), and the separate search-tool
+> plan.
 
 ---
 
@@ -254,7 +269,7 @@ column precedent in `settings`).
   after; two files edited in one turn both appear; KB no longer in `system`;
   synthetic turns never persist to `messages`.
 
-### FC-04 — FilePanel for project/workspace files + user revisions
+### FC-04 — FilePanel for project/workspace files + user revisions ✅ DONE
 - Open the existing FilePanel from the project/workspace **file lists** (not
   just chat surfaces).
 - Save endpoints for the other two scopes: `PUT /api/projects/:pid/files/:fid/

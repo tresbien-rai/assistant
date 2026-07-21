@@ -39,6 +39,7 @@ const realDrive = { ...drive };
 function installDriveMock() {
   drive.getAuthForUser = () => ({ mock: true });
   drive.ensureConversationFolder = async () => 'folder_conversation';
+  drive.ensureProjectFolderId = async () => 'folder_project';
   drive.uploadFile = async (auth, { name, data }) => {
     const id = `drive_${++uploadSeq}`;
     contents.set(id, Buffer.isBuffer(data) ? data.toString('utf8') : String(data));
@@ -175,6 +176,31 @@ function restoreDrive() {
       const big = Array.from({ length: 6000 }, (_, i) => `line ${i}`).join('\n');
       const out = unifiedDiff('', big, { maxChars: 20000 });
       assert.match(out, /diff omitted — file too large/);
+    });
+
+    console.log('\n9. FC-04: a project list-edit logs a user revision + delete cleans up...');
+    await check('user save on a project file (no chat) logs a null-conversation user revision', async () => {
+      const workspace = dal.createWorkspace(userId, { name: 'WS', instructions: '' });
+      const project = dal.createProject(userId, { workspaceId: workspace.id, name: 'PROJ', instructions: '' });
+      const pstore = resolveFileStore({ userId, project, workspace: null });
+      contents.set('seed_proj', 'original text');
+      const prow = pstore.add({ filename: 'spec.md', mimeType: 'text/markdown', sizeBytes: 13, driveFileId: 'seed_proj' });
+
+      const res = await saveTextOverFile(drive.getAuthForUser(userId), pstore, prow, 'edited by hand', userId, {});
+      assert.strictEqual(res.ok, true, res.reason);
+
+      const revs = dal.listFileRevisions('project', prow.id);
+      assert.strictEqual(revs.length, 1, 'one project revision');
+      assert.strictEqual(revs[0].author, 'user');
+      assert.strictEqual(revs[0].op, 'edit');
+      assert.strictEqual(revs[0].conversation_id, null, 'no chat context → null conversation');
+      assert.match(revs[0].diff, /-original text/);
+      assert.match(revs[0].diff, /\+edited by hand/);
+
+      // FC-04 cleanup: this scope has no cascade, so delete removes revisions.
+      const removed = dal.deleteFileRevisions('project', prow.id);
+      assert.strictEqual(removed, 1);
+      assert.strictEqual(dal.listFileRevisions('project', prow.id).length, 0);
     });
 
   } catch (err) {
