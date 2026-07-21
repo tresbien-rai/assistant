@@ -43,7 +43,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
 const { resolveFileStore } = require('../tools/fileStore');
-const { saveTextOverFile } = require('../tools/storeWriter');
+const { saveTextOverFile, restoreFileRevision } = require('../tools/storeWriter');
 const { formatFileRevision } = require('../utils/format');
 
 const router = express.Router();
@@ -332,6 +332,26 @@ router.get('/:id/files/:fileId/revisions', asyncHandler(async (req, res) => {
   }
   const revisions = dal.listFileRevisions('workspace', req.params.fileId);
   res.json(revisions.map(formatFileRevision));
+}));
+
+/**
+ * POST /api/workspaces/:id/files/:fileId/revisions/:revId/restore
+ * Restore a workspace file to a stored version (File Collaboration, FC-06b).
+ */
+router.post('/:id/files/:fileId/revisions/:revId/restore', asyncHandler(async (req, res) => {
+  const workspace = requireWorkspace(req.params.id, req.user.userId);
+  const file = dal.getWorkspaceFile(req.params.fileId, req.params.id);
+  if (!file || !file.drive_file_id) {
+    throw AppError.notFound('File');
+  }
+  const auth = drive.getAuthForUser(req.user.userId);
+  const store = resolveFileStore({ userId: req.user.userId, project: null, workspace });
+  const result = await restoreFileRevision(auth, store, file, req.params.revId, req.user.userId, {});
+  if (!result.ok) {
+    if (result.notFound) throw AppError.notFound('Revision');
+    throw AppError.validation(result.reason);
+  }
+  res.json(formatWorkspaceFile(result.record));
 }));
 
 /**

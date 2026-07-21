@@ -314,11 +314,27 @@ Fix + foundation for versions:
 - Stores gained `get(fileId)`. New `test-revertfiles.js` (8 scenarios); suite
   223 assertions green; endpoint contract smoke-tested in-browser.
 
-### FC-06b — Rich diff renderer (next, nice-to-have)
-- Version-centric History viewer built on the FC-06a snapshots: version chips/
-  rail + a detail pane showing a version's diff or a two-version compare, with
-  word-level intra-line highlighting, "editorial minimal" styling, and
-  restore-to-version. (Was FC-06; snapshots now make versions first-class.)
+### FC-06b — Version viewer + restore ✅ DONE
+Version-centric History viewer built on the FC-06a snapshots:
+- Frontend (app.js/styles.css): the History view is now a **version rail**
+  (newest first, with author/op/relative-time and +N/−M stats, a "current"
+  badge) + a **detail pane** rendering the selected version's diff in the
+  **editorial-minimal** style with **word-level intra-line highlighting**
+  (token-LCS pairs − / + lines and marks exactly the changed words). A
+  **Restore this version** button on non-current versions that still have a
+  snapshot. All from the existing `/revisions` data — no diff sent as HTML.
+- Backend: `hasSnapshot` added to the revisions response; a shared
+  `restoreFileRevision` (writes the snapshot back as a NEW revision — history
+  stays append-only) behind `POST .../files/:id/revisions/:revId/restore` on
+  every scope; `dal.getFileRevisionById`.
+- Verified in-browser (rail, selection, current badge, restore visibility,
+  word-level highlights all correct); `test-revisions.js` §10 covers restore;
+  suite 224 assertions green.
+- **Deferred (FC-06c, optional):** arbitrary two-version compare (the piece that
+  needs a new compare endpoint / client diff). Per-version diffs + restore ship
+  now.
+
+**File Collaboration is complete: FC-01…06 all built & merged.**
 
 ### Later — search & additional tools (separate plan)
 - `search_files` and the broader tool family get their own design pass; out of

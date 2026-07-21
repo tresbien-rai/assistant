@@ -4775,46 +4775,110 @@ body {
     padding: 32px 16px;
 }
 
-/* Change history (FC-04) */
-.file-panel-history {
+/* Version history viewer (FC-06b): a version rail on top, the selected
+   version's rich diff below. Editorial-minimal — a thin colored edge per
+   changed line + word-level highlights, keyed to theme variables. */
+.fp-history {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
 }
-.history-item {
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    overflow: hidden;
-    background: var(--bg-primary);
-}
-.history-meta {
+.fp-versions {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 8px 10px;
-    font-size: var(--text-xs);
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
+    flex-direction: column;
+    gap: 4px;
+    flex: 0 0 auto;
+    max-height: 40%;
+    overflow-y: auto;
 }
-.history-who { font-weight: 600; color: var(--text-primary); }
-.history-op { color: var(--accent); text-transform: capitalize; }
-.history-when { margin-left: auto; color: var(--text-secondary); }
-pre.file-panel-diff {
-    margin: 0;
-    padding: 8px 10px;
-    /* Wrap by default — long diff lines flow to the next line rather than
-       scrolling sideways (UI principle: content wraps, only vertical scroll). */
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
+.fp-version {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    text-align: left;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: var(--text-xs);
+}
+.fp-version:hover { background: var(--bg-tertiary); }
+.fp-version.is-selected {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.fp-version-line { display: flex; align-items: baseline; gap: 6px; }
+.fp-version-who { font-weight: 600; }
+.fp-version-op { color: var(--accent); text-transform: capitalize; }
+.fp-version-current {
+    margin-left: auto;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0 4px;
+}
+.fp-version-sub { justify-content: space-between; color: var(--text-secondary); }
+.fp-version-stat { display: flex; gap: 6px; font-family: var(--font-mono); }
+.fp-add { color: #3fb950; }
+.fp-del { color: #f85149; }
+
+.fp-detail {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    border-top: 1px solid var(--border-color);
+    padding-top: 10px;
+}
+.fp-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.fp-detail-title { font-size: var(--text-xs); color: var(--text-secondary); }
+.fp-restore-btn {
+    margin-left: auto;
+    font-size: var(--text-xs);
+    padding: 3px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.fp-restore-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Rich diff: one line per row, wraps (UI principle), colored left edge. */
+.fp-rdiff {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    line-height: 1.5;
+    line-height: 1.55;
 }
-pre.file-panel-diff .diff-add { color: #3fb950; }
-pre.file-panel-diff .diff-del { color: #f85149; }
-pre.file-panel-diff .diff-hunk { color: var(--text-secondary); }
-pre.file-panel-diff .diff-ctx { color: var(--text-primary); }
+.fp-rline {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding: 0 6px 0 8px;
+    border-left: 3px solid transparent;
+}
+.fp-rhunk {
+    color: var(--text-secondary);
+    border-left-color: transparent;
+    margin: 6px 0 2px;
+    opacity: 0.8;
+}
+.fp-rctx { color: var(--text-primary); opacity: 0.75; }
+.fp-rdel { border-left-color: #f85149; background: color-mix(in srgb, #f85149 8%, transparent); }
+.fp-radd { border-left-color: #3fb950; background: color-mix(in srgb, #3fb950 8%, transparent); }
+.fp-rdel .fp-tok { background: color-mix(in srgb, #f85149 30%, transparent); border-radius: 2px; }
+.fp-radd .fp-tok { background: color-mix(in srgb, #3fb950 32%, transparent); border-radius: 2px; }
 
 /* Container file list: a text file name opens the panel (FC-04) */
 .project-file-name.clickable { cursor: pointer; }

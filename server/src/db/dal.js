@@ -1566,6 +1566,17 @@ function listFileRevisions(scope, fileId) {
 }
 
 /**
+ * Get a single revision by id (File Collaboration, FC-06b) — used by restore,
+ * which then verifies the revision belongs to the file being restored.
+ * @param {string} id
+ * @returns {Object|undefined}
+ */
+function getFileRevisionById(id) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM file_revisions WHERE id = ?').get(id);
+}
+
+/**
  * Delete all revisions for a file (File Collaboration, FC-04). Called when a
  * file is deleted from a scope with no cascading FK (project/workspace/user
  * files, and any null-conversation revisions), so the log doesn't orphan.
@@ -1714,4 +1725,6 @@ module.exports = {
   listModelRevisionsFromTurn,
   getSnapshotBeforeTurn,
   deleteRevisionsFromTurn,
+  // Version restore (FC-06b)
+  getFileRevisionById,
 };

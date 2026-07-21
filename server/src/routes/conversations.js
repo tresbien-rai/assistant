@@ -22,7 +22,7 @@ const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { resolveFileStore } = require('../tools/fileStore');
-const { saveTextOverFile } = require('../tools/storeWriter');
+const { saveTextOverFile, restoreFileRevision } = require('../tools/storeWriter');
 const { revertConversationFiles } = require('../tools/revertFiles');
 const { formatFileRevision } = require('../utils/format');
 const { trashConversationFiles } = require('../tools/conversationCleanup');
@@ -533,6 +533,25 @@ router.get('/:id/files/:fileId/revisions', asyncHandler(async (req, res) => {
   requireConversationFile(req.user.userId, req.params.id, req.params.fileId);
   const revisions = dal.listFileRevisions('conversation', req.params.fileId);
   res.json(revisions.map(formatFileRevision));
+}));
+
+/**
+ * POST /api/conversations/:id/files/:fileId/revisions/:revId/restore
+ * Restore a chat file to a stored version (File Collaboration, FC-06b).
+ */
+router.post('/:id/files/:fileId/revisions/:revId/restore', asyncHandler(async (req, res) => {
+  const file = requireConversationFile(req.user.userId, req.params.id, req.params.fileId);
+  const auth = drive.getAuthForUser(req.user.userId);
+  const store = resolveFileStore({ userId: req.user.userId, conversationId: req.params.id });
+  const result = await restoreFileRevision(
+    auth, store, file, req.params.revId, req.user.userId,
+    { conversationId: req.params.id, turn: dal.countUserMessages(req.params.id) }
+  );
+  if (!result.ok) {
+    if (result.notFound) throw AppError.notFound('Revision');
+    throw AppError.validation(result.reason);
+  }
+  res.json(formatConversationFile(result.record));
 }));
 
 /**

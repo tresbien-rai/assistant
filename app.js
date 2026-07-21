@@ -6088,6 +6088,143 @@ function buildToolChip(att) {
     return chip;
 }
 
+// ===== Rich diff viewer helpers (FC-06b) =====
+
+/** Compact relative time for version labels: "2m ago", "3h ago", "2d ago". */
+function formatRelativeTime(ms) {
+    const diff = Date.now() - ms;
+    if (diff < 60000) return 'just now';
+    const m = Math.floor(diff / 60000);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    if (d < 7) return `${d}d ago`;
+    return new Date(ms).toLocaleDateString();
+}
+
+/** Count added / deleted lines in a unified diff (hunk headers excluded). */
+function diffStats(diffText) {
+    let adds = 0, dels = 0;
+    if (diffText) {
+        for (const line of diffText.split('\n')) {
+            const c = line.charAt(0);
+            if (c === '+') adds++;
+            else if (c === '-') dels++;
+        }
+    }
+    return { adds, dels };
+}
+
+/** Split a string into word / whitespace / punctuation tokens (for word diff). */
+function tokenizeLine(s) {
+    return s.match(/(\s+|\w+|[^\w\s])/g) || [];
+}
+
+/**
+ * Token-level LCS diff between two strings → { oldParts, newParts }, each a list
+ * of { text, changed } runs. Powers the intra-line word highlighting so the eye
+ * lands on exactly what changed, not just which line changed.
+ */
+function computeWordDiff(oldStr, newStr) {
+    const a = tokenizeLine(oldStr), b = tokenizeLine(newStr);
+    const n = a.length, m = b.length;
+    const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+            dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+    const oldParts = [], newParts = [];
+    const push = (arr, text, changed) => {
+        const last = arr[arr.length - 1];
+        if (last && last.changed === changed) last.text += text;
+        else arr.push({ text, changed });
+    };
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+        if (a[i] === b[j]) { push(oldParts, a[i], false); push(newParts, b[j], false); i++; j++; }
+        else if (dp[i + 1][j] >= dp[i][j + 1]) { push(oldParts, a[i], true); i++; }
+        else { push(newParts, b[j], true); j++; }
+    }
+    while (i < n) { push(oldParts, a[i], true); i++; }
+    while (j < m) { push(newParts, b[j], true); j++; }
+    return { oldParts, newParts };
+}
+
+/** One diff line (prefix stripped); `kind` is hunk|ctx|del|add. */
+function rdiffLine(kind, rawLine) {
+    const div = document.createElement('div');
+    div.className = 'fp-rline fp-r' + kind;
+    div.textContent = kind === 'hunk' ? rawLine : rawLine.slice(1);
+    return div;
+}
+
+/** A del/add line rendered from word-diff parts, changed tokens highlighted. */
+function rdiffLineTokens(kind, parts) {
+    const div = document.createElement('div');
+    div.className = 'fp-rline fp-r' + kind;
+    parts.forEach(p => {
+        if (p.changed) {
+            const mark = document.createElement('span');
+            mark.className = 'fp-tok';
+            mark.textContent = p.text;
+            div.appendChild(mark);
+        } else {
+            div.appendChild(document.createTextNode(p.text));
+        }
+    });
+    return div;
+}
+
+/**
+ * Render a unified diff into an editorial-minimal element with word-level
+ * highlighting: consecutive − / + runs are paired by index and token-diffed so
+ * the changed words stand out; unpaired lines render plainly.
+ */
+function buildRichDiff(diffText) {
+    const container = document.createElement('div');
+    container.className = 'fp-rdiff';
+    if (!diffText) {
+        container.innerHTML = '<p class="file-panel-empty">No content changes recorded for this version.</p>';
+        return container;
+    }
+    const lines = diffText.split('\n');
+    let i = 0;
+    while (i < lines.length) {
+        const c = lines[i].charAt(0);
+        if (c === '@') {
+            container.appendChild(rdiffLine('hunk', lines[i]));
+            i++;
+        } else if (c === '-') {
+            const dels = []; while (i < lines.length && lines[i].charAt(0) === '-') { dels.push(lines[i]); i++; }
+            const adds = []; while (i < lines.length && lines[i].charAt(0) === '+') { adds.push(lines[i]); i++; }
+            // Pair by index for word-level highlights; show all − then all +.
+            const oldEls = [], newEls = [];
+            const pairs = Math.max(dels.length, adds.length);
+            for (let k = 0; k < pairs; k++) {
+                const d = dels[k], a = adds[k];
+                if (d != null && a != null) {
+                    const { oldParts, newParts } = computeWordDiff(d.slice(1), a.slice(1));
+                    oldEls.push(rdiffLineTokens('del', oldParts));
+                    newEls.push(rdiffLineTokens('add', newParts));
+                } else if (d != null) { oldEls.push(rdiffLine('del', d)); }
+                else if (a != null) { newEls.push(rdiffLine('add', a)); }
+            }
+            oldEls.forEach(el => container.appendChild(el));
+            newEls.forEach(el => container.appendChild(el));
+        } else if (c === '+') {
+            const adds = []; while (i < lines.length && lines[i].charAt(0) === '+') { adds.push(lines[i]); i++; }
+            adds.forEach(l => container.appendChild(rdiffLine('add', l)));
+        } else {
+            // Context, or one of our note lines ("… (diff truncated …)").
+            container.appendChild(rdiffLine('ctx', lines[i]));
+            i++;
+        }
+    }
+    return container;
+}
+
 // ===== File Panel (edit-in-context slice 1: viewer) =====
 // Shows a model-created file beside the chat instead of only as a download
 // card. Device-local filePanelMode picks between auto-opening on create_file
@@ -6110,6 +6247,8 @@ const FilePanel = {
     standalone: false,
     standaloneView: null, // the mainView key it was opened on (dismiss on nav away)
     historyMode: false,
+    historyRevisions: [],  // FC-06b: fetched revisions, NEWEST first
+    selectedRevId: null,   // the version shown in the detail pane
     conflict: false, // the assistant rewrote the file mid-edit (Save confirms)
     _fetchSeq: 0,    // ignore stale fetch responses after rapid updates
     _cache: null,    // { url, text } — last fetched content, so raw/rendered
@@ -6348,7 +6487,7 @@ const FilePanel = {
         }
     },
 
-    /** Fetch and render the file's change history into the panel body. */
+    /** Fetch the file's revisions and render the version viewer (FC-06b). */
     async showHistory() {
         if (!this.file) return;
         this.historyMode = true;
@@ -6368,48 +6507,100 @@ const FilePanel = {
         }
         // Ignore a stale response (panel switched files / left history since).
         if (seq !== this._fetchSeq || !this.historyMode) return;
-        this.renderHistory(revs);
+        // Newest first; select the newest version by default.
+        this.historyRevisions = Array.isArray(revs) ? [...revs].reverse() : [];
+        this.selectedRevId = this.historyRevisions.length ? this.historyRevisions[0].id : null;
+        this.renderHistory();
     },
 
-    /** Paint the revision list (newest first) with a colorized diff per entry. */
-    renderHistory(revs) {
+    /** Render the version list + the selected version's detail (FC-06b). */
+    renderHistory() {
         const body = elements.filePanelBody;
         if (!body) return;
-        if (!Array.isArray(revs) || revs.length === 0) {
+        const revs = this.historyRevisions;
+        if (!revs.length) {
             body.innerHTML = '<p class="file-panel-empty">No changes recorded yet.</p>';
             return;
         }
+
         const wrap = document.createElement('div');
-        wrap.className = 'file-panel-history';
-        [...revs].reverse().forEach(rev => {
-            const item = document.createElement('div');
-            item.className = 'history-item';
+        wrap.className = 'fp-history';
 
-            const meta = document.createElement('div');
-            meta.className = 'history-meta';
+        // Version rail (newest first). Index 0 is the current version.
+        const rail = document.createElement('div');
+        rail.className = 'fp-versions';
+        revs.forEach((rev, i) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'fp-version' + (rev.id === this.selectedRevId ? ' is-selected' : '');
+            const { adds, dels } = diffStats(rev.diff);
             const who = rev.author === 'user' ? 'You' : 'Assistant';
-            const when = new Date(rev.createdAt).toLocaleString();
-            meta.innerHTML = `<span class="history-who">${escapeHtml(who)}</span> `
-                + `<span class="history-op">${escapeHtml(rev.op)}</span>`
-                + `<span class="history-when">${escapeHtml(when)}</span>`;
-            item.appendChild(meta);
-
-            if (rev.diff) {
-                const pre = document.createElement('pre');
-                pre.className = 'file-panel-diff';
-                rev.diff.split('\n').forEach(line => {
-                    const c = line.charAt(0);
-                    const span = document.createElement('span');
-                    span.className = c === '+' ? 'diff-add' : c === '-' ? 'diff-del' : c === '@' ? 'diff-hunk' : 'diff-ctx';
-                    span.textContent = line + '\n';
-                    pre.appendChild(span);
-                });
-                item.appendChild(pre);
-            }
-            wrap.appendChild(item);
+            btn.innerHTML =
+                `<span class="fp-version-line">`
+                + `<span class="fp-version-who">${escapeHtml(who)}</span>`
+                + `<span class="fp-version-op">${escapeHtml(rev.op)}</span>`
+                + (i === 0 ? `<span class="fp-version-current">current</span>` : '')
+                + `</span>`
+                + `<span class="fp-version-line fp-version-sub">`
+                + `<span class="fp-version-when">${escapeHtml(formatRelativeTime(rev.createdAt))}</span>`
+                + `<span class="fp-version-stat">`
+                + (adds ? `<span class="fp-add">+${adds}</span>` : '')
+                + (dels ? `<span class="fp-del">−${dels}</span>` : '')
+                + `</span></span>`;
+            btn.addEventListener('click', () => this.selectVersion(rev.id));
+            rail.appendChild(btn);
         });
+        wrap.appendChild(rail);
+
+        // Detail pane for the selected version.
+        const detail = document.createElement('div');
+        detail.className = 'fp-detail';
+        const rev = revs.find(r => r.id === this.selectedRevId) || revs[0];
+        const isCurrent = rev.id === revs[0].id;
+
+        const head = document.createElement('div');
+        head.className = 'fp-detail-head';
+        const who = rev.author === 'user' ? 'You' : 'Assistant';
+        head.innerHTML = `<span class="fp-detail-title">${escapeHtml(who)} · ${escapeHtml(rev.op)} · ${escapeHtml(new Date(rev.createdAt).toLocaleString())}</span>`;
+        if (!isCurrent && rev.hasSnapshot) {
+            const restore = document.createElement('button');
+            restore.type = 'button';
+            restore.className = 'fp-restore-btn';
+            restore.textContent = 'Restore this version';
+            restore.addEventListener('click', () => this.restoreVersion(rev.id));
+            head.appendChild(restore);
+        }
+        detail.appendChild(head);
+        detail.appendChild(buildRichDiff(rev.diff));
+        wrap.appendChild(detail);
+
         body.innerHTML = '';
         body.appendChild(wrap);
+    },
+
+    /** Show a different version in the detail pane. */
+    selectVersion(revId) {
+        this.selectedRevId = revId;
+        if (this.historyMode) this.renderHistory();
+    },
+
+    /** Restore the file to a stored version (adds a new version, FC-06b). */
+    async restoreVersion(revId) {
+        if (!this.file || state.isLoading) {
+            if (state.isLoading) showToast('Wait for the assistant to finish its turn first.', { type: 'warning' });
+            return;
+        }
+        if (!window.confirm('Restore this version? The file’s current content is replaced with this version, added as a new entry in the history.')) return;
+        try {
+            const updated = await API.files.restoreRevision(this.file.url, revId);
+            if (updated && typeof updated.sizeBytes === 'number') this.file.sizeBytes = updated.sizeBytes;
+            this._cache = null; // content changed server-side
+            showToast('Restored.', { type: 'success' });
+            this.showHistory(); // refresh the log (restore appended a version)
+        } catch (err) {
+            console.error('Failed to restore version:', err);
+            displayError(err, { action: 'restore the version' });
+        }
     },
 
     // ---- User editing (slice 3) ----

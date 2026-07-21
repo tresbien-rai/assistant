@@ -384,6 +384,13 @@
       revisions(contentUrl) {
         return request('GET', contentUrl.replace(/\/content$/, '/revisions'));
       },
+      /**
+       * Restore a file to a stored version (FC-06b). Derived from the content
+       * URL like `revisions`. Returns the updated file metadata.
+       */
+      restoreRevision(contentUrl, revId) {
+        return request('POST', contentUrl.replace(/\/content$/, `/revisions/${encodeURIComponent(revId)}/restore`));
+      },
     },
 
     // -------------------------------------------------------------------------
