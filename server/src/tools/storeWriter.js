@@ -57,6 +57,7 @@ function recordRevision({ store, record, bytes, overwritten, revision }) {
       diff,
       sizeBytes: bytes.length,
       driveFileId: record.drive_file_id,
+      turn: revision.turn == null ? null : revision.turn,
     });
   } catch (err) {
     logger.warn({ fileId: record?.id, msg: err.message }, 'Failed to record file revision; write itself succeeded');
@@ -185,6 +186,7 @@ async function saveTextOverFile(auth, store, file, content, userId, revisionMeta
       op: 'edit',
       conversationId: revisionMeta.conversationId,
       messageId: revisionMeta.messageId || null,
+      turn: revisionMeta.turn == null ? null : revisionMeta.turn,
       oldText,
     };
   }

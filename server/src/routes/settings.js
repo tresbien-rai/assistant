@@ -63,8 +63,17 @@ router.get('/', asyncHandler(async (req, res) => {
  * Accepts partial updates - only provided fields are updated
  * Creates settings record if none exists (upsert)
  */
+// activeFileTurns (FC-03b): how many turns a just-changed file stays live in
+// context. Bounded so a stray value can't inject a file for hundreds of turns.
+const ACTIVE_FILE_TURNS_MIN = 0; // 0 = never inject (always tool-read)
+const ACTIVE_FILE_TURNS_MAX = 20;
+
+function isValidActiveFileTurns(v) {
+  return Number.isInteger(v) && v >= ACTIVE_FILE_TURNS_MIN && v <= ACTIVE_FILE_TURNS_MAX;
+}
+
 router.put('/', asyncHandler(async (req, res) => {
-  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig } = req.body;
+  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns } = req.body;
 
   // Validate avatarSize if provided (preset name or numeric px string)
   if (avatarSize !== undefined && !isValidAvatarSize(avatarSize)) {
@@ -100,6 +109,13 @@ router.put('/', asyncHandler(async (req, res) => {
     }
   }
 
+  // Validate activeFileTurns if provided (FC-03b)
+  if (activeFileTurns !== undefined && !isValidActiveFileTurns(activeFileTurns)) {
+    throw AppError.validation(
+      `Invalid activeFileTurns: ${activeFileTurns}. Must be an integer ${ACTIVE_FILE_TURNS_MIN}-${ACTIVE_FILE_TURNS_MAX}.`
+    );
+  }
+
   // Build update data (only include fields that were provided)
   const updateData = {};
   if (avatarSize !== undefined) updateData.avatarSize = avatarSize;
@@ -107,6 +123,7 @@ router.put('/', asyncHandler(async (req, res) => {
   if (showAvatar !== undefined) updateData.showAvatar = showAvatar;
   if (customModels !== undefined) updateData.customModels = customModels;
   if (currentModelConfig !== undefined) updateData.currentModelConfig = currentModelConfig;
+  if (activeFileTurns !== undefined) updateData.activeFileTurns = activeFileTurns;
 
   // Upsert settings
   const settings = dal.upsertSettings(req.user.userId, updateData);

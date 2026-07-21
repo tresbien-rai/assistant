@@ -295,6 +295,17 @@
     margin-bottom: 12px;
 }
 
+/* Files-in-context: number input + trailing label (FC-03b) */
+.active-file-turns-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.active-file-turns-row input[type="number"] {
+    width: 72px;
+}
+
 .palette-row input[type="color"] {
     width: 48px;
     height: 36px;

@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS file_revisions (
     diff            TEXT DEFAULT '',    -- bounded unified diff (old -> new)
     size_bytes      INTEGER DEFAULT 0,
     drive_file_id   TEXT DEFAULT '',
+    turn            INTEGER,            -- conversation turn (user-msg count) at write time (FC-03b)
     created_at      INTEGER NOT NULL
 );
 
@@ -213,6 +214,7 @@ CREATE TABLE IF NOT EXISTS settings (
     show_avatar     INTEGER DEFAULT 1,  -- SQLite boolean (0/1)
     custom_models   TEXT DEFAULT '{}',  -- JSON for custom model definitions
     current_model_config TEXT,          -- JSON: the active model layer (WR-12); NULL until the client seeds it
+    active_file_turns INTEGER DEFAULT 1, -- turns a file stays live in context after a change (FC-03b)
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
 );

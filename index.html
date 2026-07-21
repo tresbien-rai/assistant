@@ -138,6 +138,19 @@
                     <p class="section-note">Adds a "view request" (⟨⟩) button to inspect the exact payload sent to the provider.</p>
                 </div>
 
+                <!-- Files in context (server-backed, synced across devices) -->
+                <div class="settings-section">
+                    <h3>Files in Context</h3>
+                    <p class="section-note">Synced to your account.</p>
+
+                    <label for="activeFileTurns">Keep an edited file in context for</label>
+                    <div class="active-file-turns-row">
+                        <input type="number" id="activeFileTurns" min="0" max="20" step="1" value="1">
+                        <span>turn(s) after a change</span>
+                    </div>
+                    <p class="section-note">After a file is created or edited in a chat, its full contents and the latest diff stay visible to the assistant for this many turns — so you can talk about the change without it re-reading the file. 0 turns off in-context injection (the assistant reads files on demand). Default: 1.</p>
+                </div>
+
                 <!-- Active model + API key (re-parented into #modelsView on load — WR-13) -->
                 <div class="settings-section" id="modelSettingsSection">
                     <h3>Active Model</h3>

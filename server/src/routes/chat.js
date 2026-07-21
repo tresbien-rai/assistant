@@ -16,6 +16,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const { getDecryptedApiKey } = require('./apiKeys');
 const dal = require('../db/dal');
 const { assembleProjectContext, assembleWorkspaceContext } = require('../utils/projectContext');
+const { resolveActiveFileBlock, appendToLastUserMessage } = require('../utils/activeFiles');
 const { TOOL_DEFINITIONS } = require('../tools/definitions');
 const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
@@ -229,6 +230,38 @@ function assembleProviderInput(requestContext, systemPrompt, messages = []) {
   };
 }
 
+/** The conversation turn of a request = its user-message count (FC-03b). */
+function countUserTurns(messages) {
+  return messages.filter((m) => m && m.role === 'user').length;
+}
+
+/**
+ * Full request assembly shared by every endpoint (FC-03a + FC-03b): resolve the
+ * KB context, append the recency-scoped active-file block to the last user
+ * message, then fold the KB into synthetic leading turns. Returns everything the
+ * callers need: the final `system`/`messages`, the KB `requestContext` (for the
+ * warning header), and `currentTurn` (stamped onto tool writes this request).
+ * @returns {Promise<{ system: string|undefined, messages: Array, requestContext: object|null, currentTurn: number }>}
+ */
+async function assembleChatRequest(req, containers, { systemPrompt, messages }) {
+  const userId = req.user.userId;
+  const requestContext = await resolveRequestContext(req, containers);
+
+  const currentTurn = countUserTurns(messages);
+  const conversationId = containers.conversation?.id || null;
+  let activeFileTurns = 1;
+  try {
+    activeFileTurns = dal.getSettingsByUser(userId).activeFileTurns;
+  } catch (err) {
+    logger.warn({ userId, msg: err.message }, 'Could not load activeFileTurns; using default');
+  }
+  const activeBlock = await resolveActiveFileBlock(userId, conversationId, currentTurn, activeFileTurns);
+  const messagesWithActive = activeBlock ? appendToLastUserMessage(messages, activeBlock) : messages;
+
+  const { system, messages: assembled } = assembleProviderInput(requestContext, systemPrompt, messagesWithActive);
+  return { system, messages: assembled, requestContext, currentTurn };
+}
+
 /**
  * Resolve whether file tools are enabled for this request (Track A).
  * Precedence: conversation override (tools_enabled 1/0) → persona base
@@ -251,7 +284,7 @@ function assembleProviderInput(requestContext, systemPrompt, messages = []) {
  * @param {Object} chatParams - { model, messages, systemPrompt, modelParams, attachments }
  * @returns {{ params: Object, toolContext: Object }}
  */
-function buildToolLoopInvocation(req, containers, chatParams) {
+function buildToolLoopInvocation(req, containers, chatParams, turnOrdinal = null) {
   return {
     params: chatParams,
     toolContext: {
@@ -259,6 +292,10 @@ function buildToolLoopInvocation(req, containers, chatParams) {
       workspace: containers.workspace,
       project: containers.project,
       conversationId: containers.conversation?.id || null,
+      // Turn a tool write is stamped with (FC-03b) = the user-message count of
+      // THIS request, so the file is live on the next turn. Computed from the
+      // raw messages (before the KB synthetic turn is prepended).
+      turnOrdinal,
     },
   };
 }
@@ -402,13 +439,10 @@ router.post('/', asyncHandler(async (req, res) => {
   // Get provider module
   const providerModule = getProvider(provider);
 
-  // Assemble the request: workspace + project context becomes a synthetic
-  // user+assistant pair at the front of the messages (FC-03a); `system` stays
-  // the persona prompt alone.
+  // Assemble the request (FC-03a KB relocation + FC-03b active-file injection).
   const containers = resolveRequestContainers(req);
-  const requestContext = await resolveRequestContext(req, containers);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages } =
-    assembleProviderInput(requestContext, systemPrompt, messages);
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn } =
+    await assembleChatRequest(req, containers, { systemPrompt, messages });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   logger.info({
@@ -429,7 +463,7 @@ router.post('/', asyncHandler(async (req, res) => {
 
     const { params: loopParams, toolContext } = buildToolLoopInvocation(req, containers, {
       model, messages: effectiveMessages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
-    });
+    }, currentTurn);
     const { result: loopResult, toolEvents, aborted } = await runToolLoop({
       providerModule,
       apiKey,
@@ -484,13 +518,11 @@ router.post('/stream', asyncHandler(async (req, res) => {
     throw AppError.validation(`Streaming not supported for provider: ${provider}`);
   }
 
-  // Assemble the request: KB becomes a synthetic user+assistant pair at the
-  // front of the messages (FC-03a); `system` stays the persona prompt alone.
+  // Assemble the request (FC-03a KB relocation + FC-03b active-file injection).
   // Resolved before any SSE headers are sent so the warning header is valid.
   const containers = resolveRequestContainers(req);
-  const requestContext = await resolveRequestContext(req, containers);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages } =
-    assembleProviderInput(requestContext, systemPrompt, messages);
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn } =
+    await assembleChatRequest(req, containers, { systemPrompt, messages });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   if (requestContext?.warning) {
@@ -534,7 +566,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
     try {
       const { params: loopParams, toolContext } = buildToolLoopInvocation(req, containers, {
         model, messages: effectiveMessages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
-      });
+      }, currentTurn);
       const { result, toolEvents, aborted } = await runToolLoop({
         providerModule,
         apiKey,
@@ -610,11 +642,11 @@ router.post('/preview', asyncHandler(async (req, res) => {
 
   // Identical context assembly to the real chat path — including the tools
   // toggle, so the inspector shows the tool definitions (and the skipped
-  // prefill) exactly as a real tools-on send would build them.
+  // prefill) exactly as a real tools-on send would build them, plus the KB
+  // relocation and active-file injection.
   const containers = resolveRequestContainers(req);
-  const requestContext = await resolveRequestContext(req, containers);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages } =
-    assembleProviderInput(requestContext, systemPrompt, messages);
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext } =
+    await assembleChatRequest(req, containers, { systemPrompt, messages });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   const body = providerModule.buildRequestBody({

@@ -594,6 +594,7 @@ function getSettingsByUser(userId) {
     showAvatar: true,
     customModels: {},
     currentModelConfig: null,
+    activeFileTurns: 1,
   };
 }
 
@@ -633,6 +634,10 @@ function upsertSettings(userId, data) {
       updates.push('current_model_config = ?');
       values.push(data.currentModelConfig === null ? null : JSON.stringify(data.currentModelConfig));
     }
+    if (data.activeFileTurns !== undefined) {
+      updates.push('active_file_turns = ?');
+      values.push(data.activeFileTurns);
+    }
 
     if (updates.length > 0) {
       updates.push('updated_at = ?');
@@ -644,8 +649,8 @@ function upsertSettings(userId, data) {
   } else {
     const id = generateId();
     db.prepare(`
-      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       userId,
@@ -654,6 +659,7 @@ function upsertSettings(userId, data) {
       data.showAvatar !== undefined ? (data.showAvatar ? 1 : 0) : 1,
       JSON.stringify(data.customModels || {}),
       data.currentModelConfig ? JSON.stringify(data.currentModelConfig) : null,
+      data.activeFileTurns !== undefined ? data.activeFileTurns : 1,
       timestamp,
       timestamp
     );
@@ -674,6 +680,9 @@ function parseSettingsJson(settings) {
     showAvatar: Boolean(settings.show_avatar),
     customModels: JSON.parse(settings.custom_models || '{}'),
     currentModelConfig: settings.current_model_config ? JSON.parse(settings.current_model_config) : null,
+    // FC-03b: turns a file stays live in context after a change. NULL (pre-migration
+    // rows) reads as the default of 1.
+    activeFileTurns: settings.active_file_turns == null ? 1 : settings.active_file_turns,
     createdAt: settings.created_at,
     updatedAt: settings.updated_at,
   };
@@ -1451,20 +1460,22 @@ function deleteConversationFile(fileId, conversationId) {
  * @param {string} [data.diff] - bounded unified diff
  * @param {number} [data.sizeBytes] - resulting file size
  * @param {string} [data.driveFileId] - the new blob's Drive id
+ * @param {number} [data.turn] - conversation turn (user-msg count) at write time (FC-03b)
  * @returns {Object} The created file_revisions record
  */
-function addFileRevision({ scope, fileId, conversationId, messageId, author, op, diff, sizeBytes, driveFileId }) {
+function addFileRevision({ scope, fileId, conversationId, messageId, author, op, diff, sizeBytes, driveFileId, turn }) {
   const db = getDb();
   const id = generateId();
   const timestamp = now();
 
   db.prepare(`
     INSERT INTO file_revisions
-      (id, scope, file_id, conversation_id, message_id, author, op, diff, size_bytes, drive_file_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, scope, file_id, conversation_id, message_id, author, op, diff, size_bytes, drive_file_id, turn, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, scope, fileId, conversationId || null, messageId || null,
-    author, op, diff || '', sizeBytes || 0, driveFileId || '', timestamp
+    author, op, diff || '', sizeBytes || 0, driveFileId || '',
+    turn == null ? null : turn, timestamp
   );
 
   return db.prepare('SELECT * FROM file_revisions WHERE id = ?').get(id);
@@ -1482,6 +1493,39 @@ function listFileRevisions(scope, fileId) {
   return db.prepare(`
     SELECT * FROM file_revisions WHERE scope = ? AND file_id = ? ORDER BY created_at ASC
   `).all(scope, fileId);
+}
+
+/**
+ * Conversation-scoped revisions for a chat, newest first (File Collaboration,
+ * FC-03b). The active-file injection uses these to find files touched recently
+ * (dedupes to the latest per file and filters by the turn window). Limited to
+ * the `conversation` scope: project/workspace file content already rides in the
+ * knowledge-base block, so only chat-created files need full re-injection.
+ * @param {string} conversationId
+ * @returns {Array} Array of file_revisions records, newest first
+ */
+function listConversationFileRevisions(conversationId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM file_revisions
+    WHERE conversation_id = ? AND scope = 'conversation'
+    ORDER BY created_at DESC
+  `).all(conversationId);
+}
+
+/**
+ * Count the user-role messages in a conversation — the turn ordinal a file
+ * write is stamped with (FC-03b), so panel saves outside the chat request can
+ * stamp the same "turn" the tool loop would.
+ * @param {string} conversationId
+ * @returns {number}
+ */
+function countUserMessages(conversationId) {
+  const db = getDb();
+  const row = db.prepare(
+    `SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ? AND role = 'user'`
+  ).get(conversationId);
+  return row ? row.c : 0;
 }
 
 // =============================================================================
@@ -1579,4 +1623,6 @@ module.exports = {
   // File Revisions (File Collaboration, FC-02 — change log)
   addFileRevision,
   listFileRevisions,
+  listConversationFileRevisions,
+  countUserMessages,
 };

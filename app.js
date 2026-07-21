@@ -23,7 +23,8 @@ const CONFIG = {
 When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.`,
         avatarSize: 'medium',
         avatarPosition: 'top-right',
-        showAvatar: true
+        showAvatar: true,
+        activeFileTurns: 1
     },
     defaultExpressions: {
         neutral: { emoji: '😊', imageKey: '', keywords: [] },
@@ -1434,7 +1435,8 @@ const elements = {
     avatarPreviewName: document.getElementById('avatarPreviewName'),
     avatarPreviewStatus: document.getElementById('avatarPreviewStatus'),
     showAvatar: document.getElementById('showAvatar'),
-    
+    activeFileTurns: document.getElementById('activeFileTurns'),
+
     // Expression settings
     expressionList: document.getElementById('expressionList'),
     addExpressionBtn: document.getElementById('addExpressionBtn'),
@@ -1639,6 +1641,7 @@ function hydrateSettings(settings) {
     state.settings.avatarSize = settings.avatarSize || CONFIG.defaults.avatarSize;
     state.settings.avatarPosition = settings.avatarPosition || CONFIG.defaults.avatarPosition;
     state.settings.showAvatar = settings.showAvatar !== undefined ? settings.showAvatar : CONFIG.defaults.showAvatar;
+    state.settings.activeFileTurns = settings.activeFileTurns !== undefined ? settings.activeFileTurns : CONFIG.defaults.activeFileTurns;
     // customModels arrives as an object keyed by provider (parsed JSON from
     // the server). Default empty arrays per provider if absent.
     const cm = settings.customModels || {};
@@ -2050,6 +2053,7 @@ function persistSettings() {
         avatarSize: state.settings.avatarSize,
         avatarPosition: state.settings.avatarPosition,
         showAvatar: state.settings.showAvatar,
+        activeFileTurns: state.settings.activeFileTurns,
         customModels: state.settings.customModels,
         currentModelConfig: state.currentModelConfig, // the active layer (WR-12)
     };
@@ -2150,6 +2154,7 @@ async function updateUI() {
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
     elements.showAvatar.checked = state.settings.showAvatar;
+    if (elements.activeFileTurns) elements.activeFileTurns.value = state.settings.activeFileTurns;
 
     // Load model parameters to UI (from active persona's modelConfig)
     loadModelParamsToUI();
@@ -7527,6 +7532,20 @@ function setupEventListeners() {
             applyDevMode();
         });
     }
+    // Files-in-context: how many turns a changed file stays live (FC-03b).
+    // Server-backed, so it rides the settings auto-save. Clamp to the same
+    // 0–20 the API enforces and reflect the clamped value back in the field.
+    if (elements.activeFileTurns) {
+        elements.activeFileTurns.addEventListener('change', () => {
+            let v = parseInt(elements.activeFileTurns.value, 10);
+            if (!Number.isFinite(v)) v = CONFIG.defaults.activeFileTurns;
+            v = Math.max(0, Math.min(20, v));
+            elements.activeFileTurns.value = v;
+            state.settings.activeFileTurns = v;
+            autoSaveSettings();
+        });
+    }
+
     if (elements.viewRequestBtn) {
         elements.viewRequestBtn.addEventListener('click', previewCurrentRequest);
     }
