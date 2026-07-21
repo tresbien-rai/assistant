@@ -1362,6 +1362,7 @@ const elements = {
     filePanelBadge: document.getElementById('filePanelBadge'),
     filePanelName: document.getElementById('filePanelName'),
     filePanelRawToggle: document.getElementById('filePanelRawToggle'),
+    filePanelHistoryBtn: document.getElementById('filePanelHistoryBtn'),
     filePanelEditBtn: document.getElementById('filePanelEditBtn'),
     filePanelDownload: document.getElementById('filePanelDownload'),
     filePanelClose: document.getElementById('filePanelClose'),
@@ -5140,13 +5141,21 @@ async function loadContainerFiles(kind, id) {
         row.className = 'project-file-item';
         const label = getFileTypeLabel(f.filename, f.mimeType);
         const href = containerFilesApi(kind).contentUrl(id, f.id);
+        // Text files open in the file panel for view/edit/history (FC-04); PDFs
+        // and other binaries are download-only.
+        const viewable = !/\.pdf$/i.test(f.filename || '');
         row.innerHTML = `
             <span class="project-file-badge">${escapeHtml(label)}</span>
-            <span class="project-file-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
+            <span class="project-file-name${viewable ? ' clickable' : ''}" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
             <span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>
             <a class="project-file-download" href="${href}" download title="Download">⤓</a>
             <button class="project-file-delete" type="button" title="Delete">✕</button>
         `;
+        if (viewable) {
+            row.querySelector('.project-file-name').addEventListener('click', () => {
+                FilePanel.openStandalone({ fileName: f.filename, url: href, mimeType: f.mimeType, sizeBytes: f.sizeBytes });
+            });
+        }
         row.querySelector('.project-file-delete')
             .addEventListener('click', () => deleteContainerFilePrompt(kind, id, f.id, f.filename));
         listEl.appendChild(row);
@@ -6072,6 +6081,12 @@ const FilePanel = {
     unseen: false,   // live activity arrived while closed → tab dot pulses
     rawMode: false,  // markdown only: show source instead of rendered
     editMode: false, // user is editing in a textarea (slice 3)
+    // FC-04: a container/Downloads file opened from a file LIST (not a chat).
+    // `standalone` decouples the panel from conversation plumbing; historyMode
+    // shows the revision log instead of the file's content.
+    standalone: false,
+    standaloneView: null, // the mainView key it was opened on (dismiss on nav away)
+    historyMode: false,
     conflict: false, // the assistant rewrote the file mid-edit (Save confirms)
     _fetchSeq: 0,    // ignore stale fetch responses after rapid updates
     _cache: null,    // { url, text } — last fetched content, so raw/rendered
@@ -6139,8 +6154,33 @@ const FilePanel = {
         // Re-clicking the edited file's own card leaves edit mode — warn if
         // the draft had changes (same courtesy as close/switch).
         this.discardDraft();
+        this.standalone = false;
+        this.historyMode = false;
         this.file = att;
         this.conversationId = state.activeConversationId;
+        this.isOpen = true;
+        this.unseen = false;
+        this.rawMode = false;
+        this.renderHeader();
+        this.loadContent();
+        this.syncUi();
+    },
+
+    /**
+     * Open a container/Downloads file from a file list (FC-04). Unlike open(),
+     * this is not tied to a conversation — the panel floats beside the
+     * project/workspace page it was opened on and is dismissed on navigation.
+     * @param {{fileName:string, url:string, mimeType?:string, sizeBytes?:number}} descriptor
+     */
+    openStandalone(descriptor) {
+        if (!descriptor || !descriptor.url) return;
+        this.discardDraft();
+        const view = state.ui.mainView || {};
+        this.standalone = true;
+        this.standaloneView = `${view.type}:${view.id || ''}`;
+        this.historyMode = false;
+        this.file = descriptor;
+        this.conversationId = null;
         this.isOpen = true;
         this.unseen = false;
         this.rawMode = false;
@@ -6176,7 +6216,28 @@ const FilePanel = {
      */
     syncUi() {
         if (!elements.filePanel || !elements.filePanelTab) return;
-        const inChat = (state.ui.mainView || {}).type === 'chat';
+        const view = state.ui.mainView || {};
+        const inChat = view.type === 'chat';
+
+        // FC-04 standalone viewer: a file opened from a container/Downloads list.
+        // It floats beside the page it was opened on, with no edge tab; opening a
+        // chat or navigating to any other page dismisses it.
+        if (this.standalone) {
+            const viewKey = `${view.type}:${view.id || ''}`;
+            if (inChat || viewKey !== this.standaloneView) {
+                this.discardDraft();
+                this.standalone = false;
+                this.historyMode = false;
+                this.isOpen = false;
+                this.file = null;
+                // fall through to the chat logic below (hides or re-derives)
+            } else {
+                elements.filePanel.hidden = !(this.isOpen && !!this.file);
+                elements.filePanelTab.hidden = true;
+                if (elements.filePanelTabDot) elements.filePanelTabDot.hidden = true;
+                return;
+            }
+        }
 
         if (inChat && this.conversationId !== state.activeConversationId) {
             this.discardDraft();
@@ -6184,6 +6245,7 @@ const FilePanel = {
             this.file = this.deriveConversationFile();
             this.isOpen = false;
             this.unseen = false;
+            this.historyMode = false;
         }
 
         const showPanel = inChat && this.isOpen && !!this.file;
@@ -6220,11 +6282,17 @@ const FilePanel = {
             elements.filePanelDownload.setAttribute('download', f.fileName || 'file');
         }
         if (elements.filePanelRawToggle) {
-            elements.filePanelRawToggle.hidden = this.editMode || !this.isMarkdown();
+            elements.filePanelRawToggle.hidden = this.editMode || this.historyMode || !this.isMarkdown();
             elements.filePanelRawToggle.classList.toggle('active', this.rawMode);
         }
-        // All panel files are text in v1 — editable unless a draft is open.
-        if (elements.filePanelEditBtn) elements.filePanelEditBtn.hidden = this.editMode;
+        // History toggle (FC-04): available except while editing; active shows
+        // the revision log instead of the content.
+        if (elements.filePanelHistoryBtn) {
+            elements.filePanelHistoryBtn.hidden = this.editMode;
+            elements.filePanelHistoryBtn.classList.toggle('active', this.historyMode);
+        }
+        // All panel files are text in v1 — editable unless a draft or history is open.
+        if (elements.filePanelEditBtn) elements.filePanelEditBtn.hidden = this.editMode || this.historyMode;
     },
 
     isMarkdown() {
@@ -6236,6 +6304,89 @@ const FilePanel = {
         this.rawMode = !this.rawMode;
         this.renderHeader();
         this.loadContent();
+    },
+
+    // ---- Change history (FC-04) ----
+
+    /** The file's revisions URL, derived from its content URL (all scopes). */
+    revisionsUrl() {
+        return this.file ? this.file.url.replace(/\/content$/, '/revisions') : null;
+    },
+
+    /** Toggle between the file's content and its revision history. */
+    toggleHistory() {
+        if (!this.file || this.editMode) return;
+        if (this.historyMode) {
+            this.historyMode = false;
+            this.renderHeader();
+            this.loadContent();
+        } else {
+            this.showHistory();
+        }
+    },
+
+    /** Fetch and render the file's change history into the panel body. */
+    async showHistory() {
+        if (!this.file) return;
+        this.historyMode = true;
+        this.renderHeader();
+        const body = elements.filePanelBody;
+        if (body) body.innerHTML = '<p class="file-panel-empty">Loading history…</p>';
+        const seq = ++this._fetchSeq;
+        let revs;
+        try {
+            revs = await API.files.revisions(this.file.url);
+        } catch (err) {
+            console.error('Failed to load file history:', err);
+            if (seq === this._fetchSeq && this.historyMode && body) {
+                body.innerHTML = '<p class="file-panel-empty">Could not load history.</p>';
+            }
+            return;
+        }
+        // Ignore a stale response (panel switched files / left history since).
+        if (seq !== this._fetchSeq || !this.historyMode) return;
+        this.renderHistory(revs);
+    },
+
+    /** Paint the revision list (newest first) with a colorized diff per entry. */
+    renderHistory(revs) {
+        const body = elements.filePanelBody;
+        if (!body) return;
+        if (!Array.isArray(revs) || revs.length === 0) {
+            body.innerHTML = '<p class="file-panel-empty">No changes recorded yet.</p>';
+            return;
+        }
+        const wrap = document.createElement('div');
+        wrap.className = 'file-panel-history';
+        [...revs].reverse().forEach(rev => {
+            const item = document.createElement('div');
+            item.className = 'history-item';
+
+            const meta = document.createElement('div');
+            meta.className = 'history-meta';
+            const who = rev.author === 'user' ? 'You' : 'Assistant';
+            const when = new Date(rev.createdAt).toLocaleString();
+            meta.innerHTML = `<span class="history-who">${escapeHtml(who)}</span> `
+                + `<span class="history-op">${escapeHtml(rev.op)}</span>`
+                + `<span class="history-when">${escapeHtml(when)}</span>`;
+            item.appendChild(meta);
+
+            if (rev.diff) {
+                const pre = document.createElement('pre');
+                pre.className = 'file-panel-diff';
+                rev.diff.split('\n').forEach(line => {
+                    const c = line.charAt(0);
+                    const span = document.createElement('span');
+                    span.className = c === '+' ? 'diff-add' : c === '-' ? 'diff-del' : c === '@' ? 'diff-hunk' : 'diff-ctx';
+                    span.textContent = line + '\n';
+                    pre.appendChild(span);
+                });
+                item.appendChild(pre);
+            }
+            wrap.appendChild(item);
+        });
+        body.innerHTML = '';
+        body.appendChild(wrap);
     },
 
     // ---- User editing (slice 3) ----
@@ -7489,6 +7640,9 @@ function setupEventListeners() {
     }
     if (elements.filePanelRawToggle) {
         elements.filePanelRawToggle.addEventListener('click', () => FilePanel.toggleRaw());
+    }
+    if (elements.filePanelHistoryBtn) {
+        elements.filePanelHistoryBtn.addEventListener('click', () => FilePanel.toggleHistory());
     }
     if (elements.filePanelTab) {
         elements.filePanelTab.addEventListener('click', () => {

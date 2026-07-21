@@ -4768,11 +4768,54 @@ body {
 }
 
 .file-panel-loading,
-.file-panel-error {
+.file-panel-error,
+.file-panel-empty {
     color: var(--text-secondary);
     text-align: center;
     padding: 32px 16px;
 }
+
+/* Change history (FC-04) */
+.file-panel-history {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.history-item {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-primary);
+}
+.history-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 10px;
+    font-size: var(--text-xs);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+}
+.history-who { font-weight: 600; color: var(--text-primary); }
+.history-op { color: var(--accent); text-transform: capitalize; }
+.history-when { margin-left: auto; color: var(--text-secondary); }
+pre.file-panel-diff {
+    margin: 0;
+    padding: 8px 10px;
+    overflow-x: auto;
+    white-space: pre;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+}
+pre.file-panel-diff .diff-add { color: #3fb950; }
+pre.file-panel-diff .diff-del { color: #f85149; }
+pre.file-panel-diff .diff-hunk { color: var(--text-secondary); }
+pre.file-panel-diff .diff-ctx { color: var(--text-primary); }
+
+/* Container file list: a text file name opens the panel (FC-04) */
+.project-file-name.clickable { cursor: pointer; }
+.project-file-name.clickable:hover { color: var(--accent); text-decoration: underline; }
 
 .file-panel-error {
     color: var(--error);

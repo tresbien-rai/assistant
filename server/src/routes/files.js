@@ -21,6 +21,7 @@ const drive = require('../utils/drive');
 const AppError = require('../utils/AppError');
 const { resolveFileStore } = require('../tools/fileStore');
 const { saveTextOverFile } = require('../tools/storeWriter');
+const { formatFileRevision } = require('../utils/format');
 
 const router = express.Router();
 
@@ -81,11 +82,25 @@ router.put('/:id/content', asyncHandler(async (req, res) => {
 
   const auth = drive.getAuthForUser(req.user.userId);
   const store = resolveFileStore({ userId: req.user.userId, project: null, workspace: null });
-  const result = await saveTextOverFile(auth, store, file, req.body?.content, req.user.userId);
+  // Log the edit as a user-authored revision (FC-04); no chat context here.
+  const result = await saveTextOverFile(auth, store, file, req.body?.content, req.user.userId, {});
   if (!result.ok) {
     throw AppError.validation(result.reason);
   }
   res.json(formatFile(result.record));
+}));
+
+/**
+ * GET /api/files/:id/revisions
+ * A Downloads file's change history (File Collaboration, FC-04).
+ */
+router.get('/:id/revisions', asyncHandler(async (req, res) => {
+  const file = dal.getUserFile(req.params.id, req.user.userId);
+  if (!file) {
+    throw AppError.notFound('File');
+  }
+  const revisions = dal.listFileRevisions('downloads', req.params.id);
+  res.json(revisions.map(formatFileRevision));
 }));
 
 module.exports = router;

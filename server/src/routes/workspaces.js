@@ -44,6 +44,7 @@ const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
 const { resolveFileStore } = require('../tools/fileStore');
 const { saveTextOverFile } = require('../tools/storeWriter');
+const { formatFileRevision } = require('../utils/format');
 
 const router = express.Router();
 
@@ -311,11 +312,26 @@ router.put('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
 
   const auth = drive.getAuthForUser(req.user.userId);
   const store = resolveFileStore({ userId: req.user.userId, project: null, workspace });
-  const result = await saveTextOverFile(auth, store, file, req.body?.content, req.user.userId);
+  // Log the edit as a user-authored revision (FC-04); no chat context here.
+  const result = await saveTextOverFile(auth, store, file, req.body?.content, req.user.userId, {});
   if (!result.ok) {
     throw AppError.validation(result.reason);
   }
   res.json(formatWorkspaceFile(result.record));
+}));
+
+/**
+ * GET /api/workspaces/:id/files/:fileId/revisions
+ * The workspace file's change history (File Collaboration, FC-04).
+ */
+router.get('/:id/files/:fileId/revisions', asyncHandler(async (req, res) => {
+  requireWorkspace(req.params.id, req.user.userId);
+  const file = dal.getWorkspaceFile(req.params.fileId, req.params.id);
+  if (!file) {
+    throw AppError.notFound('File');
+  }
+  const revisions = dal.listFileRevisions('workspace', req.params.fileId);
+  res.json(revisions.map(formatFileRevision));
 }));
 
 /**
@@ -382,6 +398,7 @@ router.delete('/:id/files/:fileId', asyncHandler(async (req, res) => {
   }
 
   dal.deleteWorkspaceFile(req.params.fileId, req.params.id);
+  dal.deleteFileRevisions('workspace', req.params.fileId); // no cascade for this scope (FC-04)
 
   logger.info({ userId: req.user.userId, workspaceId: req.params.id, fileId: file.id }, 'Workspace file deleted');
   res.json({ deleted: true });

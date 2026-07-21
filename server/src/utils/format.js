@@ -20,4 +20,22 @@ function formatFileSize(bytes) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-module.exports = { formatFileSize };
+/**
+ * Format a file_revisions row for API responses (File Collaboration, FC-04):
+ * snake_case → camelCase, shared by every scope's revisions endpoint.
+ * @param {Object} rev - file_revisions row
+ * @returns {Object}
+ */
+function formatFileRevision(rev) {
+  return {
+    id: rev.id,
+    author: rev.author,
+    op: rev.op,
+    diff: rev.diff,
+    sizeBytes: rev.size_bytes,
+    turn: rev.turn,
+    createdAt: rev.created_at,
+  };
+}
+
+module.exports = { formatFileSize, formatFileRevision };

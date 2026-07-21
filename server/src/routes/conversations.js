@@ -23,6 +23,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { resolveFileStore } = require('../tools/fileStore');
 const { saveTextOverFile } = require('../tools/storeWriter');
+const { formatFileRevision } = require('../utils/format');
 const { trashConversationFiles } = require('../tools/conversationCleanup');
 
 const router = express.Router();
@@ -486,6 +487,16 @@ router.get('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`);
   res.send(bytes);
+}));
+
+/**
+ * GET /api/conversations/:id/files/:fileId/revisions
+ * The chat file's change history (File Collaboration, FC-04).
+ */
+router.get('/:id/files/:fileId/revisions', asyncHandler(async (req, res) => {
+  requireConversationFile(req.user.userId, req.params.id, req.params.fileId);
+  const revisions = dal.listFileRevisions('conversation', req.params.fileId);
+  res.json(revisions.map(formatFileRevision));
 }));
 
 /**
