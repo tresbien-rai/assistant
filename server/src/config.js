@@ -61,6 +61,10 @@ const config = {
     // than the whole-context budget. ~100k chars ≈ ~25k tokens; larger files are
     // truncated with a note so the model knows there's more.
     toolReadMaxChars: parseInt(process.env.TOOL_READ_MAX_CHARS, 10) || 100000,
+    // Cap for a single stored revision diff (File Collaboration, FC-02). Kept
+    // tight because FC-03 injects the latest diff into the prompt; oversized
+    // diffs are truncated with a note. ~20k chars ≈ ~5k tokens.
+    revisionDiffMaxChars: parseInt(process.env.REVISION_DIFF_MAX_CHARS, 10) || 20000,
     // Accepted file extensions: text/code + PDF (Phase 1 decision #2). Lowercase,
     // leading dot. Anything else is rejected on upload. Extension is the reliable
     // signal here because browsers send inconsistent MIME types for source files.

@@ -135,12 +135,16 @@ async function executeCreateFile(input, ctx) {
 
   const store = resolveFileStore(ctx);
 
-  // Overwrite-on-duplicate (decision 6) via the shared write path.
+  // Overwrite-on-duplicate (decision 6) via the shared write path, which also
+  // appends the file_revisions row (FC-02). create_file doesn't hold the prior
+  // content, so a fresh file logs as 'create' (all-additions) and a same-name
+  // replacement logs as 'overwrite' — storeWriter derives the op.
   const { record, overwritten } = await writeContentToStore(auth, store, {
     filename,
     mimeType,
     bytes,
     userId: ctx.userId,
+    revision: { author: 'model', conversationId: ctx.conversationId || null },
   });
 
   const url = store.urlFor(record.id);
