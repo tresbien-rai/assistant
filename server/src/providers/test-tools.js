@@ -35,11 +35,17 @@ console.log('='.repeat(60));
 // ---------------------------------------------------------------------------
 console.log('\n1. Definitions sanity...');
 
-check('four tools defined: create_file, edit_file, read_file, list_files', () => {
+check('five tools defined: create_file, edit_file, read_file, list_files, move_file', () => {
   assert.deepStrictEqual(
     TOOL_DEFINITIONS.map((t) => t.name),
-    ['create_file', 'edit_file', 'read_file', 'list_files']
+    ['create_file', 'edit_file', 'read_file', 'list_files', 'move_file']
   );
+});
+
+check('move_file requires filename + destination (enum)', () => {
+  const mf = TOOL_DEFINITIONS.find((t) => t.name === 'move_file');
+  assert.deepStrictEqual(mf.input_schema.required, ['filename', 'destination']);
+  assert.deepStrictEqual(mf.input_schema.properties.destination.enum, ['project', 'workspace', 'downloads']);
 });
 
 check('every tool has description + object input_schema', () => {
@@ -65,7 +71,7 @@ console.log('\n2. Anthropic formatTools + buildRequestBody threading...');
 
 check('formatTools passes the native shape through', () => {
   const tools = anthropic.formatTools(TOOL_DEFINITIONS);
-  assert.strictEqual(tools.length, 4);
+  assert.strictEqual(tools.length, 5);
   assert.strictEqual(tools[0].name, 'create_file');
   assert.strictEqual(tools[0].input_schema.properties.filename.type, 'string');
 });
@@ -73,7 +79,7 @@ check('formatTools passes the native shape through', () => {
 check('buildRequestBody includes tools when passed, omits otherwise', () => {
   const base = { model: 'claude-x', messages: [{ role: 'user', content: 'hi' }] };
   const withTools = anthropic.buildRequestBody({ ...base, tools: TOOL_DEFINITIONS });
-  assert.strictEqual(withTools.tools.length, 4);
+  assert.strictEqual(withTools.tools.length, 5);
   const without = anthropic.buildRequestBody(base);
   assert.strictEqual(without.tools, undefined);
 });
@@ -158,8 +164,12 @@ check('formatTools emits functionDeclarations with proto-enum types', () => {
   const tools = gemini.formatTools(TOOL_DEFINITIONS);
   assert.strictEqual(tools.length, 1);
   const decls = tools[0].functionDeclarations;
-  assert.strictEqual(decls.length, 4);
+  assert.strictEqual(decls.length, 5);
   assert.strictEqual(decls[0].parameters.type, 'OBJECT');
+  // move_file's enum destination survives the proto-schema translation.
+  const moveFile = decls.find((d) => d.name === 'move_file');
+  assert.deepStrictEqual(moveFile.parameters.properties.destination.enum, ['project', 'workspace', 'downloads']);
+  assert.strictEqual(moveFile.parameters.properties.destination.type, 'STRING');
   assert.strictEqual(decls[0].parameters.properties.filename.type, 'STRING');
   assert.deepStrictEqual(decls[0].parameters.required, ['filename', 'content']);
   // edit_file's boolean param must translate to the proto-enum type.
@@ -176,7 +186,7 @@ check('no-argument tool (list_files) omits parameters entirely', () => {
 check('buildRequestBody includes tools when passed, omits otherwise', () => {
   const base = { model: 'gemini-x', messages: [{ role: 'user', content: 'hi' }] };
   const withTools = gemini.buildRequestBody({ ...base, tools: TOOL_DEFINITIONS });
-  assert.strictEqual(withTools.tools[0].functionDeclarations.length, 4);
+  assert.strictEqual(withTools.tools[0].functionDeclarations.length, 5);
   const without = gemini.buildRequestBody(base);
   assert.strictEqual(without.tools, undefined);
 });

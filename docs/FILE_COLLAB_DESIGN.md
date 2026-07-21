@@ -9,7 +9,9 @@ hierarchy this layers onto).
 > **Status (2026-07-20):** Design **locked** with the human across a full design
 > pass. Build order: **FC-01 → FC-02 → FC-03 → FC-04**, with FC-05 (move/promote
 > tool) and the search-tool family deferred to a later plan. FC-01 and FC-02 are
-> load-bearing — everything else builds on them.
+> load-bearing — everything else builds on them. **FC-01…05 are now built &
+> merged** (per-slice notes below); only FC-06 (rich diff renderer) and the
+> separate search-tool plan remain.
 >
 > **FC-01 ✅ built** (conversation file scope): `conversation_files` table + DAL,
 > `conversationStore` routing (all creates → chat scope; reads search
@@ -280,10 +282,18 @@ column precedent in `settings`).
 - A basic **History** affordance in the panel listing revisions (raw diff text
   for now; the rich renderer is FC-06, deferred).
 
-### FC-05 — Move / promote tool (deferred)
-- A `move_file` tool relocating a file between scopes (conversation → project/
-  workspace, etc.), so chat-authored work can be promoted into the curated
-  knowledge base intentionally.
+### FC-05 — Move / promote tool ✅ DONE
+- `move_file(filename, destination)` tool relocating a file between scopes,
+  chiefly to promote a chat-created file into the project/workspace knowledge
+  base (or Downloads). Mechanics: a metadata + Drive-parent move (reparent the
+  bytes into the destination folder — keeps the Drive id — create the
+  destination row, drop the source row + its now-orphaned revisions). A move is
+  not a content edit, so it logs no revision; a same-name destination file is
+  overwritten. `resolveDestinationStore` validates the target is reachable from
+  the chat; stores gained a `remove()`; `drive.moveFileToFolder` added.
+  Frontend needed NO change — a successful move returns a download URL, so the
+  existing "any file-producing tool gets a card" path renders it. New
+  `test-movefile.js`; suite 215 assertions green.
 
 ### FC-06 — Rich diff renderer (deferred, nice-to-have)
 - Human-facing visual diff in the FilePanel History: changed-line highlighting,

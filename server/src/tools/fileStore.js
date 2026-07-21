@@ -39,6 +39,7 @@ function projectStore(ctx) {
     list: () => dal.listProjectFiles(projectId),
     add: (data) => dal.addProjectFile(projectId, data),
     updateContent: (fileId, data) => dal.updateProjectFileContent(fileId, projectId, data),
+    remove: (fileId) => dal.deleteProjectFile(fileId, projectId),
     urlFor: (fileId) => `/api/projects/${projectId}/files/${fileId}/content`,
   };
 }
@@ -53,6 +54,7 @@ function workspaceStore(ctx) {
     list: () => dal.listWorkspaceFiles(workspaceId),
     add: (data) => dal.addWorkspaceFile(workspaceId, data),
     updateContent: (fileId, data) => dal.updateWorkspaceFileContent(fileId, workspaceId, data),
+    remove: (fileId) => dal.deleteWorkspaceFile(fileId, workspaceId),
     urlFor: (fileId) => `/api/workspaces/${workspaceId}/files/${fileId}/content`,
   };
 }
@@ -67,6 +69,7 @@ function downloadsStore(ctx) {
     list: () => dal.listUserFiles(userId),
     add: (data) => dal.addUserFile(userId, data),
     updateContent: (fileId, data) => dal.updateUserFileContent(fileId, userId, data),
+    remove: (fileId) => dal.deleteUserFile(fileId, userId),
     urlFor: (fileId) => `/api/files/${fileId}/content`,
   };
 }
@@ -81,6 +84,7 @@ function conversationStore(ctx) {
     list: () => dal.listConversationFiles(conversationId),
     add: (data) => dal.addConversationFile(conversationId, data),
     updateContent: (fileId, data) => dal.updateConversationFileContent(fileId, conversationId, data),
+    remove: (fileId) => dal.deleteConversationFile(fileId, conversationId),
     urlFor: (fileId) => `/api/conversations/${conversationId}/files/${fileId}/content`,
   };
 }
@@ -129,6 +133,33 @@ function resolveReadStores(ctx) {
 }
 
 /**
+ * Resolve a WRITE store for an explicit destination kind (File Collaboration,
+ * FC-05, move_file). Unlike resolveFileStore (which picks by precedence), this
+ * returns the store the caller named, or a reason string when that destination
+ * isn't available in this conversation (e.g. "project" from an unfiled chat).
+ * @param {Object} ctx - ToolContext
+ * @param {'conversation'|'project'|'workspace'|'downloads'} kind
+ * @returns {{store: FileStore}|{unavailable: string}}
+ */
+function resolveDestinationStore(ctx, kind) {
+  switch (kind) {
+    case 'conversation':
+      if (!ctx.conversationId) return { unavailable: 'this chat has no file scope.' };
+      return { store: conversationStore(ctx) };
+    case 'project':
+      if (!ctx.project) return { unavailable: 'this chat is not in a project.' };
+      return { store: projectStore(ctx) };
+    case 'workspace':
+      if (!ctx.workspace) return { unavailable: 'this chat is not in a workspace.' };
+      return { store: workspaceStore(ctx) };
+    case 'downloads':
+      return { store: downloadsStore(ctx) };
+    default:
+      return { unavailable: `"${kind}" is not a valid destination.` };
+  }
+}
+
+/**
  * Find a file by exact name across an ordered store list (most specific
  * first). Also reports any LESS-specific stores that hold the same name
  * (shadowing) so callers can disambiguate for the user. Shared by read_file
@@ -166,4 +197,4 @@ function resolveToolDriveAuth(userId) {
   }
 }
 
-module.exports = { resolveFileStore, resolveReadStores, findAcrossStores, resolveToolDriveAuth };
+module.exports = { resolveFileStore, resolveReadStores, resolveDestinationStore, findAcrossStores, resolveToolDriveAuth };
