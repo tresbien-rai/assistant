@@ -23,6 +23,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { resolveFileStore } = require('../tools/fileStore');
 const { saveTextOverFile } = require('../tools/storeWriter');
+const { trashConversationFiles } = require('../tools/conversationCleanup');
 
 const router = express.Router();
 
@@ -271,14 +272,23 @@ router.put('/:id', asyncHandler(async (req, res) => {
 
 /**
  * DELETE /api/conversations/:id
- * Deletes a conversation and all its messages (cascade)
+ * Deletes a conversation and all its messages (cascade). The chat's created
+ * files live on Drive under `Tessera/Chats/<id>/`; the DB rows cascade away but
+ * the Drive files would be orphaned, so trash them (recoverable) first. Trashing
+ * is best-effort — a Drive failure must not leave the user with an undeletable
+ * conversation.
  */
 router.delete('/:id', asyncHandler(async (req, res) => {
-  const deleted = dal.deleteConversation(req.params.id, req.user.userId);
-
-  if (!deleted) {
+  // Verify ownership/existence up front so we don't do Drive work for a chat
+  // that isn't the user's (and can return the 404 the old flow returned).
+  const conversation = dal.getConversationMeta(req.params.id, req.user.userId);
+  if (!conversation) {
     throw AppError.notFound('Conversation');
   }
+
+  await trashConversationFiles(req.user.userId, req.params.id);
+
+  dal.deleteConversation(req.params.id, req.user.userId);
 
   res.json({ deleted: true });
 }));
