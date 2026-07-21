@@ -13,6 +13,26 @@ don't assume the human has deep familiarity with the codebase internals.
 All work now goes through Claude Code (no parallel Claude Code Web sessions), so
 local `main` and origin stay in sync during normal single-session work.
 
+### Model tiering / sub-agents
+
+The orchestrator (main session) runs on the top-tier model. Two cheaper,
+opt-in sub-agents are defined in `.claude/agents/` for the orchestrator to
+delegate to **at its discretion**:
+
+- **`searcher`** (fast/cheap, read-only) — bounded fan-out code search: "where
+  does X live", "what uses Y", "what's the naming convention". Returns paths +
+  line refs + a short conclusion.
+- **`mechanic`** (mid-tier) — isolated, fully-specified mechanical work: a
+  well-scoped edit, a repetitive change across named files, or running the test
+  suite and reporting results.
+
+Delegation is **selective, not reflexive.** A sub-agent starts cold and
+re-derives context, so it only pays off for genuinely isolated, context-light
+tasks. Work that is tightly woven into the current conversation (e.g. an active
+design/implementation slice) stays inline on the orchestrator. Delegating is a
+judgement call the orchestrator makes as the codebase grows — when in doubt,
+inline it.
+
 ## Project Summary
 
 Tessera - a personal, server-backed AI chat interface with Google OAuth authentication. Users sign in with Google (which also connects their Google Drive) and store API keys server-side. Features customizable personas with avatar expressions and conversation history synced across devices.
