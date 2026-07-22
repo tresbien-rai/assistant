@@ -708,8 +708,10 @@ When responding, you may optionally include an expression tag like [expression: 
                 </div>
                 <p class="help-text">Upload an image for this expression, or use emoji as fallback.</p>
             </div>
-            <div class="modal-footer">
-                <button class="modal-btn secondary" id="deleteExpressionBtn">Delete</button>
+            <!-- .split: Delete is destructive, so it's held away from Save
+                 rather than sitting next to it. -->
+            <div class="modal-footer split">
+                <button class="modal-btn secondary danger-quiet" id="deleteExpressionBtn">Delete</button>
                 <button class="modal-btn primary" id="saveExpressionBtn">Save</button>
             </div>
         </div>

@@ -3655,12 +3655,18 @@ body {
     z-index: 200;
     opacity: 0;
     visibility: hidden;
-    transition: all 0.3s;
+    /* `visibility` is animatable, so `transition: all` makes hidden -> visible
+       take effect only once the transition passes 0 — a frame later. Until then
+       the modal is computed-hidden and nothing inside it can take focus, so a
+       .focus() on open silently does nothing. Flip visibility instantly on
+       open, and delay it on close so the opacity fade-out still plays. */
+    transition: opacity 0.3s, visibility 0s linear 0.3s;
 }
 
 .modal-overlay.visible {
     opacity: 1;
     visibility: visible;
+    transition: opacity 0.3s, visibility 0s;
 }
 
 /* Secondary modals can be opened from within the settings modal, so they must
@@ -3710,7 +3716,9 @@ body {
     cursor: pointer;
     padding: 4px 8px;
     border-radius: var(--radius-sm);
-    transition: all 0.2s;
+    /* Not `all` — same reason as .modal-btn: it would delay the visibility
+       flip inherited from .modal-overlay and make this unfocusable on open. */
+    transition: background-color 0.2s, color 0.2s;
 }
 
 .modal-close:hover {
@@ -3747,12 +3755,19 @@ body {
     border-color: var(--accent);
 }
 
+/* Right-aligned by default: a footer's choices read as a group. Use .split for
+   the exception — a destructive action that should be held away from the
+   primary one (see the expression modal's Delete vs Save). */
 .modal-footer {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     padding: 16px 20px;
     border-top: 1px solid var(--border-color);
     gap: 12px;
+}
+
+.modal-footer.split {
+    justify-content: space-between;
 }
 
 .modal-btn {
@@ -3762,7 +3777,9 @@ body {
     font-size: var(--text-sm);
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    /* Not `all`: that would include the visibility flip inherited from
+       .modal-overlay and leave the button unfocusable for a frame on open. */
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s, filter 0.2s;
 }
 
 .modal-btn.primary {
@@ -3781,6 +3798,15 @@ body {
 }
 
 .modal-btn.secondary:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+/* A destructive action sitting alongside a primary one: quiet at rest, so it
+   doesn't compete, and unmistakably destructive on hover. This is what
+   .secondary:hover used to do for every secondary button, including plain
+   Cancel/Close ones where "destructive" was the wrong signal. */
+.modal-btn.danger-quiet:hover {
     border-color: var(--error);
     color: var(--error);
 }
@@ -3790,19 +3816,14 @@ body {
    delete button in the expression modal, which is itself at z-index 250). */
 #confirmModal {
     z-index: 300;
-    /* `.modal-overlay` transitions `all`, which includes `visibility`.
-       visibility is animatable, so on hidden -> visible the new value doesn't
-       apply until the transition progresses past 0 — a frame later. Until then
-       the dialog is computed-hidden and its buttons cannot take focus, so the
-       initial .focus() silently does nothing and Tab walks the page behind.
-       Transition only what actually needs to animate. */
-    transition: opacity 0.3s;
 }
 
-/* Same trap one level down: .modal-btn sets `transition: all 0.2s`, which would
-   delay the buttons' own inherited visibility flip even after the fix above. */
-#confirmModal .modal-btn {
-    transition: background-color 0.2s, border-color 0.2s, color 0.2s, filter 0.2s;
+/* The dialog deliberately focuses Cancel so a stray Enter is safe. Opening it
+   by mouse means :focus-visible won't match, hiding the ring — and an invisible
+   focus position makes that safety invisible too. Show it on plain :focus. */
+#confirmModal .modal-btn:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .modal-confirm .modal-body p {
@@ -3812,12 +3833,6 @@ body {
     color: var(--text-secondary);
 }
 
-/* Confirm dialogs group their two choices at the right edge instead of pushing
-   them to opposite ends of a narrow box (the .modal-footer default). */
-.modal-confirm .modal-footer {
-    justify-content: flex-end;
-}
-
 .modal-btn.danger {
     background-color: var(--error);
     color: var(--on-error);
@@ -3825,13 +3840,6 @@ body {
 
 .modal-btn.danger:hover {
     filter: brightness(1.08);
-}
-
-/* The global .modal-btn.secondary:hover turns the button red, which would make
-   both buttons read as destructive here. Keep Cancel visibly neutral. */
-.modal-confirm .modal-btn.secondary:hover {
-    border-color: var(--text-secondary);
-    color: var(--text-primary);
 }
 
 /* ===== Model Management Modal ===== */

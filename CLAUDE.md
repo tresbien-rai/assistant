@@ -271,6 +271,12 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
   guarded action silently does nothing. Use `confirmDialog()` (promise-based,
   themed, in `app.js`) for confirmations, `showToast()` for transient notices,
   and `promptName()` for a name/text input.
+- **Modal chrome.** `.modal-footer` right-aligns its buttons; add `.split` only
+  to hold a destructive action away from the primary one. `.modal-btn.danger`
+  is a solid destructive button, `.danger-quiet` a destructive one that sits
+  next to a primary. Nothing inside `.modal-overlay` may use `transition: all`
+  — it delays the inherited `visibility` flip and makes the element
+  unfocusable when the modal opens (see `docs/CONFIRM_DIALOG_PLAN.md`).
 - All data operations go through `api-client.js`
 - State loaded from server on init, kept in memory during session
 - Event listeners set up in `setupEventListeners()`
