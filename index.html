@@ -575,6 +575,11 @@ When responding, you may optionally include an expression tag like [expression: 
                         <div class="avatar-image size-medium" id="avatarImage">
                             <span class="avatar-emoji" id="avatarEmoji">🤖</span>
                             <img class="avatar-img" id="avatarImg" src="" alt="Avatar" style="display: none;">
+                            <!-- Mood badge: shown over the default avatar when
+                                 the current expression has no image of its own,
+                                 so uploading an avatar doesn't silently switch
+                                 off all expression feedback. -->
+                            <span class="avatar-mood-badge" id="avatarMoodBadge" hidden aria-hidden="true"></span>
                         </div>
                     </div>
                     <div class="avatar-label">

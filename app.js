@@ -28,16 +28,22 @@ const CONFIG = {
         activeFileTurns: 1
     },
     // `keywords` is gone — expressions are declared by the model, never inferred
-    // from the text. `thinking` is reserved for the generation animation and is
-    // excluded from what the model may declare.
+    // from the text. `generating` is the one reserved slot: it's the UI's own
+    // "working on it" state, held for the whole response, and the model may
+    // never declare it. Everything else here is an ordinary expression —
+    // including `thinking`, which used to be reserved and is now free to be a
+    // real character pose (hand on chin).
     defaultExpressions: {
         neutral: { emoji: '😊', imageKey: '' },
         happy: { emoji: '😄', imageKey: '' },
         sad: { emoji: '😢', imageKey: '' },
         thinking: { emoji: '🤔', imageKey: '' },
         excited: { emoji: '🎉', imageKey: '' },
-        confused: { emoji: '😕', imageKey: '' }
+        confused: { emoji: '😕', imageKey: '' },
+        generating: { emoji: '💭', imageKey: '' }
     },
+    /** The expression slot driven by the UI, never by the model. */
+    generatingExpression: 'generating',
     attachments: {
         maxImageSize: 20 * 1024 * 1024,  // 20MB for images
         maxFileSize: 10 * 1024 * 1024,   // 10MB for other files
@@ -1444,6 +1450,7 @@ const elements = {
     avatarFileInput: document.getElementById('avatarFileInput'),
     avatarUploadBtn: document.getElementById('avatarUploadBtn'),
     avatarClearBtn: document.getElementById('avatarClearBtn'),
+    avatarMoodBadge: document.getElementById('avatarMoodBadge'),
     avatarPreview: document.getElementById('avatarPreview'),
     avatarPreviewName: document.getElementById('avatarPreviewName'),
     avatarPreviewTagline: document.getElementById('avatarPreviewTagline'),
@@ -1686,12 +1693,14 @@ function hydratePersonas(personas) {
         const expressions = hasExpressions
             ? p.expressions
             : { ...CONFIG.defaultExpressions };
-        // 'thinking' is reserved for the built-in generation animation (P2-U2)
-        // and must always have a slot — otherwise setExpression('thinking')
-        // silently no-ops and the slot never appears in persona settings.
-        // Personas created before it became a default lack it, so backfill.
-        if (!expressions.thinking) {
-            expressions.thinking = { ...CONFIG.defaultExpressions.thinking };
+        // The generating slot must always exist — otherwise setExpression()
+        // silently no-ops while the model works and the slot never appears in
+        // the expression editor. Personas predating it get it backfilled.
+        // Note this deliberately leaves any existing `thinking` entry alone:
+        // it used to be this reserved slot, and now demotes to an ordinary
+        // expression, art and all.
+        if (!expressions[CONFIG.generatingExpression]) {
+            expressions[CONFIG.generatingExpression] = { ...CONFIG.defaultExpressions.generating };
         }
         state.personas[p.id] = {
             id: p.id,
@@ -2680,10 +2689,10 @@ async function updateFloatingAvatar() {
     const inChat = (state.ui.mainView || {}).type === 'chat';
     avatar.classList.toggle('hidden', !state.settings.showAvatar || !inChat);
 
-    // Built-in "thinking" animation while the model generates (P2-U2). Plays
-    // over a custom thinking image/gif too, and is cleared automatically when
-    // the expression changes, since this runs on every setExpression().
-    avatar.classList.toggle('thinking', state.currentExpression === 'thinking');
+    // Built-in pulse while the model generates (P2-U2). Plays over a custom
+    // generating image/gif too, and clears automatically when the expression
+    // changes, since this runs on every setExpression().
+    avatar.classList.toggle('generating', state.currentExpression === CONFIG.generatingExpression);
 
     // Update image or emoji.
     // Priority: expression image > default avatar > emoji.
@@ -2702,21 +2711,29 @@ async function updateFloatingAvatar() {
         avatarImageUrl = `${API.avatars.getUrl(persona.id)}${cacheBust}`;
     }
 
+    const moodEmoji = (currentExpr && currentExpr.emoji) || '🤖';
     if (expressionImageUrl) {
-        // Expression has a custom image
+        // The expression has art of its own — it already conveys the mood, so
+        // no badge.
         elements.avatarEmoji.style.display = 'none';
         elements.avatarImg.style.display = 'block';
         elements.avatarImg.src = expressionImageUrl;
+        elements.avatarMoodBadge.hidden = true;
     } else if (avatarImageUrl) {
-        // Use default avatar
+        // Default avatar carries identity; the badge carries mood. Without it,
+        // a persona with an avatar but no per-expression art would never
+        // visibly change expression at all.
         elements.avatarEmoji.style.display = 'none';
         elements.avatarImg.style.display = 'block';
         elements.avatarImg.src = avatarImageUrl;
+        elements.avatarMoodBadge.textContent = moodEmoji;
+        elements.avatarMoodBadge.hidden = false;
     } else {
-        // Use emoji
+        // Nothing uploaded at all — the emoji IS the avatar, so no badge.
         elements.avatarEmoji.style.display = 'block';
         elements.avatarImg.style.display = 'none';
-        elements.avatarEmoji.textContent = (currentExpr && currentExpr.emoji) || '🤖';
+        elements.avatarEmoji.textContent = moodEmoji;
+        elements.avatarMoodBadge.hidden = true;
     }
 
     // Update name and expression label
@@ -2792,10 +2809,16 @@ async function renderExpressionList() {
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
     const cacheBust = persona && persona.updatedAt ? `?v=${persona.updatedAt}` : '';
+    const avatarUrl = persona && persona.avatarFilename
+        ? `${API.avatars.getUrl(persona.id)}${cacheBust}`
+        : null;
     for (const [name, expr] of Object.entries(expressions)) {
         const hasImage = !!(persona && expr.imageKey);
+        // Three states worth distinguishing visually: has its own art, falls
+        // back to the avatar + badge, or is a genuinely empty slot (dashed).
+        const fallbackClass = hasImage ? '' : (avatarUrl ? ' fallback-avatar' : ' no-image');
         const item = document.createElement('div');
-        item.className = `expression-slot${hasImage ? '' : ' no-image'}`;
+        item.className = `expression-slot${fallbackClass}`;
         item.setAttribute('role', 'button');
         item.tabIndex = 0;
         item.title = `Edit "${name}"`;
@@ -2807,14 +2830,23 @@ async function renderExpressionList() {
             }
         };
 
-        const face = hasImage
-            ? `<img src="${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}" alt="${escapeHtml(name)}">`
-            : `<span class="expression-slot-emoji">${expr.emoji || '🙂'}</span>`;
+        // Mirrors exactly what the chat will render for this expression:
+        // its own art if it has any, otherwise the default avatar wearing the
+        // emoji as a mood badge, otherwise the bare emoji.
+        let face;
+        if (hasImage) {
+            face = `<img src="${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}" alt="${escapeHtml(name)}">`;
+        } else if (avatarUrl) {
+            face = `<img src="${avatarUrl}" alt="${escapeHtml(name)}">
+                    <span class="expression-slot-badge">${expr.emoji || '🙂'}</span>`;
+        } else {
+            face = `<span class="expression-slot-emoji">${expr.emoji || '🙂'}</span>`;
+        }
 
         item.innerHTML = `
             <div class="expression-slot-face">${face}</div>
             <span class="expression-slot-name">${escapeHtml(name)}</span>
-            ${name === 'thinking' ? '<span class="expression-slot-tag">auto</span>' : ''}
+            ${name === CONFIG.generatingExpression ? '<span class="expression-slot-tag">auto</span>' : ''}
         `;
 
         list.appendChild(item);
@@ -2842,9 +2874,10 @@ async function openExpressionModal(name = null) {
         elements.expressionModalTitle.textContent = 'Edit Expression';
         elements.expressionName.value = name;
         elements.expressionEmoji.value = expr.emoji;
-        // 'thinking' is the generation animation, not a declarable mood — its
-        // art is editable but the slot itself can't be removed.
-        elements.deleteExpressionBtn.style.display = name === 'thinking' ? 'none' : 'block';
+        // The generating slot is the UI's own state, not a declarable mood —
+        // its art is editable but the slot itself can't be removed.
+        elements.deleteExpressionBtn.style.display =
+            name === CONFIG.generatingExpression ? 'none' : 'block';
 
         // Server URL for the expression image (cache-busted).
         if (persona && expr.imageKey) {
@@ -2892,8 +2925,8 @@ async function saveExpression() {
         showToast('Use letters, numbers, spaces, - or _ (max 31 characters)', { type: 'warning' });
         return;
     }
-    if (name === 'thinking' && editingExpression !== 'thinking') {
-        showToast('"thinking" is reserved for the generating animation', { type: 'warning' });
+    if (name === CONFIG.generatingExpression && editingExpression !== CONFIG.generatingExpression) {
+        showToast(`"${CONFIG.generatingExpression}" is reserved for the working-on-it state`, { type: 'warning' });
         return;
     }
 
@@ -4454,19 +4487,31 @@ function detectExpression(text) {
     const persona = getActivePersona();
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
-    // 'thinking' is reserved as the transient generation-phase state (P2-U2) —
-    // it's never a settled expression, so ignore it even if declared.
+    // The generating slot is the UI's own state, so a model that declares it
+    // is ignored.
     const tagMatch = text.match(/\[expression:\s*([\w -]+)\]/i);
     if (tagMatch) {
         const exprName = tagMatch[1].trim().toLowerCase();
-        if (expressions[exprName] && exprName !== 'thinking') {
+        if (expressions[exprName] && exprName !== CONFIG.generatingExpression) {
             return exprName;
         }
     }
 
     // Nothing declared: hold the current expression, except settle the
-    // transient "thinking" generation state back to neutral.
-    return state.currentExpression === 'thinking' ? 'neutral' : state.currentExpression;
+    // transient generating state back to neutral.
+    return state.currentExpression === CONFIG.generatingExpression ? 'neutral' : state.currentExpression;
+}
+
+/**
+ * Drop the avatar out of the `generating` state after a failed or abandoned
+ * request. Without this the pulse runs forever: nothing else clears it, since
+ * the settled expression is normally applied when a response finalizes.
+ * No-op if the avatar has already moved on.
+ */
+function settleGeneratingExpression() {
+    if (state.currentExpression === CONFIG.generatingExpression) {
+        setExpression('neutral');
+    }
 }
 
 function stripExpressionTag(text) {
@@ -5992,7 +6037,7 @@ async function sendMessageFromText(text, attachments = []) {
 
     await appendMessage('user', text, true, null, attachments.length > 0 ? attachments : null);
     showTypingIndicator();
-    setExpression('thinking'); // restored when the (re)generated response completes
+    setExpression(CONFIG.generatingExpression); // held until the response completes
 
     try {
         let response;
@@ -6042,6 +6087,7 @@ async function sendMessageFromText(text, attachments = []) {
         }
     } catch (error) {
         hideTypingIndicator();
+        settleGeneratingExpression();
         displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
         console.error('API Error:', error);
     } finally {
@@ -7043,9 +7089,9 @@ async function sendMessage() {
         try {
             hideTypingIndicator();
             startStreamingMessage();
-            // Show the persona's "thinking" expression for the whole generation;
-            // finalizeStreamingMessage restores the detected expression on end.
-            setExpression('thinking');
+            // Hold the generating state for the whole response;
+            // finalizeStreamingMessage applies the declared expression at the end.
+            setExpression(CONFIG.generatingExpression);
             // Pin the conversation id at send-time so a mid-stream switch
             // doesn't redirect the assistant reply.
             const targetConvoId = state.activeConversationId;
@@ -7062,6 +7108,7 @@ async function sendMessage() {
                 state.streamingMessageDiv = null;
             }
             hideTypingIndicator();
+            settleGeneratingExpression();
             displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
             console.error('API Error:', error);
         } finally {
@@ -7073,7 +7120,7 @@ async function sendMessage() {
     } else {
         // Non-streaming path
         showTypingIndicator();
-        setExpression('thinking'); // restored from the response below
+        setExpression(CONFIG.generatingExpression); // restored from the response below
 
         try {
             const response = await callAPI(userMessage, attachmentMeta);
@@ -7100,6 +7147,7 @@ async function sendMessage() {
 
         } catch (error) {
             hideTypingIndicator();
+            settleGeneratingExpression();
             displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
             console.error('API Error:', error);
         } finally {
@@ -7427,7 +7475,7 @@ function startStreamingMessage() {
 
     state.streamingMessageDiv = messageDiv;
     state.streamingAccumulator = '';
-    state.streamingExpressionApplied = null;
+    state.streamingDeclaredExpression = null;
     state.streamingGeneratedImages = [];
     state.streamingToolEvents = [];
 
@@ -7495,15 +7543,13 @@ function appendStreamChunk(text) {
                 scrollToBottom();
                 return;
             }
-            // Fire once, the moment the tag closes: the avatar changes BEFORE
-            // the first word of the reply renders. 'thinking' is the UI's own
-            // generation state, so a model that declares it is ignored (the tag
-            // is still stripped). Unknown names no-op inside setExpression.
-            if (expression && expression !== 'thinking'
-                && expression !== state.streamingExpressionApplied) {
-                state.streamingExpressionApplied = expression;
-                setExpression(expression);
-            }
+            // The tag is parsed and stripped here but deliberately NOT applied
+            // yet: the avatar holds the `generating` state for the whole
+            // response, so "working on it" stays legible instead of flickering
+            // for the four tokens it takes the tag to close. The declared
+            // expression lands in finalizeStreamingMessage, which re-reads it
+            // from the full text via detectExpression.
+            if (expression) state.streamingDeclaredExpression = expression;
 
             // First real content: drop the pre-token placeholder state so the
             // trailing block cursor takes over from the typing dots.

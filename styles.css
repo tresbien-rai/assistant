@@ -1814,17 +1814,20 @@ body {
     color: var(--error);
 }
 
-/* Expression Image Preview in Modal */
+/* Expression image preview in the modal. Sized and centered to match the
+   persona Avatar tab — any interface for working with images should show the
+   image big enough to actually judge it. */
 .expression-image-preview {
-    width: 80px;
-    height: 80px;
+    width: 200px;
+    max-width: 100%;
+    aspect-ratio: 1 / 1;
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 12px;
+    margin: 0 auto 12px;
     overflow: hidden;
 }
 
@@ -2020,10 +2023,65 @@ body {
     line-height: 1;
 }
 
-/* An imageless slot is a gap to fill, not a finished state — say so quietly. */
+/* A slot with nothing at all is a gap to fill — say so quietly. */
 .expression-slot.no-image .expression-slot-face {
     border-style: dashed;
     background: transparent;
+}
+
+/* Falling back to the default avatar: dashed border still marks "no art of its
+   own", and the avatar sits back a little so the mood badge reads first. */
+.expression-slot.fallback-avatar .expression-slot-face {
+    border-style: dashed;
+}
+
+.expression-slot.fallback-avatar .expression-slot-face img {
+    opacity: 0.55;
+}
+
+.expression-slot:hover .expression-slot-face img {
+    opacity: 1;
+}
+
+/* Mood badge — the emoji worn over the default avatar. Mirrors the floating
+   avatar's badge so the editor previews exactly what chat renders. */
+.expression-slot-badge,
+.avatar-mood-badge {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    line-height: 1;
+}
+
+.expression-slot-badge {
+    width: 30px;
+    height: 30px;
+    margin: 4px;
+    font-size: 15px;
+}
+
+/* Scales with the avatar, which is user-resizable from 32px to 480px. */
+.avatar-mood-badge {
+    width: 32%;
+    height: 32%;
+    max-width: 88px;
+    max-height: 88px;
+    min-width: 16px;
+    min-height: 16px;
+    margin: 4%;
+    font-size: clamp(9px, 17cqw, 46px);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    z-index: 1;
+}
+
+.expression-slot-face {
+    position: relative;
 }
 
 .expression-slot-name {
@@ -3302,7 +3360,7 @@ body {
 /* "Thinking" state (P2-U2): a gentle bob + accent glow while the model
    generates. Plays regardless of whether the persona has a custom thinking
    image. Skip the bob when the avatar is being dragged. */
-.floating-avatar.thinking:not(.dragging) .avatar-frame {
+.floating-avatar.generating:not(.dragging) .avatar-frame {
     animation: avatar-thinking 1.6s ease-in-out infinite;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent-subtle), var(--shadow-lg);
@@ -3314,7 +3372,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .floating-avatar.thinking .avatar-frame { animation: none; }
+    .floating-avatar.generating .avatar-frame { animation: none; }
 }
 
 /* Position classes */
@@ -3354,6 +3412,10 @@ body {
     justify-content: center;
     overflow: hidden;
     transition: all 0.3s ease;
+    /* Anchors the mood badge, and lets it scale in cq units — the avatar is
+       user-resizable from 32px to 480px, so the badge can't be a fixed size. */
+    position: relative;
+    container-type: inline-size;
 }
 
 .avatar-emoji {

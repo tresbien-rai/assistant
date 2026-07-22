@@ -20,8 +20,13 @@
  *   most-shared to least-shared.
  */
 
-/** Reserved: the transient generation-phase state, driven by the UI, never declared. */
-const RESERVED_EXPRESSIONS = new Set(['thinking']);
+/**
+ * Reserved: the "working on it" state the UI drives while a response streams.
+ * Never offered to the model. Note `thinking` is NOT reserved — it used to be
+ * this slot, and is now an ordinary character expression (a hand-on-chin pose
+ * is a perfectly good thing to declare).
+ */
+const RESERVED_EXPRESSIONS = new Set(['generating']);
 
 /** Expression names are interpolated into the system prompt, so they're constrained. */
 const VALID_EXPRESSION_NAME = /^[a-z0-9][a-z0-9 _-]{0,30}$/i;
