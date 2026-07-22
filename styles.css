@@ -16,6 +16,7 @@
     --assistant-bubble: #2d2d44;
     --border-color: #2d2d44;
     --error: #ff6b6b;
+    --on-error: #2a1214;       /* text sitting on an --error background (light coral needs a dark label) */
     --success: #51cf66;
     --warning: #ffd43b;
     --info: #4dabf7;
@@ -3782,6 +3783,42 @@ body {
 .modal-btn.secondary:hover {
     border-color: var(--error);
     color: var(--error);
+}
+
+/* ===== Confirm Dialog ===== */
+/* Stacks above every other modal — it can be opened from inside one (e.g. the
+   delete button in the expression modal, which is itself at z-index 250). */
+#confirmModal {
+    z-index: 300;
+}
+
+.modal-confirm .modal-body p {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+/* Confirm dialogs group their two choices at the right edge instead of pushing
+   them to opposite ends of a narrow box (the .modal-footer default). */
+.modal-confirm .modal-footer {
+    justify-content: flex-end;
+}
+
+.modal-btn.danger {
+    background-color: var(--error);
+    color: var(--on-error);
+}
+
+.modal-btn.danger:hover {
+    filter: brightness(1.08);
+}
+
+/* The global .modal-btn.secondary:hover turns the button red, which would make
+   both buttons read as destructive here. Keep Cancel visibly neutral. */
+.modal-confirm .modal-btn.secondary:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
 }
 
 /* ===== Model Management Modal ===== */

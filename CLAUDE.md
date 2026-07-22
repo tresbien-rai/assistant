@@ -265,6 +265,12 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
 
 ### Frontend
 - DOM elements cached in `elements` object
+- **No native dialogs.** Never use `confirm()`, `alert()`, or `prompt()`.
+  Browsers let users permanently suppress them ("prevent this page from creating
+  additional dialogs"), after which `confirm()` returns `false` forever and every
+  guarded action silently does nothing. Use `confirmDialog()` (promise-based,
+  themed, in `app.js`) for confirmations, `showToast()` for transient notices,
+  and `promptName()` for a name/text input.
 - All data operations go through `api-client.js`
 - State loaded from server on init, kept in memory during session
 - Event listeners set up in `setupEventListeners()`

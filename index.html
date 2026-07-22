@@ -789,6 +789,26 @@ When responding, you may optionally include an expression tag like [expression: 
         </div>
     </div>
 
+    <!-- Confirm dialog. Replaces window.confirm() everywhere: browsers let users
+         permanently suppress native dialogs, after which confirm() silently
+         returns false and every guarded action stops working. One shared
+         instance — confirmDialog() in app.js fills it and resolves a promise. -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal-content modal-small modal-confirm" role="alertdialog" aria-modal="true"
+             aria-labelledby="confirmModalTitle" aria-describedby="confirmModalBody">
+            <div class="modal-header">
+                <h3 id="confirmModalTitle">Are you sure?</h3>
+            </div>
+            <div class="modal-body">
+                <p id="confirmModalBody"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary" id="confirmModalCancelBtn" type="button">Cancel</button>
+                <button class="modal-btn primary" id="confirmModalConfirmBtn" type="button">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Request Inspector Modal (developer mode) -->
     <div class="modal-overlay" id="requestInspectorModal">
         <div class="modal-content modal-xl">

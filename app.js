@@ -1397,6 +1397,13 @@ const elements = {
     nameModalSaveBtn: document.getElementById('nameModalSaveBtn'),
     closeNameModal: document.getElementById('closeNameModal'),
 
+    // Shared confirm dialog (replaces window.confirm — see confirmDialog()).
+    confirmModal: document.getElementById('confirmModal'),
+    confirmModalTitle: document.getElementById('confirmModalTitle'),
+    confirmModalBody: document.getElementById('confirmModalBody'),
+    confirmModalCancelBtn: document.getElementById('confirmModalCancelBtn'),
+    confirmModalConfirmBtn: document.getElementById('confirmModalConfirmBtn'),
+
     // Top-bar breadcrumb indicator (No workspace / WS / WS › Project)
     workspaceBreadcrumb: document.getElementById('workspaceBreadcrumb'),
 
@@ -2051,9 +2058,13 @@ async function clearStoredApiKey() {
     const provider = getActiveModelConfig().provider || CONFIG.defaults.provider;
     if (!state.apiKeyStatus[provider]?.hasKey) return;
 
-    if (!confirm(`Clear your saved ${provider} API key from the server? You'll need to re-enter it to chat.`)) {
-        return;
-    }
+    const ok = await confirmDialog({
+        title: 'Clear stored API key?',
+        body: `Your saved ${provider} key will be removed from the server. You'll need to re-enter it before you can chat.`,
+        confirmLabel: 'Clear key',
+        danger: true,
+    });
+    if (!ok) return;
 
     try {
         await API.apiKeys.delete(provider);
@@ -3006,34 +3017,45 @@ async function deleteExpression() {
         return;
     }
 
-    if (confirm(`Delete expression "${editingExpression}"?`)) {
-        const expr = persona.expressions[editingExpression];
+    // Pin the name: confirming is async now, so don't trust the module-level
+    // `editingExpression` to still point at the same thing afterwards.
+    const name = editingExpression;
+    const expr = persona.expressions[name];
 
-        // Local optimistic delete.
-        const newExpressions = { ...persona.expressions };
-        delete newExpressions[editingExpression];
+    const ok = await confirmDialog({
+        title: 'Delete expression?',
+        body: expr?.imageKey
+            ? `"${name}" and its uploaded image will be removed from this persona. This can't be undone.`
+            : `"${name}" will be removed from this persona. This can't be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
 
-        try {
-            // 1. Persist expression-set change.
-            await API.personas.update(persona.id, { expressions: newExpressions });
-            // 2. Drop the server-side image file too (best-effort).
-            if (expr?.imageKey) {
-                try {
-                    await API.avatars.deleteExpression(persona.id, editingExpression);
-                } catch (e) { /* file may already be gone — non-fatal */ }
-            }
-            // 3. Sync local state with the result.
-            persona.expressions = newExpressions;
-            persona.updatedAt = Date.now();
-        } catch (err) {
-            console.error('Failed to delete expression:', err);
-            displayError(err, { action: 'delete expression' });
-            return;
+    // Local optimistic delete.
+    const newExpressions = { ...persona.expressions };
+    delete newExpressions[name];
+
+    try {
+        // 1. Persist expression-set change.
+        await API.personas.update(persona.id, { expressions: newExpressions });
+        // 2. Drop the server-side image file too (best-effort).
+        if (expr?.imageKey) {
+            try {
+                await API.avatars.deleteExpression(persona.id, name);
+            } catch (e) { /* file may already be gone — non-fatal */ }
         }
-
-        await renderExpressionList();
-        closeExpressionModal();
+        // 3. Sync local state with the result.
+        persona.expressions = newExpressions;
+        persona.updatedAt = Date.now();
+    } catch (err) {
+        console.error('Failed to delete expression:', err);
+        displayError(err, { action: 'delete expression' });
+        return;
     }
+
+    await renderExpressionList();
+    closeExpressionModal();
 }
 
 function updateSystemPromptExpressions() {
@@ -3204,9 +3226,15 @@ function renderSavedModelsList() {
 
     // Add delete button listeners
     container.querySelectorAll('.delete-model-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             const modelId = e.target.dataset.modelId;
-            if (confirm(`Delete model "${getModelDisplayName(modelId)}"?`)) {
+            const ok = await confirmDialog({
+                title: 'Delete model?',
+                body: `"${getModelDisplayName(modelId)}" will be removed from your model catalog. You can add it again later.`,
+                confirmLabel: 'Delete',
+                danger: true,
+            });
+            if (ok) {
                 removeCustomModel(modelId);
                 renderSavedModelsList();
                 populateModelDropdown();
@@ -3619,7 +3647,13 @@ async function deleteConversationPrompt(conversationId) {
     const convo = state.conversations[conversationId];
     if (!convo) return;
 
-    if (!confirm(`Delete "${convo.title || 'New Chat'}"? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+        title: 'Delete chat?',
+        body: `"${convo.title || 'New Chat'}" and all of its messages will be deleted. This can't be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
 
     try {
         await API.conversations.delete(conversationId);
@@ -3958,53 +3992,59 @@ async function deletePersonaPrompt(personaId) {
     // Count linked conversations
     const linkedConvos = Object.values(state.conversations).filter(c => c.personaId === personaId);
 
-    let message = `Delete persona "${persona.name}"?`;
+    let body = `"${persona.name}", its avatar, and its expressions will be deleted.`;
     if (linkedConvos.length > 0) {
-        message += `\n\nThis will also delete ${linkedConvos.length} linked conversation${linkedConvos.length !== 1 ? 's' : ''}.`;
+        body += ` This also deletes ${linkedConvos.length} linked chat${linkedConvos.length !== 1 ? 's' : ''}.`;
     }
-    message += '\n\nThis cannot be undone.';
+    body += " This can't be undone.";
 
-    if (confirm(message)) {
-        // Server-side delete cascades to linked conversations (and messages).
-        // Backend refuses to delete the user's last persona — that surfaces as
-        // a VALIDATION_ERROR, which we catch and show to the user.
-        try {
-            await API.personas.delete(personaId);
-        } catch (err) {
-            console.error('Failed to delete persona:', err);
-            displayError(err, { action: 'delete persona' });
-            return;
-        }
+    const ok = await confirmDialog({
+        title: 'Delete persona?',
+        body,
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
 
-        // Local cleanup mirrors the server cascade.
-        linkedConvos.forEach(convo => {
-            delete state.conversations[convo.id];
-        });
-        delete state.personas[personaId];
-
-        // If we deleted the active persona, switch to another.
-        if (state.activePersonaId === personaId) {
-            const remaining = Object.values(state.personas);
-            state.activePersonaId = remaining.length > 0 ? remaining[0].id : null;
-            applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
-        }
-
-        // Clear active conversation if it was deleted by the cascade.
-        if (state.activeConversationId && !state.conversations[state.activeConversationId]) {
-            state.activeConversationId = null;
-        }
-
-        // The persona editor always shows the active persona, which just got
-        // deleted (or swapped) — fall back to the Personas list instead of
-        // silently re-targeting the editor at another persona.
-        if ((state.ui.mainView || {}).type === 'persona-edit') {
-            state.ui.mainView = { type: 'personas' };
-        }
-
-        renderConversationList();
-        renderConversation();
-        await updateUI();
+    // Server-side delete cascades to linked conversations (and messages).
+    // Backend refuses to delete the user's last persona — that surfaces as
+    // a VALIDATION_ERROR, which we catch and show to the user.
+    try {
+        await API.personas.delete(personaId);
+    } catch (err) {
+        console.error('Failed to delete persona:', err);
+        displayError(err, { action: 'delete persona' });
+        return;
     }
+
+    // Local cleanup mirrors the server cascade.
+    linkedConvos.forEach(convo => {
+        delete state.conversations[convo.id];
+    });
+    delete state.personas[personaId];
+
+    // If we deleted the active persona, switch to another.
+    if (state.activePersonaId === personaId) {
+        const remaining = Object.values(state.personas);
+        state.activePersonaId = remaining.length > 0 ? remaining[0].id : null;
+        applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
+    }
+
+    // Clear active conversation if it was deleted by the cascade.
+    if (state.activeConversationId && !state.conversations[state.activeConversationId]) {
+        state.activeConversationId = null;
+    }
+
+    // The persona editor always shows the active persona, which just got
+    // deleted (or swapped) — fall back to the Personas list instead of
+    // silently re-targeting the editor at another persona.
+    if ((state.ui.mainView || {}).type === 'persona-edit') {
+        state.ui.mainView = { type: 'personas' };
+    }
+
+    renderConversationList();
+    renderConversation();
+    await updateUI();
 }
 
 /**
@@ -4153,13 +4193,19 @@ async function deleteProjectPrompt(projectId) {
     if (!project) return;
 
     const count = project.fileCount || 0;
-    let message = `Delete project "${project.name}"?`;
+    let body = `"${project.name}" will be deleted.`;
     if (count > 0) {
-        message += `\n\nIts ${count} file${count !== 1 ? 's' : ''} will be moved to your Google Drive trash.`;
+        body += ` Its ${count} file${count !== 1 ? 's' : ''} will be moved to your Google Drive trash.`;
     }
-    message += '\n\nChats in this project will keep working without its context.';
+    body += ' Chats in this project will keep working, but without its context.';
 
-    if (!confirm(message)) return;
+    const ok = await confirmDialog({
+        title: 'Delete project?',
+        body,
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
 
     try {
         await API.projects.delete(projectId);
@@ -4238,13 +4284,19 @@ async function deleteWorkspacePrompt(workspaceId) {
 
     const pc = ws.projectCount || 0;
     const fc = ws.fileCount || 0;
-    let message = `Delete workspace "${ws.name}"?`;
+    let body = `"${ws.name}" will be deleted.`;
     if (pc > 0 || fc > 0) {
-        message += `\n\nIts ${pc} project${pc !== 1 ? 's' : ''} and ${fc} file${fc !== 1 ? 's' : ''} will be moved to your Google Drive trash.`;
+        body += ` Its ${pc} project${pc !== 1 ? 's' : ''} and ${fc} file${fc !== 1 ? 's' : ''} will be moved to your Google Drive trash.`;
     }
-    message += '\n\nChats in this workspace become unfiled — kept, but without its context.';
+    body += ' Chats in this workspace become unfiled — kept, but without its context.';
 
-    if (!confirm(message)) return;
+    const ok = await confirmDialog({
+        title: 'Delete workspace?',
+        body,
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
 
     try {
         await API.workspaces.delete(workspaceId);
@@ -5139,6 +5191,78 @@ function showPersonaCardMenu(anchorEl, personaId) {
 const CONTAINER_FOLDER_SVG = '<svg class="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>';
 const CONTAINER_UPLOAD_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
 
+// ===== Confirm dialog =====
+// Replaces window.confirm(). Browsers let users permanently suppress native
+// dialogs ("prevent this page from creating additional dialogs"); once ticked,
+// confirm() returns false forever and every guarded action silently does
+// nothing. Promise-based — resolves true to proceed, false to cancel.
+let _confirmResolve = null;
+let _confirmLastFocus = null;
+let _confirmPrevOverflow = '';
+
+/**
+ * Ask the user to confirm an action.
+ * `title` and `body` are set as text, never HTML — they routinely interpolate
+ * user-controlled names (personas, files, imported .tessera bundles).
+ * @param {{title?:string, body?:string, confirmLabel?:string, cancelLabel?:string, danger?:boolean}} [opts]
+ * @returns {Promise<boolean>}
+ */
+function confirmDialog({
+    title = 'Are you sure?',
+    body = '',
+    confirmLabel = 'Confirm',
+    cancelLabel = 'Cancel',
+    danger = false,
+} = {}) {
+    // Never stack: a second call cancels whatever is already on screen.
+    if (_confirmResolve) closeConfirmDialog(false);
+
+    return new Promise(resolve => {
+        _confirmResolve = resolve;
+        _confirmLastFocus = document.activeElement;
+
+        elements.confirmModalTitle.textContent = title;
+        elements.confirmModalBody.textContent = body;
+        elements.confirmModalBody.style.display = body ? '' : 'none';
+        elements.confirmModalConfirmBtn.textContent = confirmLabel;
+        elements.confirmModalCancelBtn.textContent = cancelLabel;
+        elements.confirmModalConfirmBtn.classList.toggle('danger', danger);
+        elements.confirmModalConfirmBtn.classList.toggle('primary', !danger);
+
+        _confirmPrevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        elements.confirmModal.classList.add('visible');
+
+        // Destructive actions focus Cancel, so a stray Enter can't destroy
+        // anything; everything else focuses Confirm. Enter then activates the
+        // focused button natively — no extra key handling needed.
+        const initial = danger ? elements.confirmModalCancelBtn : elements.confirmModalConfirmBtn;
+        initial.focus();
+        // The overlay animates out of `visibility: hidden`, and a still-hidden
+        // element can't take focus. If the first attempt didn't land, retry once
+        // the next frame has applied the class.
+        if (document.activeElement !== initial) {
+            requestAnimationFrame(() => {
+                if (_confirmResolve) initial.focus();
+            });
+        }
+    });
+}
+
+/** Close the confirm dialog, resolving the pending promise with `result`. */
+function closeConfirmDialog(result) {
+    elements.confirmModal.classList.remove('visible');
+    document.body.style.overflow = _confirmPrevOverflow;
+
+    // Hand focus back to whatever opened the dialog, if it's still around.
+    if (_confirmLastFocus?.isConnected) _confirmLastFocus.focus();
+    _confirmLastFocus = null;
+
+    const resolve = _confirmResolve;
+    _confirmResolve = null;
+    if (resolve) resolve(result);
+}
+
 // ===== Name-only create modal =====
 // The single remaining create dialog: asks only for a name, then the caller
 // opens the new container's inline page to fill in the rest. Promise-based —
@@ -5530,7 +5654,13 @@ async function uploadContainerFiles(kind, id, fileList) {
  */
 async function deleteContainerFilePrompt(kind, id, fileId, filename) {
     const where = kind === 'workspace' ? 'workspace' : 'project';
-    if (!confirm(`Delete file "${filename}"? This removes it from the ${where} and your Google Drive.`)) return;
+    const ok = await confirmDialog({
+        title: 'Delete file?',
+        body: `"${filename}" will be removed from this ${where} and from your Google Drive.`,
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
     try {
         await containerFilesApi(kind).delete(id, fileId);
     } catch (err) {
@@ -6035,7 +6165,17 @@ async function deleteMessage(msgIndex) {
     const activeConvo = getActiveConversation();
     if (!activeConvo || !activeConvo.messages[msgIndex]) return;
 
-    if (!confirm('Delete this message?')) return;
+    const ok = await confirmDialog({
+        title: 'Delete message?',
+        body: "This message will be removed from the conversation. This can't be undone.",
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
+
+    // Confirming is async now — re-check that the message is still there and
+    // that we're still looking at the same conversation.
+    if (getActiveConversation() !== activeConvo || !activeConvo.messages[msgIndex]) return;
 
     const msg = activeConvo.messages[msgIndex];
 
@@ -6908,7 +7048,12 @@ const FilePanel = {
             if (state.isLoading) showToast('Wait for the assistant to finish its turn first.', { type: 'warning' });
             return;
         }
-        if (!window.confirm('Restore this version? The file’s current content is replaced with this version, added as a new entry in the history.')) return;
+        const ok = await confirmDialog({
+            title: 'Restore this version?',
+            body: 'The file’s current content is replaced with this version, and the replacement is added as a new entry in the history.',
+            confirmLabel: 'Restore',
+        });
+        if (!ok) return;
         try {
             const updated = await API.files.restoreRevision(this.file.url, revId);
             if (updated && typeof updated.sizeBytes === 'number') this.file.sizeBytes = updated.sizeBytes;
@@ -7013,10 +7158,14 @@ const FilePanel = {
 
         // The assistant rewrote this file mid-edit — saving is a deliberate
         // choice to overwrite its version, so ask.
-        if (this.conflict && !window.confirm(
-            'The assistant updated this file while you were editing. Save anyway and overwrite its version with yours?'
-        )) {
-            return;
+        if (this.conflict) {
+            const ok = await confirmDialog({
+                title: 'Overwrite the assistant’s version?',
+                body: 'The assistant updated this file while you were editing. Saving replaces its version with yours.',
+                confirmLabel: 'Save anyway',
+                danger: true,
+            });
+            if (!ok) return;
         }
 
         // Pinned: a conversation switch or panel close while the PUT is in
@@ -8343,6 +8492,31 @@ function setupEventListeners() {
     // (The "+ New chat" button lives in the main-area Chats list, wired per
     // render in renderChatsListMain.)
 
+    // Shared confirm dialog. No close ×: a confirm has exactly two exits.
+    elements.confirmModalCancelBtn.addEventListener('click', () => closeConfirmDialog(false));
+    elements.confirmModalConfirmBtn.addEventListener('click', () => closeConfirmDialog(true));
+    elements.confirmModal.addEventListener('click', (e) => {
+        if (e.target === elements.confirmModal) closeConfirmDialog(false);
+    });
+    elements.confirmModal.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            // Capture it here so a modal underneath (which may have its own Esc
+            // handler) doesn't also close.
+            e.stopPropagation();
+            e.preventDefault();
+            closeConfirmDialog(false);
+            return;
+        }
+        // Focus trap. Only two focusable elements, so Tab just toggles.
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const next = document.activeElement === elements.confirmModalCancelBtn
+                ? elements.confirmModalConfirmBtn
+                : elements.confirmModalCancelBtn;
+            next.focus();
+        }
+    });
+
     // Name-only create modal (workspace + project creation). The create/edit
     // triggers live in the Workspaces drill-in and the inline container pages,
     // wired per-render. Container instructions/files are edited inline, not here.
@@ -8912,23 +9086,29 @@ function setupTextareaResizers() {
 }
 
 async function clearConversation() {
-    if (confirm('Are you sure you want to clear the conversation? This cannot be undone.')) {
-        // Clear the active conversation's messages
-        const activeConvo = getActiveConversation();
-        if (activeConvo) {
-            activeConvo.messages = [];
-            activeConvo.title = 'New Chat';
-            activeConvo.updatedAt = Date.now();
-            saveConversations();
-        }
+    const ok = await confirmDialog({
+        title: 'Clear this conversation?',
+        body: "Every message in this chat will be removed and the chat reset to a new one. This can't be undone.",
+        confirmLabel: 'Clear',
+        danger: true,
+    });
+    if (!ok) return;
 
-        state.estimatedTokens = 0;
-        state.currentExpression = 'neutral';
-        renderConversation();
-        updateStatusBar();
-        await updateFloatingAvatar();
-        closeSidebar();
+    // Clear the active conversation's messages
+    const activeConvo = getActiveConversation();
+    if (activeConvo) {
+        activeConvo.messages = [];
+        activeConvo.title = 'New Chat';
+        activeConvo.updatedAt = Date.now();
+        saveConversations();
     }
+
+    state.estimatedTokens = 0;
+    state.currentExpression = 'neutral';
+    renderConversation();
+    updateStatusBar();
+    await updateFloatingAvatar();
+    closeSidebar();
 }
 
 // ===== Auth Gate (P0-14) =====
