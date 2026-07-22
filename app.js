@@ -1007,6 +1007,8 @@ async function createPersona(name = CONFIG.defaults.assistantName) {
     state.personas[created.id] = {
         id: created.id,
         name: created.name,
+        tagline: created.tagline || '',
+        roleLabel: created.roleLabel || '',
         systemPrompt: created.systemPrompt || '',
         prefill: created.prefill || '',
         avatarFilename: created.avatarFilename || '',
@@ -1312,6 +1314,8 @@ function savePersonas() {
     Promise.all(personas.map(p =>
         API.personas.update(p.id, {
             name: p.name,
+            tagline: p.tagline || '',
+            roleLabel: p.roleLabel || '',
             systemPrompt: p.systemPrompt,
             prefill: p.prefill,
             // avatarFilename is INTENTIONALLY omitted. It's owned by the avatar
@@ -1393,6 +1397,10 @@ const elements = {
     toggleApiKey: document.getElementById('toggleApiKey'),
     clearApiKeyBtn: document.getElementById('clearApiKeyBtn'),
     assistantName: document.getElementById('assistantName'),
+    personaTagline: document.getElementById('personaTagline'),
+    personaTaglineCount: document.getElementById('personaTaglineCount'),
+    personaRoleLabel: document.getElementById('personaRoleLabel'),
+    personaRoleLabelCount: document.getElementById('personaRoleLabelCount'),
     systemPrompt: document.getElementById('systemPrompt'),
     prefillInput: document.getElementById('prefillInput'),
 
@@ -1434,6 +1442,7 @@ const elements = {
     avatarClearBtn: document.getElementById('avatarClearBtn'),
     avatarPreview: document.getElementById('avatarPreview'),
     avatarPreviewName: document.getElementById('avatarPreviewName'),
+    avatarPreviewTagline: document.getElementById('avatarPreviewTagline'),
     avatarPreviewStatus: document.getElementById('avatarPreviewStatus'),
     showAvatar: document.getElementById('showAvatar'),
     activeFileTurns: document.getElementById('activeFileTurns'),
@@ -1684,6 +1693,8 @@ function hydratePersonas(personas) {
         state.personas[p.id] = {
             id: p.id,
             name: p.name,
+            tagline: p.tagline || '',
+            roleLabel: p.roleLabel || '',
             systemPrompt: p.systemPrompt || '',
             prefill: p.prefill || '',
             avatarFilename: p.avatarFilename || '',
@@ -1973,6 +1984,8 @@ function saveAllSettingsFromUI() {
     // Persona settings (name, system prompt — prefill lives in model params now)
     if (persona) {
         persona.name = elements.assistantName.value || CONFIG.defaults.assistantName;
+        persona.tagline = elements.personaTagline.value.trim();
+        persona.roleLabel = elements.personaRoleLabel.value.trim();
         persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
         persona.updatedAt = Date.now();
     }
@@ -2153,6 +2166,9 @@ async function updateUI() {
     }
     updateApiKeyFieldForProvider(currentProvider);
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
+    elements.personaTagline.value = persona ? (persona.tagline || '') : '';
+    elements.personaRoleLabel.value = persona ? (persona.roleLabel || '') : '';
+    syncPersonaFieldCounters();
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
     elements.showAvatar.checked = state.settings.showAvatar;
     if (elements.activeFileTurns) elements.activeFileTurns.value = state.settings.activeFileTurns;
@@ -2421,10 +2437,12 @@ function addStopSequence() {
 function updateAvatarPreview() {
     const preview = elements.avatarPreview;
     const name = elements.avatarPreviewName;
+    const tagline = elements.avatarPreviewTagline;
     const status = elements.avatarPreviewStatus;
     const persona = getActivePersona();
 
     name.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
+    tagline.textContent = persona ? (persona.tagline || '') : '';
 
     if (persona && persona.avatarFilename) {
         // Cache-bust on updatedAt so re-uploads are immediately visible.
@@ -2434,6 +2452,21 @@ function updateAvatarPreview() {
     } else {
         preview.textContent = '🤖';
         status.textContent = 'Default Avatar';
+    }
+}
+
+/**
+ * Refresh the "n/max" counters next to the tagline and role inputs. Both are
+ * capped by `maxlength` on the input, so this only reports — it never trims.
+ */
+function syncPersonaFieldCounters() {
+    const pairs = [
+        [elements.personaTagline, elements.personaTaglineCount],
+        [elements.personaRoleLabel, elements.personaRoleLabelCount],
+    ];
+    for (const [input, counter] of pairs) {
+        if (!input || !counter) continue;
+        counter.textContent = `${input.value.length}/${input.maxLength}`;
     }
 }
 
@@ -4668,9 +4701,10 @@ function renderWorkspacesListMain() {
 }
 
 /**
- * Main-area "Personas" section (WR-07c): cards for each persona (avatar + name +
- * Active badge). Click a card to make it active (stays here); the ⋯ menu edits
- * (→ Settings) or deletes. The top-bar persona popover still handles quick-switch.
+ * Main-area "Personas" section: a character-select grid of portrait tiles —
+ * large 1:1 avatar, name, optional role chip, and the persona's tagline. Click
+ * a tile to make it active (stays here); the ⋯ menu edits (→ persona editor)
+ * or deletes. The top-bar persona popover still handles quick-switch.
  */
 function renderPersonasListMain() {
     const c = elements.messagesContainer;
@@ -4679,17 +4713,22 @@ function renderPersonasListMain() {
 
     const cards = personas.map(p => {
         const active = p.id === state.activePersonaId;
-        const sub = (p.systemPrompt || '').trim().replace(/\s+/g, ' ').slice(0, 90);
+        const tagline = (p.tagline || '').trim();
+        const role = (p.roleLabel || '').trim();
         return `
-            <div class="persona-card${active ? ' active' : ''}">
-                <div class="persona-card-open" data-persona-open="${escapeHtml(p.id)}">
-                    <div class="persona-card-avatar">${personaAvatarHTML(p)}</div>
-                    <div class="persona-card-info">
-                        <span class="persona-card-name">${escapeHtml(p.name || 'Untitled')}${active ? '<span class="persona-card-badge">Active</span>' : ''}</span>
-                        <span class="persona-card-sub">${sub ? escapeHtml(sub) : 'No system prompt'}</span>
+            <div class="persona-tile${active ? ' active' : ''}">
+                <div class="persona-tile-open" data-persona-open="${escapeHtml(p.id)}" role="button" tabindex="0">
+                    <div class="persona-tile-portrait">
+                        ${personaAvatarHTML(p)}
+                        ${active ? '<span class="persona-tile-active">Active</span>' : ''}
+                    </div>
+                    <div class="persona-tile-caption">
+                        <span class="persona-tile-name">${escapeHtml(p.name || 'Untitled')}</span>
+                        ${role ? `<span class="persona-tile-role">${escapeHtml(role)}</span>` : ''}
+                        <span class="persona-tile-tagline${tagline ? '' : ' empty'}">${tagline ? escapeHtml(tagline) : 'Add a tagline'}</span>
                     </div>
                 </div>
-                <button class="project-menu-btn persona-card-menu" data-persona-menu="${escapeHtml(p.id)}" title="Options">⋯</button>
+                <button class="project-menu-btn persona-tile-menu" data-persona-menu="${escapeHtml(p.id)}" title="Options">⋯</button>
             </div>`;
     }).join('');
 
@@ -4699,13 +4738,20 @@ function renderPersonasListMain() {
                 <h1 class="section-title">Personas</h1>
                 <button class="section-new-btn" id="personaNewBtn" type="button">+ New persona</button>
             </div>
-            ${personas.length ? `<div class="persona-card-list">${cards}</div>` : `<p class="empty-state small">No personas yet.</p>`}
+            ${personas.length ? `<div class="persona-tile-grid">${cards}</div>` : `<p class="empty-state small">No personas yet.</p>`}
         </div>`;
 
     const nb = c.querySelector('#personaNewBtn');
     if (nb) nb.addEventListener('click', startNewPersona);
-    c.querySelectorAll('[data-persona-open]').forEach(el =>
-        el.addEventListener('click', () => activatePersona(el.dataset.personaOpen)));
+    c.querySelectorAll('[data-persona-open]').forEach(el => {
+        el.addEventListener('click', () => activatePersona(el.dataset.personaOpen));
+        el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                activatePersona(el.dataset.personaOpen);
+            }
+        });
+    });
     c.querySelectorAll('[data-persona-menu]').forEach(btn =>
         btn.addEventListener('click', (e) => { e.stopPropagation(); showPersonaCardMenu(btn, btn.dataset.personaMenu); }));
 }
@@ -8065,6 +8111,8 @@ function setupEventListeners() {
 
     // Persona settings - auto-save
     elements.assistantName.addEventListener('input', autoSaveSettings);
+    elements.personaTagline.addEventListener('input', autoSaveSettings);
+    elements.personaRoleLabel.addEventListener('input', autoSaveSettings);
     elements.systemPrompt.addEventListener('input', autoSaveSettings);
     elements.prefillInput.addEventListener('input', autoSaveSettings);
 
@@ -8257,6 +8305,15 @@ function setupEventListeners() {
         const editTitle = document.getElementById('personaEditTitle');
         if (editTitle) editTitle.textContent = name;
     });
+
+    // Tagline / role live-update the card preview + their counters. The values
+    // themselves are persisted by autoSaveSettings (wired above with the rest
+    // of the persona fields).
+    elements.personaTagline.addEventListener('input', () => {
+        elements.avatarPreviewTagline.textContent = elements.personaTagline.value.trim();
+        syncPersonaFieldCounters();
+    });
+    elements.personaRoleLabel.addEventListener('input', syncPersonaFieldCounters);
 }
 
 // ===== File Upload Handlers =====

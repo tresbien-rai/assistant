@@ -336,6 +336,20 @@
                     <label for="assistantName">Assistant Name</label>
                     <input type="text" id="assistantName" placeholder="Assistant" value="Assistant">
 
+                    <!-- Card display fields. Neither is sent to the model —
+                         they're how the persona introduces itself in the grid. -->
+                    <label for="personaTagline">
+                        Tagline <span class="field-counter" id="personaTaglineCount">0/80</span>
+                    </label>
+                    <input type="text" id="personaTagline" maxlength="80" placeholder="Archivist of half-finished things">
+                    <p class="help-text">A one-line intro, in the persona's own voice. Shown on its card.</p>
+
+                    <label for="personaRoleLabel">
+                        Role <span class="field-counter" id="personaRoleLabelCount">0/24</span>
+                    </label>
+                    <input type="text" id="personaRoleLabel" maxlength="24" placeholder="Researcher">
+                    <p class="help-text">Optional short label shown as a chip on the card.</p>
+
                     <label for="systemPrompt">System Prompt</label>
                     <div class="textarea-resizable">
                         <textarea id="systemPrompt" rows="8" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
@@ -368,10 +382,13 @@ When responding, you may optionally include an expression tag like [expression: 
                 <div class="settings-section" id="personaAvatarSection">
                     <h3>Avatar</h3>
 
+                    <!-- WYSIWYG card preview: same frame + caption the persona
+                         grid renders, so what you see here is the tile. -->
                     <div class="avatar-settings-preview">
-                        <div class="avatar-preview-image" id="avatarPreview">🤖</div>
+                        <div class="persona-tile-portrait" id="avatarPreview">🤖</div>
                         <div class="avatar-preview-info">
-                            <span id="avatarPreviewName">Assistant</span>
+                            <span class="persona-tile-name" id="avatarPreviewName">Assistant</span>
+                            <span class="persona-tile-tagline" id="avatarPreviewTagline"></span>
                             <span class="avatar-preview-status" id="avatarPreviewStatus">Default Avatar</span>
                         </div>
                     </div>

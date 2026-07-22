@@ -21,8 +21,29 @@ const AppError = require('../utils/AppError');
 
 const router = express.Router();
 
+// Display-field caps. These are card-layout budgets, not data limits — a
+// tagline that wraps to three lines breaks the tile grid, so we trim rather
+// than reject (the client counts down to the same numbers).
+const TAGLINE_MAX = 80;
+const ROLE_LABEL_MAX = 24;
+
 // All routes require authentication
 router.use(authenticate);
+
+/**
+ * Validate + normalize one of the short display strings (tagline, roleLabel):
+ * must be a string, trimmed, and truncated to `max`.
+ * @param {*} value - Raw value from the request body
+ * @param {string} field - Field name, for the error message
+ * @param {number} max - Maximum length after trimming
+ * @returns {string} The normalized value
+ */
+function normalizeDisplayField(value, field, max) {
+  if (typeof value !== 'string') {
+    throw AppError.validation(`${field} must be a string`);
+  }
+  return value.trim().slice(0, max);
+}
 
 /**
  * Format a persona record for API response
@@ -35,6 +56,8 @@ function formatPersona(persona) {
     id: persona.id,
     userId: persona.user_id,
     name: persona.name,
+    tagline: persona.tagline || '',
+    roleLabel: persona.role_label || '',
     systemPrompt: persona.system_prompt,
     prefill: persona.prefill,
     avatarFilename: persona.avatar_filename,
@@ -74,7 +97,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
  * Creates a persona linked to the authenticated user.
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, systemPrompt, prefill, expressions, modelConfig } = req.body;
+  const { name, tagline, roleLabel, systemPrompt, prefill, expressions, modelConfig } = req.body;
 
   if (!name || typeof name !== 'string' || name.trim() === '') {
     throw AppError.validation('Name is required');
@@ -95,6 +118,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
   const persona = dal.createPersona(req.user.userId, {
     name: name.trim(),
+    tagline: tagline === undefined ? '' : normalizeDisplayField(tagline, 'tagline', TAGLINE_MAX),
+    roleLabel: roleLabel === undefined ? '' : normalizeDisplayField(roleLabel, 'roleLabel', ROLE_LABEL_MAX),
     systemPrompt,
     prefill,
     expressions,
@@ -110,7 +135,7 @@ router.post('/', asyncHandler(async (req, res) => {
  * Updates persona (only if owned by user) and bumps updatedAt.
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { name, systemPrompt, prefill, avatarFilename, expressions, modelConfig } = req.body;
+  const { name, tagline, roleLabel, systemPrompt, prefill, avatarFilename, expressions, modelConfig } = req.body;
   const updateData = {};
 
   if (name !== undefined) {
@@ -118,6 +143,12 @@ router.put('/:id', asyncHandler(async (req, res) => {
       throw AppError.validation('Name must be a non-empty string');
     }
     updateData.name = name.trim();
+  }
+  if (tagline !== undefined) {
+    updateData.tagline = normalizeDisplayField(tagline, 'tagline', TAGLINE_MAX);
+  }
+  if (roleLabel !== undefined) {
+    updateData.roleLabel = normalizeDisplayField(roleLabel, 'roleLabel', ROLE_LABEL_MAX);
   }
   if (systemPrompt !== undefined) {
     if (typeof systemPrompt !== 'string') {

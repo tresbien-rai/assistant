@@ -117,20 +117,22 @@ function getPersonaById(personaId, userId) {
  * @param {Object} data - Persona data
  * @returns {Object} The created persona record
  */
-function createPersona(userId, { name, systemPrompt, prefill, avatarFilename, expressions, modelConfig }) {
+function createPersona(userId, { name, tagline, roleLabel, systemPrompt, prefill, avatarFilename, expressions, modelConfig }) {
   const db = getDb();
   const id = generateId();
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO personas (id, user_id, name, system_prompt, prefill, avatar_filename, expressions, model_config, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO personas (id, user_id, name, tagline, role_label, system_prompt, prefill, avatar_filename, expressions, model_config, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
     id,
     userId,
     name || 'New Persona',
+    tagline || '',
+    roleLabel || '',
     systemPrompt || '',
     prefill || '',
     avatarFilename || '',
@@ -162,6 +164,14 @@ function updatePersona(personaId, userId, data) {
   if (data.name !== undefined) {
     updates.push('name = ?');
     values.push(data.name);
+  }
+  if (data.tagline !== undefined) {
+    updates.push('tagline = ?');
+    values.push(data.tagline);
+  }
+  if (data.roleLabel !== undefined) {
+    updates.push('role_label = ?');
+    values.push(data.roleLabel);
   }
   if (data.systemPrompt !== undefined) {
     updates.push('system_prompt = ?');
