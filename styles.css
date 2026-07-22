@@ -1863,20 +1863,25 @@ body {
 /* Avatar Settings Preview — a WYSIWYG copy of the persona tile, so editing the
    image here shows exactly what the Personas grid will render. Reuses
    .persona-tile-portrait / -name / -tagline; only the sizing is local. */
+/* Shaped as an actual persona tile rather than a full-width band: same border,
+   radius and proportions as the Personas grid, sized to its content and
+   centered. A stretched box left the portrait marooned in empty space. */
 .avatar-settings-preview {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 12px;
-    padding: 20px;
-    background: var(--bg-tertiary);
+    width: 260px;
+    max-width: 100%;
+    padding: 12px 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
-    margin-bottom: 16px;
+    margin: 0 auto 16px;
 }
 
 .avatar-settings-preview .persona-tile-portrait {
-    width: 200px;
-    max-width: 100%;
+    width: 100%;
 }
 
 .avatar-preview-info {
@@ -1885,7 +1890,7 @@ body {
     align-items: center;
     gap: 4px;
     text-align: center;
-    max-width: 260px;
+    max-width: 100%;
 }
 
 .avatar-settings-preview .persona-tile-name {
@@ -4865,6 +4870,34 @@ body {
 .modal-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* The clear (✕) button sits directly beside .file-upload-btn, so it has to
+   share its shape — it was left on --radius-md while the upload button became
+   a pill, which read as two mismatched buttons. Square + full radius = a
+   circular icon button, and the fixed size keeps it from stretching. */
+.file-clear-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: var(--radius-full);
+    line-height: 1;
+}
+
+/* Upload controls sit under a centered card, so center them and let the
+   button size to its label instead of spanning the whole panel. */
+.file-upload-wrapper {
+    justify-content: center;
+    align-items: center;
+}
+
+.file-upload-btn {
+    flex: 0 1 auto;
+    min-height: 38px;
 }
 
 /* The "clear saved key" stays a small, quiet destructive pill. */

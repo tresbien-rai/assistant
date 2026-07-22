@@ -8480,6 +8480,9 @@ async function handleAvatarUpload(file) {
 
         updateAvatarPreview();
         await updateFloatingAvatar();
+        // Expression slots without art of their own render the default avatar
+        // plus a mood badge, so they're stale the moment the avatar changes.
+        await renderExpressionList();
         showNotification('Avatar uploaded!', 'success');
     } catch (error) {
         console.error('Failed to upload avatar:', error);
@@ -8508,6 +8511,8 @@ async function clearAvatarImage() {
 
     updateAvatarPreview();
     await updateFloatingAvatar();
+    // Slots falling back to the avatar revert to a bare emoji — repaint them.
+    await renderExpressionList();
 }
 
 /**
