@@ -1397,6 +1397,13 @@ const elements = {
     nameModalSaveBtn: document.getElementById('nameModalSaveBtn'),
     closeNameModal: document.getElementById('closeNameModal'),
 
+    // Shared confirm dialog (replaces window.confirm — see confirmDialog()).
+    confirmModal: document.getElementById('confirmModal'),
+    confirmModalTitle: document.getElementById('confirmModalTitle'),
+    confirmModalBody: document.getElementById('confirmModalBody'),
+    confirmModalCancelBtn: document.getElementById('confirmModalCancelBtn'),
+    confirmModalConfirmBtn: document.getElementById('confirmModalConfirmBtn'),
+
     // Top-bar breadcrumb indicator (No workspace / WS / WS › Project)
     workspaceBreadcrumb: document.getElementById('workspaceBreadcrumb'),
 
@@ -3006,34 +3013,45 @@ async function deleteExpression() {
         return;
     }
 
-    if (confirm(`Delete expression "${editingExpression}"?`)) {
-        const expr = persona.expressions[editingExpression];
+    // Pin the name: confirming is async now, so don't trust the module-level
+    // `editingExpression` to still point at the same thing afterwards.
+    const name = editingExpression;
+    const expr = persona.expressions[name];
 
-        // Local optimistic delete.
-        const newExpressions = { ...persona.expressions };
-        delete newExpressions[editingExpression];
+    const ok = await confirmDialog({
+        title: 'Delete expression?',
+        body: expr?.imageKey
+            ? `"${name}" and its uploaded image will be removed from this persona. This can't be undone.`
+            : `"${name}" will be removed from this persona. This can't be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
 
-        try {
-            // 1. Persist expression-set change.
-            await API.personas.update(persona.id, { expressions: newExpressions });
-            // 2. Drop the server-side image file too (best-effort).
-            if (expr?.imageKey) {
-                try {
-                    await API.avatars.deleteExpression(persona.id, editingExpression);
-                } catch (e) { /* file may already be gone — non-fatal */ }
-            }
-            // 3. Sync local state with the result.
-            persona.expressions = newExpressions;
-            persona.updatedAt = Date.now();
-        } catch (err) {
-            console.error('Failed to delete expression:', err);
-            displayError(err, { action: 'delete expression' });
-            return;
+    // Local optimistic delete.
+    const newExpressions = { ...persona.expressions };
+    delete newExpressions[name];
+
+    try {
+        // 1. Persist expression-set change.
+        await API.personas.update(persona.id, { expressions: newExpressions });
+        // 2. Drop the server-side image file too (best-effort).
+        if (expr?.imageKey) {
+            try {
+                await API.avatars.deleteExpression(persona.id, name);
+            } catch (e) { /* file may already be gone — non-fatal */ }
         }
-
-        await renderExpressionList();
-        closeExpressionModal();
+        // 3. Sync local state with the result.
+        persona.expressions = newExpressions;
+        persona.updatedAt = Date.now();
+    } catch (err) {
+        console.error('Failed to delete expression:', err);
+        displayError(err, { action: 'delete expression' });
+        return;
     }
+
+    await renderExpressionList();
+    closeExpressionModal();
 }
 
 function updateSystemPromptExpressions() {
@@ -5138,6 +5156,78 @@ function showPersonaCardMenu(anchorEl, personaId) {
 
 const CONTAINER_FOLDER_SVG = '<svg class="cp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>';
 const CONTAINER_UPLOAD_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
+
+// ===== Confirm dialog =====
+// Replaces window.confirm(). Browsers let users permanently suppress native
+// dialogs ("prevent this page from creating additional dialogs"); once ticked,
+// confirm() returns false forever and every guarded action silently does
+// nothing. Promise-based — resolves true to proceed, false to cancel.
+let _confirmResolve = null;
+let _confirmLastFocus = null;
+let _confirmPrevOverflow = '';
+
+/**
+ * Ask the user to confirm an action.
+ * `title` and `body` are set as text, never HTML — they routinely interpolate
+ * user-controlled names (personas, files, imported .tessera bundles).
+ * @param {{title?:string, body?:string, confirmLabel?:string, cancelLabel?:string, danger?:boolean}} [opts]
+ * @returns {Promise<boolean>}
+ */
+function confirmDialog({
+    title = 'Are you sure?',
+    body = '',
+    confirmLabel = 'Confirm',
+    cancelLabel = 'Cancel',
+    danger = false,
+} = {}) {
+    // Never stack: a second call cancels whatever is already on screen.
+    if (_confirmResolve) closeConfirmDialog(false);
+
+    return new Promise(resolve => {
+        _confirmResolve = resolve;
+        _confirmLastFocus = document.activeElement;
+
+        elements.confirmModalTitle.textContent = title;
+        elements.confirmModalBody.textContent = body;
+        elements.confirmModalBody.style.display = body ? '' : 'none';
+        elements.confirmModalConfirmBtn.textContent = confirmLabel;
+        elements.confirmModalCancelBtn.textContent = cancelLabel;
+        elements.confirmModalConfirmBtn.classList.toggle('danger', danger);
+        elements.confirmModalConfirmBtn.classList.toggle('primary', !danger);
+
+        _confirmPrevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        elements.confirmModal.classList.add('visible');
+
+        // Destructive actions focus Cancel, so a stray Enter can't destroy
+        // anything; everything else focuses Confirm. Enter then activates the
+        // focused button natively — no extra key handling needed.
+        const initial = danger ? elements.confirmModalCancelBtn : elements.confirmModalConfirmBtn;
+        initial.focus();
+        // The overlay animates out of `visibility: hidden`, and a still-hidden
+        // element can't take focus. If the first attempt didn't land, retry once
+        // the next frame has applied the class.
+        if (document.activeElement !== initial) {
+            requestAnimationFrame(() => {
+                if (_confirmResolve) initial.focus();
+            });
+        }
+    });
+}
+
+/** Close the confirm dialog, resolving the pending promise with `result`. */
+function closeConfirmDialog(result) {
+    elements.confirmModal.classList.remove('visible');
+    document.body.style.overflow = _confirmPrevOverflow;
+
+    // Hand focus back to whatever opened the dialog, if it's still around.
+    if (_confirmLastFocus?.isConnected) _confirmLastFocus.focus();
+    _confirmLastFocus = null;
+
+    const resolve = _confirmResolve;
+    _confirmResolve = null;
+    if (resolve) resolve(result);
+}
 
 // ===== Name-only create modal =====
 // The single remaining create dialog: asks only for a name, then the caller
@@ -8342,6 +8432,31 @@ function setupEventListeners() {
 
     // (The "+ New chat" button lives in the main-area Chats list, wired per
     // render in renderChatsListMain.)
+
+    // Shared confirm dialog. No close ×: a confirm has exactly two exits.
+    elements.confirmModalCancelBtn.addEventListener('click', () => closeConfirmDialog(false));
+    elements.confirmModalConfirmBtn.addEventListener('click', () => closeConfirmDialog(true));
+    elements.confirmModal.addEventListener('click', (e) => {
+        if (e.target === elements.confirmModal) closeConfirmDialog(false);
+    });
+    elements.confirmModal.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            // Capture it here so a modal underneath (which may have its own Esc
+            // handler) doesn't also close.
+            e.stopPropagation();
+            e.preventDefault();
+            closeConfirmDialog(false);
+            return;
+        }
+        // Focus trap. Only two focusable elements, so Tab just toggles.
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const next = document.activeElement === elements.confirmModalCancelBtn
+                ? elements.confirmModalConfirmBtn
+                : elements.confirmModalCancelBtn;
+            next.focus();
+        }
+    });
 
     // Name-only create modal (workspace + project creation). The create/edit
     // triggers live in the Workspaces drill-in and the inline container pages,

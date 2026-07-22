@@ -3,8 +3,8 @@
 Replace every native `window.confirm()` in the frontend with an in-app dialog
 matching Tessera's own visual language.
 
-> **Status (2026-07-22):** Not started. Scoped out during the Personas UI pass
-> and deferred so it wouldn't outgrow that session. No code written yet.
+> **Status (2026-07-22):** CD-01 done — `confirmDialog()` built and
+> `deleteExpression()` converted. CD-02 (remaining 11 sites) and CD-03 next.
 
 ## Why this matters (the actual bug)
 
@@ -95,10 +95,32 @@ made `async` locally.
   reasonably specific — but split it into title + body rather than one run-on
   sentence.
 
+## Decisions made during CD-01
+
+- **Danger button** is solid `--error` with a dark label. `--error` (`#ff6b6b`)
+  is a light coral that is never overridden per theme, so white text on it fails
+  contrast; a new `--on-error` token holds the dark label colour, mirroring the
+  existing `--on-accent` convention.
+- **Footer buttons are right-aligned** (`.modal-confirm .modal-footer` overrides
+  the inherited `justify-content: space-between`), so the two choices read as a
+  pair instead of sitting at opposite ends of a 400px box.
+- **`.modal-btn.secondary:hover` is neutralised inside the dialog.** The global
+  rule turns Cancel red on hover, which would make both buttons read as
+  destructive on a delete prompt.
+- **Title and body are set with `textContent`, never `innerHTML`.** They
+  interpolate user-controlled names (personas, files, imported `.tessera`
+  bundles). This costs the emphasised filename from the mockup — quotes carry it
+  instead. Revisit only with an explicit escaping helper.
+- **No Enter handler.** Focus starts on Cancel when `danger: true` and on Confirm
+  otherwise; the browser's native button activation then gives exactly the
+  behaviour the plan asked for.
+- **No × in the header.** A confirm has exactly two exits.
+
 ## Build order
 
-1. **CD-01** — Build `confirmDialog()` + markup + styles. Convert **one** call
-   site (`deleteExpression`, the one that surfaced the bug) and verify.
+1. **CD-01** — ✅ Done. `confirmDialog()` + markup + styles built;
+   `deleteExpression()` converted and verified (cancel leaves the expression in
+   place, confirm removes it locally and server-side).
 2. **CD-02** — Convert the remaining 11. Mechanical once CD-01 lands; a good
    candidate for delegation to the `mechanic` sub-agent, given a list of exact
    call sites and the new API.
@@ -106,8 +128,21 @@ made `async` locally.
    in `app.js`, and add a short note to `CLAUDE.md` under Code Style saying
    native dialogs are not used.
 
+4. **CD-04** — Convert the one native `prompt()` left in `app.js`: the chat
+   rename flow in `renameConversationPrompt()`. Same suppression bug, and
+   `promptName()` (the name-only modal) already does this job and returns a
+   promise. It needs one small addition first: `promptName()` always clears its
+   input, so it has to grow a `value` option to prefill the current title, and
+   its button label is hardcoded to "Create". The plan originally claimed
+   `prompt()` was unused; that was wrong.
+
+## Follow-ups outside this plan
+
+- **Footer alignment across the other modals.** CD-01 right-aligns the confirm
+  dialog's footer only. The settings, expression, model, and name modals still
+  use `justify-content: space-between`. Worth a pass to settle on one
+  convention rather than leaving the confirm dialog as the odd one out.
+
 ## Out of scope
 
 - Toasts (`showToast`) already exist and are fine; this plan doesn't touch them.
-- A generic prompt-for-text dialog. Nothing currently needs one — add later if
-  a rename flow wants it.
