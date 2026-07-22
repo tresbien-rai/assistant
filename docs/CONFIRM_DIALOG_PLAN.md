@@ -3,8 +3,9 @@
 Replace every native `window.confirm()` in the frontend with an in-app dialog
 matching Tessera's own visual language.
 
-> **Status (2026-07-22):** CD-01 done — `confirmDialog()` built and
-> `deleteExpression()` converted. CD-02 (remaining 11 sites) and CD-03 next.
+> **Status (2026-07-22):** CD-01 → CD-03 done. All 12 `confirm()` call sites now
+> use `confirmDialog()`; no native `confirm()`/`alert()` remains in the frontend.
+> CD-04 (the one surviving `prompt()`) is still open.
 
 ## Why this matters (the actual bug)
 
@@ -26,29 +27,43 @@ against the seven presets + custom OKLCH palette), can't show rich content
 (filenames, counts, consequences) with any styling, aren't keyboard-styleable,
 and block the main thread.
 
-## Call sites (12)
+## Call sites (12) — all converted
 
-All in `app.js`. Line numbers are from commit `91a5565` and will drift — search
-by function name.
+All in `app.js`. Every one now calls `confirmDialog()`; the `danger` column is
+what each was given.
 
-| Function | What it guards |
-|---|---|
-| `clearStoredApiKey()` | Clearing the saved API key for a provider |
-| `deleteExpression()` | Deleting a persona expression |
-| `renderSavedModelsList()` | Removing a model from the catalog |
-| `deleteConversationPrompt()` | Deleting a chat |
-| `deletePersonaPrompt()` | Deleting a persona (+ its chats) |
-| `deleteProjectPrompt()` | Deleting a project |
-| `deleteWorkspacePrompt()` | Deleting a workspace |
-| `deleteContainerFilePrompt()` | Deleting a file (also removes it from Drive) |
-| `deleteMessage()` | Deleting a single message |
-| `FilePanel.selectVersion()` | Restoring a file version over current content |
-| `FilePanel.cancelEdit()` | Discarding edits when there's a save conflict |
-| `clearConversation()` | Clearing all messages in a conversation |
+| Function | What it guards | danger |
+|---|---|---|
+| `clearStoredApiKey()` | Clearing the saved API key for a provider | yes |
+| `deleteExpression()` | Deleting a persona expression | yes |
+| `renderSavedModelsList()` | Removing a model from the catalog | yes |
+| `deleteConversationPrompt()` | Deleting a chat | yes |
+| `deletePersonaPrompt()` | Deleting a persona (+ its chats) | yes |
+| `deleteProjectPrompt()` | Deleting a project | yes |
+| `deleteWorkspacePrompt()` | Deleting a workspace | yes |
+| `deleteContainerFilePrompt()` | Deleting a file (also removes it from Drive) | yes |
+| `deleteMessage()` | Deleting a single message | yes |
+| `FilePanel.restoreVersion()` | Restoring a file version over current content | no |
+| `FilePanel.saveEdit()` | Overwriting the assistant's version on a save conflict | yes |
+| `clearConversation()` | Clearing all messages in a conversation | yes |
 
-Note the shapes differ: some are `if (confirm(...)) { ... }`, others
-`if (!confirm(...)) return;`. Two live on class methods (`FilePanel`), the rest
-are free functions. `alert()`/`prompt()` are not used anywhere.
+`restoreVersion()` is the one non-danger site: it adds a new history entry
+rather than destroying anything, so it gets the accent button and starts with
+focus on Confirm.
+
+Two corrections to the original survey: the `FilePanel` sites are
+`restoreVersion()` and `saveEdit()` (not `selectVersion()`/`cancelEdit()`), and
+`prompt()` **is** used — see CD-04.
+
+Three sites needed more than a mechanical swap:
+
+- `renderSavedModelsList()`'s delete handler had to become `async`, and it keeps
+  the `if (ok) { ... }` shape rather than an early return because it sits inside
+  a `forEach` callback.
+- `deleteExpression()` and `deleteMessage()` now re-validate after awaiting.
+  Confirming used to be synchronous; with an await in the middle, the
+  module-level `editingExpression` and the active conversation can both move
+  under the function before it acts.
 
 ## Design
 
@@ -121,13 +136,13 @@ made `async` locally.
 1. **CD-01** — ✅ Done. `confirmDialog()` + markup + styles built;
    `deleteExpression()` converted and verified (cancel leaves the expression in
    place, confirm removes it locally and server-side).
-2. **CD-02** — Convert the remaining 11. Mechanical once CD-01 lands; a good
-   candidate for delegation to the `mechanic` sub-agent, given a list of exact
-   call sites and the new API.
-3. **CD-03** — Grep to confirm zero remaining `confirm(` / `alert(` / `prompt(`
-   in `app.js`, and add a short note to `CLAUDE.md` under Code Style saying
-   native dialogs are not used.
-
+2. **CD-02** — ✅ Done. Remaining 11 converted. Every site's cancel path was
+   exercised against the running app and left state untouched; the confirm path
+   was verified end-to-end (through to the server) for `deleteExpression()` and
+   for the model-catalog handler, the one site keeping the `if (ok)` shape.
+3. **CD-03** — ✅ Done. No `confirm(` / `alert(` remains in `app.js` or
+   `index.html`; the only `prompt(` left is CD-04's. `CLAUDE.md` notes under
+   Code Style that native dialogs are not used.
 4. **CD-04** — Convert the one native `prompt()` left in `app.js`: the chat
    rename flow in `renameConversationPrompt()`. Same suppression bug, and
    `promptName()` (the name-only modal) already does this job and returns a
@@ -138,10 +153,18 @@ made `async` locally.
 
 ## Follow-ups outside this plan
 
-- **Footer alignment across the other modals.** CD-01 right-aligns the confirm
-  dialog's footer only. The settings, expression, model, and name modals still
-  use `justify-content: space-between`. Worth a pass to settle on one
-  convention rather than leaving the confirm dialog as the odd one out.
+Both of these are modal-chrome conventions that CD-01 had to override locally.
+Rather than leaving the confirm dialog as the odd one out, settle them across
+every modal — possibly alongside CD-04, which is already in that area.
+
+- **Footer alignment.** CD-01 right-aligns the confirm dialog's footer only. The
+  settings, expression, model, and name modals still use
+  `justify-content: space-between`.
+- **Secondary-button hover.** The global `.modal-btn.secondary:hover` turns the
+  button's border and text red (`--error`). That reads as "destructive" on what
+  is usually a Cancel or Close button, and CD-01 had to neutralise it inside the
+  confirm dialog. Decide whether the red hover belongs anywhere, and if so give
+  it its own class rather than attaching it to every secondary button.
 
 ## Out of scope
 
