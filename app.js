@@ -5233,14 +5233,18 @@ function confirmDialog({
         document.body.style.overflow = 'hidden';
         elements.confirmModal.classList.add('visible');
 
+        // Esc/Tab are handled on the document (capture) rather than on the
+        // dialog, so they still work if focus is somehow outside it.
+        document.addEventListener('keydown', _confirmKeydown, true);
+
         // Destructive actions focus Cancel, so a stray Enter can't destroy
         // anything; everything else focuses Confirm. Enter then activates the
         // focused button natively — no extra key handling needed.
+        // The styles deliberately keep `visibility` out of this dialog's
+        // transitions so the buttons are focusable in this same tick; the
+        // next-frame retry is a backstop in case that ever regresses.
         const initial = danger ? elements.confirmModalCancelBtn : elements.confirmModalConfirmBtn;
         initial.focus();
-        // The overlay animates out of `visibility: hidden`, and a still-hidden
-        // element can't take focus. If the first attempt didn't land, retry once
-        // the next frame has applied the class.
         if (document.activeElement !== initial) {
             requestAnimationFrame(() => {
                 if (_confirmResolve) initial.focus();
@@ -5249,8 +5253,34 @@ function confirmDialog({
     });
 }
 
+/**
+ * Key handling while the confirm dialog is open. Bound to the document in the
+ * capture phase so it runs before anything underneath (the dialog can be opened
+ * from inside another modal that has its own Esc handler).
+ */
+function _confirmKeydown(e) {
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeConfirmDialog(false);
+        return;
+    }
+    if (e.key === 'Tab') {
+        // Two focusable elements, so Tab just toggles. Starting from anywhere
+        // else — including <body> — this pulls focus into the dialog rather
+        // than letting it walk the page behind.
+        e.preventDefault();
+        e.stopPropagation();
+        const next = document.activeElement === elements.confirmModalCancelBtn
+            ? elements.confirmModalConfirmBtn
+            : elements.confirmModalCancelBtn;
+        next.focus();
+    }
+}
+
 /** Close the confirm dialog, resolving the pending promise with `result`. */
 function closeConfirmDialog(result) {
+    document.removeEventListener('keydown', _confirmKeydown, true);
     elements.confirmModal.classList.remove('visible');
     document.body.style.overflow = _confirmPrevOverflow;
 
@@ -8498,24 +8528,8 @@ function setupEventListeners() {
     elements.confirmModal.addEventListener('click', (e) => {
         if (e.target === elements.confirmModal) closeConfirmDialog(false);
     });
-    elements.confirmModal.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            // Capture it here so a modal underneath (which may have its own Esc
-            // handler) doesn't also close.
-            e.stopPropagation();
-            e.preventDefault();
-            closeConfirmDialog(false);
-            return;
-        }
-        // Focus trap. Only two focusable elements, so Tab just toggles.
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            const next = document.activeElement === elements.confirmModalCancelBtn
-                ? elements.confirmModalConfirmBtn
-                : elements.confirmModalCancelBtn;
-            next.focus();
-        }
-    });
+    // Esc and the Tab trap are bound to the document while the dialog is open —
+    // see _confirmKeydown.
 
     // Name-only create modal (workspace + project creation). The create/edit
     // triggers live in the Workspaces drill-in and the inline container pages,
