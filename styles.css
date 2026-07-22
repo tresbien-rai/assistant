@@ -3790,6 +3790,19 @@ body {
    delete button in the expression modal, which is itself at z-index 250). */
 #confirmModal {
     z-index: 300;
+    /* `.modal-overlay` transitions `all`, which includes `visibility`.
+       visibility is animatable, so on hidden -> visible the new value doesn't
+       apply until the transition progresses past 0 — a frame later. Until then
+       the dialog is computed-hidden and its buttons cannot take focus, so the
+       initial .focus() silently does nothing and Tab walks the page behind.
+       Transition only what actually needs to animate. */
+    transition: opacity 0.3s;
+}
+
+/* Same trap one level down: .modal-btn sets `transition: all 0.2s`, which would
+   delay the buttons' own inherited visibility flip even after the fix above. */
+#confirmModal .modal-btn {
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s, filter 0.2s;
 }
 
 .modal-confirm .modal-body p {

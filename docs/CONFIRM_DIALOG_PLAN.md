@@ -130,6 +130,36 @@ made `async` locally.
   otherwise; the browser's native button activation then gives exactly the
   behaviour the plan asked for.
 - **No × in the header.** A confirm has exactly two exits.
+- **`visibility` is kept out of this dialog's CSS transitions.** See below —
+  without that, initial focus silently does nothing.
+
+### The visibility/transition trap (fixed after first merge)
+
+Initial focus did not work when PR #96 first landed: the dialog opened with
+nothing focused, and Tab walked the page behind it instead of cycling the two
+buttons.
+
+`visibility` is an animatable property. On `hidden -> visible` the new value
+only takes effect once the transition has progressed past 0 — i.e. a frame
+later. `.modal-overlay` transitions `all 0.3s`, so synchronously after adding
+`.visible` the dialog is still computed `visibility: hidden`, and **an element
+with computed `visibility: hidden` cannot take focus**. The `.focus()` call was
+a guaranteed no-op.
+
+`.modal-btn` sets `transition: all 0.2s` of its own, so fixing only the overlay
+is not enough — the buttons stay computed-hidden for that frame too. Both need
+`visibility` excluded, which is why `styles.css` names explicit
+`transition-property` lists for `#confirmModal` and `#confirmModal .modal-btn`
+instead of inheriting `all`.
+
+Because focus never landed, the Tab trap never engaged either: it was bound to
+the dialog element, so with focus on `<body>` the keydown never reached it. It
+is now bound to `document` in the **capture** phase while the dialog is open,
+which also means Tab pulls focus *into* the dialog from anywhere, and Esc beats
+the Esc handler of any modal underneath.
+
+Worth remembering generally: any `.modal-*` element that needs focus on open has
+this same trap waiting.
 
 ## Build order
 
