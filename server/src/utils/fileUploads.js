@@ -46,6 +46,29 @@ const upload = multer({
 });
 
 /**
+ * Recover UTF-8 filenames mangled by multipart parsing.
+ *
+ * multer/busboy decodes the multipart `filename` field as latin1, so any name
+ * with non-ASCII characters (Korean, accented Latin, etc.) arrives as mojibake.
+ * Browsers actually send the raw UTF-8 bytes, so re-decoding latin1→utf8
+ * recovers the original name; pure-ASCII names round-trip unchanged. Run this
+ * immediately after `upload.single(...)`, before the filename is stored or sent
+ * on to Drive. Placed before `handleUploadError` in the chain so it is skipped
+ * (as a normal 3-arg middleware) when multer itself errored.
+ */
+function fixUploadedFilename(req, res, next) {
+  const decode = (name) =>
+    typeof name === 'string' ? Buffer.from(name, 'latin1').toString('utf8') : name;
+  if (req.file) {
+    req.file.originalname = decode(req.file.originalname);
+  }
+  if (Array.isArray(req.files)) {
+    for (const f of req.files) f.originalname = decode(f.originalname);
+  }
+  next();
+}
+
+/**
  * Translate multer errors (file too large, etc.) into AppErrors.
  */
 function handleUploadError(err, req, res, next) {
@@ -60,4 +83,4 @@ function handleUploadError(err, req, res, next) {
   return next(err);
 }
 
-module.exports = { upload, handleUploadError, ACCEPTED_EXTENSIONS, isTextAuthorableExtension };
+module.exports = { upload, fixUploadedFilename, handleUploadError, ACCEPTED_EXTENSIONS, isTextAuthorableExtension };

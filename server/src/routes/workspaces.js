@@ -37,7 +37,7 @@ const express = require('express');
 
 const dal = require('../db/dal');
 const drive = require('../utils/drive');
-const { upload, handleUploadError } = require('../utils/fileUploads');
+const { upload, fixUploadedFilename, handleUploadError } = require('../utils/fileUploads');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
@@ -360,7 +360,7 @@ router.post('/:id/files/:fileId/revisions/:revId/restore', asyncHandler(async (r
  * record its metadata. Self-heals the workspace folder if it doesn't exist yet
  * (best-effort create at workspace creation may have deferred it).
  */
-router.post('/:id/files', upload.single('file'), handleUploadError, asyncHandler(async (req, res) => {
+router.post('/:id/files', upload.single('file'), fixUploadedFilename, handleUploadError, asyncHandler(async (req, res) => {
   const workspace = requireWorkspace(req.params.id, req.user.userId);
 
   if (!req.file) {

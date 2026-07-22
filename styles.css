@@ -266,6 +266,13 @@
     align-items: center;
     justify-content: center;
     gap: 7px;
+    /* The generic .appearance-options rule sets min-width: 72px, which lets a
+       button shrink below its content — so a long label ("Parchment") plus the
+       swatch dot spilled outside the button. fit-content keeps each button at
+       least as wide as its own label+dot; flex:1 still grows them to fill the
+       row, and flex-wrap drops overflow onto the next line. */
+    min-width: fit-content;
+    white-space: nowrap;
 }
 
 #themeOptions button::before {
@@ -2399,15 +2406,24 @@ body {
     text-decoration: underline;
 }
 
+/* Code sits on the code-block surface (--code-bg / --code-inline-bg), not on
+   the accent bubble, so it must not inherit the bubble's white text — that
+   vanished on light themes. Theme-aware primary reads on both. highlight.js
+   token spans still win via their own direct color rules. */
+.message.user .message-content code {
+    color: var(--text-primary);
+}
+
+/* Action buttons render in a floating popover backed by --bg-secondary, NOT on
+   the colored bubble — so they must NOT inherit the bubble's white text (that
+   was invisible on light themes). They use the same theme-aware colors as the
+   assistant buttons; the only user-specific touch is the softer idle opacity. */
 .message.user .message-action-btn {
-    color: var(--user-bubble-text);
     opacity: 0.7;
 }
 
 .message.user .message-action-btn:hover {
     opacity: 1;
-    background-color: rgba(0, 0, 0, 0.18);
-    color: var(--user-bubble-text);
 }
 
 .message.assistant {
