@@ -28,8 +28,14 @@
  */
 const RESERVED_EXPRESSIONS = new Set(['generating']);
 
-/** Expression names are interpolated into the system prompt, so they're constrained. */
-const VALID_EXPRESSION_NAME = /^[a-z0-9][a-z0-9 _-]{0,30}$/i;
+/**
+ * Expression names are interpolated into the system prompt, so they're
+ * constrained. Deliberately matches `validateExpressionName` in
+ * routes/avatars.js — names are also filenames and URL segments there, and a
+ * name accepted here but rejected there would be an expression that can never
+ * have art (spaces were exactly that bug).
+ */
+const VALID_EXPRESSION_NAME = /^[a-z0-9][a-z0-9_-]{0,30}$/i;
 const MAX_EXPRESSIONS = 24;
 
 /**

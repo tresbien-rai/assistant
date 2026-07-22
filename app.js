@@ -2919,10 +2919,12 @@ async function saveExpression() {
         showToast('Please enter an expression name', { type: 'warning' });
         return;
     }
-    // The name is interpolated into the model's expression protocol, so keep it
-    // to something declarable — and the server drops anything that isn't.
-    if (!/^[a-z0-9][a-z0-9 _-]{0,30}$/.test(name)) {
-        showToast('Use letters, numbers, spaces, - or _ (max 31 characters)', { type: 'warning' });
+    // The name is interpolated into the model's expression protocol AND used as
+    // a filename + URL segment by the avatar routes, so all three agree on this
+    // charset. No spaces: the image endpoints reject them, which would leave the
+    // expression permanently unable to hold art.
+    if (!/^[a-z0-9][a-z0-9_-]{0,30}$/.test(name)) {
+        showToast('Use letters, numbers, - or _ (no spaces, max 31 characters)', { type: 'warning' });
         return;
     }
     if (name === CONFIG.generatingExpression && editingExpression !== CONFIG.generatingExpression) {
