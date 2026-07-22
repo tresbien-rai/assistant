@@ -680,10 +680,11 @@ When responding, you may optionally include an expression tag like [expression: 
             <div class="modal-body">
                 <label for="expressionName">Expression Name</label>
                 <input type="text" id="expressionName" placeholder="e.g., happy">
-                
+                <p class="help-text">This is the name the model declares, so make it a word it would reach for — <em>smug</em>, <em>delighted</em>, <em>wary</em>.</p>
+
                 <label for="expressionEmoji">Emoji (fallback)</label>
                 <input type="text" id="expressionEmoji" placeholder="e.g., 😊" maxlength="4">
-                
+
                 <label>Expression Image (optional)</label>
                 <div class="expression-image-preview" id="expressionImagePreview">
                     <span class="preview-placeholder">No image</span>
@@ -701,10 +702,6 @@ When responding, you may optionally include an expression tag like [expression: 
                     </button>
                 </div>
                 <p class="help-text">Upload an image for this expression, or use emoji as fallback.</p>
-                
-                <label for="expressionKeywords">Trigger Keywords (comma-separated)</label>
-                <input type="text" id="expressionKeywords" placeholder="happy, glad, wonderful, great">
-                <p class="help-text">These words in the response will trigger this expression as a fallback.</p>
             </div>
             <div class="modal-footer">
                 <button class="modal-btn secondary" id="deleteExpressionBtn">Delete</button>

@@ -18,21 +18,25 @@ const CONFIG = {
         provider: 'anthropic',
         model: 'claude-sonnet-4-20250514',
         assistantName: 'Assistant',
-        systemPrompt: `You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
-
-When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.`,
+        // Persona voice only. The expression protocol is NOT stated here — the
+        // server's Tessera base layer supplies it, generated from the persona's
+        // real expression set, so it can never go stale the way this text did.
+        systemPrompt: `You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.`,
         avatarSize: 'medium',
         avatarPosition: 'top-right',
         showAvatar: true,
         activeFileTurns: 1
     },
+    // `keywords` is gone — expressions are declared by the model, never inferred
+    // from the text. `thinking` is reserved for the generation animation and is
+    // excluded from what the model may declare.
     defaultExpressions: {
-        neutral: { emoji: '😊', imageKey: '', keywords: [] },
-        happy: { emoji: '😄', imageKey: '', keywords: ['happy', 'glad', 'wonderful', 'great', 'love', 'excited', 'awesome', 'fantastic'] },
-        sad: { emoji: '😢', imageKey: '', keywords: ['sorry', 'unfortunately', 'sad', 'regret', 'apologize', 'difficult'] },
-        thinking: { emoji: '🤔', imageKey: '', keywords: ['hmm', 'consider', 'perhaps', 'maybe', 'wondering', 'think', 'analyze'] },
-        excited: { emoji: '🎉', imageKey: '', keywords: ['amazing', 'incredible', 'wow', 'excellent', 'brilliant', 'outstanding'] },
-        confused: { emoji: '😕', imageKey: '', keywords: ['confused', 'unclear', 'not sure', 'don\'t understand', 'puzzled'] }
+        neutral: { emoji: '😊', imageKey: '' },
+        happy: { emoji: '😄', imageKey: '' },
+        sad: { emoji: '😢', imageKey: '' },
+        thinking: { emoji: '🤔', imageKey: '' },
+        excited: { emoji: '🎉', imageKey: '' },
+        confused: { emoji: '😕', imageKey: '' }
     },
     attachments: {
         maxImageSize: 20 * 1024 * 1024,  // 20MB for images
@@ -1461,7 +1465,6 @@ const elements = {
     expressionUploadBtn: document.getElementById('expressionUploadBtn'),
     expressionClearBtn: document.getElementById('expressionClearBtn'),
     expressionImagePreview: document.getElementById('expressionImagePreview'),
-    expressionKeywords: document.getElementById('expressionKeywords'),
     saveExpressionBtn: document.getElementById('saveExpressionBtn'),
     deleteExpressionBtn: document.getElementById('deleteExpressionBtn'),
 
@@ -2775,6 +2778,12 @@ function updateSendButtonState() {
 }
 
 // ===== Expression Management =====
+/**
+ * Render the persona's expression set as a grid of face tiles. Image-first:
+ * the art is the point, so each slot shows the actual expression image at a
+ * size you can judge, reusing the persona-card portrait language. Slots with
+ * no image show their emoji and read as "unfilled" so gaps are obvious.
+ */
 async function renderExpressionList() {
     const list = elements.expressionList;
     list.innerHTML = '';
@@ -2784,23 +2793,28 @@ async function renderExpressionList() {
 
     const cacheBust = persona && persona.updatedAt ? `?v=${persona.updatedAt}` : '';
     for (const [name, expr] of Object.entries(expressions)) {
+        const hasImage = !!(persona && expr.imageKey);
         const item = document.createElement('div');
-        item.className = 'expression-item';
+        item.className = `expression-slot${hasImage ? '' : ' no-image'}`;
+        item.setAttribute('role', 'button');
+        item.tabIndex = 0;
+        item.title = `Edit "${name}"`;
         item.onclick = () => openExpressionModal(name);
+        item.onkeydown = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openExpressionModal(name);
+            }
+        };
 
-        // Show image when expression has one server-side; fall back to emoji.
-        let imageContent = expr.emoji;
-        if (persona && expr.imageKey) {
-            const imageUrl = `${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}`;
-            imageContent = `<img src="${imageUrl}" alt="${name}">`;
-        }
+        const face = hasImage
+            ? `<img src="${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}" alt="${escapeHtml(name)}">`
+            : `<span class="expression-slot-emoji">${expr.emoji || '🙂'}</span>`;
 
         item.innerHTML = `
-            <div class="expression-item-emoji">
-                ${imageContent}
-            </div>
-            <span class="expression-item-name">${name}</span>
-            <span class="expression-item-edit">Edit →</span>
+            <div class="expression-slot-face">${face}</div>
+            <span class="expression-slot-name">${escapeHtml(name)}</span>
+            ${name === 'thinking' ? '<span class="expression-slot-tag">auto</span>' : ''}
         `;
 
         list.appendChild(item);
@@ -2828,8 +2842,9 @@ async function openExpressionModal(name = null) {
         elements.expressionModalTitle.textContent = 'Edit Expression';
         elements.expressionName.value = name;
         elements.expressionEmoji.value = expr.emoji;
-        elements.expressionKeywords.value = expr.keywords.join(', ');
-        elements.deleteExpressionBtn.style.display = 'block';
+        // 'thinking' is the generation animation, not a declarable mood — its
+        // art is editable but the slot itself can't be removed.
+        elements.deleteExpressionBtn.style.display = name === 'thinking' ? 'none' : 'block';
 
         // Server URL for the expression image (cache-busted).
         if (persona && expr.imageKey) {
@@ -2843,7 +2858,6 @@ async function openExpressionModal(name = null) {
         elements.expressionModalTitle.textContent = 'Add Expression';
         elements.expressionName.value = '';
         elements.expressionEmoji.value = '';
-        elements.expressionKeywords.value = '';
         elements.deleteExpressionBtn.style.display = 'none';
         elements.expressionImagePreview.innerHTML = '<span class="preview-placeholder">No image</span>';
     }
@@ -2867,13 +2881,19 @@ function closeExpressionModal() {
 async function saveExpression() {
     const name = elements.expressionName.value.trim().toLowerCase();
     const emoji = elements.expressionEmoji.value.trim() || '😊';
-    const keywords = elements.expressionKeywords.value
-        .split(',')
-        .map(k => k.trim().toLowerCase())
-        .filter(k => k.length > 0);
 
     if (!name) {
         showToast('Please enter an expression name', { type: 'warning' });
+        return;
+    }
+    // The name is interpolated into the model's expression protocol, so keep it
+    // to something declarable — and the server drops anything that isn't.
+    if (!/^[a-z0-9][a-z0-9 _-]{0,30}$/.test(name)) {
+        showToast('Use letters, numbers, spaces, - or _ (max 31 characters)', { type: 'warning' });
+        return;
+    }
+    if (name === 'thinking' && editingExpression !== 'thinking') {
+        showToast('"thinking" is reserved for the generating animation', { type: 'warning' });
         return;
     }
 
@@ -2895,7 +2915,7 @@ async function saveExpression() {
     const initialImageKey = state.tempExpressionCleared
         ? ''
         : (state.tempExpressionBlob || isRename ? '' : oldImageKey);
-    newExpressions[name] = { emoji, keywords, imageKey: initialImageKey };
+    newExpressions[name] = { emoji, imageKey: initialImageKey };
 
     try {
         // 1. Push the metadata change.
@@ -4418,36 +4438,34 @@ function escapeHtml(str) {
 }
 
 // ===== Expression Detection =====
+/**
+ * Resolve the expression a response declares.
+ *
+ * Declaration is the ONLY signal. The old keyword fallback was removed: it
+ * matched substrings anywhere in the reply, so 'sorry', 'unfortunately' and
+ * 'difficult' pushed the avatar to `sad` constantly during ordinary work talk,
+ * and which expression won depended on insertion order in the expression map.
+ * A missed tag now just holds the current expression — stale beats wrong.
+ *
+ * @param {string} text - The full response text
+ * @returns {string} The expression name to display
+ */
 function detectExpression(text) {
     const persona = getActivePersona();
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
-    // First, check for explicit expression tag. 'thinking' is reserved as the
-    // transient generation-phase state (P2-U2) — it's never a "detected" settled
-    // expression, so ignore it here even if tagged/keyworded.
-    const tagMatch = text.match(/\[expression:\s*(\w+)\]/i);
+    // 'thinking' is reserved as the transient generation-phase state (P2-U2) —
+    // it's never a settled expression, so ignore it even if declared.
+    const tagMatch = text.match(/\[expression:\s*([\w -]+)\]/i);
     if (tagMatch) {
-        const exprName = tagMatch[1].toLowerCase();
+        const exprName = tagMatch[1].trim().toLowerCase();
         if (expressions[exprName] && exprName !== 'thinking') {
             return exprName;
         }
     }
 
-    // Fallback: keyword matching
-    const lowerText = text.toLowerCase();
-
-    for (const [name, expr] of Object.entries(expressions)) {
-        if (name === 'neutral' || name === 'thinking') continue; // not keyword-detectable
-
-        for (const keyword of expr.keywords) {
-            if (lowerText.includes(keyword)) {
-                return name;
-            }
-        }
-    }
-
-    // Default to the current expression (don't change if nothing detected),
-    // except settle the transient "thinking" generation state to neutral.
+    // Nothing declared: hold the current expression, except settle the
+    // transient "thinking" generation state back to neutral.
     return state.currentExpression === 'thinking' ? 'neutral' : state.currentExpression;
 }
 
@@ -7126,6 +7144,10 @@ function buildChatRequest() {
         model: modelConfig.model,
         messages,
         systemPrompt,
+        // The server's Tessera base layer names these in the expression
+        // protocol, so the model is told the persona's REAL expression set
+        // rather than a list frozen into the prompt text at creation.
+        expressionNames: Object.keys(persona ? persona.expressions || {} : {}),
         modelParams: modelConfig.modelParams,
         ...(prefillText ? { prefill: prefillText } : {}),
         // Lets the server resolve this conversation's project and inject its
@@ -7405,25 +7427,88 @@ function startStreamingMessage() {
 
     state.streamingMessageDiv = messageDiv;
     state.streamingAccumulator = '';
+    state.streamingExpressionApplied = null;
     state.streamingGeneratedImages = [];
     state.streamingToolEvents = [];
 
     scrollToBottom();
 }
 
+// A leading "[expression: name]" is a control token, not content: it must set
+// the avatar and then never reach the screen. Since chunks arrive split at
+// arbitrary boundaries, the opening of a stream can be an INCOMPLETE tag
+// ("[expr"), so we withhold display until we know whether it will close into
+// one. This matches the tag against a growing prefix of the expected shape.
+const TAG_OPEN = '[expression:';
+const LEADING_EXPRESSION_TAG = /^\[expression:\s*([\w -]+)\]\s*/i;
+// Stop waiting if an unclosed tag runs longer than any real name would — a
+// malformed opener must never buffer the whole response.
+const MAX_TAG_NAME_LENGTH = 40;
+
+/**
+ * Could `text` still grow into a complete leading expression tag?
+ * Two phases: still typing out "[expression:" itself, or past the opener and
+ * accumulating a plausible name that hasn't closed yet.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isPartialExpressionTag(text) {
+    const lower = text.toLowerCase();
+    if (lower.length < TAG_OPEN.length) return TAG_OPEN.startsWith(lower);
+    if (!lower.startsWith(TAG_OPEN)) return false;
+    const name = text.slice(TAG_OPEN.length);
+    // A ']' here means the full-tag regex already declined it — malformed.
+    return !name.includes(']') && name.length <= MAX_TAG_NAME_LENGTH && /^[\w -]*$/.test(name);
+}
+
+/**
+ * Decide what of the stream so far is safe to render.
+ * @param {string} text - Accumulated text (prefill already stripped)
+ * @returns {{ display: string, expression: string|null, pending: boolean }}
+ *   `pending` means "still might become a tag — render nothing yet".
+ */
+function splitLeadingExpressionTag(text) {
+    const done = text.match(LEADING_EXPRESSION_TAG);
+    if (done) {
+        return { display: text.slice(done[0].length), expression: done[1].trim().toLowerCase(), pending: false };
+    }
+    if (isPartialExpressionTag(text)) {
+        return { display: '', expression: null, pending: true };
+    }
+    return { display: text, expression: null, pending: false };
+}
+
 function appendStreamChunk(text) {
     state.streamingAccumulator += text;
     if (state.streamingMessageDiv) {
-        // First real content: drop the pre-token placeholder state so the
-        // trailing block cursor takes over from the typing dots.
-        state.streamingMessageDiv.classList.remove('awaiting-first-token');
         const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
         if (contentDiv) {
             let displayText = state.streamingAccumulator;
             if (state.currentPrefill) {
                 displayText = stripPrefillText(displayText, state.currentPrefill);
             }
-            contentDiv.innerHTML = renderMarkdown(displayText);
+
+            const { display, expression, pending } = splitLeadingExpressionTag(displayText);
+            // Still waiting to see if this is a tag — keep the typing dots up
+            // rather than flashing a partial "[expre" on screen.
+            if (pending) {
+                scrollToBottom();
+                return;
+            }
+            // Fire once, the moment the tag closes: the avatar changes BEFORE
+            // the first word of the reply renders. 'thinking' is the UI's own
+            // generation state, so a model that declares it is ignored (the tag
+            // is still stripped). Unknown names no-op inside setExpression.
+            if (expression && expression !== 'thinking'
+                && expression !== state.streamingExpressionApplied) {
+                state.streamingExpressionApplied = expression;
+                setExpression(expression);
+            }
+
+            // First real content: drop the pre-token placeholder state so the
+            // trailing block cursor takes over from the typing dots.
+            state.streamingMessageDiv.classList.remove('awaiting-first-token');
+            contentDiv.innerHTML = renderMarkdown(display);
         }
         scrollToBottom();
     }

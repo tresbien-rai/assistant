@@ -18,6 +18,7 @@ const dal = require('../db/dal');
 const { assembleProjectContext, assembleWorkspaceContext } = require('../utils/projectContext');
 const { resolveActiveFileBlock, appendToLastUserMessage } = require('../utils/activeFiles');
 const { TOOL_DEFINITIONS } = require('../tools/definitions');
+const { buildSystemPrompt } = require('../prompts/tessera');
 const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
@@ -213,11 +214,14 @@ const CONTEXT_ACK = "Understood — I'll use the reference material above as bac
  * assembled per request and are never persisted.
  *
  * @param {{text: string}|null} requestContext - resolveRequestContext result
- * @param {string} [systemPrompt] - the persona prompt (used as-is for `system`)
+ * @param {string} [systemPrompt] - the persona prompt (goes *after* the Tessera
+ *   base layer, which carries the platform preamble + expression protocol)
  * @param {Array} [messages] - the raw conversation messages
+ * @param {string[]} [expressionNames] - the persona's expression names, so the
+ *   base layer can name the ones that actually exist
  * @returns {{ system: string|undefined, messages: Array }}
  */
-function assembleProviderInput(requestContext, systemPrompt, messages = []) {
+function assembleProviderInput(requestContext, systemPrompt, messages = [], expressionNames = []) {
   const contextMessages = requestContext?.text
     ? [
         { role: 'user', content: requestContext.text },
@@ -225,7 +229,7 @@ function assembleProviderInput(requestContext, systemPrompt, messages = []) {
       ]
     : [];
   return {
-    system: systemPrompt,
+    system: buildSystemPrompt(systemPrompt, expressionNames),
     messages: [...contextMessages, ...messages],
   };
 }
@@ -243,7 +247,7 @@ function countUserTurns(messages) {
  * warning header), and `currentTurn` (stamped onto tool writes this request).
  * @returns {Promise<{ system: string|undefined, messages: Array, requestContext: object|null, currentTurn: number }>}
  */
-async function assembleChatRequest(req, containers, { systemPrompt, messages }) {
+async function assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames }) {
   const userId = req.user.userId;
   const requestContext = await resolveRequestContext(req, containers);
 
@@ -258,7 +262,8 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages }) 
   const activeBlock = await resolveActiveFileBlock(userId, conversationId, currentTurn, activeFileTurns);
   const messagesWithActive = activeBlock ? appendToLastUserMessage(messages, activeBlock) : messages;
 
-  const { system, messages: assembled } = assembleProviderInput(requestContext, systemPrompt, messagesWithActive);
+  const { system, messages: assembled } =
+    assembleProviderInput(requestContext, systemPrompt, messagesWithActive, expressionNames);
   return { system, messages: assembled, requestContext, currentTurn };
 }
 
@@ -429,7 +434,7 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
  * }
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { provider, model, messages, systemPrompt, modelParams, prefill, attachments } = req.body;
+  const { provider, model, messages, systemPrompt, modelParams, prefill, attachments, expressionNames } = req.body;
 
   validateChatRequest(req.body);
 
@@ -442,7 +447,7 @@ router.post('/', asyncHandler(async (req, res) => {
   // Assemble the request (FC-03a KB relocation + FC-03b active-file injection).
   const containers = resolveRequestContainers(req);
   const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn } =
-    await assembleChatRequest(req, containers, { systemPrompt, messages });
+    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   logger.info({
@@ -504,7 +509,7 @@ router.post('/', asyncHandler(async (req, res) => {
  * Response: SSE stream with provider's native event format
  */
 router.post('/stream', asyncHandler(async (req, res) => {
-  const { provider, model, messages, systemPrompt, modelParams, prefill, attachments } = req.body;
+  const { provider, model, messages, systemPrompt, modelParams, prefill, attachments, expressionNames } = req.body;
 
   validateChatRequest(req.body);
 
@@ -522,7 +527,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
   // Resolved before any SSE headers are sent so the warning header is valid.
   const containers = resolveRequestContainers(req);
   const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn } =
-    await assembleChatRequest(req, containers, { systemPrompt, messages });
+    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   if (requestContext?.warning) {
@@ -625,7 +630,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
  * of a fresh conversation.
  */
 router.post('/preview', asyncHandler(async (req, res) => {
-  const { provider, model, messages = [], systemPrompt, modelParams, prefill, attachments } = req.body;
+  const { provider, model, messages = [], systemPrompt, modelParams, prefill, attachments, expressionNames } = req.body;
 
   validateProvider(provider);
   if (!model || typeof model !== 'string') {
@@ -646,7 +651,7 @@ router.post('/preview', asyncHandler(async (req, res) => {
   // relocation and active-file injection.
   const containers = resolveRequestContainers(req);
   const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext } =
-    await assembleChatRequest(req, containers, { systemPrompt, messages });
+    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
 
   const body = providerModule.buildRequestBody({
