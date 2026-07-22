@@ -85,6 +85,21 @@ try {
   });
   console.log(`   ✓ Updated settings: avatarSize=${updatedSettings.avatarSize}, showAvatar=${updatedSettings.showAvatar}`);
 
+  // catalogProviders round-trip (Models tab redesign, Slice 2): default null,
+  // stores/reads back a JSON array, and clears back to null.
+  if (defaultSettings.catalogProviders !== null) {
+    throw new Error(`Expected default catalogProviders=null, got ${JSON.stringify(defaultSettings.catalogProviders)}`);
+  }
+  const withProviders = dal.upsertSettings(user.id, { catalogProviders: ['anthropic', 'google'] });
+  if (JSON.stringify(withProviders.catalogProviders) !== JSON.stringify(['anthropic', 'google'])) {
+    throw new Error(`catalogProviders round-trip failed: ${JSON.stringify(withProviders.catalogProviders)}`);
+  }
+  const clearedProviders = dal.upsertSettings(user.id, { catalogProviders: null });
+  if (clearedProviders.catalogProviders !== null) {
+    throw new Error(`Expected catalogProviders to clear to null, got ${JSON.stringify(clearedProviders.catalogProviders)}`);
+  }
+  console.log(`   ✓ catalogProviders round-trip: null → ["anthropic","google"] → null`);
+
   // Test API keys
   console.log('\n7. Testing API key operations...');
   dal.upsertApiKey(user.id, 'anthropic', 'encrypted-key-data');

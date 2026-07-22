@@ -731,7 +731,11 @@ const state = {
             anthropic: [],
             google: [],
             openai: []
-        }
+        },
+        // Models catalog "daily drivers" filter (Models tab redesign): an array
+        // of provider ids the catalog shows, or null for "All". Persisted in the
+        // settings row. The provider chips (a later slice) are the only writer.
+        catalogProviders: null
     },
     // The active model layer (WR-12): provider + model + params that every
     // chat send and the model/params UI use. User-level, persisted in
@@ -1677,6 +1681,10 @@ function hydrateSettings(settings) {
         google: Array.isArray(cm.google) ? cm.google : [],
         openai: Array.isArray(cm.openai) ? cm.openai : [],
     };
+    // Models catalog "daily drivers" filter. null (server default) = "All".
+    state.settings.catalogProviders = Array.isArray(settings.catalogProviders)
+        ? settings.catalogProviders
+        : null;
     // The active model layer (WR-12). NULL sentinel = not yet seeded (first
     // load after the de-sync upgrade) — init() seeds it from the active
     // persona once personas are hydrated.
@@ -1943,6 +1951,20 @@ function autoSaveSettings() {
 }
 
 /**
+ * Set the Models catalog "daily drivers" provider filter and persist it
+ * (debounced). `providers` is an array of provider ids, or null/[] for "All" —
+ * an empty selection normalises to null so the catalog never renders blank
+ * (docs/MODELS_TAB_REDESIGN.md). Plumbing only in this slice; the provider
+ * chips are the caller in a later slice.
+ * @param {string[] | null} providers
+ */
+function saveCatalogProviders(providers) {
+    state.settings.catalogProviders =
+        Array.isArray(providers) && providers.length ? providers : null;
+    autoSaveSettings();
+}
+
+/**
  * Collect all current UI values into state
  */
 function saveAllSettingsFromUI() {
@@ -2093,6 +2115,7 @@ function persistSettings() {
         activeFileTurns: state.settings.activeFileTurns,
         customModels: state.settings.customModels,
         currentModelConfig: state.currentModelConfig, // the active layer (WR-12)
+        catalogProviders: state.settings.catalogProviders, // Models catalog filter
     };
     API.settings.update(settingsPayload).catch(err => {
         console.error('Failed to persist settings:', err);

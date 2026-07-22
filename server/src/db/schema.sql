@@ -218,6 +218,7 @@ CREATE TABLE IF NOT EXISTS settings (
     custom_models   TEXT DEFAULT '{}',  -- JSON for custom model definitions
     current_model_config TEXT,          -- JSON: the active model layer (WR-12); NULL until the client seeds it
     active_file_turns INTEGER DEFAULT 1, -- turns a file stays live in context after a change (FC-03b)
+    catalog_providers TEXT DEFAULT NULL, -- JSON array of provider ids for the Models catalog "daily drivers" filter; NULL = All
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
 );

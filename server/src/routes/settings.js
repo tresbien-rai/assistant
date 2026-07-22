@@ -72,8 +72,16 @@ function isValidActiveFileTurns(v) {
   return Number.isInteger(v) && v >= ACTIVE_FILE_TURNS_MIN && v <= ACTIVE_FILE_TURNS_MAX;
 }
 
+// catalogProviders (Models tab redesign): the "daily drivers" provider filter
+// for the Models catalog. null = "All"; otherwise an array of provider id
+// strings. The set of valid ids is intentionally not enforced here — the client
+// owns the provider registry, and an unknown id simply matches no models.
+function isValidCatalogProviders(v) {
+  return v === null || (Array.isArray(v) && v.every((p) => typeof p === 'string'));
+}
+
 router.put('/', asyncHandler(async (req, res) => {
-  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns } = req.body;
+  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns, catalogProviders } = req.body;
 
   // Validate avatarSize if provided (preset name or numeric px string)
   if (avatarSize !== undefined && !isValidAvatarSize(avatarSize)) {
@@ -116,6 +124,11 @@ router.put('/', asyncHandler(async (req, res) => {
     );
   }
 
+  // Validate catalogProviders if provided (Models tab redesign)
+  if (catalogProviders !== undefined && !isValidCatalogProviders(catalogProviders)) {
+    throw AppError.validation('catalogProviders must be null or an array of provider id strings');
+  }
+
   // Build update data (only include fields that were provided)
   const updateData = {};
   if (avatarSize !== undefined) updateData.avatarSize = avatarSize;
@@ -124,6 +137,7 @@ router.put('/', asyncHandler(async (req, res) => {
   if (customModels !== undefined) updateData.customModels = customModels;
   if (currentModelConfig !== undefined) updateData.currentModelConfig = currentModelConfig;
   if (activeFileTurns !== undefined) updateData.activeFileTurns = activeFileTurns;
+  if (catalogProviders !== undefined) updateData.catalogProviders = catalogProviders;
 
   // Upsert settings
   const settings = dal.upsertSettings(req.user.userId, updateData);
