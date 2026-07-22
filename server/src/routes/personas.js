@@ -27,6 +27,8 @@ const {
   avatarFilename,
   expressionFilename,
   safeDelete,
+  personaImageRefs,
+  deletePersonaImages,
 } = require('./avatars');
 
 const router = express.Router();
@@ -76,6 +78,24 @@ function formatPersona(persona) {
     createdAt: persona.created_at,
     updatedAt: persona.updated_at,
   };
+}
+
+/**
+ * After an edit, delete image files the update orphaned — an expression that
+ * was removed or had its image cleared/replaced, or an avatar that was cleared
+ * or replaced. Compares the pre-update persona against the post-update one:
+ * any file referenced by `before` but not by `after` is no longer reachable
+ * and is safe to remove. Best-effort; never throws.
+ * @param {Object} before - DAL-shaped persona before the update
+ * @param {Object} after - DAL-shaped persona after the update
+ */
+function pruneOrphanedByEdit(before, after) {
+  const stillReferenced = personaImageRefs(after);
+  for (const filename of personaImageRefs(before)) {
+    if (!stillReferenced.has(filename)) {
+      safeDelete(path.join(AVATARS_DIR, filename));
+    }
+  }
 }
 
 /**
@@ -262,10 +282,21 @@ router.put('/:id', asyncHandler(async (req, res) => {
     updateData.modelConfig = modelConfig;
   }
 
+  // When an edit reshapes the avatar or expression set, we need the pre-update
+  // state to know which image files it orphans.
+  const willReshapeImages = expressions !== undefined || avatarFilename !== undefined;
+  const before = willReshapeImages
+    ? dal.getPersonaById(req.params.id, req.user.userId)
+    : null;
+
   const persona = dal.updatePersona(req.params.id, req.user.userId, updateData);
 
   if (!persona) {
     throw AppError.notFound('Persona');
+  }
+
+  if (before) {
+    pruneOrphanedByEdit(before, persona);
   }
 
   res.json(formatPersona(persona));
@@ -294,6 +325,11 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   if (!deleted) {
     throw AppError.notFound('Persona');
   }
+
+  // DB rows cascade away, but the avatar/expression files on disk do not —
+  // remove them now. Best-effort; a stray file left by a crash here is what the
+  // periodic sweep reclaims.
+  deletePersonaImages(req.params.id);
 
   res.json({ deleted: true });
 }));

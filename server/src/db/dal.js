@@ -97,6 +97,29 @@ function getPersonasByUser(userId) {
 }
 
 /**
+ * Get the image references for every persona across ALL users.
+ * Maintenance-only projection for the orphaned-avatar sweep — deliberately
+ * unscoped by user_id, since the sweep reconciles the shared avatars directory
+ * against the whole database. Returns just what the sweep needs.
+ * @returns {Array<{avatar_filename: string, expressions: Object}>}
+ */
+function getAllPersonaImageRefs() {
+  const db = getDb();
+  const rows = db.prepare('SELECT avatar_filename, expressions FROM personas').all();
+  return rows.map((row) => {
+    let expressions = {};
+    try {
+      expressions = JSON.parse(row.expressions || '{}');
+    } catch {
+      // A corrupt expressions blob shouldn't make the sweep treat everything as
+      // unreferenced — fall back to an empty set for this row.
+      expressions = {};
+    }
+    return { avatar_filename: row.avatar_filename, expressions };
+  });
+}
+
+/**
  * Get a single persona by ID (only if owned by the user)
  * @param {string} personaId - The persona's UUID
  * @param {string} userId - The user's UUID
@@ -1645,6 +1668,7 @@ module.exports = {
 
   // Personas
   getPersonasByUser,
+  getAllPersonaImageRefs,
   getPersonaById,
   createPersona,
   updatePersona,

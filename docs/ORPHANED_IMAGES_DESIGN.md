@@ -102,6 +102,9 @@ and skipped under `NODE_ENV=test`.
 
 ## Task breakdown
 
+*Progress: ALL DONE — OI-01, OI-02, OI-03 implemented together on
+`claude/persona-orphaned-images-539y1q` (this PR).*
+
 | Task | Scope | Size |
 |------|-------|------|
 | **OI-01** | `deletePersonaImages` helper; wire into the persona delete route and the expression-diff prune in the edit route. | Small |

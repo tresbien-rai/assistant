@@ -147,6 +147,58 @@ function safeDelete(filePath) {
 }
 
 /**
+ * Collect the set of image filenames a persona currently references —
+ * its avatar plus every expression's imageKey. Operates on a DAL-shaped
+ * persona (snake_case `avatar_filename`, parsed `expressions` object), so it
+ * works for records from getPersonaById / updatePersona and for the projection
+ * used by the sweep. Pure; no filesystem access.
+ * @param {{avatar_filename?: string, expressions?: Object}} persona
+ * @returns {Set<string>} referenced filenames
+ */
+function personaImageRefs(persona) {
+  const set = new Set();
+  if (persona && persona.avatar_filename) set.add(persona.avatar_filename);
+  const expressions = (persona && persona.expressions) || {};
+  for (const expr of Object.values(expressions)) {
+    if (expr && expr.imageKey) set.add(expr.imageKey);
+  }
+  return set;
+}
+
+/**
+ * Delete every image file belonging to a persona — its avatar and all
+ * expression images, regardless of extension. Used when a persona is deleted:
+ * its DB rows cascade away, but the files on disk do not. Best-effort; never
+ * throws.
+ * @param {string} personaId
+ * @returns {number} count of files deleted
+ */
+function deletePersonaImages(personaId) {
+  const avatarBase = `${personaId}_avatar`;
+  const exprPrefix = `${personaId}_expr_`;
+  let files;
+  try {
+    files = fs.readdirSync(AVATARS_DIR);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      logger.warn({ err, personaId }, 'Failed to list avatars dir for persona cleanup');
+    }
+    return 0;
+  }
+  let deleted = 0;
+  for (const f of files) {
+    const nameWithoutExt = f.substring(0, f.lastIndexOf('.'));
+    // Persona IDs are fixed-length UUIDs, so an exact avatar-base match and an
+    // `{id}_expr_` prefix match cannot collide with another persona's files.
+    if (nameWithoutExt === avatarBase || f.startsWith(exprPrefix)) {
+      safeDelete(path.join(AVATARS_DIR, f));
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
+/**
  * Verify a resolved file path is inside AVATARS_DIR (path traversal guard)
  * @param {string} filePath - Resolved file path to check
  * @throws {AppError} If path escapes the avatars directory
@@ -438,4 +490,6 @@ module.exports = {
   expressionFilename,
   findFileByPattern,
   safeDelete,
+  personaImageRefs,
+  deletePersonaImages,
 };
