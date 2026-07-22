@@ -23,7 +23,7 @@ const express = require('express');
 
 const dal = require('../db/dal');
 const drive = require('../utils/drive');
-const { upload, handleUploadError } = require('../utils/fileUploads');
+const { upload, fixUploadedFilename, handleUploadError } = require('../utils/fileUploads');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
@@ -396,7 +396,7 @@ router.post('/:id/files/:fileId/revisions/:revId/restore', asyncHandler(async (r
  * Upload a file (multipart field "file") to the project's Drive folder and
  * record its metadata.
  */
-router.post('/:id/files', upload.single('file'), handleUploadError, asyncHandler(async (req, res) => {
+router.post('/:id/files', upload.single('file'), fixUploadedFilename, handleUploadError, asyncHandler(async (req, res) => {
   const project = requireProject(req.params.id, req.user.userId);
 
   if (!req.file) {
