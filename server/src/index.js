@@ -29,6 +29,7 @@ const settingsRoutes = require('./routes/settings');
 const filesRoutes = require('./routes/files');
 const { chatRouter, modelsRouter } = require('./routes/chat');
 const { personaAvatarRouter, avatarServingRouter } = require('./routes/avatars');
+const { startAvatarSweep } = require('./tools/avatarSweep');
 
 // Initialize Express app
 const app = express();
@@ -144,6 +145,9 @@ const port = config.port;
 
 app.listen(port, () => {
   logger.info({ port, env: config.nodeEnv }, `Server started on port ${port}`);
+  // Periodically reclaim avatar/expression images left behind on disk when
+  // personas/expressions are removed. Safe to skip; gated by env + NODE_ENV.
+  startAvatarSweep();
 });
 
 module.exports = app;
