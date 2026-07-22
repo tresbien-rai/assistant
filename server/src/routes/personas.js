@@ -14,10 +14,20 @@
  */
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const dal = require('../db/dal');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
+const { logger } = require('../utils/logger');
+const { validateBundle } = require('../utils/personaBundle');
+const {
+  AVATARS_DIR,
+  avatarFilename,
+  expressionFilename,
+  safeDelete,
+} = require('./avatars');
 
 const router = express.Router();
 
@@ -127,6 +137,77 @@ router.post('/', asyncHandler(async (req, res) => {
   });
 
   res.status(201).json(formatPersona(persona));
+}));
+
+/**
+ * POST /api/personas/import
+ * Body: a parsed `.tessera` persona bundle.
+ *
+ * Creates a new persona from an untrusted bundle. Everything is validated by
+ * validateBundle first; images are written only after the persona row exists
+ * (they're named by persona id). Deliberately ignores any model pin or
+ * file-tool setting the bundle might carry — an import lands in shared model
+ * mode with tools off, because neither is the exporter's decision to make
+ * about the importer's account.
+ *
+ * Declared before `/:id` routes would matter for GET, but this is the only
+ * POST subpath so there's no shadowing to worry about.
+ */
+router.post('/import', express.json({ limit: '32mb' }), asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const { persona: incoming, avatar, expressionImages } = validateBundle(req.body);
+
+  const created = dal.createPersona(userId, {
+    name: incoming.name,
+    tagline: incoming.tagline,
+    roleLabel: incoming.roleLabel,
+    systemPrompt: incoming.systemPrompt,
+    prefill: '',
+    expressions: incoming.expressions,
+    modelConfig: {}, // shared mode; never inherit a pin or toolsEnabled
+  });
+
+  const written = [];
+  try {
+    const expressions = { ...incoming.expressions };
+
+    if (avatar) {
+      const name = avatarFilename(created.id, avatar.ext);
+      const dest = path.join(AVATARS_DIR, name);
+      fs.writeFileSync(dest, avatar.buffer);
+      written.push(dest);
+      dal.updatePersona(created.id, userId, { avatarFilename: name });
+    }
+
+    for (const image of expressionImages) {
+      const name = expressionFilename(created.id, image.name, image.ext);
+      const dest = path.join(AVATARS_DIR, name);
+      fs.writeFileSync(dest, image.buffer);
+      written.push(dest);
+      if (expressions[image.name]) expressions[image.name].imageKey = name;
+    }
+    if (expressionImages.length > 0) {
+      dal.updatePersona(created.id, userId, { expressions });
+    }
+  } catch (err) {
+    // Don't leave a half-built persona behind: roll back the row and any
+    // files already on disk, then surface the failure.
+    written.forEach(safeDelete);
+    try {
+      dal.deletePersona(created.id, userId);
+    } catch (cleanupErr) {
+      logger.error({ err: cleanupErr, personaId: created.id }, 'Failed to roll back imported persona');
+    }
+    logger.error({ err, personaId: created.id }, 'Persona import failed writing images');
+    throw AppError.server('Could not save the imported persona images');
+  }
+
+  logger.info(
+    { personaId: created.id, expressions: Object.keys(incoming.expressions).length, images: written.length },
+    'Persona imported'
+  );
+
+  res.status(201).json(formatPersona(dal.getPersonaById(created.id, userId)));
 }));
 
 /**

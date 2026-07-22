@@ -24,8 +24,18 @@ function hasColumn(db, table, column) {
     .some((col) => col.name === column);
 }
 
+/** @param {import('better-sqlite3').Database} db @param {string} table */
+function hasTable(db, table) {
+  return !!db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(table);
+}
+
 /** @param {import('better-sqlite3').Database} db */
 function up(db) {
+  // `personas` comes from schema.sql; a DB that predates it (or the migration
+  // test's bare fixture) has nothing to alter.
+  if (!hasTable(db, 'personas')) return;
   if (!hasColumn(db, 'personas', 'tagline')) {
     db.exec(`ALTER TABLE personas ADD COLUMN tagline TEXT DEFAULT ''`);
   }

@@ -311,6 +311,14 @@
       delete(id) {
         return request('DELETE', `/api/personas/${encodeURIComponent(id)}`);
       },
+      /**
+       * Create a persona from a parsed `.tessera` bundle. The server validates
+       * everything in it — the file came from someone else.
+       * @param {Object} bundle
+       */
+      import(bundle) {
+        return request('POST', '/api/personas/import', { body: bundle });
+      },
     },
 
     // -------------------------------------------------------------------------

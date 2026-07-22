@@ -669,6 +669,29 @@ body {
     background: var(--accent-hover);
 }
 
+.section-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Quieter sibling of .section-new-btn for secondary actions (Import). */
+.section-secondary-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.section-secondary-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
 .section-list {
     display: flex;
     flex-direction: column;

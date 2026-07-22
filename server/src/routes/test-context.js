@@ -65,10 +65,12 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
     check('has <project_context> wrapper', pCtx.text.includes('<project_context>'));
 
     // FC-03a: the KB no longer rides in the system prompt — it becomes a
-    // synthetic user turn + an assistant ack prepended to the messages, and
-    // `system` is the persona prompt alone.
+    // synthetic user turn + an assistant ack prepended to the messages. `system`
+    // is the Tessera base layer followed by the persona prompt, and crucially
+    // still carries no knowledge-base text.
     const assembled = assembleProviderInput(pCtx, 'PERSONA_PROMPT', [{ role: 'user', content: 'HELLO_TURN' }]);
-    check('system is the persona prompt alone (KB not in system)', assembled.system === 'PERSONA_PROMPT');
+    check('system = Tessera base layer + persona prompt', assembled.system.startsWith('# Tessera') && assembled.system.endsWith('PERSONA_PROMPT'));
+    check('KB text is not in system', !assembled.system.includes('<project_context>') && !assembled.system.includes('<workspace_context>'));
     check('KB is the leading synthetic user turn',
       assembled.messages[0].role === 'user'
       && assembled.messages[0].content.includes('WS_INSTRUCTIONS')
@@ -89,7 +91,7 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
     check('no context block', uCtx === null);
     const uAssembled = assembleProviderInput(uCtx, 'PERSONA_PROMPT', [{ role: 'user', content: 'X' }]);
     check('no context → messages passed through unchanged', uAssembled.messages.length === 1 && uAssembled.messages[0].content === 'X');
-    check('no context → system is still the persona prompt', uAssembled.system === 'PERSONA_PROMPT');
+    check('no context → system still ends with the persona prompt', uAssembled.system.endsWith('PERSONA_PROMPT'));
 
     // --- New (unsaved) chat via explicit ids; project derives its workspace --
     console.log('\n4. Explicit projectId derives its workspace...');
