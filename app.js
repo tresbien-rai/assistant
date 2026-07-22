@@ -18,22 +18,32 @@ const CONFIG = {
         provider: 'anthropic',
         model: 'claude-sonnet-4-20250514',
         assistantName: 'Assistant',
-        systemPrompt: `You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
-
-When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.`,
+        // Persona voice only. The expression protocol is NOT stated here — the
+        // server's Tessera base layer supplies it, generated from the persona's
+        // real expression set, so it can never go stale the way this text did.
+        systemPrompt: `You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.`,
         avatarSize: 'medium',
         avatarPosition: 'top-right',
         showAvatar: true,
         activeFileTurns: 1
     },
+    // `keywords` is gone — expressions are declared by the model, never inferred
+    // from the text. `generating` is the one reserved slot: it's the UI's own
+    // "working on it" state, held for the whole response, and the model may
+    // never declare it. Everything else here is an ordinary expression —
+    // including `thinking`, which used to be reserved and is now free to be a
+    // real character pose (hand on chin).
     defaultExpressions: {
-        neutral: { emoji: '😊', imageKey: '', keywords: [] },
-        happy: { emoji: '😄', imageKey: '', keywords: ['happy', 'glad', 'wonderful', 'great', 'love', 'excited', 'awesome', 'fantastic'] },
-        sad: { emoji: '😢', imageKey: '', keywords: ['sorry', 'unfortunately', 'sad', 'regret', 'apologize', 'difficult'] },
-        thinking: { emoji: '🤔', imageKey: '', keywords: ['hmm', 'consider', 'perhaps', 'maybe', 'wondering', 'think', 'analyze'] },
-        excited: { emoji: '🎉', imageKey: '', keywords: ['amazing', 'incredible', 'wow', 'excellent', 'brilliant', 'outstanding'] },
-        confused: { emoji: '😕', imageKey: '', keywords: ['confused', 'unclear', 'not sure', 'don\'t understand', 'puzzled'] }
+        neutral: { emoji: '😊', imageKey: '' },
+        happy: { emoji: '😄', imageKey: '' },
+        sad: { emoji: '😢', imageKey: '' },
+        thinking: { emoji: '🤔', imageKey: '' },
+        excited: { emoji: '🎉', imageKey: '' },
+        confused: { emoji: '😕', imageKey: '' },
+        generating: { emoji: '💭', imageKey: '' }
     },
+    /** The expression slot driven by the UI, never by the model. */
+    generatingExpression: 'generating',
     attachments: {
         maxImageSize: 20 * 1024 * 1024,  // 20MB for images
         maxFileSize: 10 * 1024 * 1024,   // 10MB for other files
@@ -1007,6 +1017,8 @@ async function createPersona(name = CONFIG.defaults.assistantName) {
     state.personas[created.id] = {
         id: created.id,
         name: created.name,
+        tagline: created.tagline || '',
+        roleLabel: created.roleLabel || '',
         systemPrompt: created.systemPrompt || '',
         prefill: created.prefill || '',
         avatarFilename: created.avatarFilename || '',
@@ -1312,6 +1324,8 @@ function savePersonas() {
     Promise.all(personas.map(p =>
         API.personas.update(p.id, {
             name: p.name,
+            tagline: p.tagline || '',
+            roleLabel: p.roleLabel || '',
             systemPrompt: p.systemPrompt,
             prefill: p.prefill,
             // avatarFilename is INTENTIONALLY omitted. It's owned by the avatar
@@ -1393,6 +1407,10 @@ const elements = {
     toggleApiKey: document.getElementById('toggleApiKey'),
     clearApiKeyBtn: document.getElementById('clearApiKeyBtn'),
     assistantName: document.getElementById('assistantName'),
+    personaTagline: document.getElementById('personaTagline'),
+    personaTaglineCount: document.getElementById('personaTaglineCount'),
+    personaRoleLabel: document.getElementById('personaRoleLabel'),
+    personaRoleLabelCount: document.getElementById('personaRoleLabelCount'),
     systemPrompt: document.getElementById('systemPrompt'),
     prefillInput: document.getElementById('prefillInput'),
 
@@ -1432,8 +1450,10 @@ const elements = {
     avatarFileInput: document.getElementById('avatarFileInput'),
     avatarUploadBtn: document.getElementById('avatarUploadBtn'),
     avatarClearBtn: document.getElementById('avatarClearBtn'),
+    avatarMoodBadge: document.getElementById('avatarMoodBadge'),
     avatarPreview: document.getElementById('avatarPreview'),
     avatarPreviewName: document.getElementById('avatarPreviewName'),
+    avatarPreviewTagline: document.getElementById('avatarPreviewTagline'),
     avatarPreviewStatus: document.getElementById('avatarPreviewStatus'),
     showAvatar: document.getElementById('showAvatar'),
     activeFileTurns: document.getElementById('activeFileTurns'),
@@ -1452,7 +1472,6 @@ const elements = {
     expressionUploadBtn: document.getElementById('expressionUploadBtn'),
     expressionClearBtn: document.getElementById('expressionClearBtn'),
     expressionImagePreview: document.getElementById('expressionImagePreview'),
-    expressionKeywords: document.getElementById('expressionKeywords'),
     saveExpressionBtn: document.getElementById('saveExpressionBtn'),
     deleteExpressionBtn: document.getElementById('deleteExpressionBtn'),
 
@@ -1674,16 +1693,20 @@ function hydratePersonas(personas) {
         const expressions = hasExpressions
             ? p.expressions
             : { ...CONFIG.defaultExpressions };
-        // 'thinking' is reserved for the built-in generation animation (P2-U2)
-        // and must always have a slot — otherwise setExpression('thinking')
-        // silently no-ops and the slot never appears in persona settings.
-        // Personas created before it became a default lack it, so backfill.
-        if (!expressions.thinking) {
-            expressions.thinking = { ...CONFIG.defaultExpressions.thinking };
+        // The generating slot must always exist — otherwise setExpression()
+        // silently no-ops while the model works and the slot never appears in
+        // the expression editor. Personas predating it get it backfilled.
+        // Note this deliberately leaves any existing `thinking` entry alone:
+        // it used to be this reserved slot, and now demotes to an ordinary
+        // expression, art and all.
+        if (!expressions[CONFIG.generatingExpression]) {
+            expressions[CONFIG.generatingExpression] = { ...CONFIG.defaultExpressions.generating };
         }
         state.personas[p.id] = {
             id: p.id,
             name: p.name,
+            tagline: p.tagline || '',
+            roleLabel: p.roleLabel || '',
             systemPrompt: p.systemPrompt || '',
             prefill: p.prefill || '',
             avatarFilename: p.avatarFilename || '',
@@ -1973,6 +1996,8 @@ function saveAllSettingsFromUI() {
     // Persona settings (name, system prompt — prefill lives in model params now)
     if (persona) {
         persona.name = elements.assistantName.value || CONFIG.defaults.assistantName;
+        persona.tagline = elements.personaTagline.value.trim();
+        persona.roleLabel = elements.personaRoleLabel.value.trim();
         persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
         persona.updatedAt = Date.now();
     }
@@ -2153,6 +2178,9 @@ async function updateUI() {
     }
     updateApiKeyFieldForProvider(currentProvider);
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
+    elements.personaTagline.value = persona ? (persona.tagline || '') : '';
+    elements.personaRoleLabel.value = persona ? (persona.roleLabel || '') : '';
+    syncPersonaFieldCounters();
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
     elements.showAvatar.checked = state.settings.showAvatar;
     if (elements.activeFileTurns) elements.activeFileTurns.value = state.settings.activeFileTurns;
@@ -2421,10 +2449,12 @@ function addStopSequence() {
 function updateAvatarPreview() {
     const preview = elements.avatarPreview;
     const name = elements.avatarPreviewName;
+    const tagline = elements.avatarPreviewTagline;
     const status = elements.avatarPreviewStatus;
     const persona = getActivePersona();
 
     name.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
+    tagline.textContent = persona ? (persona.tagline || '') : '';
 
     if (persona && persona.avatarFilename) {
         // Cache-bust on updatedAt so re-uploads are immediately visible.
@@ -2434,6 +2464,21 @@ function updateAvatarPreview() {
     } else {
         preview.textContent = '🤖';
         status.textContent = 'Default Avatar';
+    }
+}
+
+/**
+ * Refresh the "n/max" counters next to the tagline and role inputs. Both are
+ * capped by `maxlength` on the input, so this only reports — it never trims.
+ */
+function syncPersonaFieldCounters() {
+    const pairs = [
+        [elements.personaTagline, elements.personaTaglineCount],
+        [elements.personaRoleLabel, elements.personaRoleLabelCount],
+    ];
+    for (const [input, counter] of pairs) {
+        if (!input || !counter) continue;
+        counter.textContent = `${input.value.length}/${input.maxLength}`;
     }
 }
 
@@ -2644,10 +2689,10 @@ async function updateFloatingAvatar() {
     const inChat = (state.ui.mainView || {}).type === 'chat';
     avatar.classList.toggle('hidden', !state.settings.showAvatar || !inChat);
 
-    // Built-in "thinking" animation while the model generates (P2-U2). Plays
-    // over a custom thinking image/gif too, and is cleared automatically when
-    // the expression changes, since this runs on every setExpression().
-    avatar.classList.toggle('thinking', state.currentExpression === 'thinking');
+    // Built-in pulse while the model generates (P2-U2). Plays over a custom
+    // generating image/gif too, and clears automatically when the expression
+    // changes, since this runs on every setExpression().
+    avatar.classList.toggle('generating', state.currentExpression === CONFIG.generatingExpression);
 
     // Update image or emoji.
     // Priority: expression image > default avatar > emoji.
@@ -2666,21 +2711,29 @@ async function updateFloatingAvatar() {
         avatarImageUrl = `${API.avatars.getUrl(persona.id)}${cacheBust}`;
     }
 
+    const moodEmoji = (currentExpr && currentExpr.emoji) || '🤖';
     if (expressionImageUrl) {
-        // Expression has a custom image
+        // The expression has art of its own — it already conveys the mood, so
+        // no badge.
         elements.avatarEmoji.style.display = 'none';
         elements.avatarImg.style.display = 'block';
         elements.avatarImg.src = expressionImageUrl;
+        elements.avatarMoodBadge.hidden = true;
     } else if (avatarImageUrl) {
-        // Use default avatar
+        // Default avatar carries identity; the badge carries mood. Without it,
+        // a persona with an avatar but no per-expression art would never
+        // visibly change expression at all.
         elements.avatarEmoji.style.display = 'none';
         elements.avatarImg.style.display = 'block';
         elements.avatarImg.src = avatarImageUrl;
+        elements.avatarMoodBadge.textContent = moodEmoji;
+        elements.avatarMoodBadge.hidden = false;
     } else {
-        // Use emoji
+        // Nothing uploaded at all — the emoji IS the avatar, so no badge.
         elements.avatarEmoji.style.display = 'block';
         elements.avatarImg.style.display = 'none';
-        elements.avatarEmoji.textContent = (currentExpr && currentExpr.emoji) || '🤖';
+        elements.avatarEmoji.textContent = moodEmoji;
+        elements.avatarMoodBadge.hidden = true;
     }
 
     // Update name and expression label
@@ -2742,6 +2795,12 @@ function updateSendButtonState() {
 }
 
 // ===== Expression Management =====
+/**
+ * Render the persona's expression set as a grid of face tiles. Image-first:
+ * the art is the point, so each slot shows the actual expression image at a
+ * size you can judge, reusing the persona-card portrait language. Slots with
+ * no image show their emoji and read as "unfilled" so gaps are obvious.
+ */
 async function renderExpressionList() {
     const list = elements.expressionList;
     list.innerHTML = '';
@@ -2750,24 +2809,44 @@ async function renderExpressionList() {
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
     const cacheBust = persona && persona.updatedAt ? `?v=${persona.updatedAt}` : '';
+    const avatarUrl = persona && persona.avatarFilename
+        ? `${API.avatars.getUrl(persona.id)}${cacheBust}`
+        : null;
     for (const [name, expr] of Object.entries(expressions)) {
+        const hasImage = !!(persona && expr.imageKey);
+        // Three states worth distinguishing visually: has its own art, falls
+        // back to the avatar + badge, or is a genuinely empty slot (dashed).
+        const fallbackClass = hasImage ? '' : (avatarUrl ? ' fallback-avatar' : ' no-image');
         const item = document.createElement('div');
-        item.className = 'expression-item';
+        item.className = `expression-slot${fallbackClass}`;
+        item.setAttribute('role', 'button');
+        item.tabIndex = 0;
+        item.title = `Edit "${name}"`;
         item.onclick = () => openExpressionModal(name);
+        item.onkeydown = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openExpressionModal(name);
+            }
+        };
 
-        // Show image when expression has one server-side; fall back to emoji.
-        let imageContent = expr.emoji;
-        if (persona && expr.imageKey) {
-            const imageUrl = `${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}`;
-            imageContent = `<img src="${imageUrl}" alt="${name}">`;
+        // Mirrors exactly what the chat will render for this expression:
+        // its own art if it has any, otherwise the default avatar wearing the
+        // emoji as a mood badge, otherwise the bare emoji.
+        let face;
+        if (hasImage) {
+            face = `<img src="${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}" alt="${escapeHtml(name)}">`;
+        } else if (avatarUrl) {
+            face = `<img src="${avatarUrl}" alt="${escapeHtml(name)}">
+                    <span class="expression-slot-badge">${expr.emoji || '🙂'}</span>`;
+        } else {
+            face = `<span class="expression-slot-emoji">${expr.emoji || '🙂'}</span>`;
         }
 
         item.innerHTML = `
-            <div class="expression-item-emoji">
-                ${imageContent}
-            </div>
-            <span class="expression-item-name">${name}</span>
-            <span class="expression-item-edit">Edit →</span>
+            <div class="expression-slot-face">${face}</div>
+            <span class="expression-slot-name">${escapeHtml(name)}</span>
+            ${name === CONFIG.generatingExpression ? '<span class="expression-slot-tag">auto</span>' : ''}
         `;
 
         list.appendChild(item);
@@ -2795,8 +2874,10 @@ async function openExpressionModal(name = null) {
         elements.expressionModalTitle.textContent = 'Edit Expression';
         elements.expressionName.value = name;
         elements.expressionEmoji.value = expr.emoji;
-        elements.expressionKeywords.value = expr.keywords.join(', ');
-        elements.deleteExpressionBtn.style.display = 'block';
+        // The generating slot is the UI's own state, not a declarable mood —
+        // its art is editable but the slot itself can't be removed.
+        elements.deleteExpressionBtn.style.display =
+            name === CONFIG.generatingExpression ? 'none' : 'block';
 
         // Server URL for the expression image (cache-busted).
         if (persona && expr.imageKey) {
@@ -2810,7 +2891,6 @@ async function openExpressionModal(name = null) {
         elements.expressionModalTitle.textContent = 'Add Expression';
         elements.expressionName.value = '';
         elements.expressionEmoji.value = '';
-        elements.expressionKeywords.value = '';
         elements.deleteExpressionBtn.style.display = 'none';
         elements.expressionImagePreview.innerHTML = '<span class="preview-placeholder">No image</span>';
     }
@@ -2834,13 +2914,21 @@ function closeExpressionModal() {
 async function saveExpression() {
     const name = elements.expressionName.value.trim().toLowerCase();
     const emoji = elements.expressionEmoji.value.trim() || '😊';
-    const keywords = elements.expressionKeywords.value
-        .split(',')
-        .map(k => k.trim().toLowerCase())
-        .filter(k => k.length > 0);
 
     if (!name) {
         showToast('Please enter an expression name', { type: 'warning' });
+        return;
+    }
+    // The name is interpolated into the model's expression protocol AND used as
+    // a filename + URL segment by the avatar routes, so all three agree on this
+    // charset. No spaces: the image endpoints reject them, which would leave the
+    // expression permanently unable to hold art.
+    if (!/^[a-z0-9][a-z0-9_-]{0,30}$/.test(name)) {
+        showToast('Use letters, numbers, - or _ (no spaces, max 31 characters)', { type: 'warning' });
+        return;
+    }
+    if (name === CONFIG.generatingExpression && editingExpression !== CONFIG.generatingExpression) {
+        showToast(`"${CONFIG.generatingExpression}" is reserved for the working-on-it state`, { type: 'warning' });
         return;
     }
 
@@ -2862,7 +2950,7 @@ async function saveExpression() {
     const initialImageKey = state.tempExpressionCleared
         ? ''
         : (state.tempExpressionBlob || isRename ? '' : oldImageKey);
-    newExpressions[name] = { emoji, keywords, imageKey: initialImageKey };
+    newExpressions[name] = { emoji, imageKey: initialImageKey };
 
     try {
         // 1. Push the metadata change.
@@ -4385,37 +4473,47 @@ function escapeHtml(str) {
 }
 
 // ===== Expression Detection =====
+/**
+ * Resolve the expression a response declares.
+ *
+ * Declaration is the ONLY signal. The old keyword fallback was removed: it
+ * matched substrings anywhere in the reply, so 'sorry', 'unfortunately' and
+ * 'difficult' pushed the avatar to `sad` constantly during ordinary work talk,
+ * and which expression won depended on insertion order in the expression map.
+ * A missed tag now just holds the current expression — stale beats wrong.
+ *
+ * @param {string} text - The full response text
+ * @returns {string} The expression name to display
+ */
 function detectExpression(text) {
     const persona = getActivePersona();
     const expressions = persona ? persona.expressions : CONFIG.defaultExpressions;
 
-    // First, check for explicit expression tag. 'thinking' is reserved as the
-    // transient generation-phase state (P2-U2) — it's never a "detected" settled
-    // expression, so ignore it here even if tagged/keyworded.
-    const tagMatch = text.match(/\[expression:\s*(\w+)\]/i);
+    // The generating slot is the UI's own state, so a model that declares it
+    // is ignored.
+    const tagMatch = text.match(/\[expression:\s*([\w -]+)\]/i);
     if (tagMatch) {
-        const exprName = tagMatch[1].toLowerCase();
-        if (expressions[exprName] && exprName !== 'thinking') {
+        const exprName = tagMatch[1].trim().toLowerCase();
+        if (expressions[exprName] && exprName !== CONFIG.generatingExpression) {
             return exprName;
         }
     }
 
-    // Fallback: keyword matching
-    const lowerText = text.toLowerCase();
+    // Nothing declared: hold the current expression, except settle the
+    // transient generating state back to neutral.
+    return state.currentExpression === CONFIG.generatingExpression ? 'neutral' : state.currentExpression;
+}
 
-    for (const [name, expr] of Object.entries(expressions)) {
-        if (name === 'neutral' || name === 'thinking') continue; // not keyword-detectable
-
-        for (const keyword of expr.keywords) {
-            if (lowerText.includes(keyword)) {
-                return name;
-            }
-        }
+/**
+ * Drop the avatar out of the `generating` state after a failed or abandoned
+ * request. Without this the pulse runs forever: nothing else clears it, since
+ * the settled expression is normally applied when a response finalizes.
+ * No-op if the avatar has already moved on.
+ */
+function settleGeneratingExpression() {
+    if (state.currentExpression === CONFIG.generatingExpression) {
+        setExpression('neutral');
     }
-
-    // Default to the current expression (don't change if nothing detected),
-    // except settle the transient "thinking" generation state to neutral.
-    return state.currentExpression === 'thinking' ? 'neutral' : state.currentExpression;
 }
 
 function stripExpressionTag(text) {
@@ -4668,9 +4766,10 @@ function renderWorkspacesListMain() {
 }
 
 /**
- * Main-area "Personas" section (WR-07c): cards for each persona (avatar + name +
- * Active badge). Click a card to make it active (stays here); the ⋯ menu edits
- * (→ Settings) or deletes. The top-bar persona popover still handles quick-switch.
+ * Main-area "Personas" section: a character-select grid of portrait tiles —
+ * large 1:1 avatar, name, optional role chip, and the persona's tagline. Click
+ * a tile to make it active (stays here); the ⋯ menu edits (→ persona editor)
+ * or deletes. The top-bar persona popover still handles quick-switch.
  */
 function renderPersonasListMain() {
     const c = elements.messagesContainer;
@@ -4679,17 +4778,22 @@ function renderPersonasListMain() {
 
     const cards = personas.map(p => {
         const active = p.id === state.activePersonaId;
-        const sub = (p.systemPrompt || '').trim().replace(/\s+/g, ' ').slice(0, 90);
+        const tagline = (p.tagline || '').trim();
+        const role = (p.roleLabel || '').trim();
         return `
-            <div class="persona-card${active ? ' active' : ''}">
-                <div class="persona-card-open" data-persona-open="${escapeHtml(p.id)}">
-                    <div class="persona-card-avatar">${personaAvatarHTML(p)}</div>
-                    <div class="persona-card-info">
-                        <span class="persona-card-name">${escapeHtml(p.name || 'Untitled')}${active ? '<span class="persona-card-badge">Active</span>' : ''}</span>
-                        <span class="persona-card-sub">${sub ? escapeHtml(sub) : 'No system prompt'}</span>
+            <div class="persona-tile${active ? ' active' : ''}">
+                <div class="persona-tile-open" data-persona-open="${escapeHtml(p.id)}" role="button" tabindex="0">
+                    <div class="persona-tile-portrait">
+                        ${personaAvatarHTML(p)}
+                        ${active ? '<span class="persona-tile-active">Active</span>' : ''}
+                    </div>
+                    <div class="persona-tile-caption">
+                        <span class="persona-tile-name">${escapeHtml(p.name || 'Untitled')}</span>
+                        ${role ? `<span class="persona-tile-role">${escapeHtml(role)}</span>` : ''}
+                        <span class="persona-tile-tagline${tagline ? '' : ' empty'}">${tagline ? escapeHtml(tagline) : 'Add a tagline'}</span>
                     </div>
                 </div>
-                <button class="project-menu-btn persona-card-menu" data-persona-menu="${escapeHtml(p.id)}" title="Options">⋯</button>
+                <button class="project-menu-btn persona-tile-menu" data-persona-menu="${escapeHtml(p.id)}" title="Options">⋯</button>
             </div>`;
     }).join('');
 
@@ -4697,15 +4801,27 @@ function renderPersonasListMain() {
         <div class="section-view">
             <div class="section-head">
                 <h1 class="section-title">Personas</h1>
-                <button class="section-new-btn" id="personaNewBtn" type="button">+ New persona</button>
+                <div class="section-head-actions">
+                    <button class="section-secondary-btn" id="personaImportBtn" type="button">Import</button>
+                    <button class="section-new-btn" id="personaNewBtn" type="button">+ New persona</button>
+                </div>
             </div>
-            ${personas.length ? `<div class="persona-card-list">${cards}</div>` : `<p class="empty-state small">No personas yet.</p>`}
+            ${personas.length ? `<div class="persona-tile-grid">${cards}</div>` : `<p class="empty-state small">No personas yet.</p>`}
         </div>`;
 
     const nb = c.querySelector('#personaNewBtn');
     if (nb) nb.addEventListener('click', startNewPersona);
-    c.querySelectorAll('[data-persona-open]').forEach(el =>
-        el.addEventListener('click', () => activatePersona(el.dataset.personaOpen)));
+    const ib = c.querySelector('#personaImportBtn');
+    if (ib) ib.addEventListener('click', promptPersonaImport);
+    c.querySelectorAll('[data-persona-open]').forEach(el => {
+        el.addEventListener('click', () => activatePersona(el.dataset.personaOpen));
+        el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                activatePersona(el.dataset.personaOpen);
+            }
+        });
+    });
     c.querySelectorAll('[data-persona-menu]').forEach(btn =>
         btn.addEventListener('click', (e) => { e.stopPropagation(); showPersonaCardMenu(btn, btn.dataset.personaMenu); }));
 }
@@ -4790,6 +4906,202 @@ function activatePersona(personaId) {
 }
 
 /** Per-card context menu on the Personas section: Edit (→ Settings) / Delete. */
+// ===== Persona export / import (`.tessera` bundles) =====
+// A bundle is one self-contained JSON file: persona text plus its art inlined
+// as base64. Built in the browser rather than on the server because <canvas>
+// gives us resizing and WebP encoding for free — doing it server-side would
+// mean adding a native image library (sharp) for what the browser already has.
+
+const BUNDLE_FORMAT = 'tessera.bundle';
+const BUNDLE_VERSION = 1;
+/** Longest edge for normalized art. The UI never renders above 480px. */
+const BUNDLE_IMAGE_MAX_EDGE = 512;
+const BUNDLE_IMAGE_QUALITY = 0.82;
+
+/**
+ * Fetch an image URL and return it as `{ mimeType, data }` with base64 data.
+ * Normalizes to WebP within BUNDLE_IMAGE_MAX_EDGE unless `fullQuality`, which
+ * ships the original bytes untouched.
+ * @param {string} url
+ * @param {boolean} fullQuality
+ * @returns {Promise<{mimeType: string, data: string}|null>} null if unavailable
+ */
+async function imageToBundleEntry(url, fullQuality) {
+    let blob;
+    try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) return null;
+        blob = await res.blob();
+    } catch {
+        return null;
+    }
+    if (!blob || blob.size === 0) return null;
+
+    if (!fullQuality) {
+        try {
+            blob = await normalizeImageBlob(blob);
+        } catch {
+            /* fall through and ship the original */
+        }
+    }
+    const data = await blobToBase64(blob);
+    return data ? { mimeType: blob.type || 'image/png', data } : null;
+}
+
+/**
+ * Downscale a blob to fit BUNDLE_IMAGE_MAX_EDGE and re-encode as WebP.
+ * Images already within bounds are still re-encoded — that's usually where
+ * most of the size saving comes from.
+ * @param {Blob} blob
+ * @returns {Promise<Blob>}
+ */
+async function normalizeImageBlob(blob) {
+    const bitmap = await createImageBitmap(blob);
+    const scale = Math.min(1, BUNDLE_IMAGE_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const out = await new Promise(r => canvas.toBlob(r, 'image/webp', BUNDLE_IMAGE_QUALITY));
+    return out || blob;
+}
+
+/**
+ * Base64 (no data: prefix) for a blob.
+ * @param {Blob} blob
+ * @returns {Promise<string>}
+ */
+function blobToBase64(blob) {
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = String(reader.result || '');
+            resolve(result.slice(result.indexOf(',') + 1));
+        };
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(blob);
+    });
+}
+
+/**
+ * Build and download a `.tessera` bundle for a persona.
+ *
+ * The model pin and file-tools flag are deliberately left out: neither is the
+ * exporter's decision to make about whoever imports this.
+ * @param {string} personaId
+ * @param {{fullQuality?: boolean}} [opts]
+ */
+async function exportPersona(personaId, opts = {}) {
+    const persona = state.personas[personaId];
+    if (!persona) return;
+    const fullQuality = !!opts.fullQuality;
+
+    showToast(`Preparing ${persona.name}…`);
+    try {
+        const cacheBust = persona.updatedAt ? `?v=${persona.updatedAt}` : '';
+        const avatar = persona.avatarFilename
+            ? await imageToBundleEntry(`${API.avatars.getUrl(persona.id)}${cacheBust}`, fullQuality)
+            : null;
+
+        const expressions = {};
+        for (const [name, expr] of Object.entries(persona.expressions || {})) {
+            if (name === CONFIG.generatingExpression) continue; // UI state, not character
+            expressions[name] = {
+                emoji: expr.emoji || '🙂',
+                image: expr.imageKey
+                    ? await imageToBundleEntry(`${API.avatars.getExpressionUrl(persona.id, name)}${cacheBust}`, fullQuality)
+                    : null,
+            };
+        }
+
+        const bundle = {
+            format: BUNDLE_FORMAT,
+            version: BUNDLE_VERSION,
+            kind: 'persona',
+            exportedAt: Date.now(),
+            persona: {
+                name: persona.name || 'Untitled',
+                tagline: persona.tagline || '',
+                roleLabel: persona.roleLabel || '',
+                systemPrompt: persona.systemPrompt || '',
+                avatar,
+                expressions,
+            },
+        };
+
+        const json = JSON.stringify(bundle, null, 2);
+        const filename = `${(persona.name || 'persona').replace(/[^\w-]+/g, '_')}.tessera`;
+        downloadBlob(new Blob([json], { type: 'application/json' }), filename);
+        showToast(`Exported ${filename} (${formatBytes(json.length)})`, { type: 'success' });
+    } catch (err) {
+        console.error('Failed to export persona:', err);
+        displayError(err, { action: 'export this persona' });
+    }
+}
+
+/**
+ * Trigger a browser download for a blob.
+ * @param {Blob} blob
+ * @param {string} filename
+ */
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Human-readable byte count. */
+function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * Read a `.tessera` file and import it as a new persona. The file is parsed
+ * here only to fail fast on malformed JSON — the server does the real
+ * validation, since the file is untrusted.
+ * @param {File} file
+ */
+async function importPersonaFromFile(file) {
+    if (!file) return;
+    let bundle;
+    try {
+        bundle = JSON.parse(await file.text());
+    } catch {
+        showToast("That file isn't a readable Tessera bundle", { type: 'warning' });
+        return;
+    }
+
+    try {
+        const created = await API.personas.import(bundle);
+        hydratePersonas(await API.personas.list());
+        renderPersonasListMain();
+        showToast(`Imported "${created.name}"`, { type: 'success' });
+    } catch (err) {
+        console.error('Failed to import persona:', err);
+        displayError(err, { action: 'import this persona' });
+    }
+}
+
+/** Open a file picker and import the chosen `.tessera` bundle. */
+function promptPersonaImport() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.tessera,application/json';
+    input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (file) importPersonaFromFile(file);
+    });
+    input.click();
+}
+
 function showPersonaCardMenu(anchorEl, personaId) {
     const existing = document.querySelector('.context-menu');
     if (existing) existing.remove();
@@ -4798,6 +5110,8 @@ function showPersonaCardMenu(anchorEl, personaId) {
     menu.className = 'context-menu';
     menu.innerHTML = `
         <button class="context-menu-item" data-action="edit">Edit</button>
+        <button class="context-menu-item" data-action="export">Export…</button>
+        <button class="context-menu-item" data-action="export-full">Export (full quality)</button>
         <button class="context-menu-item danger" data-action="delete">Delete</button>
     `;
     positionPopover(menu, anchorEl, 'right');
@@ -4805,8 +5119,11 @@ function showPersonaCardMenu(anchorEl, personaId) {
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
             menu.remove();
-            if (item.dataset.action === 'edit') editPersona(personaId);
-            else if (item.dataset.action === 'delete') deletePersonaPrompt(personaId);
+            const action = item.dataset.action;
+            if (action === 'edit') editPersona(personaId);
+            else if (action === 'export') exportPersona(personaId);
+            else if (action === 'export-full') exportPersona(personaId, { fullQuality: true });
+            else if (action === 'delete') deletePersonaPrompt(personaId);
         });
     });
     attachPopoverOutsideClose(menu, anchorEl);
@@ -5928,7 +6245,7 @@ async function sendMessageFromText(text, attachments = []) {
 
     await appendMessage('user', text, true, null, attachments.length > 0 ? attachments : null);
     showTypingIndicator();
-    setExpression('thinking'); // restored when the (re)generated response completes
+    setExpression(CONFIG.generatingExpression); // held until the response completes
 
     try {
         let response;
@@ -5978,6 +6295,7 @@ async function sendMessageFromText(text, attachments = []) {
         }
     } catch (error) {
         hideTypingIndicator();
+        settleGeneratingExpression();
         displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
         console.error('API Error:', error);
     } finally {
@@ -6979,9 +7297,9 @@ async function sendMessage() {
         try {
             hideTypingIndicator();
             startStreamingMessage();
-            // Show the persona's "thinking" expression for the whole generation;
-            // finalizeStreamingMessage restores the detected expression on end.
-            setExpression('thinking');
+            // Hold the generating state for the whole response;
+            // finalizeStreamingMessage applies the declared expression at the end.
+            setExpression(CONFIG.generatingExpression);
             // Pin the conversation id at send-time so a mid-stream switch
             // doesn't redirect the assistant reply.
             const targetConvoId = state.activeConversationId;
@@ -6998,6 +7316,7 @@ async function sendMessage() {
                 state.streamingMessageDiv = null;
             }
             hideTypingIndicator();
+            settleGeneratingExpression();
             displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
             console.error('API Error:', error);
         } finally {
@@ -7009,7 +7328,7 @@ async function sendMessage() {
     } else {
         // Non-streaming path
         showTypingIndicator();
-        setExpression('thinking'); // restored from the response below
+        setExpression(CONFIG.generatingExpression); // restored from the response below
 
         try {
             const response = await callAPI(userMessage, attachmentMeta);
@@ -7036,6 +7355,7 @@ async function sendMessage() {
 
         } catch (error) {
             hideTypingIndicator();
+            settleGeneratingExpression();
             displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
             console.error('API Error:', error);
         } finally {
@@ -7080,6 +7400,10 @@ function buildChatRequest() {
         model: modelConfig.model,
         messages,
         systemPrompt,
+        // The server's Tessera base layer names these in the expression
+        // protocol, so the model is told the persona's REAL expression set
+        // rather than a list frozen into the prompt text at creation.
+        expressionNames: Object.keys(persona ? persona.expressions || {} : {}),
         modelParams: modelConfig.modelParams,
         ...(prefillText ? { prefill: prefillText } : {}),
         // Lets the server resolve this conversation's project and inject its
@@ -7359,25 +7683,86 @@ function startStreamingMessage() {
 
     state.streamingMessageDiv = messageDiv;
     state.streamingAccumulator = '';
+    state.streamingDeclaredExpression = null;
     state.streamingGeneratedImages = [];
     state.streamingToolEvents = [];
 
     scrollToBottom();
 }
 
+// A leading "[expression: name]" is a control token, not content: it must set
+// the avatar and then never reach the screen. Since chunks arrive split at
+// arbitrary boundaries, the opening of a stream can be an INCOMPLETE tag
+// ("[expr"), so we withhold display until we know whether it will close into
+// one. This matches the tag against a growing prefix of the expected shape.
+const TAG_OPEN = '[expression:';
+const LEADING_EXPRESSION_TAG = /^\[expression:\s*([\w -]+)\]\s*/i;
+// Stop waiting if an unclosed tag runs longer than any real name would — a
+// malformed opener must never buffer the whole response.
+const MAX_TAG_NAME_LENGTH = 40;
+
+/**
+ * Could `text` still grow into a complete leading expression tag?
+ * Two phases: still typing out "[expression:" itself, or past the opener and
+ * accumulating a plausible name that hasn't closed yet.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isPartialExpressionTag(text) {
+    const lower = text.toLowerCase();
+    if (lower.length < TAG_OPEN.length) return TAG_OPEN.startsWith(lower);
+    if (!lower.startsWith(TAG_OPEN)) return false;
+    const name = text.slice(TAG_OPEN.length);
+    // A ']' here means the full-tag regex already declined it — malformed.
+    return !name.includes(']') && name.length <= MAX_TAG_NAME_LENGTH && /^[\w -]*$/.test(name);
+}
+
+/**
+ * Decide what of the stream so far is safe to render.
+ * @param {string} text - Accumulated text (prefill already stripped)
+ * @returns {{ display: string, expression: string|null, pending: boolean }}
+ *   `pending` means "still might become a tag — render nothing yet".
+ */
+function splitLeadingExpressionTag(text) {
+    const done = text.match(LEADING_EXPRESSION_TAG);
+    if (done) {
+        return { display: text.slice(done[0].length), expression: done[1].trim().toLowerCase(), pending: false };
+    }
+    if (isPartialExpressionTag(text)) {
+        return { display: '', expression: null, pending: true };
+    }
+    return { display: text, expression: null, pending: false };
+}
+
 function appendStreamChunk(text) {
     state.streamingAccumulator += text;
     if (state.streamingMessageDiv) {
-        // First real content: drop the pre-token placeholder state so the
-        // trailing block cursor takes over from the typing dots.
-        state.streamingMessageDiv.classList.remove('awaiting-first-token');
         const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
         if (contentDiv) {
             let displayText = state.streamingAccumulator;
             if (state.currentPrefill) {
                 displayText = stripPrefillText(displayText, state.currentPrefill);
             }
-            contentDiv.innerHTML = renderMarkdown(displayText);
+
+            const { display, expression, pending } = splitLeadingExpressionTag(displayText);
+            // Still waiting to see if this is a tag — keep the typing dots up
+            // rather than flashing a partial "[expre" on screen.
+            if (pending) {
+                scrollToBottom();
+                return;
+            }
+            // The tag is parsed and stripped here but deliberately NOT applied
+            // yet: the avatar holds the `generating` state for the whole
+            // response, so "working on it" stays legible instead of flickering
+            // for the four tokens it takes the tag to close. The declared
+            // expression lands in finalizeStreamingMessage, which re-reads it
+            // from the full text via detectExpression.
+            if (expression) state.streamingDeclaredExpression = expression;
+
+            // First real content: drop the pre-token placeholder state so the
+            // trailing block cursor takes over from the typing dots.
+            state.streamingMessageDiv.classList.remove('awaiting-first-token');
+            contentDiv.innerHTML = renderMarkdown(display);
         }
         scrollToBottom();
     }
@@ -8065,6 +8450,8 @@ function setupEventListeners() {
 
     // Persona settings - auto-save
     elements.assistantName.addEventListener('input', autoSaveSettings);
+    elements.personaTagline.addEventListener('input', autoSaveSettings);
+    elements.personaRoleLabel.addEventListener('input', autoSaveSettings);
     elements.systemPrompt.addEventListener('input', autoSaveSettings);
     elements.prefillInput.addEventListener('input', autoSaveSettings);
 
@@ -8257,6 +8644,15 @@ function setupEventListeners() {
         const editTitle = document.getElementById('personaEditTitle');
         if (editTitle) editTitle.textContent = name;
     });
+
+    // Tagline / role live-update the card preview + their counters. The values
+    // themselves are persisted by autoSaveSettings (wired above with the rest
+    // of the persona fields).
+    elements.personaTagline.addEventListener('input', () => {
+        elements.avatarPreviewTagline.textContent = elements.personaTagline.value.trim();
+        syncPersonaFieldCounters();
+    });
+    elements.personaRoleLabel.addEventListener('input', syncPersonaFieldCounters);
 }
 
 // ===== File Upload Handlers =====
@@ -8292,6 +8688,9 @@ async function handleAvatarUpload(file) {
 
         updateAvatarPreview();
         await updateFloatingAvatar();
+        // Expression slots without art of their own render the default avatar
+        // plus a mood badge, so they're stale the moment the avatar changes.
+        await renderExpressionList();
         showNotification('Avatar uploaded!', 'success');
     } catch (error) {
         console.error('Failed to upload avatar:', error);
@@ -8320,6 +8719,8 @@ async function clearAvatarImage() {
 
     updateAvatarPreview();
     await updateFloatingAvatar();
+    // Slots falling back to the avatar revert to a bare emoji — repaint them.
+    await renderExpressionList();
 }
 
 /**

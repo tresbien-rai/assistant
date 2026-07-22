@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS personas (
     id              TEXT PRIMARY KEY,
     user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name            TEXT NOT NULL,
+    tagline         TEXT DEFAULT '',     -- one-line in-character intro (card display only)
+    role_label      TEXT DEFAULT '',     -- short role chip, e.g. "Researcher" (card display only)
     system_prompt   TEXT DEFAULT '',
     prefill         TEXT DEFAULT '',
     avatar_filename TEXT DEFAULT '',

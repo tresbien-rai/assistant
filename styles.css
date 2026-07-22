@@ -669,75 +669,191 @@ body {
     background: var(--accent-hover);
 }
 
+.section-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Quieter sibling of .section-new-btn for secondary actions (Import). */
+.section-secondary-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.section-secondary-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
 .section-list {
     display: flex;
     flex-direction: column;
 }
 
-/* ===== Personas section (WR-07c) ===== */
-.persona-card-list {
+/* ===== Personas section — character-select tile grid =====
+   Personas are characters, not config rows: the portrait is the primary
+   element, with name / role chip / tagline as a caption beneath it. The
+   persona editor's Avatar tab reuses .persona-tile-portrait and the caption
+   classes so its preview is literally the tile you get here. */
+.persona-tile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+}
+
+.persona-tile {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-}
-
-.persona-card {
-    display: flex;
-    align-items: center;
-    gap: 12px;
     padding: 12px;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     background: var(--bg-secondary);
-    transition: border-color 0.15s;
+    transition: border-color 0.15s, transform 0.15s;
 }
 
-.persona-card.active {
+.persona-tile:hover {
+    border-color: var(--accent-hover);
+    transform: translateY(-2px);
+}
+
+.persona-tile.active {
     border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
 }
 
-.persona-card-open {
-    flex: 1;
+.persona-tile-open {
     min-width: 0;
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 10px;
     cursor: pointer;
 }
 
-.persona-card-avatar {
-    width: 40px;
-    height: 40px;
-    flex: 0 0 auto;
-    border-radius: 50%;
+.persona-tile-open:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: var(--radius-md);
+}
+
+/* 1:1 rounded portrait — chosen over a 3:4 crop so existing square avatar
+   uploads are never re-cropped. */
+.persona-tile-portrait {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-md);
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg-tertiary);
-    font-size: 22px;
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--accent-subtle) 100%);
+    font-size: 56px;
 }
 
-.persona-card-avatar img {
+.persona-tile-portrait img {
     width: 100%;
     height: 100%;
     object-fit: cover;
 }
 
-.persona-card-info {
+/* Corner marker rather than an inline pill — it belongs to the portrait. */
+.persona-tile-active {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--on-accent);
+    background: var(--accent);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+}
+
+.persona-tile-caption {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
 }
 
-.persona-card-name {
+.persona-tile-name {
     font-size: var(--text-sm);
     font-weight: 600;
     color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.persona-tile-role {
+    align-self: flex-start;
+    max-width: 100%;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    padding: 1px 7px;
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The tagline is voice, not metadata — italic, and allowed two lines before
+   it clamps, so a real sentence fits. */
+.persona-tile-tagline {
+    font-size: var(--text-xs);
+    font-style: italic;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.persona-tile-tagline.empty {
+    font-style: normal;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.persona-tile-menu {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.persona-tile:hover .persona-tile-menu,
+.persona-tile-menu:focus-visible {
+    opacity: 1;
+}
+
+/* Hover-reveal hides the menu entirely on touch, where there is no hover to
+   reveal it. Narrow viewports are covered too — pointer detection alone is
+   unreliable (hybrid laptops, emulated viewports). */
+@media (hover: none), (max-width: 640px) {
+    .persona-tile-menu {
+        opacity: 1;
+    }
 }
 
 .persona-card-badge {
@@ -749,18 +865,6 @@ body {
     background: var(--accent-subtle);
     padding: 1px 6px;
     border-radius: var(--radius-full);
-}
-
-.persona-card-sub {
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.persona-card-menu {
-    flex: 0 0 auto;
 }
 
 .tab-content {
@@ -1733,17 +1837,20 @@ body {
     color: var(--error);
 }
 
-/* Expression Image Preview in Modal */
+/* Expression image preview in the modal. Sized and centered to match the
+   persona Avatar tab — any interface for working with images should show the
+   image big enough to actually judge it. */
 .expression-image-preview {
-    width: 80px;
-    height: 80px;
+    width: 200px;
+    max-width: 100%;
+    aspect-ratio: 1 / 1;
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 12px;
+    margin: 0 auto 12px;
     overflow: hidden;
 }
 
@@ -1776,46 +1883,59 @@ body {
     font-style: italic;
 }
 
-/* Avatar Settings Preview */
+/* Avatar Settings Preview — a WYSIWYG copy of the persona tile, so editing the
+   image here shows exactly what the Personas grid will render. Reuses
+   .persona-tile-portrait / -name / -tagline; only the sizing is local. */
+/* Shaped as an actual persona tile rather than a full-width band: same border,
+   radius and proportions as the Personas grid, sized to its content and
+   centered. A stretched box left the portrait marooned in empty space. */
 .avatar-settings-preview {
     display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 12px;
-    padding: 12px;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    margin-bottom: 16px;
+    width: 260px;
+    max-width: 100%;
+    padding: 12px 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    margin: 0 auto 16px;
 }
 
-.avatar-preview-image {
-    width: 48px;
-    height: 48px;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    overflow: hidden;
-}
-
-.avatar-preview-image img {
+.avatar-settings-preview .persona-tile-portrait {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
 }
 
 .avatar-preview-info {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    text-align: center;
+    max-width: 100%;
 }
 
-.avatar-preview-info span:first-child {
-    font-weight: 600;
+.avatar-settings-preview .persona-tile-name {
+    font-size: var(--text-base);
+}
+
+/* No clamp here: the editor should show the whole tagline while you write it. */
+.avatar-settings-preview .persona-tile-tagline {
+    display: block;
+    overflow: visible;
 }
 
 .avatar-preview-status {
     font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+/* "n/max" counter shown inline in the tagline / role field labels */
+.field-counter {
+    float: right;
+    font-size: var(--text-xs);
+    font-weight: 400;
     color: var(--text-muted);
 }
 
@@ -1877,55 +1997,144 @@ body {
     font-size: var(--text-sm);
 }
 
-/* Expression List */
+/* ===== Expression grid =====
+   Image-first: expressions are art, so each slot shows the face big enough to
+   judge. Same 1:1 rounded frame as the persona portrait, one step smaller. */
 .expression-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 12px;
     margin-bottom: 12px;
 }
 
-.expression-item {
+.expression-slot {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.expression-slot:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: var(--radius-md);
+}
+
+.expression-slot-face {
+    width: 100%;
+    aspect-ratio: 1 / 1;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    justify-content: center;
     background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all 0.2s;
+    overflow: hidden;
+    transition: border-color 0.15s, transform 0.15s;
 }
 
-.expression-item:hover {
-    background: var(--border-color);
+.expression-slot:hover .expression-slot-face {
+    border-color: var(--accent);
+    transform: translateY(-2px);
 }
 
-.expression-item-emoji {
-    font-size: 1.25rem;
-    width: 32px;
-    height: 32px;
+.expression-slot-face img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.expression-slot-emoji {
+    font-size: 34px;
+    line-height: 1;
+}
+
+/* A slot with nothing at all is a gap to fill — say so quietly. */
+.expression-slot.no-image .expression-slot-face {
+    border-style: dashed;
+    background: transparent;
+}
+
+/* Falling back to the default avatar: dashed border still marks "no art of its
+   own", and the avatar sits back a little so the mood badge reads first. */
+.expression-slot.fallback-avatar .expression-slot-face {
+    border-style: dashed;
+}
+
+.expression-slot.fallback-avatar .expression-slot-face img {
+    opacity: 0.55;
+}
+
+.expression-slot:hover .expression-slot-face img {
+    opacity: 1;
+}
+
+/* Mood badge — the emoji worn over the default avatar. Mirrors the floating
+   avatar's badge so the editor previews exactly what chat renders. */
+.expression-slot-badge,
+.avatar-mood-badge {
+    position: absolute;
+    right: 0;
+    bottom: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--bg-secondary);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    line-height: 1;
 }
 
-.expression-item-emoji img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: var(--radius-sm);
+.expression-slot-badge {
+    width: 30px;
+    height: 30px;
+    margin: 4px;
+    font-size: 15px;
 }
 
-.expression-item-name {
-    flex: 1;
-    font-size: var(--text-sm);
+/* Scales with the avatar, which is user-resizable from 32px to 480px. */
+.avatar-mood-badge {
+    width: 32%;
+    height: 32%;
+    max-width: 88px;
+    max-height: 88px;
+    min-width: 16px;
+    min-height: 16px;
+    margin: 4%;
+    font-size: clamp(9px, 17cqw, 46px);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    z-index: 1;
 }
 
-.expression-item-edit {
-    color: var(--text-muted);
+.expression-slot-face {
+    position: relative;
+}
+
+.expression-slot-name {
     font-size: var(--text-xs);
+    color: var(--text-secondary);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Marks 'thinking' — driven by the UI while generating, not declared. */
+.expression-slot-tag {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    padding: 1px 5px;
+    border-radius: var(--radius-full);
 }
 
 .add-expression-btn {
@@ -3179,7 +3388,7 @@ body {
 /* "Thinking" state (P2-U2): a gentle bob + accent glow while the model
    generates. Plays regardless of whether the persona has a custom thinking
    image. Skip the bob when the avatar is being dragged. */
-.floating-avatar.thinking:not(.dragging) .avatar-frame {
+.floating-avatar.generating:not(.dragging) .avatar-frame {
     animation: avatar-thinking 1.6s ease-in-out infinite;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent-subtle), var(--shadow-lg);
@@ -3191,7 +3400,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .floating-avatar.thinking .avatar-frame { animation: none; }
+    .floating-avatar.generating .avatar-frame { animation: none; }
 }
 
 /* Position classes */
@@ -3231,6 +3440,10 @@ body {
     justify-content: center;
     overflow: hidden;
     transition: all 0.3s ease;
+    /* Anchors the mood badge, and lets it scale in cq units — the avatar is
+       user-resizable from 32px to 480px, so the badge can't be a fixed size. */
+    position: relative;
+    container-type: inline-size;
 }
 
 .avatar-emoji {
@@ -4680,6 +4893,34 @@ body {
 .modal-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* The clear (✕) button sits directly beside .file-upload-btn, so it has to
+   share its shape — it was left on --radius-md while the upload button became
+   a pill, which read as two mismatched buttons. Square + full radius = a
+   circular icon button, and the fixed size keeps it from stretching. */
+.file-clear-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: var(--radius-full);
+    line-height: 1;
+}
+
+/* Upload controls sit under a centered card, so center them and let the
+   button size to its label instead of spanning the whole panel. */
+.file-upload-wrapper {
+    justify-content: center;
+    align-items: center;
+}
+
+.file-upload-btn {
+    flex: 0 1 auto;
+    min-height: 38px;
 }
 
 /* The "clear saved key" stays a small, quiet destructive pill. */

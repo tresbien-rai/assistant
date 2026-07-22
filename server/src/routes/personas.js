@@ -14,15 +14,46 @@
  */
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const dal = require('../db/dal');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
+const { logger } = require('../utils/logger');
+const { validateBundle } = require('../utils/personaBundle');
+const {
+  AVATARS_DIR,
+  avatarFilename,
+  expressionFilename,
+  safeDelete,
+} = require('./avatars');
 
 const router = express.Router();
 
+// Display-field caps. These are card-layout budgets, not data limits — a
+// tagline that wraps to three lines breaks the tile grid, so we trim rather
+// than reject (the client counts down to the same numbers).
+const TAGLINE_MAX = 80;
+const ROLE_LABEL_MAX = 24;
+
 // All routes require authentication
 router.use(authenticate);
+
+/**
+ * Validate + normalize one of the short display strings (tagline, roleLabel):
+ * must be a string, trimmed, and truncated to `max`.
+ * @param {*} value - Raw value from the request body
+ * @param {string} field - Field name, for the error message
+ * @param {number} max - Maximum length after trimming
+ * @returns {string} The normalized value
+ */
+function normalizeDisplayField(value, field, max) {
+  if (typeof value !== 'string') {
+    throw AppError.validation(`${field} must be a string`);
+  }
+  return value.trim().slice(0, max);
+}
 
 /**
  * Format a persona record for API response
@@ -35,6 +66,8 @@ function formatPersona(persona) {
     id: persona.id,
     userId: persona.user_id,
     name: persona.name,
+    tagline: persona.tagline || '',
+    roleLabel: persona.role_label || '',
     systemPrompt: persona.system_prompt,
     prefill: persona.prefill,
     avatarFilename: persona.avatar_filename,
@@ -74,7 +107,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
  * Creates a persona linked to the authenticated user.
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, systemPrompt, prefill, expressions, modelConfig } = req.body;
+  const { name, tagline, roleLabel, systemPrompt, prefill, expressions, modelConfig } = req.body;
 
   if (!name || typeof name !== 'string' || name.trim() === '') {
     throw AppError.validation('Name is required');
@@ -95,6 +128,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
   const persona = dal.createPersona(req.user.userId, {
     name: name.trim(),
+    tagline: tagline === undefined ? '' : normalizeDisplayField(tagline, 'tagline', TAGLINE_MAX),
+    roleLabel: roleLabel === undefined ? '' : normalizeDisplayField(roleLabel, 'roleLabel', ROLE_LABEL_MAX),
     systemPrompt,
     prefill,
     expressions,
@@ -105,12 +140,83 @@ router.post('/', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * POST /api/personas/import
+ * Body: a parsed `.tessera` persona bundle.
+ *
+ * Creates a new persona from an untrusted bundle. Everything is validated by
+ * validateBundle first; images are written only after the persona row exists
+ * (they're named by persona id). Deliberately ignores any model pin or
+ * file-tool setting the bundle might carry — an import lands in shared model
+ * mode with tools off, because neither is the exporter's decision to make
+ * about the importer's account.
+ *
+ * Declared before `/:id` routes would matter for GET, but this is the only
+ * POST subpath so there's no shadowing to worry about.
+ */
+router.post('/import', express.json({ limit: '32mb' }), asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const { persona: incoming, avatar, expressionImages } = validateBundle(req.body);
+
+  const created = dal.createPersona(userId, {
+    name: incoming.name,
+    tagline: incoming.tagline,
+    roleLabel: incoming.roleLabel,
+    systemPrompt: incoming.systemPrompt,
+    prefill: '',
+    expressions: incoming.expressions,
+    modelConfig: {}, // shared mode; never inherit a pin or toolsEnabled
+  });
+
+  const written = [];
+  try {
+    const expressions = { ...incoming.expressions };
+
+    if (avatar) {
+      const name = avatarFilename(created.id, avatar.ext);
+      const dest = path.join(AVATARS_DIR, name);
+      fs.writeFileSync(dest, avatar.buffer);
+      written.push(dest);
+      dal.updatePersona(created.id, userId, { avatarFilename: name });
+    }
+
+    for (const image of expressionImages) {
+      const name = expressionFilename(created.id, image.name, image.ext);
+      const dest = path.join(AVATARS_DIR, name);
+      fs.writeFileSync(dest, image.buffer);
+      written.push(dest);
+      if (expressions[image.name]) expressions[image.name].imageKey = name;
+    }
+    if (expressionImages.length > 0) {
+      dal.updatePersona(created.id, userId, { expressions });
+    }
+  } catch (err) {
+    // Don't leave a half-built persona behind: roll back the row and any
+    // files already on disk, then surface the failure.
+    written.forEach(safeDelete);
+    try {
+      dal.deletePersona(created.id, userId);
+    } catch (cleanupErr) {
+      logger.error({ err: cleanupErr, personaId: created.id }, 'Failed to roll back imported persona');
+    }
+    logger.error({ err, personaId: created.id }, 'Persona import failed writing images');
+    throw AppError.server('Could not save the imported persona images');
+  }
+
+  logger.info(
+    { personaId: created.id, expressions: Object.keys(incoming.expressions).length, images: written.length },
+    'Persona imported'
+  );
+
+  res.status(201).json(formatPersona(dal.getPersonaById(created.id, userId)));
+}));
+
+/**
  * PUT /api/personas/:id
  * Body: partial update fields
  * Updates persona (only if owned by user) and bumps updatedAt.
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { name, systemPrompt, prefill, avatarFilename, expressions, modelConfig } = req.body;
+  const { name, tagline, roleLabel, systemPrompt, prefill, avatarFilename, expressions, modelConfig } = req.body;
   const updateData = {};
 
   if (name !== undefined) {
@@ -118,6 +224,12 @@ router.put('/:id', asyncHandler(async (req, res) => {
       throw AppError.validation('Name must be a non-empty string');
     }
     updateData.name = name.trim();
+  }
+  if (tagline !== undefined) {
+    updateData.tagline = normalizeDisplayField(tagline, 'tagline', TAGLINE_MAX);
+  }
+  if (roleLabel !== undefined) {
+    updateData.roleLabel = normalizeDisplayField(roleLabel, 'roleLabel', ROLE_LABEL_MAX);
   }
   if (systemPrompt !== undefined) {
     if (typeof systemPrompt !== 'string') {

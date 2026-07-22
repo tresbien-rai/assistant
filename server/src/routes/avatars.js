@@ -431,4 +431,11 @@ servingRouter.get('/:personaId/expressions/:name', asyncHandler(async (req, res)
 module.exports = {
   personaAvatarRouter: personaRouter,
   avatarServingRouter: servingRouter,
+  // Shared with the persona import route so bundles land in exactly the same
+  // place, under the same naming convention, as a normal upload.
+  AVATARS_DIR,
+  avatarFilename,
+  expressionFilename,
+  findFileByPattern,
+  safeDelete,
 };
