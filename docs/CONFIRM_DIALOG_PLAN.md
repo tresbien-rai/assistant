@@ -3,9 +3,8 @@
 Replace every native `window.confirm()` in the frontend with an in-app dialog
 matching Tessera's own visual language.
 
-> **Status (2026-07-22):** CD-01 → CD-03 done. All 12 `confirm()` call sites now
-> use `confirmDialog()`; no native `confirm()`/`alert()` remains in the frontend.
-> CD-04 (the one surviving `prompt()`) is still open.
+> **Status (2026-07-22):** Complete. CD-01 → CD-04 all done. No native
+> `confirm()`, `alert()` or `prompt()` remains anywhere in the frontend.
 
 ## Why this matters (the actual bug)
 
@@ -173,28 +172,50 @@ this same trap waiting.
 3. **CD-03** — ✅ Done. No `confirm(` / `alert(` remains in `app.js` or
    `index.html`; the only `prompt(` left is CD-04's. `CLAUDE.md` notes under
    Code Style that native dialogs are not used.
-4. **CD-04** — Convert the one native `prompt()` left in `app.js`: the chat
-   rename flow in `renameConversationPrompt()`. Same suppression bug, and
-   `promptName()` (the name-only modal) already does this job and returns a
-   promise. It needs one small addition first: `promptName()` always clears its
-   input, so it has to grow a `value` option to prefill the current title, and
-   its button label is hardcoded to "Create". The plan originally claimed
-   `prompt()` was unused; that was wrong.
+4. **CD-04** — ✅ Done. The last native `prompt()` (chat rename) is gone, and the
+   modal-chrome conventions CD-01 had to override locally are now the defaults.
+   No `confirm(`, `alert(` or `prompt(` remains anywhere in the frontend.
 
-## Follow-ups outside this plan
+## CD-04: what changed
 
-Both of these are modal-chrome conventions that CD-01 had to override locally.
-Rather than leaving the confirm dialog as the odd one out, settle them across
-every modal — possibly alongside CD-04, which is already in that area.
+**Rename flow.** `promptName()` gained `value` (prefills, and selects the text
+so typing replaces it) and `confirmLabel` (was hardcoded to "Create" in the
+markup). `renameConversationPrompt()` is now `async` and re-checks that the chat
+still exists after awaiting.
 
-- **Footer alignment.** CD-01 right-aligns the confirm dialog's footer only. The
-  settings, expression, model, and name modals still use
-  `justify-content: space-between`.
-- **Secondary-button hover.** The global `.modal-btn.secondary:hover` turns the
-  button's border and text red (`--error`). That reads as "destructive" on what
-  is usually a Cancel or Close button, and CD-01 had to neutralise it inside the
-  confirm dialog. Decide whether the red hover belongs anywhere, and if so give
-  it its own class rather than attaching it to every secondary button.
+**The visibility trap was systemic, not confined to the confirm dialog.**
+`#nameModal` had it too: `promptName()`'s `input.focus()` was silently failing
+exactly the same way, so creating a workspace or project never focused the name
+field. Fixed at the source instead of per-dialog — `.modal-overlay` now flips
+`visibility` instantly on open and delays it on close:
+
+```css
+.modal-overlay          { transition: opacity 0.3s, visibility 0s linear 0.3s; }
+.modal-overlay.visible  { transition: opacity 0.3s, visibility 0s; }
+```
+
+That keeps the fade-out (the delay lets opacity finish before visibility flips)
+while making everything inside focusable in the same tick as the class change.
+`.modal-btn` and `.modal-close` also had to stop transitioning `all`, since a
+descendant's own `transition: all` re-introduces the delay on its inherited
+visibility. **Any element that might be focused when a modal opens must not
+transition `all`.**
+
+**Focus ring.** The dialog focuses Cancel so Enter is safe, but the global ring
+rule uses `:focus-visible`, which browsers suppress when the dialog was opened
+by mouse — leaving that safety invisible. `#confirmModal .modal-btn:focus` now
+shows the ring unconditionally.
+
+**Footer alignment.** `.modal-footer` right-aligns by default; `.modal-footer.split`
+opts into `space-between`. Only the expression modal uses `.split`, to hold its
+destructive Delete away from Save. `.file-panel-footer` already right-aligned,
+so this matches what was there.
+
+**Secondary hover.** `.modal-btn.secondary:hover` is now neutral. The red
+treatment moved to `.modal-btn.danger-quiet`, applied only to the expression
+modal's Delete — the button the red hover was presumably written for. Every
+other secondary button (Cancel, Close) had been inheriting a "destructive"
+signal it didn't mean.
 
 ## Out of scope
 

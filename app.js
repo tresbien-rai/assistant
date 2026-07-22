@@ -3625,17 +3625,25 @@ function showConversationMenu(anchorEl, conversationId) {
  * Prompt to rename a conversation
  * @param {string} conversationId
  */
-function renameConversationPrompt(conversationId) {
+async function renameConversationPrompt(conversationId) {
     const convo = state.conversations[conversationId];
     if (!convo) return;
 
-    const newTitle = prompt('Enter new name:', convo.title || 'New Chat');
-    if (newTitle && newTitle.trim()) {
-        convo.title = newTitle.trim();
-        convo.updatedAt = Date.now();
-        saveConversations();
-        renderConversationList();
-    }
+    const newTitle = await promptName({
+        title: 'Rename chat',
+        label: 'Chat name',
+        value: convo.title || 'New Chat',
+        confirmLabel: 'Rename',
+    });
+    if (!newTitle) return;
+
+    // Prompting is async now — the chat may have been deleted meanwhile.
+    if (!state.conversations[conversationId]) return;
+
+    convo.title = newTitle;
+    convo.updatedAt = Date.now();
+    saveConversations();
+    renderConversationList();
 }
 
 /**
@@ -5293,29 +5301,37 @@ function closeConfirmDialog(result) {
     if (resolve) resolve(result);
 }
 
-// ===== Name-only create modal =====
-// The single remaining create dialog: asks only for a name, then the caller
-// opens the new container's inline page to fill in the rest. Promise-based —
-// resolves to the trimmed name, or null if cancelled.
+// ===== Name modal =====
+// Asks for a single line of text. Used to create containers (the caller then
+// opens the new container's inline page to fill in the rest) and to rename a
+// chat. Promise-based — resolves to the trimmed name, or null if cancelled.
+// Also the replacement for window.prompt(), which browsers can suppress just
+// like confirm() — see the note on confirmDialog().
 let _namePromptResolve = null;
 
 /**
- * Show the name-only modal and resolve with the entered name (or null).
- * @param {{title?:string, label?:string, placeholder?:string}} [opts]
+ * Show the name modal and resolve with the entered name (or null).
+ * @param {{title?:string, label?:string, placeholder?:string, value?:string, confirmLabel?:string}} [opts]
  * @returns {Promise<string|null>}
  */
-function promptName({ title = 'New', label = 'Name', placeholder = '' } = {}) {
+function promptName({ title = 'New', label = 'Name', placeholder = '', value = '', confirmLabel = 'Create' } = {}) {
     // If one is somehow already open, cancel it before reusing the modal.
     if (_namePromptResolve) closeNameModal(null);
     return new Promise(resolve => {
         _namePromptResolve = resolve;
         elements.nameModalTitle.textContent = title;
         elements.nameModalLabel.textContent = label;
-        elements.nameModalInput.value = '';
+        elements.nameModalInput.value = value;
         elements.nameModalInput.placeholder = placeholder;
+        elements.nameModalSaveBtn.textContent = confirmLabel;
         closeSidebar(); // close the mobile drawer if open
         elements.nameModal.classList.add('visible');
+        // Works because .modal-overlay flips visibility without waiting on the
+        // transition — see the comment on .modal-overlay in styles.css.
         elements.nameModalInput.focus();
+        // Renaming starts with the old name in place: select it so typing
+        // replaces it, rather than landing the caret at position 0.
+        if (value) elements.nameModalInput.select();
     });
 }
 
