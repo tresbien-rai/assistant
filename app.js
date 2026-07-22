@@ -3857,12 +3857,94 @@ function showAvatarMenu(anchorEl) {
     attachPopoverOutsideClose(menu, anchorEl);
 }
 
-// Display names for the provider group headers (and anywhere else a provider
-// id needs a human label). Order here = display order in the model menu.
-const PROVIDER_LABELS = {
-    anthropic: 'Anthropic',
-    google: 'Google',
-    openai: 'OpenAI'
+// Provider registry — single source of truth for everything a provider carries:
+// human label + tagline, availability, API-key placeholder, and the parameter
+// descriptors the (future) per-model detail view renders from. Grew out of the
+// old PROVIDER_LABELS map. Order here = display order in the model menu, catalog,
+// and provider chips. See docs/MODELS_TAB_REDESIGN.md.
+//
+// A param descriptor drives one control:
+//   path      location of the value in the model's params bag. A bare key sits
+//             flat on modelParams ('temperature'); a dotted key nests under a
+//             provider namespace the backend already reads
+//             ('anthropic.thinkingBudget', 'google.thinkingLevel').
+//   group     'sampling' | 'behaviour' — which detail-view section it lands in.
+//   subgroup  optional finer grouping (e.g. 'safety' → a collapsible block).
+//   control   'range' | 'number' | 'tags' | 'toggle' | 'select' | 'textarea'.
+//   enableKey optional companion on/off key (advanced override) — temp/topP/topK.
+//   showWhen  optional conditional visibility ({ path, eq }).
+// Array order = render order. Params are NOT consumed yet (detail view is a later
+// slice); defined here so the registry is the one place providers are described.
+
+const SAMPLING_PARAMS = [
+    { path: 'temperature', label: 'Temperature', group: 'sampling',
+      control: 'range', min: 0, max: 2, step: 0.01, default: 1.0,
+      enableKey: 'temperatureEnabled',
+      help: 'Higher = more creative, lower = more focused.' },
+    { path: 'topP', label: 'Top P', group: 'sampling',
+      control: 'range', min: 0, max: 1, step: 0.01, default: 0.95,
+      enableKey: 'topPEnabled' },
+    { path: 'topK', label: 'Top K', group: 'sampling',
+      control: 'number', min: 1, max: 100, default: 40, enableKey: 'topKEnabled' },
+    { path: 'maxTokens', label: 'Max tokens', group: 'sampling',
+      control: 'number', min: 1, max: 32000, default: 4096 },
+    { path: 'stopSequences', label: 'Stop sequences', group: 'sampling',
+      control: 'tags', default: [] },
+];
+
+const BEHAVIOUR_PARAMS = [
+    { path: 'streaming', label: 'Streaming', group: 'behaviour',
+      control: 'toggle', default: false },
+    { path: 'prefill', label: 'Response prefill', group: 'behaviour',
+      control: 'textarea', default: '',
+      help: 'The model continues from this text (hidden in responses).' },
+];
+
+const ANTHROPIC_EXTRA_PARAMS = [
+    { path: 'anthropic.thinkingEnabled', label: 'Extended thinking', group: 'behaviour',
+      control: 'toggle', default: false, help: 'Deeper reasoning (Claude 4+).' },
+    { path: 'anthropic.thinkingBudget', label: 'Thinking budget', group: 'behaviour',
+      control: 'number', min: 1024, max: 32000, default: 4000, unit: 'tokens',
+      showWhen: { path: 'anthropic.thinkingEnabled', eq: true } },
+];
+
+const GEMINI_SAFETY_PARAMS = ['Harassment', 'Hate', 'Sexual', 'Dangerous'].map(cat => ({
+    path: `google.safety${cat}`, label: cat, group: 'behaviour', subgroup: 'safety',
+    control: 'select', default: 'BLOCK_MEDIUM_AND_ABOVE',
+    options: [
+        { value: 'BLOCK_LOW_AND_ABOVE',    label: 'Block most' },
+        { value: 'BLOCK_MEDIUM_AND_ABOVE', label: 'Block some' },
+        { value: 'BLOCK_ONLY_HIGH',        label: 'Block few'  },
+        { value: 'BLOCK_NONE',             label: 'Block none' },
+        { value: 'OFF',                    label: 'Off'        },
+    ],
+}));
+
+const GEMINI_EXTRA_PARAMS = [
+    { path: 'google.thinkingLevel', label: 'Thinking level', group: 'behaviour',
+      control: 'select', default: 'medium',
+      options: ['off', 'minimal', 'low', 'medium', 'high'] },
+    { path: 'google.mediaResolution', label: 'Media resolution', group: 'behaviour',
+      control: 'select', default: 'medium', options: ['low', 'medium', 'high'] },
+    ...GEMINI_SAFETY_PARAMS,
+];
+
+const PROVIDERS = {
+    anthropic: {
+        id: 'anthropic', label: 'Anthropic', tagline: 'Claude', status: 'live',
+        icon: null, keyPlaceholder: 'sk-ant-…',
+        params: [...SAMPLING_PARAMS, ...BEHAVIOUR_PARAMS, ...ANTHROPIC_EXTRA_PARAMS],
+    },
+    google: {
+        id: 'google', label: 'Google', tagline: 'Gemini', status: 'live',
+        icon: null, keyPlaceholder: 'AIza…',
+        params: [...SAMPLING_PARAMS, ...BEHAVIOUR_PARAMS, ...GEMINI_EXTRA_PARAMS],
+    },
+    openai: {
+        id: 'openai', label: 'OpenAI', tagline: 'GPT', status: 'soon',
+        icon: null, keyPlaceholder: 'sk-…',
+        params: [],
+    },
 };
 
 /**
@@ -3900,7 +3982,7 @@ function showModelMenu(anchorEl) {
 
     let html = '';
     let total = 0;
-    for (const [provider, label] of Object.entries(PROVIDER_LABELS)) {
+    for (const [provider, { label }] of Object.entries(PROVIDERS)) {
         const models = state.settings.customModels[provider] || [];
         if (models.length === 0) continue; // hide empty providers entirely
         const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
@@ -4898,7 +4980,7 @@ function renderModelsCatalog() {
     const layer = getActiveModelConfig();
 
     let html = '';
-    for (const [provider, label] of Object.entries(PROVIDER_LABELS)) {
+    for (const [provider, { label }] of Object.entries(PROVIDERS)) {
         const models = state.settings.customModels[provider] || [];
         const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
         html += `
