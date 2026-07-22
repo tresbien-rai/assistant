@@ -628,6 +628,7 @@ function getSettingsByUser(userId) {
     customModels: {},
     currentModelConfig: null,
     activeFileTurns: 1,
+    catalogProviders: null,
   };
 }
 
@@ -671,6 +672,10 @@ function upsertSettings(userId, data) {
       updates.push('active_file_turns = ?');
       values.push(data.activeFileTurns);
     }
+    if (data.catalogProviders !== undefined) {
+      updates.push('catalog_providers = ?');
+      values.push(data.catalogProviders == null ? null : JSON.stringify(data.catalogProviders));
+    }
 
     if (updates.length > 0) {
       updates.push('updated_at = ?');
@@ -682,8 +687,8 @@ function upsertSettings(userId, data) {
   } else {
     const id = generateId();
     db.prepare(`
-      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, catalog_providers, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       userId,
@@ -693,6 +698,7 @@ function upsertSettings(userId, data) {
       JSON.stringify(data.customModels || {}),
       data.currentModelConfig ? JSON.stringify(data.currentModelConfig) : null,
       data.activeFileTurns !== undefined ? data.activeFileTurns : 1,
+      data.catalogProviders == null ? null : JSON.stringify(data.catalogProviders),
       timestamp,
       timestamp
     );
@@ -716,6 +722,9 @@ function parseSettingsJson(settings) {
     // FC-03b: turns a file stays live in context after a change. NULL (pre-migration
     // rows) reads as the default of 1.
     activeFileTurns: settings.active_file_turns == null ? 1 : settings.active_file_turns,
+    // Models catalog "daily drivers" filter: a JSON array of provider ids, or
+    // NULL (pre-migration rows and un-curated users) which reads as "All".
+    catalogProviders: settings.catalog_providers == null ? null : JSON.parse(settings.catalog_providers),
     createdAt: settings.created_at,
     updatedAt: settings.updated_at,
   };
