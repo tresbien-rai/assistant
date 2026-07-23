@@ -1478,6 +1478,18 @@ body {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Provider brand marks (Slice 6): inherit color, sized inline for chips/headers */
+.provider-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    display: inline-block;
+    vertical-align: middle;
 }
 
 .model-key-badge {
