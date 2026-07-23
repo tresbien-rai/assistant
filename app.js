@@ -1087,12 +1087,16 @@ function getDefaultModelConfig() {
                 thinkingBudget: 4000
             },
             google: {
-                thinkingLevel: 'off',
+                // thinkingApi selects which thinking control is sent: 'off',
+                // 'level' (Gemini 3+ thinkingLevel) or 'budget' (Gemini 2.5
+                // thinkingBudget). They're mutually exclusive in the API.
+                thinkingApi: 'off',
+                thinkingLevel: 'medium',
+                thinkingBudget: -1,
                 safetyHarassment: 'BLOCK_MEDIUM_AND_ABOVE',
                 safetyHate: 'BLOCK_MEDIUM_AND_ABOVE',
                 safetySexual: 'BLOCK_MEDIUM_AND_ABOVE',
-                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE',
-                mediaResolution: 'medium'
+                safetyDangerous: 'BLOCK_MEDIUM_AND_ABOVE'
             }
         }
     };
@@ -1150,11 +1154,10 @@ function applyModelToLayer(provider, modelId) {
     if (layer.provider !== provider) {
         layer.provider = provider;
         // Provider-switch housekeeping. The old provider <select>, model
-        // dropdown, and API-key field are gone (Slice 4) — switching is via
-        // catalog cards and the key is provider-owned. What still needs a
-        // refresh here is the provider-specific Advanced params + the send
-        // button; the catalog/chips refresh on the ensuing updateUI.
-        updateProviderParamsVisibility();
+        // dropdown, API-key field, and static Advanced params are gone (Slices
+        // 4–5) — switching is via catalog cards, the key is provider-owned, and
+        // params live in the per-model detail view. The send button still needs
+        // a refresh; the catalog/chips refresh on the ensuing updateUI.
         updateSendButtonState();
     }
     layer.model = modelId;
@@ -1422,39 +1425,9 @@ const elements = {
     personaRoleLabel: document.getElementById('personaRoleLabel'),
     personaRoleLabelCount: document.getElementById('personaRoleLabelCount'),
     systemPrompt: document.getElementById('systemPrompt'),
-    prefillInput: document.getElementById('prefillInput'),
-
-    // Model parameters (Advanced Settings)
-    temperatureSlider: document.getElementById('temperatureSlider'),
-    tempValue: document.getElementById('tempValue'),
-    temperatureEnabled: document.getElementById('temperatureEnabled'),
-    temperatureGroup: document.getElementById('temperatureGroup'),
-    topPSlider: document.getElementById('topPSlider'),
-    topPValue: document.getElementById('topPValue'),
-    topPEnabled: document.getElementById('topPEnabled'),
-    topPGroup: document.getElementById('topPGroup'),
-    topKInput: document.getElementById('topKInput'),
-    topKEnabled: document.getElementById('topKEnabled'),
-    topKGroup: document.getElementById('topKGroup'),
-    maxTokensInput: document.getElementById('maxTokensInput'),
-    stopSequencesTags: document.getElementById('stopSequencesTags'),
-    stopSequenceInput: document.getElementById('stopSequenceInput'),
-    streamingToggle: document.getElementById('streamingToggle'),
-
-    // Anthropic-specific params
-    anthropicParams: document.getElementById('anthropicParams'),
-    thinkingEnabledToggle: document.getElementById('thinkingEnabledToggle'),
-    thinkingBudgetGroup: document.getElementById('thinkingBudgetGroup'),
-    thinkingBudgetInput: document.getElementById('thinkingBudgetInput'),
-
-    // Gemini-specific params
-    geminiParams: document.getElementById('geminiParams'),
-    thinkingLevelSelect: document.getElementById('thinkingLevelSelect'),
-    mediaResolutionSelect: document.getElementById('mediaResolutionSelect'),
-    safetyHarassmentSelect: document.getElementById('safetyHarassmentSelect'),
-    safetyHateSelect: document.getElementById('safetyHateSelect'),
-    safetySexualSelect: document.getElementById('safetySexualSelect'),
-    safetyDangerousSelect: document.getElementById('safetyDangerousSelect'),
+    // Model parameter controls (temperature, prefill, thinking, safety, …) moved
+    // to the per-model detail view (renderModelDetail, Slice 5) — rendered from
+    // PROVIDERS descriptors, so no static element refs here.
 
     // Avatar settings
     avatarFileInput: document.getElementById('avatarFileInput'),
@@ -1969,11 +1942,10 @@ function saveAllSettingsFromUI() {
     // don't read the preset buttons — that would clobber a free value.
     state.settings.showAvatar = elements.showAvatar.checked;
 
-    // Model parameters (save to the active layer)
-    saveModelParamsFromUI();
-
-    // Layer edits are remembered on the active model's profile; a fixed-mode
-    // persona just re-pins to the current model (params never live on it).
+    // Model params are edited in the per-model detail view (Slice 5), which
+    // writes them straight into the profile. This tick still mirrors the active
+    // layer to its profile (so a detail-view edit to the active model persists)
+    // and re-pins a fixed persona to the current model.
     mirrorLayerToModelProfile();
     updateFixedPersonaPin();
 
@@ -2153,8 +2125,8 @@ async function updateUI() {
     elements.showAvatar.checked = state.settings.showAvatar;
     if (elements.activeFileTurns) elements.activeFileTurns.value = state.settings.activeFileTurns;
 
-    // Load model parameters to UI (from active persona's modelConfig)
-    loadModelParamsToUI();
+    // Model params are shown/edited in the per-model detail view (Slice 5), not
+    // a static section here — nothing to load into on a general updateUI.
 
     // Reflect avatar size (presets + slider) and position (presets) into the UI.
     syncAvatarSizeControls();
@@ -2206,144 +2178,254 @@ async function updateUI() {
     renderConversationList();
 }
 
-// ===== Model Parameter Helpers =====
+// ===== Per-model detail view (Models tab redesign, Slice 5) =====
+// The static Advanced Settings section is gone. A model's params are edited in a
+// descriptor-driven detail view rendered from PROVIDERS[provider].params — the
+// first real consumer of the param-descriptor engine set up in Slice 1. Provider
+// alignment is by omission (a provider lists fewer descriptors); showWhen gates
+// dependent params (Anthropic thinking budget, Gemini thinking mode); enableKey
+// is the per-param on/off override for temp/topP/topK.
 
-/**
- * Show/hide provider-specific parameter sections based on current provider
- */
-function updateProviderParamsVisibility() {
-    const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
-    elements.anthropicParams.style.display = provider === 'anthropic' ? 'block' : 'none';
-    elements.geminiParams.style.display = provider === 'google' ? 'block' : 'none';
+/** Read a value from a params bag by descriptor path ('temperature' or 'google.x'). */
+function getParamByPath(params, path) {
+    if (!path.includes('.')) return params[path];
+    const [ns, key] = path.split('.');
+    return (params[ns] || {})[key];
+}
+
+/** Write a value into a params bag by descriptor path, creating the namespace. */
+function setParamByPath(params, path, value) {
+    if (!path.includes('.')) { params[path] = value; return; }
+    const [ns, key] = path.split('.');
+    if (!params[ns]) params[ns] = {};
+    params[ns][key] = value;
+}
+
+/** A descriptor is visible unless its showWhen dependency isn't met. */
+function paramVisible(d, params) {
+    if (!d.showWhen) return true;
+    return getParamByPath(params, d.showWhen.path) === d.showWhen.eq;
+}
+
+/** Find a provider's descriptor by path. */
+function descByPath(provider, path) {
+    return (PROVIDERS[provider]?.params || []).find(d => d.path === path) || null;
+}
+
+/** Format a numeric value for display (2 dp for fractional ranges, else integer). */
+function fmtParamValue(v, d) {
+    if (d && d.control === 'range' && d.step && d.step < 1) return Number(v).toFixed(2);
+    return String(v);
 }
 
 /**
- * Load model parameters from state to UI controls
+ * The editable params object for a model. For the active model it's the live
+ * layer (edits take effect immediately); otherwise it's the model's stored
+ * profile (seeded from defaults on first edit). Returns null if the model isn't
+ * in the catalog.
  */
-function loadModelParamsToUI() {
-    const modelConfig = getActiveModelConfig();
-    const params = modelConfig.modelParams;
-
-    // Common parameters
-    elements.temperatureSlider.value = params.temperature * 100;
-    elements.tempValue.textContent = params.temperature.toFixed(2);
-    elements.topPSlider.value = params.topP * 100;
-    elements.topPValue.textContent = params.topP.toFixed(2);
-    elements.topKInput.value = params.topK;
-    elements.maxTokensInput.value = params.maxTokens;
-    elements.prefillInput.value = params.prefill || '';
-    elements.streamingToggle.checked = params.streaming;
-
-    // Parameter enabled checkboxes
-    elements.temperatureEnabled.checked = params.temperatureEnabled !== false;
-    elements.topPEnabled.checked = params.topPEnabled !== false;
-    elements.topKEnabled.checked = params.topKEnabled !== false;
-
-    // Update disabled visual state
-    updateParamGroupDisabledState();
-
-    // Render stop sequences tags
-    renderStopSequencesTags();
-
-    // Anthropic-specific
-    elements.thinkingEnabledToggle.checked = params.anthropic.thinkingEnabled;
-    elements.thinkingBudgetInput.value = params.anthropic.thinkingBudget;
-    elements.thinkingBudgetGroup.style.display = params.anthropic.thinkingEnabled ? 'block' : 'none';
-
-    // Gemini-specific
-    elements.thinkingLevelSelect.value = params.google.thinkingLevel || 'off';
-    elements.mediaResolutionSelect.value = params.google.mediaResolution;
-    elements.safetyHarassmentSelect.value = params.google.safetyHarassment;
-    elements.safetyHateSelect.value = params.google.safetyHate;
-    elements.safetySexualSelect.value = params.google.safetySexual;
-    elements.safetyDangerousSelect.value = params.google.safetyDangerous;
-
-    // Update provider-specific visibility
-    updateProviderParamsVisibility();
+function getModelParamsForEdit(provider, modelId) {
+    const layer = getActiveModelConfig();
+    if (layer.provider === provider && layer.model === modelId) return layer.modelParams;
+    const entry = getCatalogEntry(provider, modelId);
+    if (!entry) return null;
+    if (!entry.params) entry.params = JSON.parse(JSON.stringify(getDefaultModelConfig().modelParams));
+    return entry.params;
 }
 
-/**
- * Update the disabled class on param groups based on checkbox state
- */
-function updateParamGroupDisabledState() {
-    elements.temperatureGroup.classList.toggle('disabled', !elements.temperatureEnabled.checked);
-    elements.topPGroup.classList.toggle('disabled', !elements.topPEnabled.checked);
-    elements.topKGroup.classList.toggle('disabled', !elements.topKEnabled.checked);
-}
-
-/**
- * Save model parameters from UI controls to state
- */
-function saveModelParamsFromUI() {
-    const params = getActiveModelConfig().modelParams;
-
-    // Common parameters
-    params.temperature = elements.temperatureSlider.value / 100;
-    params.topP = elements.topPSlider.value / 100;
-    params.topK = parseInt(elements.topKInput.value, 10) || 40;
-    params.maxTokens = parseInt(elements.maxTokensInput.value, 10) || 4096;
-    params.prefill = elements.prefillInput.value || '';
-    params.streaming = elements.streamingToggle.checked;
-    // stopSequences is already updated via tag input handlers
-
-    // Parameter enabled flags
-    params.temperatureEnabled = elements.temperatureEnabled.checked;
-    params.topPEnabled = elements.topPEnabled.checked;
-    params.topKEnabled = elements.topKEnabled.checked;
-
-    // Anthropic-specific
-    params.anthropic.thinkingEnabled = elements.thinkingEnabledToggle.checked;
-    params.anthropic.thinkingBudget = parseInt(elements.thinkingBudgetInput.value, 10) || 4000;
-
-    // Gemini-specific
-    params.google.thinkingLevel = elements.thinkingLevelSelect.value;
-    params.google.mediaResolution = elements.mediaResolutionSelect.value;
-    params.google.safetyHarassment = elements.safetyHarassmentSelect.value;
-    params.google.safetyHate = elements.safetyHateSelect.value;
-    params.google.safetySexual = elements.safetySexualSelect.value;
-    params.google.safetyDangerous = elements.safetyDangerousSelect.value;
-}
-
-/**
- * Render stop sequences as clickable tags
- */
-function renderStopSequencesTags() {
-    const container = elements.stopSequencesTags;
-    const sequences = getActiveModelConfig().modelParams.stopSequences || [];
-    container.innerHTML = '';
-
-    sequences.forEach((seq, index) => {
-        const tag = document.createElement('span');
-        tag.className = 'tag';
-        tag.textContent = seq;
-        tag.title = 'Click to remove';
-        tag.addEventListener('click', () => {
-            getActiveModelConfig().modelParams.stopSequences.splice(index, 1);
-            renderStopSequencesTags();
-            autoSaveSettings();
-        });
-        container.appendChild(tag);
-    });
-}
-
-/**
- * Add a stop sequence from the input field
- */
-function addStopSequence() {
-    const input = elements.stopSequenceInput;
-    const value = input.value.trim();
-
-    if (value) {
-        const sequences = getActiveModelConfig().modelParams.stopSequences;
-        if (!sequences.includes(value)) {
-            sequences.push(value);
-            renderStopSequencesTags();
-            autoSaveSettings();
+/** Render one param control from its descriptor + current value. */
+function renderParamControl(d, params) {
+    const raw = getParamByPath(params, d.path);
+    const v = raw === undefined ? d.default : raw;
+    const enabled = d.enableKey ? (getParamByPath(params, d.enableKey) !== false) : true;
+    const p = escapeHtml(d.path);
+    const label = escapeHtml(d.label) + (d.unit ? ` <span class="param-unit">(${escapeHtml(d.unit)})</span>` : '');
+    const enableBox = d.enableKey
+        ? `<input type="checkbox" class="param-enable" data-enable="${escapeHtml(d.enableKey)}" ${enabled ? 'checked' : ''}> `
+        : '';
+    const help = d.help ? `<p class="param-help">${escapeHtml(d.help)}</p>` : '';
+    const dis = enabled ? '' : 'disabled';
+    let control = '';
+    switch (d.control) {
+        case 'range':
+            control = `<div class="param-row">
+                <div class="param-label">${enableBox}${label}<span class="param-val" data-valfor="${p}">${fmtParamValue(v, d)}</span></div>
+                <input type="range" data-path="${p}" min="${d.min}" max="${d.max}" step="${d.step || 1}" value="${v}" ${dis}>
+            </div>`;
+            break;
+        case 'number':
+            control = `<div class="param-row param-row-inline">
+                <div class="param-label">${enableBox}${label}</div>
+                <input type="number" data-path="${p}" ${d.min !== undefined ? `min="${d.min}"` : ''} ${d.max !== undefined ? `max="${d.max}"` : ''} value="${v}" ${dis}>
+            </div>`;
+            break;
+        case 'toggle':
+            control = `<div class="param-row param-row-inline">
+                <label class="param-label"><input type="checkbox" data-path="${p}" ${v ? 'checked' : ''}> ${label}</label>
+            </div>`;
+            break;
+        case 'select': {
+            const opts = (d.options || []).map(o => {
+                const ov = typeof o === 'string' ? o : o.value;
+                const ol = typeof o === 'string' ? (o.charAt(0).toUpperCase() + o.slice(1)) : o.label;
+                return `<option value="${escapeHtml(ov)}" ${ov === v ? 'selected' : ''}>${escapeHtml(ol)}</option>`;
+            }).join('');
+            control = `<div class="param-row param-row-inline">
+                <div class="param-label">${label}</div>
+                <select data-path="${p}">${opts}</select>
+            </div>`;
+            break;
+        }
+        case 'textarea':
+            control = `<div class="param-row">
+                <div class="param-label">${label}</div>
+                <textarea data-path="${p}" rows="3" placeholder="Text to start the reply with…">${escapeHtml(v || '')}</textarea>
+            </div>`;
+            break;
+        case 'tags': {
+            const tags = (Array.isArray(v) ? v : []).map((t, i) =>
+                `<span class="param-tag" data-tagindex="${i}">${escapeHtml(t)}<span class="param-tag-x">×</span></span>`).join('');
+            control = `<div class="param-row">
+                <div class="param-label">${label}</div>
+                <div class="param-tags" data-tagsfor="${p}">${tags}</div>
+                <input type="text" class="param-tag-input" data-tagsinput="${p}" placeholder="Type and press Enter">
+            </div>`;
+            break;
         }
     }
+    return control + help;
+}
 
-    input.value = '';
+/**
+ * Render the per-model detail view into #modelDetailPanel: header (back, name,
+ * id, Active/Use), then Sampling and Behaviour groups built from the provider's
+ * visible descriptors (Safety folded into a collapsible subgroup).
+ */
+function renderModelDetail(provider, modelId) {
+    const panel = document.getElementById('modelDetailPanel');
+    if (!panel) return;
+    const meta = PROVIDERS[provider];
+    const entry = getCatalogEntry(provider, modelId);
+    if (!meta || !entry) { navigate({ type: 'models' }); return; }
+    const layer = getActiveModelConfig();
+    const isActive = layer.provider === provider && layer.model === modelId;
+    const params = getModelParamsForEdit(provider, modelId);
+
+    const visible = meta.params.filter(d => paramVisible(d, params));
+    let html = `
+        <div class="model-detail-head">
+            <button class="back-link" id="modelDetailBack" type="button">‹ Models</button>
+            <div class="model-detail-title">
+                <span class="model-detail-name">${escapeHtml(entry.name)}</span>
+                ${isActive ? '<span class="persona-card-badge">Active</span>'
+                           : '<button class="modal-btn primary" id="modelDetailUse" type="button">Use this model</button>'}
+            </div>
+            <p class="model-detail-sub">${escapeHtml(entry.id)} · ${escapeHtml(meta.label)}</p>
+        </div>`;
+
+    for (const [group, gLabel] of [['sampling', 'Sampling'], ['behaviour', 'Behaviour']]) {
+        const descs = visible.filter(d => d.group === group);
+        if (descs.length === 0) continue;
+        html += `<div class="param-group-title">${gLabel}</div><div class="param-card">`;
+        descs.filter(d => !d.subgroup).forEach(d => html += renderParamControl(d, params));
+        const subs = [...new Set(descs.filter(d => d.subgroup).map(d => d.subgroup))];
+        subs.forEach(sub => {
+            html += `<details class="param-subgroup"><summary>${escapeHtml(sub.charAt(0).toUpperCase() + sub.slice(1))}</summary>`;
+            descs.filter(d => d.subgroup === sub).forEach(d => html += renderParamControl(d, params));
+            html += `</details>`;
+        });
+        html += `</div>`;
+    }
+    panel.innerHTML = html;
+
+    document.getElementById('modelDetailBack').addEventListener('click', () => navigate({ type: 'models' }));
+    const useBtn = document.getElementById('modelDetailUse');
+    if (useBtn) useBtn.addEventListener('click', () => { selectModel(modelId, provider); renderModelsView(); });
+    wireParamControls(panel, provider, modelId, params, isActive);
+}
+
+/**
+ * Attach change handlers to a detail view's controls. Every edit writes through
+ * the descriptor path into the params bag, then persists (debounced via
+ * autoSaveSettings, which mirrors the active layer to its profile). Controls
+ * that can change what's visible/enabled (selects, toggles, enable boxes, tags)
+ * re-render the view; value-only controls (range/number/textarea) update live.
+ */
+function wireParamControls(panel, provider, modelId, params, isActive) {
+    const commit = () => autoSaveSettings();
+    const rerender = () => renderModelDetail(provider, modelId);
+
+    panel.querySelectorAll('input[type=range][data-path]').forEach(inp =>
+        inp.addEventListener('input', () => {
+            setParamByPath(params, inp.dataset.path, parseFloat(inp.value));
+            const disp = panel.querySelector(`.param-val[data-valfor="${inp.dataset.path}"]`);
+            if (disp) disp.textContent = fmtParamValue(parseFloat(inp.value), descByPath(provider, inp.dataset.path));
+            commit();
+        }));
+    panel.querySelectorAll('input[type=number][data-path]').forEach(inp =>
+        inp.addEventListener('input', () => {
+            const n = parseFloat(inp.value);
+            setParamByPath(params, inp.dataset.path, Number.isFinite(n) ? n : 0);
+            commit();
+        }));
+    panel.querySelectorAll('input[type=checkbox][data-path]').forEach(inp =>
+        inp.addEventListener('change', () => {
+            setParamByPath(params, inp.dataset.path, inp.checked);
+            commit(); rerender();
+        }));
+    panel.querySelectorAll('.param-enable[data-enable]').forEach(inp =>
+        inp.addEventListener('change', () => {
+            setParamByPath(params, inp.dataset.enable, inp.checked);
+            commit(); rerender();
+        }));
+    panel.querySelectorAll('select[data-path]').forEach(sel =>
+        sel.addEventListener('change', () => {
+            setParamByPath(params, sel.dataset.path, sel.value);
+            commit(); rerender();
+        }));
+    panel.querySelectorAll('textarea[data-path]').forEach(ta =>
+        ta.addEventListener('input', () => {
+            setParamByPath(params, ta.dataset.path, ta.value);
+            commit();
+        }));
+    panel.querySelectorAll('.param-tag-input[data-tagsinput]').forEach(inp =>
+        inp.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' || !inp.value.trim()) return;
+            e.preventDefault();
+            const path = inp.dataset.tagsinput;
+            const arr = [...(getParamByPath(params, path) || [])];
+            if (!arr.includes(inp.value.trim())) arr.push(inp.value.trim());
+            setParamByPath(params, path, arr);
+            commit(); rerender();
+        }));
+    panel.querySelectorAll('.param-tags .param-tag').forEach(tag =>
+        tag.addEventListener('click', () => {
+            const path = tag.closest('[data-tagsfor]').dataset.tagsfor;
+            const arr = [...(getParamByPath(params, path) || [])];
+            arr.splice(parseInt(tag.dataset.tagindex, 10), 1);
+            setParamByPath(params, path, arr);
+            commit(); rerender();
+        }));
+}
+
+/**
+ * Models view dispatcher: the catalog (chips + cards) or a single model's detail
+ * view, chosen by state.ui.mainView.detail.
+ */
+function renderModelsView() {
+    const catPanel = document.getElementById('modelsCatalogPanel');
+    const detPanel = document.getElementById('modelDetailPanel');
+    if (!catPanel || !detPanel) return;
+    const detail = (state.ui.mainView || {}).detail;
+    if (detail) {
+        catPanel.hidden = true;
+        detPanel.hidden = false;
+        renderModelDetail(detail.provider, detail.model);
+    } else {
+        detPanel.hidden = true;
+        catPanel.hidden = false;
+        renderModelsCatalog();
+    }
 }
 
 function updateAvatarPreview() {
@@ -3020,7 +3102,6 @@ function removeCustomModel(id, provider) {
     if (modelConfig.provider === targetProvider && modelConfig.model === id) {
         modelConfig.model = providerModels.length > 0 ? providerModels[0].id : '';
         loadModelProfileIntoLayer();
-        loadModelParamsToUI();
         updateFixedPersonaPin();
         persistSettings();
     }
@@ -3797,11 +3878,26 @@ const GEMINI_SAFETY_PARAMS = ['Harassment', 'Hate', 'Sexual', 'Dangerous'].map(c
 }));
 
 const GEMINI_EXTRA_PARAMS = [
+    // Gemini's thinking control split by model generation, exposed via a
+    // user-set mode switch (the general model-variant pattern): 'level' and
+    // 'budget' are mutually exclusive in the API and can't be auto-detected
+    // from an arbitrary model id. mediaResolution was dropped — it's Gemini-3
+    // only, per-attachment, and was never sent by the backend.
+    { path: 'google.thinkingApi', label: 'Thinking control', group: 'behaviour',
+      control: 'select', default: 'off',
+      options: [
+        { value: 'off',    label: 'Off' },
+        { value: 'level',  label: 'Level (Gemini 3+)' },
+        { value: 'budget', label: 'Budget (Gemini 2.5)' },
+      ] },
     { path: 'google.thinkingLevel', label: 'Thinking level', group: 'behaviour',
       control: 'select', default: 'medium',
-      options: ['off', 'minimal', 'low', 'medium', 'high'] },
-    { path: 'google.mediaResolution', label: 'Media resolution', group: 'behaviour',
-      control: 'select', default: 'medium', options: ['low', 'medium', 'high'] },
+      options: ['minimal', 'low', 'medium', 'high'],
+      showWhen: { path: 'google.thinkingApi', eq: 'level' } },
+    { path: 'google.thinkingBudget', label: 'Thinking budget', group: 'behaviour',
+      control: 'number', min: -1, max: 32000, default: -1, unit: 'tokens',
+      help: '0 = off, -1 = dynamic.',
+      showWhen: { path: 'google.thinkingApi', eq: 'budget' } },
     ...GEMINI_SAFETY_PARAMS,
 ];
 
@@ -4638,7 +4734,7 @@ function renderMainView() {
     if (elements.modelsView) elements.modelsView.hidden = !isModels;
     if (elements.messagesContainer) elements.messagesContainer.hidden = isSettings || isPersonaEdit || isModels;
     if (isModels) {
-        renderModelsCatalog();
+        renderModelsView();
         return;
     }
     if (isPersonaEdit) {
@@ -5030,9 +5126,15 @@ function showModelCardMenu(anchorEl, modelId, provider) {
 
     const menu = document.createElement('div');
     menu.className = 'context-menu';
-    menu.innerHTML = `<button class="context-menu-item danger" data-action="remove">Remove</button>`;
+    menu.innerHTML = `
+        <button class="context-menu-item" data-action="edit">Edit settings</button>
+        <button class="context-menu-item danger" data-action="remove">Remove</button>`;
     positionPopover(menu, anchorEl, 'right');
 
+    menu.querySelector('[data-action="edit"]').addEventListener('click', () => {
+        menu.remove();
+        navigate({ type: 'models', detail: { provider, model: modelId } });
+    });
     menu.querySelector('[data-action="remove"]').addEventListener('click', () => {
         menu.remove();
         removeCustomModel(modelId, provider);
@@ -8460,23 +8562,19 @@ function setupEventListeners() {
     // and advanced-params sections re-parented out of the settings form.
     // Same re-parenting trick — every input keeps its id-cached ref + listeners.
     if (elements.modelsView) {
+        // Two sibling panels toggled by renderModelsView: the catalog (chips +
+        // cards) and the per-model detail view (Slice 5). The static Advanced
+        // Settings section is no longer re-parented in — it was retired.
         elements.modelsView.innerHTML = `
-            <div class="models-head">
-                <h1 class="settings-view-title">Models</h1>
-                <button class="section-new-btn" id="modelsAddBtn" type="button">+ Add model</button>
+            <div class="models-catalog-panel" id="modelsCatalogPanel">
+                <div class="models-head">
+                    <h1 class="settings-view-title">Models</h1>
+                    <button class="section-new-btn" id="modelsAddBtn" type="button">+ Add model</button>
+                </div>
+                <div class="provider-chips" id="providerChips"></div>
+                <div class="models-catalog" id="modelsCatalog"></div>
             </div>
-            <div class="provider-chips" id="providerChips"></div>
-            <div class="models-catalog" id="modelsCatalog"></div>`;
-        const modelsBody = document.createElement('div');
-        modelsBody.className = 'settings-modal-body';
-        // Advanced Settings is still re-parented in from the form (the Active
-        // Model section was removed in Slice 4). Advanced moves per-model in
-        // Slice 5.
-        ['advancedSettingsSection'].forEach(id => {
-            const section = document.getElementById(id);
-            if (section) modelsBody.appendChild(section);
-        });
-        elements.modelsView.appendChild(modelsBody);
+            <div class="model-detail-panel" id="modelDetailPanel" hidden></div>`;
         document.getElementById('modelsAddBtn').addEventListener('click', openModelModal);
     }
     if (elements.personaButton) {
@@ -8679,67 +8777,16 @@ function setupEventListeners() {
     // Provider/model switching and the API-key field moved out of Settings in
     // Slice 4 (catalog cards + provider key popover), so no listeners here.
 
-    // Model parameter sliders - update display value and auto-save
-    elements.temperatureSlider.addEventListener('input', (e) => {
-        const value = (e.target.value / 100).toFixed(2);
-        elements.tempValue.textContent = value;
-        autoSaveSettings();
-    });
-
-    elements.topPSlider.addEventListener('input', (e) => {
-        const value = (e.target.value / 100).toFixed(2);
-        elements.topPValue.textContent = value;
-        autoSaveSettings();
-    });
-
-    // Other model params - auto-save on change
-    elements.topKInput.addEventListener('input', autoSaveSettings);
-    elements.maxTokensInput.addEventListener('input', autoSaveSettings);
-    elements.streamingToggle.addEventListener('change', autoSaveSettings);
-
-    // Parameter enable checkboxes - toggle disabled state and auto-save
-    elements.temperatureEnabled.addEventListener('change', () => {
-        updateParamGroupDisabledState();
-        autoSaveSettings();
-    });
-    elements.topPEnabled.addEventListener('change', () => {
-        updateParamGroupDisabledState();
-        autoSaveSettings();
-    });
-    elements.topKEnabled.addEventListener('change', () => {
-        updateParamGroupDisabledState();
-        autoSaveSettings();
-    });
-
-    // Stop sequences - add on Enter
-    elements.stopSequenceInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            addStopSequence();
-        }
-    });
-
-    // Anthropic settings - auto-save
-    elements.thinkingEnabledToggle.addEventListener('change', (e) => {
-        elements.thinkingBudgetGroup.style.display = e.target.checked ? 'block' : 'none';
-        autoSaveSettings();
-    });
-    elements.thinkingBudgetInput.addEventListener('input', autoSaveSettings);
-
-    // Gemini settings - auto-save
-    elements.thinkingLevelSelect.addEventListener('change', autoSaveSettings);
-    elements.mediaResolutionSelect.addEventListener('change', autoSaveSettings);
-    elements.safetyHarassmentSelect.addEventListener('change', autoSaveSettings);
-    elements.safetyHateSelect.addEventListener('change', autoSaveSettings);
-    elements.safetySexualSelect.addEventListener('change', autoSaveSettings);
-    elements.safetyDangerousSelect.addEventListener('change', autoSaveSettings);
+    // Model parameter controls are wired per-instance by the detail view
+    // (wireParamControls in renderModelDetail), not here — the static Advanced
+    // Settings section was retired in Slice 5.
 
     // Persona settings - auto-save
     elements.assistantName.addEventListener('input', autoSaveSettings);
     elements.personaTagline.addEventListener('input', autoSaveSettings);
     elements.personaRoleLabel.addEventListener('input', autoSaveSettings);
     elements.systemPrompt.addEventListener('input', autoSaveSettings);
-    elements.prefillInput.addEventListener('input', autoSaveSettings);
+    // (prefill is a model param now — edited in the per-model detail view.)
 
     // API-key visibility toggle + clear now live in the provider key popover
     // (showProviderKeyPopover), wired per-instance when the popover opens.
