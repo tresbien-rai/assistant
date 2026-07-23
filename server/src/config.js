@@ -92,6 +92,27 @@ const config = {
     ],
   },
 
+  // Scratchpad (SCRATCHPAD_DESIGN.md): a per-conversation, DB-resident shared
+  // document the user and model CHURN (replace/overwrite, not append). Injected
+  // in full every turn it is non-empty, so its size matters — but the primary
+  // size defence is behavioural (the model replaces rather than grows it), so
+  // the cap is a high warning threshold, not a tight budget.
+  scratchpad: {
+    // Soft warning threshold: a write above this succeeds but the tool result
+    // nudges the model to trim / churn / promote to a file. High enough that a
+    // well-behaved pad never trips it. ~40k chars ≈ ~10k tokens.
+    warnBytes: parseInt(process.env.SCRATCHPAD_WARN_BYTES, 10) || 40 * 1024,
+    // Hard ceiling: a runaway guard so a pathological write can't bloat the DB
+    // or the prompt. Rejected with an error. Well above warnBytes.
+    maxBytes: parseInt(process.env.SCRATCHPAD_MAX_BYTES, 10) || 1024 * 1024, // 1MB
+    // How many recent changelog diffs to inject (Decision 7). Shows the recent
+    // arc of the back-and-forth, not just the last edit.
+    injectDiffCount: parseInt(process.env.SCRATCHPAD_INJECT_DIFF_COUNT, 10) || 3,
+    // Full-text snapshots kept per pad (mirrors projectFiles.revisionSnapshotKeep):
+    // powers the version rail + restore. Older revisions keep their diff only.
+    revisionSnapshotKeep: parseInt(process.env.SCRATCHPAD_SNAPSHOT_KEEP, 10) || 10,
+  },
+
   // Static files (frontend) - relative to server/src/, so ../../ goes to project root
   staticPath: process.env.STATIC_PATH || '../../',
 };

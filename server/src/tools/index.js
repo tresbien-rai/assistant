@@ -25,6 +25,7 @@ const { executeCreateFile } = require('./createFile');
 const { executeEditFile } = require('./editFile');
 const { executeReadFile, executeListFiles } = require('./readFiles');
 const { executeMoveFile } = require('./moveFile');
+const { executeWriteScratchpad, executeEditScratchpad } = require('./scratchpad');
 
 /**
  * Executor dispatch table. Each entry runs one tool's real work and returns a
@@ -36,6 +37,8 @@ const EXECUTORS = {
   read_file: (input, ctx) => executeReadFile(input, ctx),
   list_files: (input, ctx) => executeListFiles(input, ctx),
   move_file: (input, ctx) => executeMoveFile(input, ctx),
+  write_scratchpad: (input, ctx) => executeWriteScratchpad(input, ctx),
+  edit_scratchpad: (input, ctx) => executeEditScratchpad(input, ctx),
 };
 
 /**

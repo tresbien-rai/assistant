@@ -5,11 +5,19 @@ directly, attached to every request like an active file. Layers onto the File
 Collaboration system (`docs/FILE_COLLAB_DESIGN.md`) and reuses most of its
 machinery.
 
-> **Status (2026-07-23):** Design pass in progress. Concept and most decisions
-> settled with the human; **Decision 2 (availability model) is a recommendation
-> awaiting confirmation.** Nothing built yet. Sequenced *after* chat-files
-> navigation (CF-01) and the working-files upload split (CF-02), which are
-> agreed and come first.
+> **Status (2026-07-23):** Design **locked** with the human — all open questions
+> confirmed (availability auto-arms, own table, diff depth 3, size cap is a high
+> warning-only threshold). CF-01, CF-01b, and CF-02 are merged; the scratchpad is
+> next. **Build order below (SP-01 → SP-05).** Nothing built yet.
+>
+> **Defining principle (added 2026-07-23, human):** the scratchpad is a
+> *churning* surface — the collaborators are expected to **erase, overwrite, and
+> replace** its content, NOT append to it. This is the single most important
+> thing that distinguishes it from a working file (which you build up). The pad
+> must not grow unmanageably; superseded ideas are replaced in place. This drives
+> the tool design (Decision 6, rewritten) and is as much a prompt-engineering
+> goal as a mechanical one — assume replace-in-place is the *default* behaviour we
+> are steering the model toward.
 
 ---
 
@@ -63,8 +71,8 @@ The diff log holds the negotiation.
    promote a pad to a real workspace/project file (Decision 9).
 
 2. **Availability: always present in the UI; active by toggle; the toggle
-   auto-arms on first use.** *(Recommendation — see "The availability question"
-   below for the reasoning.)*
+   auto-arms on first use.** *(Confirmed 2026-07-23. See "The availability
+   question" below for the reasoning.)*
    - The pad **UI is always reachable** in a chat. Discoverability matters more
      than purity here, and an empty pad costs nothing.
    - "Active" means the model is told the pad exists and is given its tools.
@@ -89,17 +97,25 @@ The diff log holds the negotiation.
    currently empty" filler. When armed-but-empty, the model gets the tools and a
    one-line nudge only.
 
-6. **Two dedicated tools, no whole-document replace.**
-   - `append_scratchpad(text)` — adds to the end. Cannot fail, cannot destroy.
-     This is the common case ("add your thoughts under mine") and the safe
-     default the nudge should steer toward.
-   - `edit_scratchpad(old_text, new_text)` — exact-match find-and-replace,
-     same semantics and unique-match enforcement as `edit_file`, reusing
-     `tools/storeWriter.js`.
-   - **No `write_scratchpad` / whole-document replace in v1.** The failure mode
-     to design against is the model *replacing* the user's notes when it meant
-     to *annotate* them; omitting the tool that makes that easy is the cheapest
-     mitigation.
+6. **Two dedicated tools; whole-document replace is the PRIMARY one.**
+   *(Rewritten 2026-07-23 — this reverses the earlier append-first design once
+   the churn principle was set.)*
+   - `write_scratchpad(content)` — replaces the **entire** scratchpad with
+     `content`. This is the primary tool and the one the nudge steers toward:
+     erase = write less, overwrite = write different, replace = write new,
+     clear = write empty. It encodes the churn principle directly — there is no
+     "add to the end" verb to tempt accumulation.
+   - `edit_scratchpad(old_text, new_text)` — exact-match find-and-replace with
+     the same unique-match enforcement as `edit_file`. Secondary: a surgical
+     tweak to one part of a larger pad without re-typing the whole thing (saves
+     output tokens and removes the drop-risk of re-typing).
+   - **No `append_scratchpad`.** Appending is the behaviour we are steering
+     *away* from; it should not exist as a first-class verb.
+   - The earlier worry ("the model replaces the user's notes when it meant to
+     annotate them") is handled by the **revision history**, not by restricting
+     the tools: every write snapshots + diffs (Decision 7 / the version rail),
+     so nothing is truly lost and any version is restorable. Append-only
+     *history* is what makes replace-primary *content* safe.
 
 7. **Injection: full current content + the last ~3 diffs, author-labelled.**
    Attached to the latest real user message, same seam as the FC-03b active-file
@@ -151,24 +167,32 @@ reuses a resolution pattern the codebase already implements.
 
 ## Data model
 
-A conversation-scoped row that is **not** a Drive file:
+**Its own tables — confirmed 2026-07-23.** The scratchpad is deliberately NOT a
+`conversation_files` row: it isn't a working file, has no Drive presence, and
+(per the churn principle) is treated differently by the injection and re-roll
+paths. Keeping it separate avoids teaching every file code path to skip a
+non-file row, and avoids the null-`drive_file_id`-in-a-file-table hazard that
+produced the silent Drive-path bug in the revert logic.
 
-- Content lives **in the database**, not on Drive. The pad is not a file; it has
-  no `drive_file_id`, no download card, and no entry in the files list. (FC-06a
-  already proves DB-resident content works — `file_revisions.content` stores
-  full-text snapshots.)
-- Revisions reuse **`file_revisions`** so the pad inherits the diff log, the
-  version rail, snapshots, and restore for free. Needs a scope value that
-  routes to DB storage rather than Drive.
-- Cascades on conversation delete, like `conversation_files`.
+- **`scratchpads`** — one row per conversation: `id`, `conversation_id`
+  (FK ON DELETE CASCADE, UNIQUE — one pad per chat), `content` (TEXT, DB-resident,
+  no Drive), `created_at`, `updated_at`. New table → no migration needed
+  (`CREATE TABLE IF NOT EXISTS`, per the codebase pattern).
+- **`scratchpad_revisions`** — mirrors `file_revisions` minus the Drive columns:
+  `id`, `scratchpad_id`, `conversation_id` (FK CASCADE), `author` (user|model),
+  `op` (write|edit), `diff` (bounded unified diff via `utils/diff.js`),
+  `size_bytes`, `turn` (user-message count at write, for "N turns ago" labels +
+  re-roll keying), `content` (full-text snapshot, kept last N, pruned per write),
+  `created_at`. A small `recordScratchpadRevision` + prune mirrors
+  `storeWriter.recordRevision`; the revisions endpoint returns the same JSON
+  shape as `formatFileRevision` so the frontend version rail (FC-06b) renders it
+  unchanged.
 
-Open sub-question for the build: whether the pad is a distinguished row in
-`conversation_files` (with a `kind` column and a null `drive_file_id`) or its
-own small table. The former reuses more; the latter avoids teaching every file
-code path to skip a row that isn't a file. **Lean: its own table**, because
-Decision 5/9 and the re-roll branch below all want it treated differently
-anyway, and a null `drive_file_id` in a file table invites exactly the kind of
-silent Drive-path bug described next.
+Why not reuse `file_revisions` with a `scope='scratchpad'`? It would work
+structurally, but the file-scoped queries (active-file injection, the Drive-routed
+revert) would then have to be taught to exclude scratchpad rows — exactly the
+"skip the non-file row everywhere" tax the separate table avoids. The revision
+logging is ~20 lines; the isolation is worth it.
 
 ---
 
@@ -221,10 +245,16 @@ fromTurn`, preserving the user's own edits.
    - Expect several rounds of prompt tuning after the code is done. Budget for
      it rather than treating a weak first result as a design failure.
 
-2. **Always-injected means always-paid.** A worldbuilding pad that grows to
-   20 KB costs a few thousand tokens *every turn*. Needs a size cap with a
-   warning, and promotion to a real file (Decision 9) as the natural response
-   when it outgrows scratch status.
+2. **Always-injected means always-paid — but the churn principle is the primary
+   defence.** A pad that grows to 20 KB costs a few thousand tokens *every turn*.
+   The main guard is behavioural (Decision 6 / the defining principle): because
+   the model replaces rather than appends, a well-behaved pad stays small on its
+   own. The size **cap is a high, arbitrary threshold** (confirmed 2026-07-23) —
+   set well above normal use so it never fires in practice — and is a **warning
+   only**, never a hard block on writing. If it fires regularly, that's a signal
+   the churn nudge is failing (tune it, SP-05) or the pad has outgrown scratch
+   status and wants promotion to a real file (Decision 9). Revisit the cap value
+   after living with it.
 
 3. **Novelty.** The closest shipped cousins (Canvas, Artifacts) are document
    *generation* surfaces: the model writes, the user reads. Mutual editing with
@@ -261,11 +291,17 @@ Then:
 
 ---
 
-## Open questions
+## Open questions — all resolved 2026-07-23
 
-1. **Decision 2 (availability model)** — confirm the auto-arming toggle, or
-   simplify to a plain manual toggle.
-2. Distinguished row in `conversation_files` vs. its own table (lean: own
-   table).
-3. Diff depth of 3 — a starting value; revisit after SP-05.
-4. Size cap value and what happens at the cap (warn only, or block writes).
+1. ~~Availability model~~ → **auto-arming toggle** (Decision 2).
+2. ~~Own table vs. a `conversation_files` row~~ → **own tables**
+   (`scratchpads` + `scratchpad_revisions`; see Data model).
+3. ~~Diff depth~~ → **3** (Decision 7). Revisit after SP-05.
+4. ~~Size cap~~ → **high arbitrary threshold, warning only, never a hard block**
+   (Risk 2). The churn principle is the real size defence. Revisit the value
+   after living with it.
+
+Remaining to settle *during* the build, not blocking:
+- The exact nudge wording (SP-05 tunes it against `/api/chat/preview`).
+- The concrete cap number (pick something obviously-high for SP-01, e.g. a few
+  hundred KB, purely as a runaway guard).

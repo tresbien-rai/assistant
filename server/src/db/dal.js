@@ -1665,6 +1665,113 @@ function countUserMessages(conversationId) {
 }
 
 // =============================================================================
+// SCRATCHPAD (docs/SCRATCHPAD_DESIGN.md)
+// =============================================================================
+
+/**
+ * The conversation's scratchpad row, or undefined if none exists yet.
+ * @param {string} conversationId
+ * @returns {Object|undefined}
+ */
+function getScratchpad(conversationId) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM scratchpads WHERE conversation_id = ?').get(conversationId);
+}
+
+/**
+ * Get the conversation's scratchpad, creating an empty one if absent. One pad
+ * per conversation (UNIQUE conversation_id).
+ * @param {string} conversationId
+ * @returns {Object} the scratchpad row
+ */
+function ensureScratchpad(conversationId) {
+  const existing = getScratchpad(conversationId);
+  if (existing) return existing;
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+  db.prepare(`
+    INSERT INTO scratchpads (id, conversation_id, content, created_at, updated_at)
+    VALUES (?, ?, '', ?, ?)
+  `).run(id, conversationId, timestamp, timestamp);
+  return db.prepare('SELECT * FROM scratchpads WHERE id = ?').get(id);
+}
+
+/**
+ * Replace the scratchpad's content (the churn primitive). Creates the pad if
+ * absent. Returns the updated row.
+ * @param {string} conversationId
+ * @param {string} content
+ * @returns {Object} the updated scratchpad row
+ */
+function updateScratchpadContent(conversationId, content) {
+  ensureScratchpad(conversationId);
+  const db = getDb();
+  db.prepare('UPDATE scratchpads SET content = ?, updated_at = ? WHERE conversation_id = ?')
+    .run(content, now(), conversationId);
+  return getScratchpad(conversationId);
+}
+
+/**
+ * Append a scratchpad revision (mirrors addFileRevision, no Drive columns).
+ * @param {Object} rev - { scratchpadId, conversationId, author, op, diff, sizeBytes, turn, content }
+ * @returns {Object} the inserted revision row
+ */
+function addScratchpadRevision({ scratchpadId, conversationId, author, op, diff, sizeBytes, turn, content }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+  db.prepare(`
+    INSERT INTO scratchpad_revisions
+      (id, scratchpad_id, conversation_id, author, op, diff, size_bytes, turn, content, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, scratchpadId, conversationId || null, author, op,
+    diff || '', sizeBytes || 0, turn == null ? null : turn,
+    content == null ? null : content, timestamp
+  );
+  return db.prepare('SELECT * FROM scratchpad_revisions WHERE id = ?').get(id);
+}
+
+/**
+ * A scratchpad's revisions, oldest first (the frontend rail reverses for
+ * display, matching listFileRevisions).
+ * @param {string} scratchpadId
+ * @returns {Array}
+ */
+function listScratchpadRevisions(scratchpadId) {
+  const db = getDb();
+  return db.prepare(
+    'SELECT * FROM scratchpad_revisions WHERE scratchpad_id = ? ORDER BY created_at ASC'
+  ).all(scratchpadId);
+}
+
+/** A single scratchpad revision by id (restore verifies it belongs to the pad). */
+function getScratchpadRevisionById(id) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM scratchpad_revisions WHERE id = ?').get(id);
+}
+
+/**
+ * Keep full-text snapshots only for the most recent `keep` revisions of a pad
+ * (mirrors pruneRevisionSnapshots); null out older ones so storage stays bounded.
+ * @param {string} scratchpadId
+ * @param {number} keep
+ */
+function pruneScratchpadSnapshots(scratchpadId, keep) {
+  const db = getDb();
+  db.prepare(`
+    UPDATE scratchpad_revisions SET content = NULL
+    WHERE scratchpad_id = ? AND content IS NOT NULL
+      AND id NOT IN (
+        SELECT id FROM scratchpad_revisions
+        WHERE scratchpad_id = ?
+        ORDER BY created_at DESC, rowid DESC LIMIT ?
+      )
+  `).run(scratchpadId, scratchpadId, keep);
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
@@ -1770,4 +1877,13 @@ module.exports = {
   deleteRevisionsFromTurn,
   // Version restore (FC-06b)
   getFileRevisionById,
+
+  // Scratchpad (SCRATCHPAD_DESIGN.md)
+  getScratchpad,
+  ensureScratchpad,
+  updateScratchpadContent,
+  addScratchpadRevision,
+  listScratchpadRevisions,
+  getScratchpadRevisionById,
+  pruneScratchpadSnapshots,
 };
