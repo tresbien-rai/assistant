@@ -168,4 +168,4 @@ async function executeCreateFile(input, ctx) {
   };
 }
 
-module.exports = { executeCreateFile, _validateFilename: validateFilename };
+module.exports = { executeCreateFile, validateFilename, resolveMime, _validateFilename: validateFilename };

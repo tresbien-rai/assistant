@@ -21,8 +21,9 @@ const drive = require('../utils/drive');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
-const { resolveFileStore } = require('../tools/fileStore');
-const { saveTextOverFile, restoreFileRevision } = require('../tools/storeWriter');
+const { resolveFileStore, resolveToolDriveAuth } = require('../tools/fileStore');
+const { saveTextOverFile, restoreFileRevision, writeContentToStore } = require('../tools/storeWriter');
+const { validateFilename, resolveMime } = require('../tools/createFile');
 const { revertConversationFiles } = require('../tools/revertFiles');
 const { formatFileRevision } = require('../utils/format');
 const { trashConversationFiles } = require('../tools/conversationCleanup');
@@ -472,6 +473,60 @@ router.get('/:id/files', asyncHandler(async (req, res) => {
   }
   const files = dal.listConversationFiles(req.params.id);
   res.json(files.map(formatConversationFile));
+}));
+
+/**
+ * POST /api/conversations/:id/files
+ * Create a chat working file from a user-uploaded TEXT file (CF-02). The client
+ * reads the file as text and posts { filename, content }; this writes it into
+ * the conversation scope through the shared tool write path, so it becomes a
+ * first-class working file — listed in the files explorer, edit_file/read_file
+ * visible, and (via the user-authored revision stamped at the current turn)
+ * injected into the very next request by the recency window (FC-03b).
+ *
+ * Text only: images and PDFs are not authorable as text and keep their existing
+ * inline-attachment path client-side. Same extension allow-list + filename
+ * validation as create_file (PDF excluded). Overwrite-on-duplicate matches the
+ * tool: re-uploading a same-named file repoints the row (id + history kept).
+ */
+router.post('/:id/files', asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const conversation = dal.getConversationMeta(req.params.id, userId);
+  if (!conversation) {
+    throw AppError.notFound('Conversation');
+  }
+
+  const check = validateFilename(req.body?.filename);
+  if (!check.ok) {
+    throw AppError.validation(check.reason);
+  }
+  if (typeof req.body?.content !== 'string') {
+    throw AppError.validation('content must be a string of the complete file text.');
+  }
+  const bytes = Buffer.from(req.body.content, 'utf8');
+  const mimeType = resolveMime(req.body?.mimeType, check.ext);
+
+  // Drive-less users (e.g. dev login) get a clean error; the client then falls
+  // back to the inline-attachment path so the file still reaches the model.
+  const { auth, unavailable } = resolveToolDriveAuth(userId);
+  if (unavailable) {
+    throw AppError.validation(unavailable);
+  }
+
+  const store = resolveFileStore({ userId, conversationId: req.params.id });
+  // Author 'user', op auto-derived (create vs overwrite). Turn = current
+  // user-message count: this runs BEFORE the accompanying user message is
+  // persisted, so the stamp is currentTurn-1 and FC-03b injects it on the turn
+  // it is uploaded (age 1), then it falls out of the window as usual.
+  const { record, overwritten } = await writeContentToStore(auth, store, {
+    filename: check.name,
+    mimeType,
+    bytes,
+    userId,
+    revision: { author: 'user', conversationId: req.params.id, turn: dal.countUserMessages(req.params.id) },
+  });
+
+  res.status(201).json({ ...formatConversationFile(record), overwritten });
 }));
 
 /**
