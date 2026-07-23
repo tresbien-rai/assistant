@@ -118,4 +118,54 @@ const TOOL_DEFINITIONS = [
   },
 ];
 
-module.exports = { TOOL_DEFINITIONS };
+/**
+ * Scratchpad tools (docs/SCRATCHPAD_DESIGN.md). Defined SEPARATELY from the file
+ * tools because they are gated independently: the scratchpad toggle advertises
+ * these regardless of whether the file-tools toggle is on (Decision 3).
+ *
+ * The descriptions carry the CHURN principle (Decision 6 / the defining
+ * principle) — replace/overwrite in place, do not append or let it grow. This is
+ * the first line of the prompt-engineering that SP-05 tunes further.
+ */
+const SCRATCHPAD_TOOL_DEFINITIONS = [
+  {
+    name: 'write_scratchpad',
+    description:
+      "Replace the ENTIRE contents of the shared scratchpad — a space you and the user think in together, alongside the chat. Use it to develop ideas in place: rewrite, reorganize, trim, and REPLACE what is there. The scratchpad holds the current state of your shared thinking, NOT a growing log — delete superseded ideas rather than piling new ones on top of old ones, so it stays focused and small. This overwrites everything currently in the scratchpad; pass the complete new contents (or an empty string to clear it). The user sees your change as a diff. Prefer discussing your reasoning in your chat reply while keeping the scratchpad as the clean, current artifact.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'The complete new contents of the scratchpad. Replaces everything currently in it. Empty string clears it.',
+        },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'edit_scratchpad',
+    description:
+      "Make a targeted change to PART of the scratchpad without rewriting the whole thing. Replaces an exact snippet (old_text — must match the current scratchpad content exactly, including whitespace and line breaks, and appear exactly once unless replace_all is true) with new_text. Prefer write_scratchpad when reworking most of the content; use this for a small, surgical change to a larger scratchpad. new_text may be empty to delete the snippet.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        old_text: {
+          type: 'string',
+          description: 'The exact text to replace, copied verbatim from the current scratchpad content.',
+        },
+        new_text: {
+          type: 'string',
+          description: 'The replacement text. May be empty to delete old_text.',
+        },
+        replace_all: {
+          type: 'boolean',
+          description: 'Replace every occurrence of old_text instead of requiring it to be unique. Default false.',
+        },
+      },
+      required: ['old_text', 'new_text'],
+    },
+  },
+];
+
+module.exports = { TOOL_DEFINITIONS, SCRATCHPAD_TOOL_DEFINITIONS };

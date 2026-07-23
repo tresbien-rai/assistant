@@ -207,6 +207,41 @@ CREATE TABLE IF NOT EXISTS file_revisions (
 CREATE INDEX IF NOT EXISTS idx_file_revisions_file ON file_revisions(scope, file_id);
 CREATE INDEX IF NOT EXISTS idx_file_revisions_conversation_id ON file_revisions(conversation_id);
 
+-- Scratchpad (docs/SCRATCHPAD_DESIGN.md): a per-conversation, DB-resident shared
+-- document the user and model edit together. Deliberately NOT a working file —
+-- no Drive presence, its own tables — because it is CHURNED (content is
+-- replaced/overwritten, not appended) and is treated differently by the
+-- injection and re-roll paths. One pad per conversation. New tables => created
+-- on boot; no migration needed.
+CREATE TABLE IF NOT EXISTS scratchpads (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL UNIQUE REFERENCES conversations(id) ON DELETE CASCADE,
+    content         TEXT NOT NULL DEFAULT '',
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
+
+-- Scratchpad change log: mirrors file_revisions minus the Drive columns. Each
+-- write_scratchpad / edit_scratchpad / user Save appends one row with a bounded
+-- unified diff, author, turn (for "N turns ago" labels + re-roll keying), and a
+-- pruned full-text snapshot (version rail + restore). Same JSON shape as
+-- formatFileRevision so the frontend version rail renders it unchanged.
+CREATE TABLE IF NOT EXISTS scratchpad_revisions (
+    id              TEXT PRIMARY KEY,
+    scratchpad_id   TEXT NOT NULL,
+    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    author          TEXT NOT NULL,      -- 'model' | 'user'
+    op              TEXT NOT NULL,      -- 'write' | 'edit'
+    diff            TEXT DEFAULT '',    -- bounded unified diff (old -> new)
+    size_bytes      INTEGER DEFAULT 0,
+    turn            INTEGER,            -- conversation turn (user-msg count) at write time
+    content         TEXT,               -- full-text snapshot as of this revision, last N kept
+    created_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_scratchpad_revisions_pad ON scratchpad_revisions(scratchpad_id);
+CREATE INDEX IF NOT EXISTS idx_scratchpad_revisions_conversation_id ON scratchpad_revisions(conversation_id);
+
 -- Settings table
 -- Per-user application settings
 CREATE TABLE IF NOT EXISTS settings (
