@@ -211,22 +211,139 @@ personal app; keep marks unmodified and don't imply partnership.
 Estimated effort: small (~an hour), mostly vendoring the SVGs and wiring the
 lookup + fallback.
 
-## 5. Follow-up — top-bar quick-switch dropdown
+## 5. Top-bar quick-switch dropdown (design locked 2026-07-23)
 
-*Deferred to after the Models tab lands; captured here so it isn't lost.*
+*Deferred out of the six-slice build; designed in its own pass afterwards.
+Slices 7 and 8 below implement §5 and §6.*
 
 The model button in the top bar / composer (`#modelButton`,
-`#composerModelButton`) opens a quick-switch popover. Once the catalog is
-reworked, revisit that popover to match:
+`#composerModelButton`) opens a quick-switch popover, `showModelMenu()`. Slice 1
+already gave it provider grouping, empty-provider hiding, and a "no key" badge,
+so this pass is narrower than the original note implied.
 
-- Group its entries by provider and reuse the provider icons.
-- Consider honouring the **daily-drivers subset** so quick-switch offers the same
-  short, curated list the catalog defaults to (with an "all models" affordance) —
-  the whole point of the saved subset is fast switching, and the dropdown is
-  where switching is fastest.
-- Keep it in sync with the profiles/active-model logic it already drives.
+```
+┌───────────────────────────────────┐
+│ ◆ ANTHROPIC                       │
+│    Claude Opus 4.8              ✓ │
+│    Claude Sonnet 4.5              │
+│ ✦ GOOGLE               [no key]   │
+│    Gemini 3 Pro                   │
+│ ─────────────────────────────     │
+│ Show all providers (1 more)       │  ← only when the subset hides something
+│ Manage models…                    │
+└───────────────────────────────────┘
+```
 
-Scope and exact shape TBD when we get there.
+**B1 — Provider icons on the group labels.** `providerIconHtml(provider)` into
+`.context-menu-label`, which becomes a flex row so icon, label, and the "no key"
+badge share a line.
+
+**B2 — Honour the daily-drivers subset, with two guardrails.** The reservation
+that shaped this: `catalogProviders` was built as a *catalog view* filter. If
+narrowing the catalog to one provider silently made the top-bar switcher
+unable to reach the others, a view preference would have become a global
+restriction. So:
+
+- **The active model's provider is always shown**, even when the subset excludes
+  it. Never hide what you're currently using.
+- **"Show all providers (N more)"** appears in the footer only when the subset
+  actually hides a provider that has models, and expands **for that popover
+  session only**. It does not write `catalogProviders` — the saved list stays a
+  deliberate setting, changed only from the chips.
+
+**B3 — Height cap.** `.context-menu` has `overflow: hidden` and no `max-height`
+(styles.css ~L1348); at 10+ providers the menu would run off-screen. The groups
+go in a `max-height: 50vh; overflow-y: auto` scroll region, with the separator
+and footer items pinned below it.
+
+**B4 — Rows stay name-only.** No model-id sub-line. The catalog is where ids are
+inspected; the dropdown is where switching is fast, and compactness is the point.
+
+**B5 — "no key" providers stay listed and clickable.** The badge explains the
+state, and pre-selecting a model before adding its key is legitimate.
+
+**B6 — Out of scope:** a filter/search input (revisit past ~12–15 total models)
+and keyboard navigation (no context menu in the app has it — an app-wide gap,
+not this feature's).
+
+## 6. Add-model modal — provider becomes explicit (added 2026-07-23)
+
+*A relic missed by the six slices, found in use: the `+ Add model` button sits at
+the top right of the whole tab, and the modal it opens silently operates on the
+**active model's provider**. There is no visible way to add a model for a
+different provider.*
+
+The hidden coupling is real and total — every operation in the modal reads
+`getActiveModelConfig().provider`: `fetchAvailableModels()` (app.js ~L3044),
+`addCustomModel()` (~L3071), `renderSavedModelsList()` (~L3160),
+`renderAvailableModelsGrid()` (~L3210), and the Fetch button's disabled state in
+`openModelModal()` (~L3264).
+
+```
+┌─ Add model ───────────────────────────────── × ─┐
+│  Select provider                                │
+│  [◆ Anthropic ●] [✦ Google ●] [⬡ OpenAI soon]   │
+│  ───────────────────────────────────────────    │
+│  [ Fetch available models ]                     │
+│  Fetches the model list from Anthropic's API.   │
+│  Requires a saved key; not every provider       │
+│  offers a list endpoint.                        │
+│                                                 │
+│  ┌ (grid appears here after fetch) ┐            │
+│  ───────────── or add manually ─────────────    │
+│  Model ID     [ claude-opus-4-8            ]    │
+│  Display Name [ Claude Opus 4.8            ]    │
+│                              [ Add model ]      │
+└─────────────────────────────────────────────────┘
+```
+
+**A1 — "Your Models" is deleted.** A relic from before the catalog existed.
+Removal already lives in the catalog card's `⋯` menu, and the catalog is a
+strictly better list (grouped, shows the active model, shows key status). Drops
+`renderSavedModelsList()`, `#savedModelsList`, `#noModelsMessage`, and the
+delete-button wiring.
+
+**A2 — The modal is titled "Add model"** (was "Manage Models"). It only adds
+now, and `+ Add model` is its only entry point.
+
+**A3 — Provider selection is a chip row**, reusing the catalog chips and
+`providerIconHtml()`. Single-select, so: no "All" chip, `.provider-chips.single`
++ `role="radiogroup"` for a11y. `status: 'soon'` providers render disabled, as
+in the catalog.
+
+**A4 — Modal-local `modelModalProvider`, defaulting to the active model's
+provider.** The same default as today, but visible and changeable. Switching
+provider clears the fetched grid (it is provider-specific) and re-evaluates the
+Fetch button and its help text.
+
+**A5 — Thread `provider` through as an argument** to `fetchAvailableModels`,
+`addCustomModel`, and `renderAvailableModelsGrid` rather than reading the active
+layer. This is the actual untangle, and it matches the shape
+`removeCustomModel(id, provider)` already has. That function's "default to the
+active provider" fallback goes dead once the modal stops relying on it — drop it.
+
+**A6 — Provider-aware help text**, replacing "Requires API key. Fetches models
+from Anthropic API." The caveat is literal, not hedging: `chat.js` (~L707)
+throws `Model listing not supported` for any provider module without
+`listModels`.
+
+> Fetches the model list from **{Provider}**'s API. Requires a saved API key —
+> and not every provider offers a list endpoint.
+
+**A7 — A toast confirms a manual add** ("Claude Opus 4.8 added to Anthropic"),
+since the removal of "Your Models" leaves that path with no visible result. The
+fetch grid already flips its button to "Added".
+
+**A8 — When the selected provider has no key**, say so instead of just going
+dead, and offer `showProviderKeyPopover(anchorEl, provider)` from an "Add key"
+button in the modal. *Build risk*: that popover renders at `z-index: 1000` and
+may lose to the modal overlay's stacking context — if it does, fall back to a
+static "no API key — add one in the Models tab" line.
+
+**A9 — Per-group "+ Add" on catalog group headers**, opening the modal
+pre-selected to that provider. This answers "how do I add a Google model?" at
+the point the question actually occurs. The header's `+ Add model` stays for the
+empty/general case.
 
 ## Non-goals
 
@@ -311,10 +428,30 @@ Pure refactor, no visible change. De-risks everything after it.
 - **Verify**: icons render on both light/dark themes; fallback works for a
   provider with no `icon`.
 
-### Follow-up (separate, post-landing)
+### Slice 7 — add-model modal: explicit provider (see §6)
 
-Top-bar quick-switch dropdown rework — see §5. Not part of this build; its own
-design pass once the catalog is settled.
+Independent of Slice 8; do it first, it's self-contained.
+
+- index.html: delete the "Your Models" section; retitle the modal "Add model";
+  add the `Select provider` chip row above the fetch section.
+- app.js: add `modelModalProvider` state; thread `provider` through
+  `fetchAvailableModels` / `addCustomModel` / `renderAvailableModelsGrid`;
+  delete `renderSavedModelsList` and its element refs; provider-aware help text;
+  add toast on manual add; per-group "+ Add" buttons in `renderModelsCatalog`.
+- styles.css: `.provider-chips.single` variant.
+- **Verify**: add a model to a provider that is *not* the active one, from both
+  the header button and a group's "+ Add"; the active model must not change.
+  Check the key-popover-inside-modal stacking (A8) and fall back if it loses.
+
+### Slice 8 — quick-switch dropdown rework (see §5)
+
+- app.js `showModelMenu`: icons in group labels; daily-drivers filter with the
+  active provider always included; transient "Show all providers (N more)".
+- styles.css: `.context-menu-label` as a flex row; `.model-menu` scroll region
+  with a pinned footer.
+- **Verify**: narrow the chips to one provider, then confirm the dropdown still
+  reaches the active model's provider and that "Show all" does not persist;
+  confirm a long list scrolls rather than overflowing the viewport.
 
 ## Open questions
 

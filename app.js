@@ -1461,9 +1461,10 @@ const elements = {
     // Model management
     modelModal: document.getElementById('modelModal'),
     closeModelModal: document.getElementById('closeModelModal'),
-    savedModelsList: document.getElementById('savedModelsList'),
-    noModelsMessage: document.getElementById('noModelsMessage'),
+    modelModalProviders: document.getElementById('modelModalProviders'),
     fetchModelsBtn: document.getElementById('fetchModelsBtn'),
+    fetchModelsHelp: document.getElementById('fetchModelsHelp'),
+    modalKeyBtn: document.getElementById('modalKeyBtn'),
     availableModelsGrid: document.getElementById('availableModelsGrid'),
     newModelId: document.getElementById('newModelId'),
     newModelName: document.getElementById('newModelName'),
@@ -1990,6 +1991,7 @@ async function saveProviderKey(provider, value) {
         displayError(err, { action: `save your ${provider} API key` });
     }
     renderModelsCatalog();
+    refreshAddModelModal(); // the key popover can be opened from inside the modal
     updateSendButtonState();
 }
 
@@ -2019,6 +2021,7 @@ async function clearStoredApiKey(provider) {
 
     state.apiKeyStatus[provider] = { hasKey: false, updatedAt: Date.now() };
     renderModelsCatalog(); // refresh the group-header badge + chip dot
+    refreshAddModelModal();
     updateSendButtonState();
 }
 
@@ -3037,13 +3040,13 @@ function updateSystemPromptExpressions() {
 // ===== Model Management =====
 
 /**
- * Fetch available models from the current provider's API
+ * Fetch the available models from a provider's API. Not every provider offers a
+ * list endpoint — the server throws VALIDATION_ERROR for one whose module has no
+ * listModels(), which surfaces as a normal error toast.
+ * @param {string} provider
  * @returns {Promise<Array>} Array of { id, display_name } objects
  */
-async function fetchAvailableModels() {
-    const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
-
+async function fetchAvailableModels(provider) {
     if (!state.apiKeyStatus[provider]?.hasKey) {
         throw new Error('API key required to fetch models');
     }
@@ -3060,17 +3063,17 @@ async function fetchAvailableModels() {
 }
 
 /**
- * Add a custom model to the list for the current provider
+ * Add a custom model to a provider's catalog.
  * @param {string} id - The model ID
  * @param {string} name - The display name
+ * @param {string} provider - The provider that owns the model
  * @returns {boolean} True if added, false if already exists
  */
-function addCustomModel(id, name) {
-    if (!id || !name) return false;
+function addCustomModel(id, name, provider) {
+    if (!id || !name || !provider) return false;
 
-    const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
     const providerModels = state.settings.customModels[provider];
+    if (!providerModels) return false;
 
     // Check if already exists
     const exists = providerModels.some(m => m.id === id);
@@ -3082,15 +3085,13 @@ function addCustomModel(id, name) {
 }
 
 /**
- * Remove a custom model from the list for the current provider
+ * Remove a custom model from its provider's catalog.
  * @param {string} id - The model ID to remove
+ * @param {string} provider - The provider that owns it (the catalog card knows it)
  */
 function removeCustomModel(id, provider) {
     const modelConfig = getActiveModelConfig();
-    // Callers that know the model's provider pass it (Models catalog);
-    // the Manage Models modal operates on the active provider.
-    const targetProvider = provider || modelConfig.provider;
-    const providerModels = state.settings.customModels[targetProvider];
+    const providerModels = state.settings.customModels[provider];
     if (!providerModels) return;
     const index = providerModels.findIndex(m => m.id === id);
     if (index === -1) return;
@@ -3099,7 +3100,7 @@ function removeCustomModel(id, provider) {
     saveCustomModels();
 
     // If the removed model was the layer's selected one, fall back
-    if (modelConfig.provider === targetProvider && modelConfig.model === id) {
+    if (modelConfig.provider === provider && modelConfig.model === id) {
         modelConfig.model = providerModels.length > 0 ? providerModels[0].id : '';
         loadModelProfileIntoLayer();
         updateFixedPersonaPin();
@@ -3152,62 +3153,12 @@ function refreshAfterModelChange() {
 }
 
 /**
- * Render the saved models list in the modal for the current provider
- */
-function renderSavedModelsList() {
-    const container = elements.savedModelsList;
-    const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
-    const providerModels = state.settings.customModels[provider] || [];
-    container.innerHTML = '';
-
-    if (providerModels.length === 0) {
-        elements.noModelsMessage.style.display = 'block';
-        return;
-    }
-
-    elements.noModelsMessage.style.display = 'none';
-
-    providerModels.forEach(model => {
-        const item = document.createElement('div');
-        item.className = 'saved-model-item';
-        item.innerHTML = `
-            <div class="saved-model-info">
-                <span class="saved-model-name">${model.name}</span>
-                <span class="saved-model-id">${model.id}</span>
-            </div>
-            <button class="delete-model-btn" data-model-id="${model.id}" title="Delete model">×</button>
-        `;
-        container.appendChild(item);
-    });
-
-    // Add delete button listeners
-    container.querySelectorAll('.delete-model-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            const modelId = e.target.dataset.modelId;
-            const ok = await confirmDialog({
-                title: 'Delete model?',
-                body: `"${getModelDisplayName(modelId)}" will be removed from your model catalog. You can add it again later.`,
-                confirmLabel: 'Delete',
-                danger: true,
-            });
-            if (ok) {
-                removeCustomModel(modelId);
-                renderSavedModelsList();
-                refreshAfterModelChange();
-            }
-        });
-    });
-}
-
-/**
  * Render available models grid after fetching from API
  * @param {Array} models - Array of { id, display_name } from API
+ * @param {string} provider - The provider they were fetched from
  */
-function renderAvailableModelsGrid(models) {
+function renderAvailableModelsGrid(models, provider) {
     const grid = elements.availableModelsGrid;
-    const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
     const providerModels = state.settings.customModels[provider] || [];
     grid.innerHTML = '';
     grid.style.display = 'grid';
@@ -3236,8 +3187,7 @@ function renderAvailableModelsGrid(models) {
         btn.addEventListener('click', (e) => {
             const modelId = e.target.dataset.modelId;
             const modelName = e.target.dataset.modelName;
-            if (addCustomModel(modelId, modelName)) {
-                renderSavedModelsList();
+            if (addCustomModel(modelId, modelName, provider)) {
                 refreshAfterModelChange();
                 // Update the button
                 e.target.textContent = 'Added';
@@ -3249,19 +3199,103 @@ function renderAvailableModelsGrid(models) {
 }
 
 /**
- * Open the model management modal
+ * The provider the add-model modal is currently working on. Set from the modal's
+ * chip row; every operation in the modal (fetch, manual add) is scoped to it.
+ * Before Slice 7 the modal silently used the *active model's* provider, which
+ * made adding a model for any other provider unreachable.
  */
-function openModelModal() {
-    renderSavedModelsList();
+let modelModalProvider = null;
+
+/**
+ * Provider chips inside the add-model modal — single-select, unlike the
+ * catalog's multi-select filter chips (hence `.single` + role=radio).
+ * `status: 'soon'` providers are shown but not selectable.
+ */
+function renderModelModalProviders() {
+    const row = elements.modelModalProviders;
+    if (!row) return;
+
+    let html = '';
+    for (const [id, meta] of Object.entries(PROVIDERS)) {
+        const soon = meta.status === 'soon';
+        const hasKey = !!state.apiKeyStatus[id]?.hasKey;
+        const active = id === modelModalProvider;
+        const trailing = soon
+            ? '<span class="chip-soon">soon</span>'
+            : `<span class="chip-dot${hasKey ? ' has-key' : ''}" title="${hasKey ? 'API key saved' : 'no API key'}"></span>`;
+        html += `<button class="provider-chip${active ? ' active' : ''}${soon ? ' soon' : ''}" data-modal-provider="${id}"
+                type="button" role="radio" aria-checked="${active}"${soon ? ' disabled' : ''}>
+                ${providerIconHtml(id)}<span class="chip-label">${escapeHtml(meta.label)}</span>${trailing}
+            </button>`;
+    }
+    row.innerHTML = html;
+
+    row.querySelectorAll('[data-modal-provider]').forEach(btn =>
+        btn.addEventListener('click', () => selectModalProvider(btn.dataset.modalProvider)));
+
+    renderFetchSection();
+}
+
+/**
+ * Switch the modal to another provider: the fetched grid belongs to the old
+ * provider, so it's cleared. The manual-add fields are left alone — a half-typed
+ * model id is still valid for the newly picked provider.
+ * @param {string} provider
+ */
+function selectModalProvider(provider) {
+    if (!PROVIDERS[provider] || provider === modelModalProvider) return;
+    modelModalProvider = provider;
+    elements.availableModelsGrid.style.display = 'none';
+    elements.availableModelsGrid.innerHTML = '';
+    renderModelModalProviders();
+}
+
+/**
+ * Fetch button + help text for the selected provider. The "not every provider"
+ * caveat is literal: the server rejects a provider whose module has no
+ * listModels() (see server/src/routes/chat.js).
+ */
+function renderFetchSection() {
+    const provider = modelModalProvider;
+    const meta = PROVIDERS[provider];
+    const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
+
+    elements.fetchModelsBtn.disabled = !hasKey;
+    elements.fetchModelsHelp.innerHTML = hasKey
+        ? `Fetches the model list from ${escapeHtml(meta.label)}'s API. Not every provider offers a list endpoint — add the model manually below if this comes up empty.`
+        : `No ${escapeHtml(meta.label)} API key saved. Add one to fetch the model list, or add a model manually below.`;
+
+    // "Add key" opens the same provider-key popover the catalog uses. It renders
+    // at body level (z-index 1000) above the modal overlay (250), so it stacks.
+    elements.modalKeyBtn.hidden = hasKey;
+    elements.modalKeyBtn.textContent = `Add ${meta.label} key`;
+}
+
+/**
+ * Re-render the add-model modal after an API key changed elsewhere (the key
+ * popover writes through saveProviderKey/clearStoredApiKey). No-op when closed.
+ */
+function refreshAddModelModal() {
+    if (!elements.modelModal?.classList.contains('visible')) return;
+    renderModelModalProviders();
+}
+
+/**
+ * Open the add-model modal.
+ * @param {string} [provider] - Preselect this provider (a catalog group's
+ *   "+ Add"); defaults to the active model's provider.
+ */
+function openModelModal(provider) {
+    const preferred = PROVIDERS[provider] && PROVIDERS[provider].status !== 'soon'
+        ? provider
+        : getActiveModelConfig().provider;
+    modelModalProvider = PROVIDERS[preferred] ? preferred : Object.keys(PROVIDERS)[0];
+
     elements.availableModelsGrid.style.display = 'none';
     elements.availableModelsGrid.innerHTML = '';
     elements.newModelId.value = '';
     elements.newModelName.value = '';
-
-    // Disable fetch button if no API key for current provider
-    const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
-    elements.fetchModelsBtn.disabled = !state.apiKeyStatus[provider]?.hasKey;
+    renderModelModalProviders();
 
     elements.modelModal.classList.add('visible');
 }
@@ -3279,20 +3313,22 @@ function closeModelModal() {
 async function handleFetchModels() {
     const btn = elements.fetchModelsBtn;
     const originalText = btn.textContent;
+    // Capture the provider: the user can switch chips while the request is in
+    // flight, and the results belong to the provider that was asked.
+    const provider = modelModalProvider;
 
     try {
         btn.disabled = true;
         btn.textContent = 'Fetching...';
 
-        const models = await fetchAvailableModels();
-        renderAvailableModelsGrid(models);
+        const models = await fetchAvailableModels(provider);
+        if (provider !== modelModalProvider) return; // switched away mid-flight
+        renderAvailableModelsGrid(models, provider);
     } catch (error) {
         console.error('Failed to fetch models:', error);
-        displayError(error, { action: 'fetch models' });
+        displayError(error, { action: `fetch ${PROVIDERS[provider]?.label || provider} models` });
     } finally {
-        const modelConfig = getActiveModelConfig();
-        const provider = modelConfig.provider;
-        btn.disabled = !state.apiKeyStatus[provider]?.hasKey;
+        btn.disabled = !state.apiKeyStatus[modelModalProvider]?.hasKey;
         btn.textContent = originalText;
     }
 }
@@ -3314,11 +3350,13 @@ function handleAddModelManually() {
         return;
     }
 
-    if (addCustomModel(id, name)) {
-        renderSavedModelsList();
+    const provider = modelModalProvider;
+    if (addCustomModel(id, name, provider)) {
         refreshAfterModelChange();
         elements.newModelId.value = '';
         elements.newModelName.value = '';
+        // The modal no longer lists your models (the catalog does), so say so.
+        showToast(`${name} added to ${PROVIDERS[provider]?.label || provider}`);
 
         // Update available grid if visible
         if (elements.availableModelsGrid.style.display !== 'none') {
@@ -5035,12 +5073,17 @@ function renderModelsCatalog() {
         const soon = PROVIDERS[provider].status === 'soon';
         const keyBtn = soon ? '' :
             `<button class="group-key-btn" data-key-provider="${provider}" type="button">${hasKey ? 'Manage key' : 'Add key'}</button>`;
+        // Per-group add (Slice 7): opens the modal already pointed at this
+        // provider, so "how do I add a Google model?" is answered in place.
+        const addBtn = soon ? '' :
+            `<button class="group-key-btn" data-add-provider="${provider}" type="button">+ Add</button>`;
         html += `
             <div class="model-group-head">
                 <span class="model-group-name">${providerIconHtml(provider)}${label}</span>
                 <span class="model-group-right">
                     <span class="model-key-badge${hasKey ? ' has-key' : ''}">${hasKey ? 'API key saved' : 'no API key'}</span>
                     ${keyBtn}
+                    ${addBtn}
                 </span>
             </div>`;
         if (models.length === 0) {
@@ -5077,6 +5120,11 @@ function renderModelsCatalog() {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             showProviderKeyPopover(btn, btn.dataset.keyProvider);
+        }));
+    c.querySelectorAll('[data-add-provider]').forEach(btn =>
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openModelModal(btn.dataset.addProvider);
         }));
 }
 
@@ -8591,7 +8639,9 @@ function setupEventListeners() {
                 <div class="models-catalog" id="modelsCatalog"></div>
             </div>
             <div class="model-detail-panel" id="modelDetailPanel" hidden></div>`;
-        document.getElementById('modelsAddBtn').addEventListener('click', openModelModal);
+        // No argument: the header button is provider-agnostic, so the modal
+        // defaults to the active model's provider (a group's "+ Add" passes one).
+        document.getElementById('modelsAddBtn').addEventListener('click', () => openModelModal());
     }
     if (elements.personaButton) {
         elements.personaButton.addEventListener('click', (e) => {
@@ -8884,11 +8934,15 @@ function setupEventListeners() {
         }
     });
 
-    // Model management modal ("+ Add model" in the Models view is the entry;
-    // the old "Manage Models" button was removed with the Active Model section).
+    // Add-model modal ("+ Add model" in the Models view header, or a catalog
+    // group's "+ Add", are the entries; the provider is picked inside).
     elements.closeModelModal.addEventListener('click', closeModelModal);
     elements.fetchModelsBtn.addEventListener('click', handleFetchModels);
     elements.addModelBtn.addEventListener('click', handleAddModelManually);
+    elements.modalKeyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showProviderKeyPopover(elements.modalKeyBtn, modelModalProvider);
+    });
 
     // Close model modal on overlay click
     elements.modelModal.addEventListener('click', (e) => {
