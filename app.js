@@ -3997,38 +3997,64 @@ function selectModel(modelId, provider) {
 }
 
 /**
- * Top-bar model button popover (WR-11): every configured model across ALL
- * providers, grouped by provider, with a "no key" badge on providers that
- * have no stored API key. Picking a model sets provider+model together while
- * retaining the persona — plus a link to the Manage Models modal.
+ * Top-bar model button popover (WR-11): configured models grouped by provider,
+ * with the provider's brand mark and a "no key" badge where no API key is
+ * stored (models stay pickable — sending surfaces the missing-key error).
+ * Picking a model sets provider+model together while retaining the persona.
+ *
+ * Slice 8 scopes the list by the saved "daily drivers" subset
+ * (state.settings.catalogProviders) so quick-switch offers the same short list
+ * the catalog defaults to. Two guardrails keep a *view* preference from
+ * becoming a restriction: the active model's provider is always listed even
+ * when the subset excludes it, and "Show all providers" reopens the menu
+ * unfiltered for that viewing only — it never writes catalogProviders.
+ *
  * @param {HTMLElement} anchorEl
+ * @param {Object} [options]
+ * @param {boolean} [options.showAll] - Ignore the subset for this opening only.
  */
-function showModelMenu(anchorEl) {
+function showModelMenu(anchorEl, { showAll = false } = {}) {
     const existing = document.querySelector('.context-menu');
     if (existing) existing.remove();
 
     const modelConfig = getActiveModelConfig();
+    const selected = state.settings.catalogProviders;
+    const noFilter = showAll || !Array.isArray(selected) || selected.length === 0;
+
+    // Providers worth listing at all: an empty provider has nothing to switch to.
+    const stocked = Object.keys(PROVIDERS)
+        .filter(p => (state.settings.customModels[p] || []).length > 0);
+    // Never hide the provider you're currently using.
+    const visible = stocked.filter(p =>
+        noFilter || selected.includes(p) || p === modelConfig.provider);
+    const hiddenCount = stocked.length - visible.length;
 
     const menu = document.createElement('div');
     menu.className = 'context-menu context-menu-wide model-menu';
 
-    let html = '';
-    let total = 0;
-    for (const [provider, { label }] of Object.entries(PROVIDERS)) {
-        const models = state.settings.customModels[provider] || [];
-        if (models.length === 0) continue; // hide empty providers entirely
+    let groups = '';
+    for (const provider of visible) {
+        const { label } = PROVIDERS[provider];
         const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
-        html += `<div class="context-menu-label">${label}${hasKey ? '' : '<span class="model-menu-nokey">no key</span>'}</div>`;
-        models.forEach(m => {
+        groups += `<div class="context-menu-label">
+            ${providerIconHtml(provider)}<span class="model-menu-provider">${escapeHtml(label)}</span>
+            ${hasKey ? '' : '<span class="model-menu-nokey">no key</span>'}
+        </div>`;
+        for (const m of state.settings.customModels[provider]) {
             const active = provider === modelConfig.provider && m.id === modelConfig.model;
-            total++;
-            html += `<button class="context-menu-item${active ? ' active' : ''}" data-model-id="${escapeHtml(m.id)}" data-provider="${provider}">${escapeHtml(m.name)}</button>`;
-        });
+            groups += `<button class="context-menu-item${active ? ' active' : ''}" data-model-id="${escapeHtml(m.id)}" data-provider="${provider}">${escapeHtml(m.name)}</button>`;
+        }
     }
-    if (total === 0) {
-        html = `<div class="context-menu-empty">No models configured</div>`;
-    }
+
+    // The groups scroll; the footer stays put. .context-menu has no max-height of
+    // its own, so without this the menu runs off-screen as providers accumulate.
+    let html = visible.length > 0
+        ? `<div class="model-menu-scroll">${groups}</div>`
+        : `<div class="context-menu-empty">No models configured</div>`;
     html += `<div class="context-menu-separator"></div>`;
+    if (hiddenCount > 0) {
+        html += `<button class="context-menu-item model-menu-more" data-action="showall">Show all providers (${hiddenCount} more)</button>`;
+    }
     html += `<button class="context-menu-item" data-action="manage">Manage models…</button>`;
     menu.innerHTML = html;
 
@@ -4037,6 +4063,10 @@ function showModelMenu(anchorEl) {
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
             menu.remove();
+            if (item.dataset.action === 'showall') {
+                showModelMenu(anchorEl, { showAll: true }); // this opening only
+                return;
+            }
             if (item.dataset.action === 'manage') {
                 navigate({ type: 'models' }); // the Models section (WR-13) is the catalog's home
                 return;

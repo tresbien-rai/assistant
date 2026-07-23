@@ -4,6 +4,10 @@
 (docs/MODEL_PROFILES_DESIGN.md) and the WR-13 re-parenting that first moved the
 active-model / advanced-params sections into `#modelsView`.*
 
+**Status: complete.** Slices 1–6 landed 2026-07-22 (PRs #99–#105). Slices 7–8,
+added after living with the result, landed 2026-07-23: the add-model modal's
+provider picker (§6, PR #106) and the quick-switch dropdown (§5, PR #108).
+
 ## Premise
 
 The Models tab grew organically and now carries a relic. It stacks four things:
