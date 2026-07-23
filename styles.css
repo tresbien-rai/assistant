@@ -4313,57 +4313,11 @@ body {
     margin: 20px 0;
 }
 
-/* Saved Models List */
-.saved-models-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-.saved-model-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 12px;
-    background-color: var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-}
-
-.saved-model-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.saved-model-name {
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--text-primary);
-}
-
-.saved-model-id {
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-    font-family: var(--font-mono);
-}
-
-.delete-model-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    transition: all 0.2s;
-}
-
-.delete-model-btn:hover {
-    background-color: color-mix(in srgb, var(--error) 20%, transparent);
-    color: var(--error);
+/* The add-model modal's provider picker (Slice 7): the catalog chips, but
+   single-select and laid out for a modal rather than the centred tab column. */
+.provider-chips.single {
+    max-width: none;
+    margin: 0;
 }
 
 .empty-state {
@@ -4380,8 +4334,34 @@ body {
     margin-bottom: 16px;
 }
 
+/* Fetch sits beside an "Add key" button that only appears when the selected
+   provider has no stored key. */
+.fetch-models-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.fetch-key-btn {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.fetch-key-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
 .fetch-models-btn {
-    width: 100%;
+    flex: 1;
     padding: 10px 16px;
     background-color: var(--accent);
     border: none;

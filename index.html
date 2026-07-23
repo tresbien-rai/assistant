@@ -550,35 +550,40 @@ When responding, you may optionally include an expression tag like [expression: 
         </div>
     </div>
 
-    <!-- Model Management Modal -->
+    <!-- Add Model Modal. Provider is chosen explicitly here (Slice 7): every
+         operation below is scoped to the selected chip, NOT to the active
+         model's provider. The old "Your Models" list was removed — the Models
+         catalog lists and removes models. See docs/MODELS_TAB_REDESIGN.md §6. -->
     <div class="modal-overlay" id="modelModal">
         <div class="modal-content modal-large">
             <div class="modal-header">
-                <h3>Manage Models</h3>
+                <h3>Add model</h3>
                 <button class="modal-close" id="closeModelModal">×</button>
             </div>
             <div class="modal-body">
-                <!-- Saved Models List -->
+                <!-- Provider picker (single-select) -->
                 <div class="model-section">
-                    <h4>Your Models</h4>
-                    <div class="saved-models-list" id="savedModelsList">
+                    <h4>Select provider</h4>
+                    <div class="provider-chips single" id="modelModalProviders" role="radiogroup" aria-label="Provider">
                         <!-- Populated dynamically -->
                     </div>
-                    <p class="empty-state" id="noModelsMessage">No models added yet. Add a model below to get started.</p>
                 </div>
 
                 <hr class="modal-divider">
 
                 <!-- Add Model Section -->
                 <div class="model-section">
-                    <h4>Add Model</h4>
+                    <h4>Add model</h4>
 
                     <!-- Fetch from API -->
                     <div class="fetch-models-section">
-                        <button type="button" class="fetch-models-btn" id="fetchModelsBtn">
-                            Fetch Available Models
-                        </button>
-                        <p class="help-text">Requires API key. Fetches models from Anthropic API.</p>
+                        <div class="fetch-models-row">
+                            <button type="button" class="fetch-models-btn" id="fetchModelsBtn">
+                                Fetch Available Models
+                            </button>
+                            <button type="button" class="fetch-key-btn" id="modalKeyBtn" hidden>Add key</button>
+                        </div>
+                        <p class="help-text" id="fetchModelsHelp"></p>
                     </div>
 
                     <!-- Available Models Grid (shown after fetch) -->
