@@ -4992,18 +4992,79 @@ function renderPersonasListMain() {
 }
 
 /**
+ * Provider chips above the Models catalog (Layout B, Models tab redesign): an
+ * "All" chip plus one per provider. The chips are the writer for the "daily
+ * drivers" filter (state.settings.catalogProviders) — multi-select, "All" =
+ * show every provider. A status dot shows API-key presence; 'soon' providers
+ * render disabled. See docs/MODELS_TAB_REDESIGN.md.
+ */
+function renderProviderChips() {
+    const row = document.getElementById('providerChips');
+    if (!row) return;
+    const selected = state.settings.catalogProviders;
+    const isAll = !Array.isArray(selected) || selected.length === 0;
+
+    let html = `<button class="provider-chip${isAll ? ' active' : ''}" data-chip="all" type="button">All</button>`;
+    for (const [id, meta] of Object.entries(PROVIDERS)) {
+        const soon = meta.status === 'soon';
+        const hasKey = !!state.apiKeyStatus[id]?.hasKey;
+        const active = !isAll && selected.includes(id);
+        const trailing = soon
+            ? '<span class="chip-soon">soon</span>'
+            : `<span class="chip-dot${hasKey ? ' has-key' : ''}" title="${hasKey ? 'API key saved' : 'no API key'}"></span>`;
+        html += `<button class="provider-chip${active ? ' active' : ''}${soon ? ' soon' : ''}" data-chip="${id}" type="button"${soon ? ' disabled' : ''}>
+                <span class="chip-label">${escapeHtml(meta.label)}</span>${trailing}
+            </button>`;
+    }
+    row.innerHTML = html;
+
+    row.querySelectorAll('[data-chip]').forEach(btn =>
+        btn.addEventListener('click', () => toggleProviderChip(btn.dataset.chip)));
+}
+
+/**
+ * Toggle a provider chip, persist, and re-render. "All" clears the filter to
+ * null (show every provider). From "All", picking a provider narrows to just
+ * it; within a subset, a provider is added or removed. Emptying the subset
+ * falls back to "All" (saveCatalogProviders normalises []→null).
+ * @param {string} chip - a provider id, or 'all'
+ */
+function toggleProviderChip(chip) {
+    const current = Array.isArray(state.settings.catalogProviders)
+        ? [...state.settings.catalogProviders]
+        : null;
+    let next;
+    if (chip === 'all') {
+        next = null;
+    } else if (current === null) {
+        next = [chip];
+    } else if (current.includes(chip)) {
+        next = current.filter(p => p !== chip);
+    } else {
+        next = [...current, chip];
+    }
+    saveCatalogProviders(next); // updates state + debounced persist ([]→null)
+    renderModelsCatalog();      // re-renders chips (below) + the filtered catalog
+}
+
+/**
  * Models & Providers catalog (WR-13): every added model, grouped by provider,
  * with the provider's API-key status in the group header. Clicking a card
  * makes that model the active layer's (provider switches along); the ⋯ menu
- * removes the model from the catalog.
+ * removes the model from the catalog. Filtered by the provider chips
+ * (state.settings.catalogProviders); null/empty = show all.
  */
 function renderModelsCatalog() {
     const c = document.getElementById('modelsCatalog');
     if (!c) return;
+    renderProviderChips(); // chips + catalog always render together, stay in sync
     const layer = getActiveModelConfig();
+    const selected = state.settings.catalogProviders;
+    const showAll = !Array.isArray(selected) || selected.length === 0;
 
     let html = '';
     for (const [provider, { label }] of Object.entries(PROVIDERS)) {
+        if (!showAll && !selected.includes(provider)) continue;
         const models = state.settings.customModels[provider] || [];
         const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
         html += `
@@ -8485,6 +8546,7 @@ function setupEventListeners() {
                 <h1 class="settings-view-title">Models</h1>
                 <button class="section-new-btn" id="modelsAddBtn" type="button">+ Add model</button>
             </div>
+            <div class="provider-chips" id="providerChips"></div>
             <div class="models-catalog" id="modelsCatalog"></div>`;
         const modelsBody = document.createElement('div');
         modelsBody.className = 'settings-modal-body';
