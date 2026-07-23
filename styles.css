@@ -1947,6 +1947,47 @@ body {
     text-overflow: ellipsis;
 }
 
+/* Chat files popover (CF-01): the chat's own files. Rows mirror the container
+   file lists (same badge/size/download parts) so the three scopes read alike. */
+.chat-files-menu {
+    min-width: 260px;
+}
+
+.chat-files-scroll {
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.chat-file-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+}
+
+.chat-file-name {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-file-name.clickable {
+    cursor: pointer;
+}
+
+.chat-file-name.clickable:hover {
+    color: var(--accent);
+}
+
 /* Escape hatch out of the daily-drivers filter — a quieter footer action than
    picking a model, since it changes what you're looking at, not what you use. */
 .model-menu-more {
@@ -3931,7 +3972,8 @@ body {
 
 /* File-tools toggle pill. Ships disabled until the tool backend (Track A
    P2-02) lands; .on is the enabled/accent state used from P2-05b onward. */
-.tools-toggle {
+.tools-toggle,
+.chat-files-button {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -3947,7 +3989,8 @@ body {
     transition: color 0.2s, background-color 0.2s, border-color 0.2s;
 }
 
-.tools-toggle:hover:not(:disabled) {
+.tools-toggle:hover:not(:disabled),
+.chat-files-button:hover:not(:disabled) {
     color: var(--text-secondary);
     border-color: var(--text-muted);
 }
@@ -3958,12 +4001,14 @@ body {
     border-color: transparent;
 }
 
-.tools-toggle:disabled {
+.tools-toggle:disabled,
+.chat-files-button:disabled {
     opacity: 0.55;
     cursor: default;
 }
 
-.tools-toggle svg {
+.tools-toggle svg,
+.chat-files-button svg {
     flex-shrink: 0;
 }
 
@@ -4592,7 +4637,8 @@ body {
         max-width: 110px;
     }
 
-    .tools-toggle span {
+    .tools-toggle span,
+    .chat-files-button span {
         display: none; /* icon-only pill on small phones */
     }
 }

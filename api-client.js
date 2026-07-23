@@ -349,6 +349,23 @@
       revertFiles(id, fromTurn) {
         return request('POST', `/api/conversations/${encodeURIComponent(id)}/files/revert`, { body: { fromTurn } });
       },
+
+      /**
+       * A chat's own files (FC-01 conversation scope). Mirrors
+       * API.projects.files / API.workspaces.files so the three scopes read the
+       * same way; the endpoints have existed since FC-01, but nothing on the
+       * client called them until the chat files list (CF-01).
+       */
+      files: {
+        /** Returns [{ id, filename, mimeType, sizeBytes, createdAt }]. */
+        list(conversationId) {
+          return request('GET', `/api/conversations/${encodeURIComponent(conversationId)}/files`);
+        },
+        /** Same-origin download URL (cookie-authed <a href download>). */
+        contentUrl(conversationId, fileId) {
+          return `/api/conversations/${encodeURIComponent(conversationId)}/files/${encodeURIComponent(fileId)}/content`;
+        },
+      },
     },
 
     // -------------------------------------------------------------------------

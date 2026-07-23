@@ -449,6 +449,16 @@ When responding, you may optionally include an expression tag like [expression: 
                             </svg>
                             <span>File tools</span>
                         </button>
+                        <!-- Chat files list (CF-01): the chat's own files, which
+                             were previously reachable only via the message card
+                             that created them. Opens a popover; rows open the
+                             file panel. -->
+                        <button class="chat-files-button" id="chatFilesBtn" type="button" aria-haspopup="true" title="Files in this chat" aria-label="Files in this chat">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+                            </svg>
+                            <span>Files</span>
+                        </button>
                         <button class="model-button composer-model-button" id="composerModelButton" aria-haspopup="true" title="Switch model" aria-label="Switch model">
                             <span class="model-badge" id="composerModelName">Model</span>
                             <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
