@@ -575,14 +575,14 @@ When responding, you may optionally include an expression tag like [expression: 
                 <div class="model-section">
                     <h4>Add model</h4>
 
-                    <!-- Fetch from API -->
+                    <!-- Fetch from API. One primary slot, two states: without a
+                         key the only useful action is adding one, so that button
+                         takes the slot instead of a dead disabled Fetch. -->
                     <div class="fetch-models-section">
-                        <div class="fetch-models-row">
-                            <button type="button" class="fetch-models-btn" id="fetchModelsBtn">
-                                Fetch Available Models
-                            </button>
-                            <button type="button" class="fetch-key-btn" id="modalKeyBtn" hidden>Add key</button>
-                        </div>
+                        <button type="button" class="fetch-models-btn" id="fetchModelsBtn">
+                            Fetch Available Models
+                        </button>
+                        <button type="button" class="fetch-models-btn" id="modalKeyBtn" hidden>Add API key</button>
                         <p class="help-text" id="fetchModelsHelp"></p>
                     </div>
 
