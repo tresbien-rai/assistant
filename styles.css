@@ -1495,6 +1495,65 @@ body {
     color: var(--accent);
 }
 
+/* Provider chips (Layout B): the "daily drivers" filter above the catalog */
+.provider-chips {
+    max-width: var(--section-max-width);
+    margin: 14px auto 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.provider-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px;
+    font-size: var(--text-sm);
+    line-height: 1;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.provider-chip:hover:not(.soon) {
+    border-color: var(--accent);
+}
+
+.provider-chip.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.provider-chip.soon {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    opacity: 0.45;
+}
+
+.chip-dot.has-key {
+    background: var(--accent);
+    opacity: 1;
+}
+
+.chip-soon {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
 /* Model cards mirror the persona cards */
 .model-card {
     display: flex;
