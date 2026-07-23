@@ -1396,8 +1396,11 @@ const elements = {
     filePanelConflict: document.getElementById('filePanelConflict'),
     filePanelCancelBtn: document.getElementById('filePanelCancelBtn'),
     filePanelSaveBtn: document.getElementById('filePanelSaveBtn'),
-    filePanelTab: document.getElementById('filePanelTab'),
-    filePanelTabDot: document.getElementById('filePanelTabDot'),
+    filePanelBrowseBtn: document.getElementById('filePanelBrowseBtn'),
+    // Files explorer top-bar button (CF-01b) — replaces the panel's right-edge
+    // tab as the single entry point + unseen-activity indicator.
+    filesExplorerBtn: document.getElementById('filesExplorerBtn'),
+    filesExplorerDot: document.getElementById('filesExplorerDot'),
 
     // Name-only create modal (shared by workspace + project creation; the full
     // edit UI lives inline on the container page — WR-05).
@@ -1487,7 +1490,6 @@ const elements = {
     composerModelButton: document.getElementById('composerModelButton'),
     composerModelName: document.getElementById('composerModelName'),
     toolsToggleBtn: document.getElementById('toolsToggleBtn'),
-    chatFilesBtn: document.getElementById('chatFilesBtn'),
     personaToolsBase: document.getElementById('personaToolsBase'),
     
     // Status bar
@@ -4095,106 +4097,6 @@ function showModelMenu(anchorEl, { showAll = false } = {}) {
 }
 
 /**
- * Composer "Files" popover (CF-01): the chat's own files (FC-01 conversation
- * scope). Until now a chat file was reachable only by scrolling back to the
- * message card that created it — `GET /api/conversations/:id/files` has existed
- * since FC-01, but nothing on the client ever called it.
- *
- * The list is fetched per opening rather than cached on the conversation: a
- * tool can write a file at any turn, and a stale list is worse than a brief
- * "Loading…". Rows open the panel in CONVERSATION mode (not FC-04's standalone
- * mode) so it keeps its edge tab and survives navigation within the chat.
- *
- * @param {HTMLElement} anchorEl
- */
-async function showChatFilesMenu(anchorEl) {
-    const existing = document.querySelector('.context-menu');
-    if (existing) existing.remove();
-
-    const conversationId = state.activeConversationId;
-    if (!conversationId) return;
-
-    const menu = document.createElement('div');
-    menu.className = 'context-menu context-menu-wide chat-files-menu';
-    menu.innerHTML = `
-        <div class="context-menu-label">Files in this chat</div>
-        <div class="context-menu-empty" data-role="status">Loading…</div>
-    `;
-    // 'left', not 'right' like the model menu: this button sits mid-row rather
-    // than at the right edge, so right-aligning would hang the menu leftward
-    // across the composer instead of opening from the button.
-    positionPopover(menu, anchorEl, 'left');
-    attachPopoverOutsideClose(menu, anchorEl);
-
-    let files;
-    try {
-        files = await API.conversations.files.list(conversationId);
-    } catch (err) {
-        console.error('Failed to load chat files:', err);
-        const status = menu.querySelector('[data-role="status"]');
-        if (menu.isConnected && status) status.textContent = 'Could not load files.';
-        return;
-    }
-
-    // Dismissed, or the chat changed, while the request was in flight.
-    if (!menu.isConnected || state.activeConversationId !== conversationId) return;
-
-    if (!Array.isArray(files) || files.length === 0) {
-        const status = menu.querySelector('[data-role="status"]');
-        if (status) status.textContent = 'No files in this chat yet.';
-        return;
-    }
-
-    // Newest first: in a chat the useful question is "what were we just
-    // working on", not "what is this called".
-    const sorted = [...files].sort((a, b) =>
-        String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-
-    const rows = sorted.map(f => {
-        const href = API.conversations.files.contentUrl(conversationId, f.id);
-        const label = getFileTypeLabel(f.filename, f.mimeType);
-        // Text files open in the panel; PDFs and other binaries are
-        // download-only, same rule as the container file lists (FC-04).
-        const viewable = !/\.pdf$/i.test(f.filename || '');
-        const nameTag = viewable
-            ? `<button type="button" class="chat-file-name clickable" data-file-id="${escapeHtml(f.id)}">${escapeHtml(f.filename)}</button>`
-            : `<span class="chat-file-name">${escapeHtml(f.filename)}</span>`;
-        return `
-            <div class="chat-file-row" title="${escapeHtml(f.filename)}">
-                <span class="project-file-badge">${escapeHtml(label)}</span>
-                ${nameTag}
-                <span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>
-                <a class="project-file-download" href="${href}" download title="Download">⤓</a>
-            </div>`;
-    }).join('');
-
-    menu.innerHTML = `
-        <div class="context-menu-label">Files in this chat</div>
-        <div class="chat-files-scroll">${rows}</div>
-    `;
-    // Re-position now that the rows are in. The first call measured a one-line
-    // "Loading…" box, so its flip-above check passed on a height the menu no
-    // longer has — a long list would otherwise run off the bottom, and the
-    // anchor sits at the bottom of the screen.
-    positionPopover(menu, anchorEl, 'left');
-
-    const byId = new Map(sorted.map(f => [String(f.id), f]));
-    menu.querySelectorAll('.chat-file-name.clickable').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const f = byId.get(btn.dataset.fileId);
-            if (!f) return;
-            menu.remove();
-            FilePanel.open({
-                fileName: f.filename,
-                url: API.conversations.files.contentUrl(conversationId, f.id),
-                mimeType: f.mimeType,
-                sizeBytes: f.sizeBytes,
-            });
-        });
-    });
-}
-
-/**
  * Top-bar persona button popover: edit the current persona, create a new one,
  * or jump to another persona's chats. Switching does NOT reassign the current
  * conversation — see docs/PHASE2_UX_DESIGN.md.
@@ -4916,12 +4818,12 @@ function syncChatChrome() {
     }
     // Reflect this chat's effective file-tools state on the composer toggle.
     if (inChat) syncToolsToggle();
-    // The chat files list needs a saved conversation to list files for; a fresh
-    // unsaved chat has no id yet (CF-01).
-    if (elements.chatFilesBtn) {
-        elements.chatFilesBtn.disabled = !state.activeConversationId;
+    // The files explorer needs a saved conversation to list files for; a fresh
+    // unsaved chat has no id yet (CF-01b).
+    if (elements.filesExplorerBtn) {
+        elements.filesExplorerBtn.disabled = !state.activeConversationId;
     }
-    // File panel + edge tab follow the active chat (hidden while browsing).
+    // File panel + explorer button follow the active chat (hidden while browsing).
     FilePanel.syncUi();
 }
 
@@ -5041,6 +4943,8 @@ function renderTopBar() {
     if (elements.personaButton) elements.personaButton.hidden = inChat;
     if (elements.workspaceBreadcrumb) elements.workspaceBreadcrumb.hidden = !inChat;
     if (elements.modelButton) elements.modelButton.hidden = inChat;
+    // Files explorer (CF-01b): per-conversation, so only in a chat.
+    if (elements.filesExplorerBtn) elements.filesExplorerBtn.hidden = !inChat;
 }
 
 /** Update the model name shown on the top-bar button and the composer chip. */
@@ -7157,6 +7061,10 @@ const FilePanel = {
     standalone: false,
     standaloneView: null, // the mainView key it was opened on (dismiss on nav away)
     historyMode: false,
+    // CF-01b: the panel is showing the chat's file LIST (browser view) rather
+    // than a single file. The top-bar files button opens here; picking a file
+    // switches to the viewer.
+    browseMode: false,
     historyRevisions: [],  // FC-06b: fetched revisions, NEWEST first
     selectedRevId: null,   // the version shown in the detail pane
     conflict: false, // the assistant rewrote the file mid-edit (Save confirms)
@@ -7228,6 +7136,7 @@ const FilePanel = {
         this.discardDraft();
         this.standalone = false;
         this.historyMode = false;
+        this.browseMode = false;
         this.file = att;
         this.conversationId = state.activeConversationId;
         this.isOpen = true;
@@ -7236,6 +7145,104 @@ const FilePanel = {
         this.renderHeader();
         this.loadContent();
         this.syncUi();
+    },
+
+    /**
+     * Open the panel to the BROWSER view: the chat's file list (CF-01b). This
+     * is what the top-bar files button opens. The list is fetched per opening,
+     * not cached — a tool can add a file on any turn, and a stale list is worse
+     * than a brief "Loading…".
+     */
+    openBrowser() {
+        if (!state.activeConversationId) return;
+        this.discardDraft();
+        this.standalone = false;
+        this.historyMode = false;
+        this.browseMode = true;
+        this.conversationId = state.activeConversationId;
+        this.isOpen = true;
+        this.unseen = false;
+        this.renderHeader();
+        this.loadBrowser();
+        this.syncUi();
+    },
+
+    /**
+     * Top-bar files button. Adaptive so the button always "goes to the files":
+     * closed → open the list; showing a single file → switch to the list;
+     * already on the list → close.
+     */
+    toggleExplorer() {
+        if (this.isOpen && this.browseMode && !this.standalone) {
+            this.close();
+        } else {
+            this.openBrowser();
+        }
+    },
+
+    /** From the browser view, load and render the chat's files. */
+    async loadBrowser() {
+        const body = elements.filePanelBody;
+        const conversationId = state.activeConversationId;
+        if (!body || !conversationId) return;
+        body.innerHTML = '<p class="file-panel-empty">Loading…</p>';
+        const seq = ++this._fetchSeq;
+        let files;
+        try {
+            files = await API.conversations.files.list(conversationId);
+        } catch (err) {
+            console.error('Failed to load chat files:', err);
+            if (seq === this._fetchSeq && this.browseMode && body) {
+                body.innerHTML = '<p class="file-panel-empty">Could not load files.</p>';
+            }
+            return;
+        }
+        // Stale response (switched files/chat or left the browser since).
+        if (seq !== this._fetchSeq || !this.browseMode) return;
+        if (state.activeConversationId !== conversationId) return;
+        this.renderBrowser(files, conversationId);
+    },
+
+    /** Render the file list into the panel body (CF-01b). */
+    renderBrowser(files, conversationId) {
+        const body = elements.filePanelBody;
+        if (!body) return;
+        if (!Array.isArray(files) || files.length === 0) {
+            body.innerHTML = '<p class="file-panel-empty">No files in this chat yet.</p>';
+            return;
+        }
+        // Newest first: in a chat the useful question is "what were we just
+        // working on", not "what is this called".
+        const sorted = [...files].sort((a, b) =>
+            String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+        const list = document.createElement('div');
+        list.className = 'fp-browser';
+        sorted.forEach(f => {
+            const href = API.conversations.files.contentUrl(conversationId, f.id);
+            const label = getFileTypeLabel(f.filename, f.mimeType);
+            // Text files open in the viewer; PDFs and other binaries are
+            // download-only, same rule as the container file lists (FC-04).
+            const viewable = !/\.pdf$/i.test(f.filename || '');
+            const row = document.createElement('div');
+            row.className = 'chat-file-row';
+            row.title = f.filename || '';
+            row.innerHTML =
+                `<span class="project-file-badge">${escapeHtml(label)}</span>`
+                + (viewable
+                    ? `<button type="button" class="chat-file-name clickable">${escapeHtml(f.filename)}</button>`
+                    : `<span class="chat-file-name">${escapeHtml(f.filename)}</span>`)
+                + `<span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>`
+                + `<a class="project-file-download" href="${href}" download title="Download">⤓</a>`;
+            if (viewable) {
+                row.querySelector('.chat-file-name').addEventListener('click', () => {
+                    this.open({ fileName: f.filename, url: href, mimeType: f.mimeType, sizeBytes: f.sizeBytes });
+                });
+            }
+            list.appendChild(row);
+        });
+        body.innerHTML = '';
+        body.appendChild(list);
     },
 
     /**
@@ -7251,6 +7258,7 @@ const FilePanel = {
         this.standalone = true;
         this.standaloneView = `${view.type}:${view.id || ''}`;
         this.historyMode = false;
+        this.browseMode = false;
         this.file = descriptor;
         this.conversationId = null;
         this.isOpen = true;
@@ -7287,26 +7295,26 @@ const FilePanel = {
      * changed underneath us, re-derive the file from its messages.
      */
     syncUi() {
-        if (!elements.filePanel || !elements.filePanelTab) return;
+        if (!elements.filePanel) return;
         const view = state.ui.mainView || {};
         const inChat = view.type === 'chat';
 
         // FC-04 standalone viewer: a file opened from a container/Downloads list.
-        // It floats beside the page it was opened on, with no edge tab; opening a
-        // chat or navigating to any other page dismisses it.
+        // It floats beside the page it was opened on; opening a chat or
+        // navigating to any other page dismisses it.
         if (this.standalone) {
             const viewKey = `${view.type}:${view.id || ''}`;
             if (inChat || viewKey !== this.standaloneView) {
                 this.discardDraft();
                 this.standalone = false;
                 this.historyMode = false;
+                this.browseMode = false;
                 this.isOpen = false;
                 this.file = null;
                 // fall through to the chat logic below (hides or re-derives)
             } else {
                 elements.filePanel.hidden = !(this.isOpen && !!this.file);
-                elements.filePanelTab.hidden = true;
-                if (elements.filePanelTabDot) elements.filePanelTabDot.hidden = true;
+                if (elements.filesExplorerDot) elements.filesExplorerDot.hidden = true;
                 return;
             }
         }
@@ -7318,13 +7326,17 @@ const FilePanel = {
             this.isOpen = false;
             this.unseen = false;
             this.historyMode = false;
+            this.browseMode = false;
         }
 
-        const showPanel = inChat && this.isOpen && !!this.file;
-        const showTab = inChat && !showPanel && !!this.file;
+        // The panel shows for the browser view (no file needed) or the viewer
+        // (needs a file). The top-bar files button (renderTopBar) is the entry
+        // point; its dot signals unseen activity while the panel is closed.
+        const showPanel = inChat && this.isOpen && (this.browseMode || !!this.file);
         elements.filePanel.hidden = !showPanel;
-        elements.filePanelTab.hidden = !showTab;
-        if (elements.filePanelTabDot) elements.filePanelTabDot.hidden = !(showTab && this.unseen);
+        if (elements.filesExplorerDot) {
+            elements.filesExplorerDot.hidden = !(inChat && !showPanel && this.unseen);
+        }
     },
 
     /** Most recent created_file attachment in the active conversation, if any. */
@@ -7342,14 +7354,40 @@ const FilePanel = {
     },
 
     renderHeader() {
+        // The browse toggle (CF-01b) flips list ⇄ file; active while the list
+        // is shown. It's a chat-files affordance, so it's hidden for the FC-04
+        // standalone viewer (a container/Downloads file on a non-chat page).
+        if (elements.filePanelBrowseBtn) {
+            elements.filePanelBrowseBtn.hidden = this.standalone;
+            elements.filePanelBrowseBtn.classList.toggle('active', this.browseMode);
+        }
+
+        // Browser view: no single file, so the per-file controls don't apply.
+        if (this.browseMode) {
+            if (elements.filePanelBadge) elements.filePanelBadge.hidden = true;
+            if (elements.filePanelName) {
+                elements.filePanelName.textContent = 'Files in this chat';
+                elements.filePanelName.title = '';
+            }
+            [elements.filePanelEditBtn, elements.filePanelRawToggle,
+             elements.filePanelHistoryBtn, elements.filePanelDownload].forEach(el => {
+                if (el) el.hidden = true;
+            });
+            return;
+        }
+
         const f = this.file;
         if (!f) return;
-        if (elements.filePanelBadge) elements.filePanelBadge.textContent = getFileTypeLabel(f.fileName, f.mimeType);
+        if (elements.filePanelBadge) {
+            elements.filePanelBadge.hidden = false;
+            elements.filePanelBadge.textContent = getFileTypeLabel(f.fileName, f.mimeType);
+        }
         if (elements.filePanelName) {
             elements.filePanelName.textContent = f.fileName || 'File';
             elements.filePanelName.title = f.fileName || 'File';
         }
         if (elements.filePanelDownload) {
+            elements.filePanelDownload.hidden = false;
             elements.filePanelDownload.href = f.url;
             elements.filePanelDownload.setAttribute('download', f.fileName || 'file');
         }
@@ -8846,10 +8884,12 @@ function setupEventListeners() {
     if (elements.filePanelHistoryBtn) {
         elements.filePanelHistoryBtn.addEventListener('click', () => FilePanel.toggleHistory());
     }
-    if (elements.filePanelTab) {
-        elements.filePanelTab.addEventListener('click', () => {
-            if (FilePanel.file) FilePanel.open(FilePanel.file);
-        });
+    // CF-01b: the panel's browse toggle (list ⇄ file) and the top-bar entry point.
+    if (elements.filePanelBrowseBtn) {
+        elements.filePanelBrowseBtn.addEventListener('click', () => FilePanel.toggleExplorer());
+    }
+    if (elements.filesExplorerBtn) {
+        elements.filesExplorerBtn.addEventListener('click', () => FilePanel.toggleExplorer());
     }
     // File panel (user editing, slice 3): edit / save / cancel.
     if (elements.filePanelEditBtn) {
@@ -8993,16 +9033,6 @@ function setupEventListeners() {
     }
     if (elements.personaToolsBase) {
         elements.personaToolsBase.addEventListener('change', () => setPersonaToolsBase(elements.personaToolsBase.checked));
-    }
-
-    // Chat files list (CF-01). stopPropagation like every other popover button:
-    // the global close-menus handler on document would otherwise eat the menu
-    // on the very click that opened it.
-    if (elements.chatFilesBtn) {
-        elements.chatFilesBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showChatFilesMenu(elements.chatFilesBtn);
-        });
     }
 
     // Provider/model switching and the API-key field moved out of Settings in

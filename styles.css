@@ -1947,22 +1947,18 @@ body {
     text-overflow: ellipsis;
 }
 
-/* Chat files popover (CF-01): the chat's own files. Rows mirror the container
-   file lists (same badge/size/download parts) so the three scopes read alike. */
-.chat-files-menu {
-    min-width: 260px;
-}
-
-.chat-files-scroll {
-    max-height: 50vh;
-    overflow-y: auto;
-}
-
+/* Chat file rows (CF-01b): the chat's own files, rendered in the file panel's
+   browser view. Mirror the container file lists (same badge/size/download
+   parts) so the three scopes read alike. */
 .chat-file-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 4px 12px;
+    padding: 6px 14px;
+}
+
+.chat-file-row:hover {
+    background: var(--bg-tertiary);
 }
 
 .chat-file-name {
@@ -3972,8 +3968,7 @@ body {
 
 /* File-tools toggle pill. Ships disabled until the tool backend (Track A
    P2-02) lands; .on is the enabled/accent state used from P2-05b onward. */
-.tools-toggle,
-.chat-files-button {
+.tools-toggle {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -3989,8 +3984,7 @@ body {
     transition: color 0.2s, background-color 0.2s, border-color 0.2s;
 }
 
-.tools-toggle:hover:not(:disabled),
-.chat-files-button:hover:not(:disabled) {
+.tools-toggle:hover:not(:disabled) {
     color: var(--text-secondary);
     border-color: var(--text-muted);
 }
@@ -4001,14 +3995,12 @@ body {
     border-color: transparent;
 }
 
-.tools-toggle:disabled,
-.chat-files-button:disabled {
+.tools-toggle:disabled {
     opacity: 0.55;
     cursor: default;
 }
 
-.tools-toggle svg,
-.chat-files-button svg {
+.tools-toggle svg {
     flex-shrink: 0;
 }
 
@@ -4637,8 +4629,7 @@ body {
         max-width: 110px;
     }
 
-    .tools-toggle span,
-    .chat-files-button span {
+    .tools-toggle span {
         display: none; /* icon-only pill on small phones */
     }
 }
@@ -5628,53 +5619,40 @@ body {
 /* The rendered-markdown view reuses the .message-content class (same
    renderer and typography as chat bubbles) — no panel-specific rules. */
 
-/* Edge tab: peeks in from the right edge when the panel is closed but a
-   tool-created file exists in the open conversation. */
-.file-panel-tab {
-    position: fixed;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 90;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 52px;
-    border: 1px solid var(--border-color);
-    border-right: none;
-    border-radius: var(--radius-md) 0 0 var(--radius-md);
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    cursor: pointer;
-    box-shadow: var(--shadow);
-    transition: color 0.15s, width 0.15s;
+/* Files explorer top-bar button (CF-01b): the single entry point to the chat's
+   files + the unseen-activity indicator (replaces the panel's right-edge tab). */
+.files-explorer-btn {
+    position: relative;
 }
 
-.file-panel-tab:hover {
-    color: var(--accent);
-    width: 40px;
-}
-
-.file-panel-tab[hidden] {
-    display: none;
-}
-
-/* Unseen-activity dot: pulses until the panel is opened. */
-.file-panel-tab-dot {
+/* Unseen-activity dot: pulses on the button until the panel is opened. */
+.files-explorer-dot {
     position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 9px;
-    height: 9px;
+    top: 2px;
+    right: 2px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--accent);
+    border: 1.5px solid var(--bg-primary);
     animation: file-tab-pulse 1.6s ease-in-out infinite;
+}
+
+.files-explorer-dot[hidden] {
+    display: none;
 }
 
 @keyframes file-tab-pulse {
     0%, 100% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.35); opacity: 0.55; }
+}
+
+/* Browser (file list) view inside the panel (CF-01b). Rows reuse the container
+   file-list parts (.chat-file-row / badge / size / download). */
+.fp-browser {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 0;
 }
 
 /* Mobile: the panel becomes a full-screen overlay above the chat (opened only
