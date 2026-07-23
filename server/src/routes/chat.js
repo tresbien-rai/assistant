@@ -17,7 +17,9 @@ const { getDecryptedApiKey } = require('./apiKeys');
 const dal = require('../db/dal');
 const { assembleProjectContext, assembleWorkspaceContext } = require('../utils/projectContext');
 const { resolveActiveFileBlock, appendToLastUserMessage } = require('../utils/activeFiles');
-const { TOOL_DEFINITIONS } = require('../tools/definitions');
+const { resolveScratchpadBlock } = require('../utils/scratchpadContext');
+const { TOOL_DEFINITIONS, SCRATCHPAD_TOOL_DEFINITIONS } = require('../tools/definitions');
+const config = require('../config');
 const { buildSystemPrompt } = require('../prompts/tessera');
 const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
@@ -260,11 +262,21 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages, ex
     logger.warn({ userId, msg: err.message }, 'Could not load activeFileTurns; using default');
   }
   const activeBlock = await resolveActiveFileBlock(userId, conversationId, currentTurn, activeFileTurns);
-  const messagesWithActive = activeBlock ? appendToLastUserMessage(messages, activeBlock) : messages;
+  let trailingMessages = activeBlock ? appendToLastUserMessage(messages, activeBlock) : messages;
+
+  // Scratchpad (SP-02): injected in full every turn it is active + non-empty
+  // (NOT recency-windowed like active files). Gated on the same enabled flag the
+  // endpoints use to advertise the scratchpad tools, so a disabled pad neither
+  // injects nor tempts the model.
+  const scratchpadEnabled = resolveScratchpadEnabled(userId, containers.conversation);
+  if (scratchpadEnabled) {
+    const scratchpadBlock = resolveScratchpadBlock(conversationId, currentTurn, config.scratchpad.injectDiffCount);
+    if (scratchpadBlock) trailingMessages = appendToLastUserMessage(trailingMessages, scratchpadBlock);
+  }
 
   const { system, messages: assembled } =
-    assembleProviderInput(requestContext, systemPrompt, messagesWithActive, expressionNames);
-  return { system, messages: assembled, requestContext, currentTurn };
+    assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames);
+  return { system, messages: assembled, requestContext, currentTurn, scratchpadEnabled };
 }
 
 /**
@@ -315,6 +327,48 @@ function resolveToolsEnabled(userId, conversation) {
 }
 
 /**
+ * Resolve whether the scratchpad is active for this request (SP-02). Gated
+ * independently of file tools (Decision 3). Precedence:
+ *   conversation override (scratchpad_enabled 1/0)
+ *   → persona base (model_config.scratchpadEnabled)
+ *   → AUTO-ARM: a non-empty pad means the user is already using it (Decision 2).
+ * Server-side only, like resolveToolsEnabled. "Active" means the scratchpad
+ * tools are advertised and the pad is injected when non-empty.
+ * @param {string} userId
+ * @param {Object|null} conversation - conversations row (snake_case)
+ * @returns {boolean}
+ */
+function resolveScratchpadEnabled(userId, conversation) {
+  if (!conversation) return false;
+  if (conversation.scratchpad_enabled === 0) return false;
+  if (conversation.scratchpad_enabled === 1) return true;
+  if (conversation.persona_id) {
+    const persona = dal.getPersonaById(conversation.persona_id, userId);
+    if (persona?.modelConfig?.scratchpadEnabled === true) return true;
+  }
+  // Auto-arm: using the feature (a non-empty pad) enables it, without needing
+  // an explicit toggle. The explicit toggle (above) covers the cold-start case
+  // of drafting into an empty pad, and staying armed after a clear.
+  const pad = dal.getScratchpad(conversation.id);
+  return !!(pad && pad.content && pad.content.trim() !== '');
+}
+
+/**
+ * The tool set advertised to the model for this request: file tools when the
+ * file-tools toggle is on, scratchpad tools when the scratchpad is active — each
+ * independently. Empty array = no tool loop.
+ * @param {boolean} toolsEnabled
+ * @param {boolean} scratchpadEnabled
+ * @returns {Array}
+ */
+function resolveAdvertisedTools(toolsEnabled, scratchpadEnabled) {
+  return [
+    ...(toolsEnabled ? TOOL_DEFINITIONS : []),
+    ...(scratchpadEnabled ? SCRATCHPAD_TOOL_DEFINITIONS : []),
+  ];
+}
+
+/**
  * The Track A tool loop (decision 3 in docs/PHASE2_TASKS.md): repeatedly call
  * the provider NON-streaming; when the model requests tools, execute them and
  * continue with the raw assistant message + a tool-result message appended
@@ -351,7 +405,9 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
     try {
       data = await providerModule.chatRaw(
         apiKey,
-        { ...params, messages, prefill: undefined, tools: TOOL_DEFINITIONS },
+        // `params.tools` is the resolved set (file tools and/or scratchpad tools,
+        // gated independently by the caller). Prefill is always dropped in the loop.
+        { ...params, messages, prefill: undefined, tools: params.tools || TOOL_DEFINITIONS },
         signal
       );
     } catch (err) {
@@ -446,9 +502,10 @@ router.post('/', asyncHandler(async (req, res) => {
 
   // Assemble the request (FC-03a KB relocation + FC-03b active-file injection).
   const containers = resolveRequestContainers(req);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn } =
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn, scratchpadEnabled } =
     await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
+  const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
 
   logger.info({
     userId: req.user.userId,
@@ -457,17 +514,20 @@ router.post('/', asyncHandler(async (req, res) => {
     messageCount: messages.length,
     projectContext: Boolean(requestContext?.text),
     toolsEnabled,
+    scratchpadEnabled,
   }, 'Chat request');
 
   let result;
-  if (toolsEnabled) {
-    // Tool loop (prefill intentionally dropped — decision 5). Abort on client
+  if (advertisedTools.length > 0) {
+    // Tool loop (prefill intentionally dropped — decision 5). Runs whenever any
+    // tools are advertised (file tools and/or scratchpad). Abort on client
     // disconnect so no tool executes for an abandoned request.
     const abortController = new AbortController();
     req.on('close', () => abortController.abort());
 
     const { params: loopParams, toolContext } = buildToolLoopInvocation(req, containers, {
       model, messages: effectiveMessages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
+      tools: advertisedTools,
     }, currentTurn);
     const { result: loopResult, toolEvents, aborted } = await runToolLoop({
       providerModule,
@@ -526,9 +586,10 @@ router.post('/stream', asyncHandler(async (req, res) => {
   // Assemble the request (FC-03a KB relocation + FC-03b active-file injection).
   // Resolved before any SSE headers are sent so the warning header is valid.
   const containers = resolveRequestContainers(req);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn } =
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn, scratchpadEnabled } =
     await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
+  const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
 
   if (requestContext?.warning) {
     res.setHeader('X-Project-Context-Warning', encodeURIComponent(requestContext.warning));
@@ -541,6 +602,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
     messageCount: messages.length,
     projectContext: Boolean(requestContext?.text),
     toolsEnabled,
+    scratchpadEnabled,
   }, 'Stream request');
 
   // Set up abort handling for client disconnect
@@ -551,12 +613,12 @@ router.post('/stream', asyncHandler(async (req, res) => {
     abortController.abort();
   });
 
-  if (toolsEnabled) {
-    // Tools-on turns run the NON-streaming loop and deliver everything as
-    // synthetic SSE over this same channel (decision 3): tool-activity events
-    // while tools run, then the final answer as ONE provider-native-shaped
-    // chunk so the existing client accumulator renders it unchanged, then a
-    // done event carrying the full tool-event list (P2-05b persists it).
+  if (advertisedTools.length > 0) {
+    // Tools-on turns (file tools and/or scratchpad) run the NON-streaming loop
+    // and deliver everything as synthetic SSE over this same channel (decision
+    // 3): tool-activity events while tools run, then the final answer as ONE
+    // provider-native-shaped chunk so the existing client accumulator renders it
+    // unchanged, then a done event carrying the full tool-event list (P2-05b).
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -571,6 +633,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
     try {
       const { params: loopParams, toolContext } = buildToolLoopInvocation(req, containers, {
         model, messages: effectiveMessages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
+        tools: advertisedTools,
       }, currentTurn);
       const { result, toolEvents, aborted } = await runToolLoop({
         providerModule,
@@ -650,18 +713,20 @@ router.post('/preview', asyncHandler(async (req, res) => {
   // prefill) exactly as a real tools-on send would build them, plus the KB
   // relocation and active-file injection.
   const containers = resolveRequestContainers(req);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext } =
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, scratchpadEnabled } =
     await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
   const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
+  const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
+  const anyTools = advertisedTools.length > 0;
 
   const body = providerModule.buildRequestBody({
     model,
     messages: effectiveMessages,
     systemPrompt: effectiveSystemPrompt,
     modelParams,
-    prefill: toolsEnabled ? undefined : prefill,
+    prefill: anyTools ? undefined : prefill,
     attachments,
-    ...(toolsEnabled ? { tools: TOOL_DEFINITIONS } : {}),
+    ...(anyTools ? { tools: advertisedTools } : {}),
     stream: false,
   });
 
@@ -676,6 +741,7 @@ router.post('/preview', asyncHandler(async (req, res) => {
     // part of the body.
     apiKeyLocation: 'sent as a request header (never in the body)',
     toolsEnabled,
+    scratchpadEnabled,
     ...(requestContext?.warning ? { contextWarning: requestContext.warning } : {}),
   });
 }));
@@ -724,5 +790,7 @@ module.exports = {
   // Exported for headless tool-loop tests (P2-02).
   resolveRequestContainers,
   resolveToolsEnabled,
+  resolveScratchpadEnabled,
+  resolveAdvertisedTools,
   runToolLoop,
 };

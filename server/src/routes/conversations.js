@@ -54,6 +54,10 @@ function formatConversation(conversation) {
     toolsEnabled: conversation.tools_enabled === null || conversation.tools_enabled === undefined
       ? null
       : conversation.tools_enabled === 1,
+    // Scratchpad override (SP-02): null = inherit persona base + auto-arm, true/false = forced.
+    scratchpadEnabled: conversation.scratchpad_enabled === null || conversation.scratchpad_enabled === undefined
+      ? null
+      : conversation.scratchpad_enabled === 1,
     createdAt: conversation.created_at,
     updatedAt: conversation.updated_at,
   };
@@ -219,12 +223,12 @@ router.post('/', asyncHandler(async (req, res) => {
 /**
  * PUT /api/conversations/:id
  * Updates conversation metadata (only if owned by user)
- * Body: { title?, personaId?, projectId?, workspaceId?, toolsEnabled? }
+ * Body: { title?, personaId?, projectId?, workspaceId?, toolsEnabled?, scratchpadEnabled? }
  * Moving a chat's container re-applies the hierarchy invariant (workspace_id is
  * derived from the project; clearing both unfiles the chat).
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { title, personaId, projectId, workspaceId, toolsEnabled } = req.body;
+  const { title, personaId, projectId, workspaceId, toolsEnabled, scratchpadEnabled } = req.body;
   const updateData = {};
 
   // Track A composer override: boolean forces on/off, null clears back to
@@ -234,6 +238,15 @@ router.put('/:id', asyncHandler(async (req, res) => {
       throw AppError.validation('toolsEnabled must be true, false, or null');
     }
     updateData.toolsEnabled = toolsEnabled;
+  }
+
+  // Scratchpad override (SP-02): boolean forces on/off, null clears back to
+  // inheriting the persona base + auto-arm.
+  if (scratchpadEnabled !== undefined) {
+    if (scratchpadEnabled !== null && typeof scratchpadEnabled !== 'boolean') {
+      throw AppError.validation('scratchpadEnabled must be true, false, or null');
+    }
+    updateData.scratchpadEnabled = scratchpadEnabled;
   }
 
   // Validate and collect fields to update

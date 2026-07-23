@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     project_id      TEXT,           -- Nullable, for Phase 1 (projects feature)
     title           TEXT DEFAULT 'New Chat',
     tools_enabled   INTEGER,        -- Track A composer override: NULL = inherit persona, 1 = on, 0 = off (migration 004 backfills old DBs)
+    scratchpad_enabled INTEGER,     -- Scratchpad override (SP-02): NULL = inherit persona base, then auto-arm on non-empty content; 1 = on, 0 = off (migration 009)
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
 );

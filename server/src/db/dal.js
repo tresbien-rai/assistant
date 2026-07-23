@@ -458,6 +458,12 @@ function updateConversation(conversationId, userId, data) {
     updates.push('tools_enabled = ?');
     values.push(data.toolsEnabled === null ? null : (data.toolsEnabled ? 1 : 0));
   }
+  if (data.scratchpadEnabled !== undefined) {
+    // Tri-state scratchpad override (SP-02): true/false → 1/0, null = clear back
+    // to inheriting the persona base + auto-arm.
+    updates.push('scratchpad_enabled = ?');
+    values.push(data.scratchpadEnabled === null ? null : (data.scratchpadEnabled ? 1 : 0));
+  }
 
   if (updates.length === 0) {
     return getConversationById(conversationId, userId);
