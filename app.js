@@ -1148,10 +1148,14 @@ function applyModelToLayer(provider, modelId) {
     if (layer.provider === provider && layer.model === modelId) return false;
     mirrorLayerToModelProfile();
     if (layer.provider !== provider) {
-        // Full provider-switch housekeeping (key field, provider params,
-        // model dropdown, send button) — same path as the Settings select.
-        handleProviderChange(provider);
-        elements.providerSelect.value = provider;
+        layer.provider = provider;
+        // Provider-switch housekeeping. The old provider <select>, model
+        // dropdown, and API-key field are gone (Slice 4) — switching is via
+        // catalog cards and the key is provider-owned. What still needs a
+        // refresh here is the provider-specific Advanced params + the send
+        // button; the catalog/chips refresh on the ensuing updateUI.
+        updateProviderParamsVisibility();
+        updateSendButtonState();
     }
     layer.model = modelId;
     loadModelProfileIntoLayer();
@@ -1412,11 +1416,6 @@ const elements = {
     workspaceBreadcrumb: document.getElementById('workspaceBreadcrumb'),
 
     // Settings inputs
-    providerSelect: document.getElementById('providerSelect'),
-    modelSelect: document.getElementById('modelSelect'),
-    apiKeyInput: document.getElementById('apiKeyInput'),
-    toggleApiKey: document.getElementById('toggleApiKey'),
-    clearApiKeyBtn: document.getElementById('clearApiKeyBtn'),
     assistantName: document.getElementById('assistantName'),
     personaTagline: document.getElementById('personaTagline'),
     personaTaglineCount: document.getElementById('personaTaglineCount'),
@@ -1487,7 +1486,6 @@ const elements = {
     deleteExpressionBtn: document.getElementById('deleteExpressionBtn'),
 
     // Model management
-    manageModelsBtn: document.getElementById('manageModelsBtn'),
     modelModal: document.getElementById('modelModal'),
     closeModelModal: document.getElementById('closeModelModal'),
     savedModelsList: document.getElementById('savedModelsList'),
@@ -1922,19 +1920,10 @@ async function loadConversationMessages(conversationId) {
 // ===== Settings Management =====
 
 // ===== Real-Time Auto-Save =====
-// Two independent debounce timers so a fast typist filling in an API key
-// doesn't churn /api/settings, and a slider drag on avatar size doesn't churn
-// /api/api-keys/<provider>.
+// Debounces the settings PUT so a slider drag or a fast typist doesn't churn
+// /api/settings. API keys have their own explicit save path now (saveProviderKey
+// from the provider key popover), not this settings tick.
 let autoSaveTimeout = null;
-let apiKeySaveTimeout = null;
-// Track which provider's key (if any) was edited since the last persist so we
-// know what to POST after the debounce fires.
-let pendingApiKeyProvider = null;
-// Last typed-in key per provider, for change detection only. NOT used by any
-// other code path — the chat path now uses the server-side stored key. This
-// map persists for the session so we don't re-PUT an unchanged key on every
-// autosave tick.
-const lastTypedApiKey = { anthropic: '', google: '', openai: '' };
 
 /**
  * Debounced auto-save function
@@ -1970,44 +1959,10 @@ function saveCatalogProviders(providers) {
 function saveAllSettingsFromUI() {
     const persona = getActivePersona();
 
-    // Provider & model → the active layer (WR-12)
-    const layer = getActiveModelConfig();
-    layer.provider = elements.providerSelect.value;
-    // Model switched via the dropdown → full profile swap (save outgoing,
-    // load incoming) BEFORE params are read back from the UI, then refresh
-    // the controls so they show the incoming profile instead of clobbering
-    // it with the outgoing model's on-screen values.
-    if (elements.modelSelect.value && elements.modelSelect.value !== layer.model) {
-        applyModelToLayer(layer.provider, elements.modelSelect.value);
-        loadModelParamsToUI();
-    }
-
-    // API key for current provider: store-only path. Scheduled for server
-    // persistence on a separate debounce so /api/settings updates don't ping
-    // the API-keys endpoint and vice versa. The key value itself never lives
-    // in `state` — it's read from elements.apiKeyInput.value at debounce
-    // fire-time. Optimistically update apiKeyStatus.hasKey so the send
-    // button / fetch-models button unlock without waiting for the PUT.
-    const currentProvider = layer.provider || CONFIG.defaults.provider;
-    const inputKey = elements.apiKeyInput.value;
-    // Only schedule a PUT for non-empty input. Empty input deliberately does
-    // NOT auto-DELETE the server-stored key — a stray touch-then-clear would
-    // otherwise silently destroy the saved key with no confirmation. Use
-    // the explicit "Clear saved key" button (clearStoredApiKey) for that.
-    if (inputKey.length > 0 && lastTypedApiKey[currentProvider] !== inputKey) {
-        lastTypedApiKey[currentProvider] = inputKey;
-        state.apiKeyStatus[currentProvider] = {
-            ...state.apiKeyStatus[currentProvider],
-            hasKey: true,
-        };
-        pendingApiKeyProvider = currentProvider;
-        if (apiKeySaveTimeout) clearTimeout(apiKeySaveTimeout);
-        apiKeySaveTimeout = setTimeout(persistPendingApiKey, 500);
-    } else if (inputKey.length === 0) {
-        // Keep lastTypedApiKey in sync with the visible state without firing
-        // a destructive action.
-        lastTypedApiKey[currentProvider] = '';
-    }
+    // The active model/provider are no longer read from UI selects (removed in
+    // Slice 4) — they're maintained directly in the layer by selectModel /
+    // applyModelToLayer (catalog cards). The API key is provider-owned and saved
+    // straight from its popover (saveProviderKey), not via this settings tick.
 
     // Avatar visibility is read here; size/position are kept authoritative in
     // state by their own controls (presets, the size slider, and drag), so we
@@ -2033,52 +1988,46 @@ function saveAllSettingsFromUI() {
 }
 
 /**
- * Push the pending API-key PUT to the server. Only fires for non-empty
- * input — deletes are handled by clearStoredApiKey via the explicit
- * "Clear saved key" button, not by emptying the input.
+ * Save a provider's API key to the server (explicit, from the provider key
+ * popover). Optimistically flips apiKeyStatus.hasKey so the catalog badge / send
+ * button unlock immediately; on failure, resyncs from the server and toasts.
+ * The key value never lives in `state` — it goes straight to the API.
+ * @param {string} provider
+ * @param {string} value - the plaintext key (non-empty)
  */
-function persistPendingApiKey() {
-    const provider = pendingApiKeyProvider;
-    pendingApiKeyProvider = null;
-    if (!provider) return;
-    const value = lastTypedApiKey[provider] || '';
-    if (!value) return; // empty input → no destructive action
-
-    API.apiKeys.set(provider, value).then(result => {
+async function saveProviderKey(provider, value) {
+    if (!provider || !value) return;
+    // Optimistic: reflect a saved key in the catalog + chips right away.
+    state.apiKeyStatus[provider] = { ...state.apiKeyStatus[provider], hasKey: true };
+    renderModelsCatalog();
+    updateSendButtonState();
+    try {
+        const result = await API.apiKeys.set(provider, value);
         state.apiKeyStatus[provider] = {
             hasKey: true,
             updatedAt: (result && result.updatedAt) || Date.now(),
         };
-    }).catch(async err => {
+    } catch (err) {
         console.error(`Failed to persist API key for ${provider}:`, err);
-        // Resync from the server so the optimistic hasKey update doesn't
-        // mislead the user about what's actually saved, AND clear
-        // lastTypedApiKey so the user can re-attempt with the same value
-        // (otherwise the equality guard in saveAllSettingsFromUI would
-        // short-circuit a paste-and-retry).
-        lastTypedApiKey[provider] = '';
+        // Resync so the optimistic hasKey doesn't mislead about what's saved.
         try {
-            const list = await API.apiKeys.list();
-            hydrateApiKeyStatus(list);
+            hydrateApiKeyStatus(await API.apiKeys.list());
         } catch (refetchErr) {
             console.error('Failed to refetch apiKeyStatus:', refetchErr);
         }
-        // Re-render to surface the failure to the user.
-        updateApiKeyFieldForProvider(provider);
-        updateSendButtonState();
-        // C12: the save is debounced/async, so without an explicit signal the
-        // user has no idea the key didn't stick. Toast it.
         displayError(err, { action: `save your ${provider} API key` });
-    });
+    }
+    renderModelsCatalog();
+    updateSendButtonState();
 }
 
 /**
- * Explicit user-initiated delete of the stored API key. Confirms first
- * because this is destructive.
+ * Explicit user-initiated delete of a provider's stored API key (from the
+ * provider key popover). Confirms first because it's destructive.
+ * @param {string} provider
  */
-async function clearStoredApiKey() {
-    const provider = getActiveModelConfig().provider || CONFIG.defaults.provider;
-    if (!state.apiKeyStatus[provider]?.hasKey) return;
+async function clearStoredApiKey(provider) {
+    if (!provider || !state.apiKeyStatus[provider]?.hasKey) return;
 
     const ok = await confirmDialog({
         title: 'Clear stored API key?',
@@ -2097,9 +2046,7 @@ async function clearStoredApiKey() {
     }
 
     state.apiKeyStatus[provider] = { hasKey: false, updatedAt: Date.now() };
-    lastTypedApiKey[provider] = '';
-    elements.apiKeyInput.value = '';
-    updateApiKeyFieldForProvider(provider);
+    renderModelsCatalog(); // refresh the group-header badge + chip dot
     updateSendButtonState();
 }
 
@@ -2193,24 +2140,11 @@ async function updateUI() {
     const persona = getActivePersona();
     const modelConfig = getActiveModelConfig();
 
-    // Update form inputs - provider/model now from active persona's modelConfig
-    elements.providerSelect.value = modelConfig.provider;
-    populateModelDropdown(); // Populate from customModels based on persona's provider
-    const currentProvider = modelConfig.provider;
-    // The key value never lives in JS — the input starts empty. If a key is
-    // already stored server-side, the placeholder reflects that (via
-    // updateApiKeyFieldForProvider) so the user knows whether they need to
-    // re-paste. Pasting (and blur/debounce) PUTs the new value.
-    //
-    // C10: don't clobber what the user is actively typing. If the field is
-    // focused or a save is still pending, leave the value alone — updateUI can
-    // fire from background refreshes (e.g. on401 resync) mid-edit.
-    const apiKeyInputBusy = document.activeElement === elements.apiKeyInput
-        || pendingApiKeyProvider !== null;
-    if (!apiKeyInputBusy) {
-        elements.apiKeyInput.value = '';
-    }
-    updateApiKeyFieldForProvider(currentProvider);
+    // The active model/provider live on the layer; the old provider/model
+    // <select>s and API-key field are gone (Slice 4). Switching is via catalog
+    // cards; the key is provider-owned. Just keep the layer pointing at a valid
+    // model (fall back if the active one was removed from its provider).
+    ensureActiveModelValid();
     elements.assistantName.value = persona ? persona.name : CONFIG.defaults.assistantName;
     elements.personaTagline.value = persona ? (persona.tagline || '') : '';
     elements.personaRoleLabel.value = persona ? (persona.roleLabel || '') : '';
@@ -2270,74 +2204,6 @@ async function updateUI() {
 
     // Update sidebar lists
     renderConversationList();
-}
-
-/**
- * Update API key field placeholder and label based on provider
- * @param {string} provider - The provider name
- */
-function updateApiKeyFieldForProvider(provider) {
-    const placeholders = {
-        anthropic: 'sk-ant-...',
-        google: 'AIza...',
-        openai: 'sk-...'
-    };
-
-    const labels = {
-        anthropic: 'Anthropic API Key',
-        google: 'Google AI API Key',
-        openai: 'OpenAI API Key'
-    };
-
-    // If a key is already stored server-side, surface that in the placeholder
-    // so the user knows the input is empty by design (not because no key is
-    // configured). Pasting overwrites.
-    const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
-    elements.apiKeyInput.placeholder = hasKey
-        ? 'Key saved — paste a new value to replace'
-        : (placeholders[provider] || 'API Key');
-
-    // The explicit Clear button is the ONLY way to delete a stored key —
-    // emptying the input is a no-op.
-    if (elements.clearApiKeyBtn) {
-        elements.clearApiKeyBtn.hidden = !hasKey;
-    }
-
-    const labelElement = document.getElementById('apiKeyLabel');
-    if (labelElement) {
-        labelElement.textContent = labels[provider] || 'API Key';
-    }
-}
-
-/**
- * Handle provider change - update UI and load provider-specific settings
- * @param {string} provider - The new provider
- */
-function handleProviderChange(provider) {
-    const layer = getActiveModelConfig();
-    // Remember the outgoing model's params in its profile BEFORE the provider
-    // moves — after the switch the layer points at another provider's model.
-    if (layer.provider !== provider) mirrorLayerToModelProfile();
-    layer.provider = provider;
-
-    // Clear the key input on provider switch. We never want a previously-typed
-    // plaintext key from one provider to leak into the form for another, and
-    // the value never persists in JS state anyway.
-    elements.apiKeyInput.value = '';
-
-    // Update placeholder and label for the new provider.
-    updateApiKeyFieldForProvider(provider);
-
-    // Repopulate model dropdown with provider-specific models
-    populateModelDropdown();
-
-    // Update provider-specific parameter sections visibility
-    updateProviderParamsVisibility();
-
-    // Update send button state
-    updateSendButtonState();
-    // Persistence rides on the callers: the Settings select fires
-    // autoSaveSettings, and selectModel calls persistSettings directly.
 }
 
 // ===== Model Parameter Helpers =====
@@ -3174,47 +3040,34 @@ function saveCustomModels() {
 }
 
 /**
- * Populate the model dropdown from customModels for the current provider
+ * Safety net (formerly folded into the model dropdown, removed in Slice 4): if
+ * the active layer points at a model no longer in its provider's catalog — e.g.
+ * it was removed while active — fall back to the provider's first model and load
+ * that model's profile so its params come along. No-op when the active model is
+ * valid or the provider has no models. The ensuing updateUI refreshes the
+ * indicator, params UI, and catalog.
  */
-function populateModelDropdown() {
-    const select = elements.modelSelect;
+function ensureActiveModelValid() {
     const modelConfig = getActiveModelConfig();
-    const provider = modelConfig.provider;
-    const providerModels = state.settings.customModels[provider] || [];
-    select.innerHTML = '';
-
-    if (providerModels.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = 'No models - click Manage Models';
-        option.disabled = true;
-        option.selected = true;
-        select.appendChild(option);
-        select.disabled = true;
-    } else {
-        select.disabled = false;
-        providerModels.forEach(model => {
-            const option = document.createElement('option');
-            option.value = model.id;
-            option.textContent = model.name;
-            if (model.id === modelConfig.model) {
-                option.selected = true;
-            }
-            select.appendChild(option);
-        });
-
-        // If selected model not in list, fall back to the provider's first —
-        // and load THAT model's profile so its params come along.
-        if (!providerModels.some(m => m.id === modelConfig.model)) {
-            modelConfig.model = providerModels[0].id;
-            loadModelProfileIntoLayer();
-            loadModelParamsToUI();
-            select.value = providerModels[0].id;
-        }
+    const providerModels = state.settings.customModels[modelConfig.provider] || [];
+    if (providerModels.length === 0) return;
+    if (!providerModels.some(m => m.id === modelConfig.model)) {
+        modelConfig.model = providerModels[0].id;
+        loadModelProfileIntoLayer();
     }
+}
 
-    // Update the model indicators (top bar + composer chip)
-    setModelIndicator(getModelDisplayName(modelConfig.model));
+/**
+ * Refresh UI after the model catalog changes from the modal (add/remove): keep
+ * the active model valid, then refresh the Models catalog, the model indicator,
+ * and the send button. Replaces the old populateModelDropdown() refresh now that
+ * the dropdown is gone (Slice 4).
+ */
+function refreshAfterModelChange() {
+    ensureActiveModelValid();
+    renderModelsCatalog();
+    setModelIndicator(getModelDisplayName(getActiveModelConfig().model));
+    updateSendButtonState();
 }
 
 /**
@@ -3260,7 +3113,7 @@ function renderSavedModelsList() {
             if (ok) {
                 removeCustomModel(modelId);
                 renderSavedModelsList();
-                populateModelDropdown();
+                refreshAfterModelChange();
             }
         });
     });
@@ -3304,7 +3157,7 @@ function renderAvailableModelsGrid(models) {
             const modelName = e.target.dataset.modelName;
             if (addCustomModel(modelId, modelName)) {
                 renderSavedModelsList();
-                populateModelDropdown();
+                refreshAfterModelChange();
                 // Update the button
                 e.target.textContent = 'Added';
                 e.target.disabled = true;
@@ -3382,7 +3235,7 @@ function handleAddModelManually() {
 
     if (addCustomModel(id, name)) {
         renderSavedModelsList();
-        populateModelDropdown();
+        refreshAfterModelChange();
         elements.newModelId.value = '';
         elements.newModelName.value = '';
 
@@ -5067,10 +4920,16 @@ function renderModelsCatalog() {
         if (!showAll && !selected.includes(provider)) continue;
         const models = state.settings.customModels[provider] || [];
         const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
+        const soon = PROVIDERS[provider].status === 'soon';
+        const keyBtn = soon ? '' :
+            `<button class="group-key-btn" data-key-provider="${provider}" type="button">${hasKey ? 'Manage key' : 'Add key'}</button>`;
         html += `
             <div class="model-group-head">
                 <span class="model-group-name">${label}</span>
-                <span class="model-key-badge${hasKey ? ' has-key' : ''}">${hasKey ? 'API key saved' : 'no API key'}</span>
+                <span class="model-group-right">
+                    <span class="model-key-badge${hasKey ? ' has-key' : ''}">${hasKey ? 'API key saved' : 'no API key'}</span>
+                    ${keyBtn}
+                </span>
             </div>`;
         if (models.length === 0) {
             html += `<p class="empty-state small">No ${label} models added.</p>`;
@@ -5102,6 +4961,66 @@ function renderModelsCatalog() {
             e.stopPropagation();
             showModelCardMenu(btn, btn.dataset.modelMenu, btn.dataset.provider);
         }));
+    c.querySelectorAll('[data-key-provider]').forEach(btn =>
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showProviderKeyPopover(btn, btn.dataset.keyProvider);
+        }));
+}
+
+/**
+ * Provider API-key editor popover (Models tab redesign, Slice 4). Anchored to a
+ * provider's "Manage key"/"Add key" button on its catalog group header. The key
+ * is provider-owned — one per provider, shared by all its models. The stored key
+ * is never echoed back: the field starts empty (placeholder notes a saved key),
+ * Save PUTs a new value, Clear deletes.
+ * @param {HTMLElement} anchorEl
+ * @param {string} provider
+ */
+function showProviderKeyPopover(anchorEl, provider) {
+    const existing = document.querySelector('.context-menu, .key-popover');
+    if (existing) existing.remove();
+    const meta = PROVIDERS[provider];
+    if (!meta) return;
+    const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
+
+    const pop = document.createElement('div');
+    pop.className = 'key-popover';
+    pop.innerHTML = `
+        <div class="key-popover-title">${escapeHtml(meta.label)} API key</div>
+        <div class="key-popover-field">
+            <input type="password" class="key-popover-input" autocomplete="off" spellcheck="false"
+                placeholder="${hasKey ? 'Key saved — paste to replace' : escapeHtml(meta.keyPlaceholder || 'API key')}">
+            <button class="key-popover-eye" type="button">Show</button>
+        </div>
+        <p class="key-popover-help">Stored encrypted on the server. Shared by all ${escapeHtml(meta.label)} models.</p>
+        <div class="key-popover-actions">
+            ${hasKey ? '<button class="key-popover-clear" type="button">Clear</button>' : ''}
+            <button class="key-popover-save" type="button">Save</button>
+        </div>`;
+    positionPopover(pop, anchorEl, 'right');
+
+    const input = pop.querySelector('.key-popover-input');
+    const save = () => {
+        const value = input.value.trim();
+        pop.remove();
+        if (value) saveProviderKey(provider, value);
+    };
+    pop.querySelector('.key-popover-eye').addEventListener('click', (e) => {
+        const showing = input.type === 'text';
+        input.type = showing ? 'password' : 'text';
+        e.target.textContent = showing ? 'Show' : 'Hide';
+        input.focus();
+    });
+    pop.querySelector('.key-popover-save').addEventListener('click', save);
+    const clearBtn = pop.querySelector('.key-popover-clear');
+    if (clearBtn) clearBtn.addEventListener('click', () => { pop.remove(); clearStoredApiKey(provider); });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); save(); }
+    });
+
+    attachPopoverOutsideClose(pop, anchorEl);
+    input.focus();
 }
 
 /** Per-card ⋯ menu on the Models section: Remove from catalog. */
@@ -8550,7 +8469,10 @@ function setupEventListeners() {
             <div class="models-catalog" id="modelsCatalog"></div>`;
         const modelsBody = document.createElement('div');
         modelsBody.className = 'settings-modal-body';
-        ['modelSettingsSection', 'advancedSettingsSection'].forEach(id => {
+        // Advanced Settings is still re-parented in from the form (the Active
+        // Model section was removed in Slice 4). Advanced moves per-model in
+        // Slice 5.
+        ['advancedSettingsSection'].forEach(id => {
             const section = document.getElementById(id);
             if (section) modelsBody.appendChild(section);
         });
@@ -8754,15 +8676,8 @@ function setupEventListeners() {
         elements.personaToolsBase.addEventListener('change', () => setPersonaToolsBase(elements.personaToolsBase.checked));
     }
 
-    // Provider & Model - auto-save on change
-    elements.providerSelect.addEventListener('change', (e) => {
-        handleProviderChange(e.target.value);
-        autoSaveSettings();
-    });
-    elements.modelSelect.addEventListener('change', autoSaveSettings);
-
-    // API Key - auto-save on input
-    elements.apiKeyInput.addEventListener('input', autoSaveSettings);
+    // Provider/model switching and the API-key field moved out of Settings in
+    // Slice 4 (catalog cards + provider key popover), so no listeners here.
 
     // Model parameter sliders - update display value and auto-save
     elements.temperatureSlider.addEventListener('input', (e) => {
@@ -8826,18 +8741,9 @@ function setupEventListeners() {
     elements.systemPrompt.addEventListener('input', autoSaveSettings);
     elements.prefillInput.addEventListener('input', autoSaveSettings);
 
-    // API key visibility toggle
-    elements.toggleApiKey.addEventListener('click', () => {
-        const input = elements.apiKeyInput;
-        input.type = input.type === 'password' ? 'text' : 'password';
-    });
+    // API-key visibility toggle + clear now live in the provider key popover
+    // (showProviderKeyPopover), wired per-instance when the popover opens.
 
-    // Explicit Clear-saved-key handler (the safe, intentional path for
-    // deleting a stored key — emptying the input does NOT do this).
-    if (elements.clearApiKeyBtn) {
-        elements.clearApiKeyBtn.addEventListener('click', clearStoredApiKey);
-    }
-    
     // Size / position preset buttons in Settings (the popover wires its own).
     document.querySelectorAll('.size-preset-btn').forEach(btn => {
         btn.addEventListener('click', () => setAvatarSize(btn.dataset.size));
@@ -8915,8 +8821,8 @@ function setupEventListeners() {
         }
     });
 
-    // Model management modal
-    elements.manageModelsBtn.addEventListener('click', openModelModal);
+    // Model management modal ("+ Add model" in the Models view is the entry;
+    // the old "Manage Models" button was removed with the Active Model section).
     elements.closeModelModal.addEventListener('click', closeModelModal);
     elements.fetchModelsBtn.addEventListener('click', handleFetchModels);
     elements.addModelBtn.addEventListener('click', handleAddModelManually);
@@ -9001,11 +8907,6 @@ function setupEventListeners() {
         if (e.dataTransfer.files.length > 0) {
             handleFileAttachment(e.dataTransfer.files);
         }
-    });
-    
-    // Model select change
-    elements.modelSelect.addEventListener('change', () => {
-        setModelIndicator(getModelDisplayName(elements.modelSelect.value));
     });
     
     // Assistant name preview (avatar card + persona-editor page title)
