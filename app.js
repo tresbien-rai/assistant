@@ -1487,6 +1487,7 @@ const elements = {
     composerModelButton: document.getElementById('composerModelButton'),
     composerModelName: document.getElementById('composerModelName'),
     toolsToggleBtn: document.getElementById('toolsToggleBtn'),
+    chatFilesBtn: document.getElementById('chatFilesBtn'),
     personaToolsBase: document.getElementById('personaToolsBase'),
     
     // Status bar
@@ -3782,6 +3783,19 @@ function positionPopover(menu, anchorEl, align) {
     } else {
         menu.style.left = `${rect.left}px`;
     }
+    // Horizontal clamp. Either alignment can run off-screen when the anchor
+    // isn't near the edge it aligns to and the menu is wide relative to the
+    // viewport — a phone-width hazard (the composer's Files button sits
+    // mid-row, so at 375px it overflows left when right-aligned and right when
+    // left-aligned). Re-anchors to `left` only when the menu doesn't already
+    // fit, so a menu that fits never moves.
+    const MARGIN = 8;
+    const box = menu.getBoundingClientRect();
+    if (box.left < MARGIN || box.right > window.innerWidth - MARGIN) {
+        const maxLeft = window.innerWidth - MARGIN - box.width;
+        menu.style.right = 'auto';
+        menu.style.left = `${Math.max(MARGIN, Math.min(box.left, maxLeft))}px`;
+    }
     if (rect.bottom + 6 + menu.offsetHeight > window.innerHeight) {
         menu.style.top = `${Math.max(8, rect.top - 6 - menu.offsetHeight)}px`;
     }
@@ -4078,6 +4092,106 @@ function showModelMenu(anchorEl, { showAll = false } = {}) {
     });
 
     attachPopoverOutsideClose(menu, anchorEl);
+}
+
+/**
+ * Composer "Files" popover (CF-01): the chat's own files (FC-01 conversation
+ * scope). Until now a chat file was reachable only by scrolling back to the
+ * message card that created it — `GET /api/conversations/:id/files` has existed
+ * since FC-01, but nothing on the client ever called it.
+ *
+ * The list is fetched per opening rather than cached on the conversation: a
+ * tool can write a file at any turn, and a stale list is worse than a brief
+ * "Loading…". Rows open the panel in CONVERSATION mode (not FC-04's standalone
+ * mode) so it keeps its edge tab and survives navigation within the chat.
+ *
+ * @param {HTMLElement} anchorEl
+ */
+async function showChatFilesMenu(anchorEl) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const conversationId = state.activeConversationId;
+    if (!conversationId) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu context-menu-wide chat-files-menu';
+    menu.innerHTML = `
+        <div class="context-menu-label">Files in this chat</div>
+        <div class="context-menu-empty" data-role="status">Loading…</div>
+    `;
+    // 'left', not 'right' like the model menu: this button sits mid-row rather
+    // than at the right edge, so right-aligning would hang the menu leftward
+    // across the composer instead of opening from the button.
+    positionPopover(menu, anchorEl, 'left');
+    attachPopoverOutsideClose(menu, anchorEl);
+
+    let files;
+    try {
+        files = await API.conversations.files.list(conversationId);
+    } catch (err) {
+        console.error('Failed to load chat files:', err);
+        const status = menu.querySelector('[data-role="status"]');
+        if (menu.isConnected && status) status.textContent = 'Could not load files.';
+        return;
+    }
+
+    // Dismissed, or the chat changed, while the request was in flight.
+    if (!menu.isConnected || state.activeConversationId !== conversationId) return;
+
+    if (!Array.isArray(files) || files.length === 0) {
+        const status = menu.querySelector('[data-role="status"]');
+        if (status) status.textContent = 'No files in this chat yet.';
+        return;
+    }
+
+    // Newest first: in a chat the useful question is "what were we just
+    // working on", not "what is this called".
+    const sorted = [...files].sort((a, b) =>
+        String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+    const rows = sorted.map(f => {
+        const href = API.conversations.files.contentUrl(conversationId, f.id);
+        const label = getFileTypeLabel(f.filename, f.mimeType);
+        // Text files open in the panel; PDFs and other binaries are
+        // download-only, same rule as the container file lists (FC-04).
+        const viewable = !/\.pdf$/i.test(f.filename || '');
+        const nameTag = viewable
+            ? `<button type="button" class="chat-file-name clickable" data-file-id="${escapeHtml(f.id)}">${escapeHtml(f.filename)}</button>`
+            : `<span class="chat-file-name">${escapeHtml(f.filename)}</span>`;
+        return `
+            <div class="chat-file-row" title="${escapeHtml(f.filename)}">
+                <span class="project-file-badge">${escapeHtml(label)}</span>
+                ${nameTag}
+                <span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>
+                <a class="project-file-download" href="${href}" download title="Download">⤓</a>
+            </div>`;
+    }).join('');
+
+    menu.innerHTML = `
+        <div class="context-menu-label">Files in this chat</div>
+        <div class="chat-files-scroll">${rows}</div>
+    `;
+    // Re-position now that the rows are in. The first call measured a one-line
+    // "Loading…" box, so its flip-above check passed on a height the menu no
+    // longer has — a long list would otherwise run off the bottom, and the
+    // anchor sits at the bottom of the screen.
+    positionPopover(menu, anchorEl, 'left');
+
+    const byId = new Map(sorted.map(f => [String(f.id), f]));
+    menu.querySelectorAll('.chat-file-name.clickable').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const f = byId.get(btn.dataset.fileId);
+            if (!f) return;
+            menu.remove();
+            FilePanel.open({
+                fileName: f.filename,
+                url: API.conversations.files.contentUrl(conversationId, f.id),
+                mimeType: f.mimeType,
+                sizeBytes: f.sizeBytes,
+            });
+        });
+    });
 }
 
 /**
@@ -4802,6 +4916,11 @@ function syncChatChrome() {
     }
     // Reflect this chat's effective file-tools state on the composer toggle.
     if (inChat) syncToolsToggle();
+    // The chat files list needs a saved conversation to list files for; a fresh
+    // unsaved chat has no id yet (CF-01).
+    if (elements.chatFilesBtn) {
+        elements.chatFilesBtn.disabled = !state.activeConversationId;
+    }
     // File panel + edge tab follow the active chat (hidden while browsing).
     FilePanel.syncUi();
 }
@@ -8874,6 +8993,16 @@ function setupEventListeners() {
     }
     if (elements.personaToolsBase) {
         elements.personaToolsBase.addEventListener('change', () => setPersonaToolsBase(elements.personaToolsBase.checked));
+    }
+
+    // Chat files list (CF-01). stopPropagation like every other popover button:
+    // the global close-menus handler on document would otherwise eat the menu
+    // on the very click that opened it.
+    if (elements.chatFilesBtn) {
+        elements.chatFilesBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showChatFilesMenu(elements.chatFilesBtn);
+        });
     }
 
     // Provider/model switching and the API-key field moved out of Settings in
