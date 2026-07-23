@@ -3251,24 +3251,30 @@ function selectModalProvider(provider) {
 }
 
 /**
- * Fetch button + help text for the selected provider. The "not every provider"
- * caveat is literal: the server rejects a provider whose module has no
- * listModels() (see server/src/routes/chat.js).
+ * The primary slot + help text for the selected provider. The slot holds one
+ * button, whichever action is actually available: Fetch when the provider has a
+ * key, "Add <Provider> API key" when it doesn't — rather than a disabled Fetch
+ * that can't do anything. Adding a model *manually* never needs a key, so the
+ * missing key is stated, not forced (no auto-opening popover).
+ *
+ * The "not every provider" caveat is literal: the server rejects a provider
+ * whose module has no listModels() (see server/src/routes/chat.js).
  */
 function renderFetchSection() {
     const provider = modelModalProvider;
     const meta = PROVIDERS[provider];
     const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
 
+    elements.fetchModelsBtn.hidden = !hasKey;
     elements.fetchModelsBtn.disabled = !hasKey;
-    elements.fetchModelsHelp.innerHTML = hasKey
-        ? `Fetches the model list from ${escapeHtml(meta.label)}'s API. Not every provider offers a list endpoint — add the model manually below if this comes up empty.`
-        : `No ${escapeHtml(meta.label)} API key saved. Add one to fetch the model list, or add a model manually below.`;
-
     // "Add key" opens the same provider-key popover the catalog uses. It renders
     // at body level (z-index 1000) above the modal overlay (250), so it stacks.
     elements.modalKeyBtn.hidden = hasKey;
-    elements.modalKeyBtn.textContent = `Add ${meta.label} key`;
+    elements.modalKeyBtn.textContent = `Add ${meta.label} API key`;
+
+    elements.fetchModelsHelp.innerHTML = hasKey
+        ? `Fetches the model list from ${escapeHtml(meta.label)}'s API. Not every provider offers a list endpoint — add the model manually below if this comes up empty.`
+        : `No ${escapeHtml(meta.label)} API key saved. Add one to fetch the model list — or add a model manually below, which doesn't need a key.`;
 }
 
 /**

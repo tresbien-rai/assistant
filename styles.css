@@ -1611,9 +1611,26 @@ body {
     gap: 6px;
 }
 
+/* The popover renders at body level (so it can escape a modal's stacking
+   context), which puts it outside `.modal-body input` and `.settings-section
+   input` — the only input styling in the app. Without these it falls back to
+   the browser default: white, square, Arial. Mirror the modal input tokens. */
 .key-popover-input {
     flex: 1;
     min-width: 0;
+    padding: 8px 10px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+    transition: border-color 0.2s;
+}
+
+.key-popover-input:focus {
+    outline: none;
+    border-color: var(--accent);
 }
 
 .key-popover-eye {
@@ -1622,9 +1639,14 @@ body {
     font-size: var(--text-xs);
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     color: var(--text-secondary);
     cursor: pointer;
+}
+
+.key-popover-eye:hover {
+    border-color: var(--accent);
+    color: var(--accent);
 }
 
 .key-popover-help {
@@ -4334,34 +4356,10 @@ body {
     margin-bottom: 16px;
 }
 
-/* Fetch sits beside an "Add key" button that only appears when the selected
-   provider has no stored key. */
-.fetch-models-row {
-    display: flex;
-    align-items: stretch;
-    gap: 8px;
-}
-
-.fetch-key-btn {
-    flex-shrink: 0;
-    padding: 10px 14px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-size: var(--text-sm);
-    font-weight: 500;
-    cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
-}
-
-.fetch-key-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
+/* One primary slot, two states: #fetchModelsBtn or #modalKeyBtn, never both
+   (renderFetchSection toggles `hidden`), so this styles whichever is showing. */
 .fetch-models-btn {
-    flex: 1;
+    width: 100%;
     padding: 10px 16px;
     background-color: var(--accent);
     border: none;
