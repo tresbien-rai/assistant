@@ -4121,8 +4121,8 @@ async function showChatFilesMenu(anchorEl) {
         <div class="context-menu-empty" data-role="status">Loading…</div>
     `;
     // 'left', not 'right' like the model menu: this button sits mid-row rather
-    // than at the right edge, and positionPopover doesn't clamp to the viewport
-    // — right-aligning hangs the menu off the left edge on a phone.
+    // than at the right edge, so right-aligning would hang the menu leftward
+    // across the composer instead of opening from the button.
     positionPopover(menu, anchorEl, 'left');
     attachPopoverOutsideClose(menu, anchorEl);
 
@@ -4172,6 +4172,11 @@ async function showChatFilesMenu(anchorEl) {
         <div class="context-menu-label">Files in this chat</div>
         <div class="chat-files-scroll">${rows}</div>
     `;
+    // Re-position now that the rows are in. The first call measured a one-line
+    // "Loading…" box, so its flip-above check passed on a height the menu no
+    // longer has — a long list would otherwise run off the bottom, and the
+    // anchor sits at the bottom of the screen.
+    positionPopover(menu, anchorEl, 'left');
 
     const byId = new Map(sorted.map(f => [String(f.id), f]));
     menu.querySelectorAll('.chat-file-name.clickable').forEach(btn => {
