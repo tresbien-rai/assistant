@@ -323,9 +323,26 @@ design pass once the catalog is settled.
 - **"Manage key" while a provider has no models yet** — confirm the chip +
   empty group is a comfortable enough place to set the first key, or whether the
   add-model modal should also offer the key inline.
-- **`google.mediaResolution`**: present in the current UI but not clearly read
-  by `gemini.js` in the section reviewed — confirm it's consumed before carrying
-  it into the descriptor, else drop it.
+- **`google.mediaResolution`**: RESOLVED (Slice 5) — dropped. Confirmed never
+  read by `gemini.js`; it's Gemini-3-only and set per-attachment (a `resolution`
+  on each media part), not globally in `generationConfig`. It belongs on the
+  attachment flow, not a per-model profile, so it's out of the descriptor.
+
+## Model-variant params — the general pattern (added 2026-07-22, Slice 5)
+
+Provider APIs split by model generation. Gemini's thinking control is the first
+case: `thinkingLevel` (Gemini 3+) vs `thinkingBudget` (Gemini 2.5) are mutually
+exclusive and can't be auto-detected from an arbitrary model id (our standing
+non-goal). The general mechanism, which needs **no new descriptor machinery**:
+
+- A **user-set mode selector** param (stored in the profile like any other), plus
+- the divergent params **gated on it via the existing `showWhen`**.
+
+For Gemini: `google.thinkingApi` (`off`/`level`/`budget`) gates `thinkingLevel`
+and `thinkingBudget`. `gemini.js` sends whichever the mode selects (never both —
+the API rejects that), and is legacy-safe (infers `level` from a set
+`thinkingLevel` on pre-switch profiles). Any future provider that splits its API
+uses the same pattern: add a mode selector + `showWhen`-gated params.
 
 ## Appendix — Providers registry sketch (2026-07-22)
 
