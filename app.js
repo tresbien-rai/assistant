@@ -7917,15 +7917,57 @@ async function sendMessage() {
     state.isLoading = true;
     updateSendButtonState();
 
-    // Store attachments to IndexedDB and get metadata
-    let attachmentMeta = [];
-    if (hasAttachments) {
-        attachmentMeta = await storeAttachmentsToIndexedDB(state.pendingAttachments);
-        state.pendingAttachments = [];
-        renderAttachmentPreviews();
+    // CF-02: text uploads become chat WORKING FILES (created before the user
+    // message so their revision is stamped at currentTurn-1 → FC-03b injects
+    // them on this very turn). Images/audio/PDF stay on the inline path.
+    // `inlineMeta` (blobs in IndexedDB, base64'd into the request) is what
+    // callAPI* inlines; working files are injected server-side, not inlined.
+    const pending = state.pendingAttachments;
+    const textUploads = pending.filter(isTextWorkingFileUpload);
+    const inlineUploads = pending.filter(a => !isTextWorkingFileUpload(a));
+    state.pendingAttachments = [];
+    renderAttachmentPreviews();
+
+    // Working files need a saved conversation; create one first if this is the
+    // opening message of a fresh chat.
+    if (textUploads.length > 0 && !state.activeConversationId) {
+        try {
+            await createConversation(generateConversationTitle(userMessage || '(attached files)'));
+        } catch (err) {
+            console.error('Could not create conversation for working files:', err);
+        }
     }
 
-    await appendMessage('user', userMessage || '(attached files)', true, null, attachmentMeta.length > 0 ? attachmentMeta : null);
+    let workingFileAtts = [];
+    let inlineFallback = [];
+    if (textUploads.length > 0 && state.activeConversationId) {
+        const result = await createWorkingFilesFromUploads(state.activeConversationId, textUploads);
+        workingFileAtts = result.created;
+        inlineFallback = result.failed;
+    } else {
+        inlineFallback = textUploads; // no conversation → fall back to inline
+    }
+
+    // Inline attachments (images/audio/PDF + any working-file creation failures)
+    // still go through IndexedDB.
+    let inlineMeta = [];
+    const toInline = [...inlineUploads, ...inlineFallback];
+    if (toInline.length > 0) {
+        inlineMeta = await storeAttachmentsToIndexedDB(toInline);
+    }
+
+    // The message records both: working files as file cards, inline ones as
+    // their usual attachment metadata. Only inlineMeta is inlined into the
+    // request content below.
+    const messageAtts = [...workingFileAtts, ...inlineMeta];
+
+    // Surface the newest working file in the panel/explorer, matching how a
+    // model-created file behaves (auto-open or edge dot per filePanelMode).
+    if (workingFileAtts.length > 0) {
+        FilePanel.notifyActivity(workingFileAtts[workingFileAtts.length - 1], state.activeConversationId);
+    }
+
+    await appendMessage('user', userMessage || '(attached files)', true, null, messageAtts.length > 0 ? messageAtts : null);
 
     if (modelConfig.modelParams.streaming) {
         // Streaming path
@@ -7946,7 +7988,7 @@ async function sendMessage() {
             // callAPIStreaming always returns { text, generatedImages }
             // — including on abort (api-client swallows AbortError and we
             // finalize with the accumulator-so-far).
-            const result = await callAPIStreaming(userMessage, attachmentMeta);
+            const result = await callAPIStreaming(userMessage, inlineMeta);
             await finalizeStreamingMessage(result.text || '', result.generatedImages || [], targetConvoId);
         } catch (error) {
             // Real error path; abort flows through normally now.
@@ -7970,7 +8012,7 @@ async function sendMessage() {
         setExpression(CONFIG.generatingExpression); // restored from the response below
 
         try {
-            const response = await callAPI(userMessage, attachmentMeta);
+            const response = await callAPI(userMessage, inlineMeta);
 
             hideTypingIndicator();
 
@@ -8542,6 +8584,56 @@ async function downloadGeneratedImage(attachment) {
 }
 
 // ===== File Attachment Handling =====
+
+/**
+ * Whether a pending attachment should become a chat WORKING FILE (CF-02) rather
+ * than a static inline attachment. Text/code/markdown qualify; images, audio,
+ * and PDFs do not (images are vision content; PDFs need a binary upload path,
+ * deferred). Mirrors the server's text allow-list intent — `getFileCategory`
+ * buckets PDF as 'document' alongside text, so PDF is excluded explicitly.
+ */
+function isTextWorkingFileUpload(att) {
+    if (att.mimeType === 'application/pdf') return false;
+    if (/\.pdf$/i.test(att.fileName || '')) return false;
+    return att.type === 'code' || att.type === 'document';
+}
+
+/**
+ * Turn text uploads into conversation working files (CF-02). Each is read as
+ * text and POSTed to create a conversation file; on success it becomes a
+ * 'created_file'-shaped attachment (same card + panel affordance as a
+ * model-created file). On failure (Drive unavailable on dev login, transient
+ * error) the upload is returned in `failed` so the caller can fall back to the
+ * inline path — a file must never silently vanish.
+ * @returns {Promise<{ created: Array, failed: Array }>}
+ */
+async function createWorkingFilesFromUploads(conversationId, uploads) {
+    const created = [];
+    const failed = [];
+    for (const att of uploads) {
+        try {
+            const text = await att.file.text();
+            const rec = await API.conversations.files.create(conversationId, {
+                filename: att.fileName,
+                content: text,
+                mimeType: att.mimeType || undefined,
+            });
+            const url = API.conversations.files.contentUrl(conversationId, rec.id);
+            created.push({
+                type: 'created_file',
+                fileName: rec.filename,
+                url,
+                mimeType: rec.mimeType || att.mimeType || '',
+                sizeBytes: rec.sizeBytes || att.fileSize || 0,
+            });
+        } catch (err) {
+            console.error('Failed to create working file from upload:', err);
+            failed.push(att);
+        }
+    }
+    return { created, failed };
+}
+
 function handleFileAttachment(files) {
     const maxFiles = CONFIG.attachments.maxAttachments;
     const currentCount = state.pendingAttachments.length;

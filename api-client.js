@@ -361,6 +361,14 @@
         list(conversationId) {
           return request('GET', `/api/conversations/${encodeURIComponent(conversationId)}/files`);
         },
+        /**
+         * Create a chat working file from a user-uploaded TEXT file (CF-02).
+         * Body: { filename, content, mimeType? }. Returns the file record +
+         * { overwritten }.
+         */
+        create(conversationId, data) {
+          return request('POST', `/api/conversations/${encodeURIComponent(conversationId)}/files`, { body: data });
+        },
         /** Same-origin download URL (cookie-authed <a href download>). */
         contentUrl(conversationId, fileId) {
           return `/api/conversations/${encodeURIComponent(conversationId)}/files/${encodeURIComponent(fileId)}/content`;
