@@ -111,11 +111,17 @@ function buildRequestBody(params) {
     generationConfig.stopSequences = modelParams.stopSequences;
   }
 
-  // Add thinkingConfig if enabled
-  if (modelParams?.google?.thinkingLevel && modelParams.google.thinkingLevel !== 'off') {
-    generationConfig.thinkingConfig = {
-      thinkingLevel: modelParams.google.thinkingLevel,
-    };
+  // Add thinkingConfig based on the model's thinking mode. thinkingLevel
+  // (Gemini 3+) and thinkingBudget (Gemini 2.5) are mutually exclusive — the API
+  // rejects both. Legacy profiles predate `thinkingApi`: infer 'level' from a
+  // set thinkingLevel so they keep working.
+  const g = modelParams?.google || {};
+  const thinkingApi = g.thinkingApi
+    || ((g.thinkingLevel && g.thinkingLevel !== 'off') ? 'level' : 'off');
+  if (thinkingApi === 'level' && g.thinkingLevel && g.thinkingLevel !== 'off') {
+    generationConfig.thinkingConfig = { thinkingLevel: g.thinkingLevel };
+  } else if (thinkingApi === 'budget' && typeof g.thinkingBudget === 'number' && g.thinkingBudget !== 0) {
+    generationConfig.thinkingConfig = { thinkingBudget: g.thinkingBudget };
   }
 
   const body = {
