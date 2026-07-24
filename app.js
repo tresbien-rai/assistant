@@ -7098,6 +7098,22 @@ function buildRichDiff(diffText) {
     return container;
 }
 
+// Chat working-file inject modes (CT-04). Order IS the cycle order, and matches
+// the server's INJECT_MODES so a round trip can't disagree with the UI.
+const INJECT_MODES = ['auto', 'pin', 'mute'];
+
+const INJECT_MODE_ICONS = {
+    auto: '◐',
+    pin: '📌',
+    mute: '🚫',
+};
+
+const INJECT_MODE_TITLES = {
+    auto: 'Auto — loaded for a turn after each change, then read on demand. Click to pin.',
+    pin: 'Pinned — kept in context every turn. Click to mute.',
+    mute: 'Muted — never loaded automatically. Click for auto.',
+};
+
 // ===== File Panel (edit-in-context slice 1: viewer) =====
 // Shows a model-created file beside the chat instead of only as a download
 // card. Device-local filePanelMode picks between auto-opening on create_file
@@ -7397,18 +7413,22 @@ const FilePanel = {
         }
     },
 
-    /** From the browser view, load and render the chat's files. */
+    /**
+     * From the browser view, load and render the chat's CONTEXT (CT-04): the
+     * knowledge files it inherits from its workspace/project, resolved for this
+     * chat, plus its own working files. One call — the server does the layering.
+     */
     async loadBrowser() {
         const body = elements.filePanelBody;
         const conversationId = state.activeConversationId;
         if (!body || !conversationId) return;
         body.innerHTML = '<p class="file-panel-empty">Loading…</p>';
         const seq = ++this._fetchSeq;
-        let files;
+        let context;
         try {
-            files = await API.conversations.files.list(conversationId);
+            context = await API.conversations.context.get(conversationId);
         } catch (err) {
-            console.error('Failed to load chat files:', err);
+            console.error('Failed to load chat context:', err);
             if (seq === this._fetchSeq && this.browseMode && body) {
                 body.innerHTML = '<p class="file-panel-empty">Could not load files.</p>';
             }
@@ -7417,12 +7437,21 @@ const FilePanel = {
         // Stale response (switched files/chat or left the browser since).
         if (seq !== this._fetchSeq || !this.browseMode) return;
         if (state.activeConversationId !== conversationId) return;
-        this.renderBrowser(files, conversationId);
+        this.renderBrowser(context, conversationId);
     },
 
-    /** Render the file list into the panel body (CF-01b), with the scratchpad
-     * pinned at the top (SP-03a). */
-    renderBrowser(files, conversationId) {
+    /**
+     * Render the chat's context into the panel body: the scratchpad pinned at
+     * the top (SP-03a), then a section per source — the inherited workspace,
+     * the inherited project, and the chat's own files (CT-04).
+     *
+     * Sections answer a question the flat list couldn't: where is this chat's
+     * context actually coming from?
+     *
+     * @param {{workspace: Object|null, project: Object|null, chatFiles: Array}} context
+     * @param {string} conversationId
+     */
+    renderBrowser(context, conversationId) {
         const body = elements.filePanelBody;
         if (!body) return;
 
@@ -7430,7 +7459,7 @@ const FilePanel = {
         list.className = 'fp-browser';
 
         // Pinned scratchpad entry — always present (the shared thinking space),
-        // above the chat's files.
+        // above everything else.
         const padRow = document.createElement('div');
         padRow.className = 'chat-file-row scratchpad-row';
         padRow.title = 'The shared scratchpad for this chat';
@@ -7441,47 +7470,198 @@ const FilePanel = {
         padRow.querySelector('.chat-file-name').addEventListener('click', () => this.openScratchpad());
         list.appendChild(padRow);
 
-        const hasFiles = Array.isArray(files) && files.length > 0;
-        if (!hasFiles) {
+        const knowledge = [
+            { scope: 'workspace', label: 'Workspace', data: context?.workspace },
+            { scope: 'project', label: 'Project', data: context?.project },
+        ].filter(s => s.data && s.data.files.length > 0);
+
+        knowledge.forEach(({ scope, label, data }) => {
+            list.appendChild(this.browserSectionHeader(`${label} · ${data.name}`));
+            // Knowledge files keep their upload order: in a reference library the
+            // useful question is "what is this called", the opposite of a chat's.
+            data.files.forEach(f => list.appendChild(
+                this.knowledgeRow(f, scope, data.id, conversationId)));
+        });
+
+        const chatFiles = Array.isArray(context?.chatFiles) ? context.chatFiles : [];
+        if (chatFiles.length > 0) {
+            // Only label the section when there is something above it to
+            // distinguish it from.
+            if (knowledge.length > 0) list.appendChild(this.browserSectionHeader('This chat'));
+            // Newest first: in a chat the useful question is "what were we just
+            // working on", not "what is this called".
+            [...chatFiles]
+                .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+                .forEach(f => list.appendChild(this.chatFileRow(f, conversationId)));
+        } else if (knowledge.length === 0) {
             const note = document.createElement('p');
             note.className = 'file-panel-empty fp-browser-empty';
             note.textContent = 'No files in this chat yet.';
             list.appendChild(note);
-            body.innerHTML = '';
-            body.appendChild(list);
-            return;
         }
 
-        // Newest first: in a chat the useful question is "what were we just
-        // working on", not "what is this called".
-        const sorted = [...files].sort((a, b) =>
-            String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-
-        sorted.forEach(f => {
-            const href = API.conversations.files.contentUrl(conversationId, f.id);
-            const label = getFileTypeLabel(f.filename, f.mimeType);
-            // Text files open in the viewer; PDFs and other binaries are
-            // download-only, same rule as the container file lists (FC-04).
-            const viewable = !/\.pdf$/i.test(f.filename || '');
-            const row = document.createElement('div');
-            row.className = 'chat-file-row';
-            row.title = f.filename || '';
-            row.innerHTML =
-                `<span class="project-file-badge">${escapeHtml(label)}</span>`
-                + (viewable
-                    ? `<button type="button" class="chat-file-name clickable">${escapeHtml(f.filename)}</button>`
-                    : `<span class="chat-file-name">${escapeHtml(f.filename)}</span>`)
-                + `<span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>`
-                + `<a class="project-file-download" href="${href}" download title="Download">⤓</a>`;
-            if (viewable) {
-                row.querySelector('.chat-file-name').addEventListener('click', () => {
-                    this.open({ fileName: f.filename, url: href, mimeType: f.mimeType, sizeBytes: f.sizeBytes });
-                });
-            }
-            list.appendChild(row);
-        });
         body.innerHTML = '';
         body.appendChild(list);
+    },
+
+    /** A source divider in the browser list (CT-04). */
+    browserSectionHeader(text) {
+        const el = document.createElement('div');
+        el.className = 'fp-browser-section';
+        el.textContent = text;
+        return el;
+    },
+
+    /**
+     * One inherited knowledge file (CT-04): a checkbox resolving this chat's
+     * state, plus a reset control when the row overrides its container default.
+     */
+    knowledgeRow(f, scope, containerId, conversationId) {
+        const api = scope === 'workspace' ? API.workspaces.files : API.projects.files;
+        const href = api.contentUrl(containerId, f.id);
+        const viewable = !/\.pdf$/i.test(f.filename || '');
+        const overridden = f.source === 'chat';
+
+        const row = document.createElement('div');
+        row.className = `chat-file-row knowledge-row${f.enabled ? '' : ' is-context-off'}${overridden ? ' is-overridden' : ''}`;
+        row.title = f.filename || '';
+        row.innerHTML =
+            `<input type="checkbox" class="project-file-toggle" ${f.enabled ? 'checked' : ''}
+                    aria-label="Load ${escapeHtml(f.filename)} into this chat"
+                    title="Load this file into THIS chat. Other chats are unaffected.">`
+            + `<span class="project-file-badge">${escapeHtml(getFileTypeLabel(f.filename, f.mimeType))}</span>`
+            + (viewable
+                ? `<button type="button" class="chat-file-name clickable">${escapeHtml(f.filename)}</button>`
+                : `<span class="chat-file-name">${escapeHtml(f.filename)}</span>`)
+            + `<span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>`
+            + `<button type="button" class="fp-reset-btn" title="Reset to the ${scope} default"
+                       aria-label="Reset ${escapeHtml(f.filename)} to the ${scope} default"${overridden ? '' : ' hidden'}>↺</button>`;
+
+        if (viewable) {
+            row.querySelector('.chat-file-name').addEventListener('click', () => {
+                this.open({ fileName: f.filename, url: href, mimeType: f.mimeType, sizeBytes: f.sizeBytes });
+            });
+        }
+        row.querySelector('.project-file-toggle').addEventListener('change', (e) =>
+            this.setKnowledgeOverride(f, scope, conversationId, e.target, row));
+        row.querySelector('.fp-reset-btn').addEventListener('click', () =>
+            this.resetKnowledgeOverride(f, scope, conversationId, row));
+        return row;
+    },
+
+    /** One of the chat's own working files, with its auto/pin/mute control. */
+    chatFileRow(f, conversationId) {
+        const href = API.conversations.files.contentUrl(conversationId, f.id);
+        const viewable = !/\.pdf$/i.test(f.filename || '');
+        const mode = INJECT_MODES.includes(f.injectMode) ? f.injectMode : 'auto';
+
+        const row = document.createElement('div');
+        row.className = `chat-file-row${mode === 'mute' ? ' is-context-off' : ''}`;
+        row.title = f.filename || '';
+        row.innerHTML =
+            `<button type="button" class="fp-mode-btn mode-${mode}" data-mode="${mode}"
+                     title="${escapeHtml(INJECT_MODE_TITLES[mode])}"
+                     aria-label="${escapeHtml(f.filename)}: ${escapeHtml(INJECT_MODE_TITLES[mode])}">${INJECT_MODE_ICONS[mode]}</button>`
+            + `<span class="project-file-badge">${escapeHtml(getFileTypeLabel(f.filename, f.mimeType))}</span>`
+            + (viewable
+                ? `<button type="button" class="chat-file-name clickable">${escapeHtml(f.filename)}</button>`
+                : `<span class="chat-file-name">${escapeHtml(f.filename)}</span>`)
+            + `<span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>`
+            + `<a class="project-file-download" href="${href}" download title="Download">⤓</a>`;
+
+        if (viewable) {
+            row.querySelector('.chat-file-name').addEventListener('click', () => {
+                this.open({ fileName: f.filename, url: href, mimeType: f.mimeType, sizeBytes: f.sizeBytes });
+            });
+        }
+        row.querySelector('.fp-mode-btn').addEventListener('click', (e) =>
+            this.cycleInjectMode(f, conversationId, e.currentTarget, row));
+        return row;
+    },
+
+    /**
+     * Flip a knowledge file's state FOR THIS CHAT (CT-04). Optimistic, same
+     * reasoning as the container page: free to undo, so a round trip per click
+     * would just feel slow.
+     */
+    async setKnowledgeOverride(f, scope, conversationId, checkbox, row) {
+        const enabled = checkbox.checked;
+        const prev = { enabled: f.enabled, source: f.source };
+        this.applyKnowledgeRowState(row, f, { enabled, source: 'chat' });
+        checkbox.disabled = true;
+        try {
+            await API.conversations.context.setEnabled(conversationId, scope, f.id, enabled);
+        } catch (err) {
+            console.error('Failed to set per-chat context override:', err);
+            checkbox.checked = prev.enabled;
+            this.applyKnowledgeRowState(row, f, prev);
+            displayError(err, { action: 'update the file' });
+        } finally {
+            checkbox.disabled = false;
+        }
+    },
+
+    /** Drop this chat's override and fall back to the container default. */
+    async resetKnowledgeOverride(f, scope, conversationId, row) {
+        const prev = { enabled: f.enabled, source: f.source };
+        const btn = row.querySelector('.fp-reset-btn');
+        if (btn) btn.disabled = true;
+        try {
+            const res = await API.conversations.context.reset(conversationId, scope, f.id);
+            // The server echoes what the file now resolves to, so the row can
+            // snap to the container default without a second round trip.
+            this.applyKnowledgeRowState(row, f, { enabled: res.enabled, source: 'container' });
+            const cb = row.querySelector('.project-file-toggle');
+            if (cb) cb.checked = res.enabled;
+        } catch (err) {
+            console.error('Failed to reset per-chat context override:', err);
+            this.applyKnowledgeRowState(row, f, prev);
+            displayError(err, { action: 'reset the file' });
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    },
+
+    /** Write a resolved state onto a knowledge row (and its cached record). */
+    applyKnowledgeRowState(row, f, { enabled, source }) {
+        f.enabled = enabled;
+        f.source = source;
+        row.classList.toggle('is-context-off', !enabled);
+        row.classList.toggle('is-overridden', source === 'chat');
+        const btn = row.querySelector('.fp-reset-btn');
+        if (btn) btn.hidden = source !== 'chat';
+    },
+
+    /**
+     * Cycle a chat working file through auto → pin → mute → auto (CT-04). One
+     * click, no menu: the icon carries the state, so the control is as cheap to
+     * read as it is to change.
+     */
+    async cycleInjectMode(f, conversationId, btn, row) {
+        const current = INJECT_MODES.includes(f.injectMode) ? f.injectMode : 'auto';
+        const next = INJECT_MODES[(INJECT_MODES.indexOf(current) + 1) % INJECT_MODES.length];
+        this.applyInjectMode(btn, row, f, next);
+        btn.disabled = true;
+        try {
+            await API.conversations.files.setInjectMode(conversationId, f.id, next);
+        } catch (err) {
+            console.error('Failed to set inject mode:', err);
+            this.applyInjectMode(btn, row, f, current);
+            displayError(err, { action: 'update the file' });
+        } finally {
+            btn.disabled = false;
+        }
+    },
+
+    /** Write an inject mode onto a chat-file row (and its cached record). */
+    applyInjectMode(btn, row, f, mode) {
+        f.injectMode = mode;
+        btn.dataset.mode = mode;
+        btn.className = `fp-mode-btn mode-${mode}`;
+        btn.innerHTML = INJECT_MODE_ICONS[mode];
+        btn.title = INJECT_MODE_TITLES[mode];
+        btn.setAttribute('aria-label', `${f.filename}: ${INJECT_MODE_TITLES[mode]}`);
+        row.classList.toggle('is-context-off', mode === 'mute');
     },
 
     /**

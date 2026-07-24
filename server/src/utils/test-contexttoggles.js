@@ -389,6 +389,121 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
       );
     });
 
+    // -----------------------------------------------------------------------
+    console.log('\n9. the per-chat context endpoints (CT-04)...');
+    const convRouter = require('../routes/conversations');
+
+    /** Drive a conversations-router handler by method + path. */
+    function conversationHandler(method, path) {
+      const layer = convRouter.stack.find((l) => l.route?.path === path && l.route.methods[method]);
+      assert.ok(layer, `${method.toUpperCase()} ${path} is registered`);
+      const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+      return (params, body = {}) =>
+        new Promise((resolve, reject) => {
+          handler({ user: { userId }, params, body },
+            { json: resolve }, (err) => reject(err || new Error('unexpected next()')));
+        });
+    }
+
+    const getContext = conversationHandler('get', '/:id/context');
+    const patchOverride = conversationHandler('patch', '/:id/context/:scope/:fileId');
+    const deleteOverride = conversationHandler('delete', '/:id/context/:scope/:fileId');
+    const patchInjectMode = conversationHandler('patch', '/:id/files/:fileId');
+
+    await check('GET /context returns the inherited sections resolved for this chat', async () => {
+      const ctx = await getContext({ id: wsChat.id });
+      assert.strictEqual(ctx.workspace.id, workspace.id);
+      assert.strictEqual(ctx.workspace.name, 'WS');
+      assert.strictEqual(ctx.project, null, 'a workspace-level chat has no project section');
+      const names = ctx.workspace.files.map((f) => f.filename).sort();
+      assert.deepStrictEqual(names, ['alpha.md', 'beta.md']);
+      assert.ok(ctx.workspace.files.every((f) => typeof f.enabled === 'boolean'));
+      assert.ok(ctx.workspace.files.every((f) => ['chat', 'container'].includes(f.source)));
+    });
+
+    await check('`source` distinguishes an override from an inherited default', async () => {
+      // beta is container-disabled from section 2; alpha inherits its default.
+      let ctx = await getContext({ id: wsChat.id });
+      assert.strictEqual(ctx.workspace.files.find((f) => f.id === beta.id).source, 'container');
+
+      await patchOverride({ id: wsChat.id, scope: 'workspace', fileId: beta.id }, { enabled: true });
+      ctx = await getContext({ id: wsChat.id });
+      const row = ctx.workspace.files.find((f) => f.id === beta.id);
+      assert.strictEqual(row.enabled, true, 'override applied');
+      assert.strictEqual(row.source, 'chat', 'and reported as this chat disagreeing');
+    });
+
+    await check('the override is invisible to a sibling chat', async () => {
+      const ctx = await getContext({ id: otherChat.id });
+      const row = ctx.workspace.files.find((f) => f.id === beta.id);
+      assert.strictEqual(row.enabled, false, 'sibling still sees the container default');
+      assert.strictEqual(row.source, 'container');
+    });
+
+    await check('DELETE resets to the container default and echoes it', async () => {
+      const res = await deleteOverride({ id: wsChat.id, scope: 'workspace', fileId: beta.id });
+      assert.strictEqual(res.source, 'container');
+      assert.strictEqual(res.enabled, false, 'echoes what it now resolves to');
+      const ctx = await getContext({ id: wsChat.id });
+      assert.strictEqual(ctx.workspace.files.find((f) => f.id === beta.id).source, 'container');
+    });
+
+    await check('a chat cannot override a file it does not inherit', async () => {
+      // bareFile belongs to the `bare` workspace, which wsChat is not in.
+      await assert.rejects(
+        () => patchOverride({ id: wsChat.id, scope: 'workspace', fileId: bareFile.id }, { enabled: false }),
+        /not found/i
+      );
+      assert.strictEqual(dal.listConversationContextOverrides(wsChat.id).length, 0, 'nothing recorded');
+    });
+
+    await check('a scope the chat has no container for is a 404', async () => {
+      await assert.rejects(
+        () => patchOverride({ id: wsChat.id, scope: 'project', fileId: alpha.id }, { enabled: false }),
+        /not found/i
+      );
+    });
+
+    await check('junk scope and junk enabled are validation errors', async () => {
+      await assert.rejects(
+        () => patchOverride({ id: wsChat.id, scope: 'conversation', fileId: alpha.id }, { enabled: false }),
+        /scope/
+      );
+      await assert.rejects(
+        () => patchOverride({ id: wsChat.id, scope: 'workspace', fileId: alpha.id }, { enabled: 'yes' }),
+        /enabled/
+      );
+    });
+
+    await check('chat files come back with their inject mode', async () => {
+      dal.setConversationFileInjectMode(fresh.id, chat.id, 'auto');
+      const ctx = await getContext({ id: chat.id });
+      const modes = Object.fromEntries(ctx.chatFiles.map((f) => [f.filename, f.injectMode]));
+      assert.deepStrictEqual(modes, { 'stale.md': 'auto', 'fresh.md': 'auto' });
+      assert.strictEqual(ctx.workspace, null, 'an unfiled chat inherits nothing');
+    });
+
+    await check('PATCH sets a chat file inject mode; junk is rejected', async () => {
+      const res = await patchInjectMode({ id: chat.id, fileId: fresh.id }, { injectMode: 'pin' });
+      assert.strictEqual(res.injectMode, 'pin');
+      const ctx = await getContext({ id: chat.id });
+      assert.strictEqual(ctx.chatFiles.find((f) => f.id === fresh.id).injectMode, 'pin');
+      for (const bad of [{}, { injectMode: 'PIN' }, { injectMode: 'pinned' }, { injectMode: null }]) {
+        await assert.rejects(() => patchInjectMode({ id: chat.id, fileId: fresh.id }, bad), /injectMode/);
+      }
+      await patchInjectMode({ id: chat.id, fileId: fresh.id }, { injectMode: 'auto' });
+    });
+
+    await check('another user\'s conversation is not reachable', async () => {
+      const stranger = dal.createUser({ googleId: `ctog-x-${Date.now()}`, email: 'x@test.local' });
+      try {
+        const theirChat = dal.createConversation(stranger.id, { title: 'theirs' });
+        await assert.rejects(() => getContext({ id: theirChat.id }), /not found/i);
+      } finally {
+        db.prepare('DELETE FROM users WHERE id = ?').run(stranger.id);
+      }
+    });
+
     await check('list responses carry `enabled` for the checkbox to render', async () => {
       const listLayer = wsRouter.stack.find(
         (l) => l.route?.path === '/:id/files' && l.route.methods.get

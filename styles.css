@@ -5753,6 +5753,111 @@ body {
     padding: 4px 0;
 }
 
+/* Source dividers in the browser (CT-04): "Workspace · Lore", "This chat".
+   They answer a question the flat list couldn't — where this chat's context
+   is actually coming from. */
+.fp-browser-section {
+    padding: 10px 14px 4px;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* An unloaded/muted row stays legible — it is still a real file you may want to
+   open or download — but reads as inactive at a glance. Matches the container
+   page's .project-file-item.is-context-off treatment. */
+.chat-file-row.is-context-off .chat-file-name,
+.chat-file-row.is-context-off .project-file-badge {
+    opacity: 0.55;
+}
+
+.chat-file-row.is-context-off .chat-file-name {
+    font-style: italic;
+}
+
+/* A row whose state came from a per-chat override rather than the container
+   default. The marker is deliberately quiet: the reset button beside it is the
+   loud part, and it only exists on overridden rows. */
+.chat-file-row.is-overridden {
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.fp-reset-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--accent);
+    font-size: var(--text-sm);
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.fp-reset-btn:hover {
+    background: var(--border-color);
+}
+
+.fp-reset-btn[hidden] {
+    display: none;
+}
+
+/* Chat working-file inject mode (CT-04): one button cycling auto → pin → mute.
+   Sits in the same left column as the knowledge rows' checkbox so every row in
+   the list has its control in the same place. */
+.fp-mode-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.fp-mode-btn:hover {
+    background: var(--border-color);
+}
+
+.fp-mode-btn:disabled {
+    cursor: progress;
+    opacity: 0.5;
+}
+
+/* Auto is the default and should recede; pin and mute are deliberate states and
+   should read as such. */
+.fp-mode-btn.mode-auto {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.fp-mode-btn.mode-pin,
+.fp-mode-btn.mode-mute {
+    font-size: 11px;
+}
+
+/* Knowledge rows sit one notch in from their section header. */
+.chat-file-row.knowledge-row {
+    padding-left: 14px;
+}
+
 /* Mobile: the panel becomes a full-screen overlay above the chat (opened only
    by explicit tap — app.js never auto-opens it at this width). */
 @media (max-width: 768px) {
