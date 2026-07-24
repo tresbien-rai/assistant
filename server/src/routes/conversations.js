@@ -13,6 +13,12 @@
  * - POST /api/conversations/:id/messages - Add a message to a conversation
  * - PUT /api/conversations/:id/messages/:messageId - Update a message
  * - DELETE /api/conversations/:id/messages/:messageId - Delete a message
+ *
+ * Per-chat context controls (CT-04):
+ * - GET    /api/conversations/:id/context                    - The resolved context view
+ * - PATCH  /api/conversations/:id/context/:scope/:fileId     - Override a knowledge file here
+ * - DELETE /api/conversations/:id/context/:scope/:fileId     - Reset to the container default
+ * - PATCH  /api/conversations/:id/files/:fileId              - Set a chat file's inject mode
  */
 
 const express = require('express');
@@ -29,6 +35,14 @@ const { applyScratchpadWrite, revertScratchpad } = require('../tools/scratchpad'
 const { revertConversationFiles } = require('../tools/revertFiles');
 const { formatFileRevision } = require('../utils/format');
 const { trashConversationFiles } = require('../tools/conversationCleanup');
+const {
+  resolveKnowledgeFiles,
+  resolveInjectMode,
+  isValidInjectMode,
+  isKnowledgeScope,
+  INJECT_MODES,
+  KNOWLEDGE_SCOPES,
+} = require('../utils/contextState');
 
 const router = express.Router();
 
@@ -478,6 +492,45 @@ function requireConversationFile(userId, conversationId, fileId) {
 }
 
 /**
+ * Resolve a knowledge file addressed by a per-chat context route (CT-04),
+ * verifying the whole ownership chain: user → conversation → container → file.
+ *
+ * The container is taken from the CONVERSATION's own row, never from the
+ * request, so a chat can only ever override a file it actually inherits — the
+ * scope param selects which of its two containers, it can't point elsewhere.
+ *
+ * @param {Object} req - Express request (req.user, req.params)
+ * @returns {{ conversation: Object, scope: 'workspace'|'project', file: Object }}
+ */
+function requireKnowledgeFile(req) {
+  const userId = req.user.userId;
+  const { scope, fileId } = req.params;
+
+  if (!isKnowledgeScope(scope)) {
+    throw AppError.validation(`scope must be one of: ${KNOWLEDGE_SCOPES.join(', ')}.`);
+  }
+
+  const conversation = dal.getConversationMeta(req.params.id, userId);
+  if (!conversation) {
+    throw AppError.notFound('Conversation');
+  }
+
+  const containerId = scope === 'workspace' ? conversation.workspace_id : conversation.project_id;
+  if (!containerId) {
+    throw AppError.notFound(scope === 'workspace' ? 'Workspace' : 'Project');
+  }
+
+  const file = scope === 'workspace'
+    ? dal.getWorkspaceFile(fileId, containerId)
+    : dal.getProjectFile(fileId, containerId);
+  if (!file) {
+    throw AppError.notFound('File');
+  }
+
+  return { conversation, scope, file };
+}
+
+/**
  * GET /api/conversations/:id/files
  * List a chat's created files (metadata only, no Drive calls).
  */
@@ -488,6 +541,116 @@ router.get('/:id/files', asyncHandler(async (req, res) => {
   }
   const files = dal.listConversationFiles(req.params.id);
   res.json(files.map(formatConversationFile));
+}));
+
+/**
+ * GET /api/conversations/:id/context
+ * Everything the chat's context panel needs, in one call (CT-04): the inherited
+ * knowledge files with their state RESOLVED FOR THIS CHAT, plus the chat's own
+ * working files with their inject modes.
+ *
+ * Each knowledge file carries `source`: 'chat' when this conversation overrides
+ * its container's default, 'container' when it simply inherits. That is what
+ * lets the panel show "this row disagrees with the default" and offer a reset —
+ * the client never has to re-derive the layering, which is resolved server-side
+ * by the same utils/contextState the injection path uses.
+ *
+ * Deliberately no budget figures: computing "chars actually loaded" means
+ * downloading and extracting every enabled file, far too expensive for opening
+ * a panel. CT-06 can add a cheap approximation if the readout earns its keep.
+ */
+router.get('/:id/context', asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const conversation = dal.getConversationMeta(req.params.id, userId);
+  if (!conversation) {
+    throw AppError.notFound('Conversation');
+  }
+
+  /** One resolved knowledge section, or null when the chat has no such container. */
+  const section = (container, scope, listFiles) => {
+    if (!container) return null;
+    const resolved = resolveKnowledgeFiles(dal, conversation.id, scope, listFiles(container.id));
+    return {
+      id: container.id,
+      name: container.name,
+      files: resolved.map(({ file, enabled, source }) => ({
+        id: file.id,
+        filename: file.filename,
+        mimeType: file.mime_type,
+        sizeBytes: file.size_bytes,
+        enabled,
+        source,
+      })),
+    };
+  };
+
+  const workspace = conversation.workspace_id
+    ? dal.getWorkspaceById(conversation.workspace_id, userId)
+    : null;
+  const project = conversation.project_id
+    ? dal.getProjectById(conversation.project_id, userId)
+    : null;
+
+  res.json({
+    workspace: section(workspace, 'workspace', dal.listWorkspaceFiles),
+    project: section(project, 'project', dal.listProjectFiles),
+    chatFiles: dal.listConversationFiles(conversation.id).map((f) => ({
+      ...formatConversationFile(f),
+      injectMode: resolveInjectMode(f),
+    })),
+  });
+}));
+
+/**
+ * PATCH /api/conversations/:id/context/:scope/:fileId
+ * Override a knowledge file's container default FOR THIS CHAT ONLY (CT-04).
+ * Body: { enabled }. The container's own default is untouched.
+ */
+router.patch('/:id/context/:scope/:fileId', asyncHandler(async (req, res) => {
+  const { conversation, scope, file } = requireKnowledgeFile(req);
+
+  if (typeof req.body.enabled !== 'boolean') {
+    throw AppError.validation('"enabled" must be true or false.');
+  }
+
+  dal.setConversationContextOverride(conversation.id, scope, file.id, req.body.enabled);
+  res.json({ fileId: file.id, scope, enabled: req.body.enabled, source: 'chat' });
+}));
+
+/**
+ * DELETE /api/conversations/:id/context/:scope/:fileId
+ * Drop this chat's override so the file falls back to its container default
+ * (CT-04). "Reset to default" is a DELETE by design — see the design note.
+ */
+router.delete('/:id/context/:scope/:fileId', asyncHandler(async (req, res) => {
+  const { conversation, scope, file } = requireKnowledgeFile(req);
+
+  dal.clearConversationContextOverride(conversation.id, scope, file.id);
+  res.json({
+    fileId: file.id,
+    scope,
+    // Echo what the file now resolves to, so the client can render the reset
+    // row without a second round trip.
+    enabled: file.enabled !== 0,
+    source: 'container',
+  });
+}));
+
+/**
+ * PATCH /api/conversations/:id/files/:fileId
+ * Set a chat working file's inject mode (CT-04): 'auto' (the recency window),
+ * 'pin' (every turn), or 'mute' (never).
+ */
+router.patch('/:id/files/:fileId', asyncHandler(async (req, res) => {
+  const file = requireConversationFile(req.user.userId, req.params.id, req.params.fileId);
+
+  const { injectMode } = req.body;
+  if (!isValidInjectMode(injectMode)) {
+    throw AppError.validation(`"injectMode" must be one of: ${INJECT_MODES.join(', ')}.`);
+  }
+
+  dal.setConversationFileInjectMode(file.id, req.params.id, injectMode);
+  res.json({ ...formatConversationFile(file), injectMode });
 }));
 
 /**

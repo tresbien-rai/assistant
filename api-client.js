@@ -373,6 +373,49 @@
         contentUrl(conversationId, fileId) {
           return `/api/conversations/${encodeURIComponent(conversationId)}/files/${encodeURIComponent(fileId)}/content`;
         },
+        /**
+         * Set a chat working file's inject mode (CT-04).
+         * @param {'auto'|'pin'|'mute'} injectMode
+         */
+        setInjectMode(conversationId, fileId, injectMode) {
+          return request(
+            'PATCH',
+            `/api/conversations/${encodeURIComponent(conversationId)}/files/${encodeURIComponent(fileId)}`,
+            { body: { injectMode } }
+          );
+        },
+      },
+
+      /**
+       * The chat's resolved context view (CT-04): inherited knowledge files with
+       * their state resolved FOR THIS CHAT, plus its own working files. One call
+       * so the panel can render every section without re-deriving the layering.
+       */
+      context: {
+        /**
+         * Returns { workspace, project, chatFiles }. `workspace`/`project` are
+         * null when the chat has no such container; each of their files carries
+         * `enabled` plus `source` ('chat' = overridden here, 'container' =
+         * inherited).
+         */
+        get(conversationId) {
+          return request('GET', `/api/conversations/${encodeURIComponent(conversationId)}/context`);
+        },
+        /** Override a knowledge file's container default for this chat only. */
+        setEnabled(conversationId, scope, fileId, enabled) {
+          return request(
+            'PATCH',
+            `/api/conversations/${encodeURIComponent(conversationId)}/context/${encodeURIComponent(scope)}/${encodeURIComponent(fileId)}`,
+            { body: { enabled } }
+          );
+        },
+        /** Drop this chat's override, falling back to the container default. */
+        reset(conversationId, scope, fileId) {
+          return request(
+            'DELETE',
+            `/api/conversations/${encodeURIComponent(conversationId)}/context/${encodeURIComponent(scope)}/${encodeURIComponent(fileId)}`
+          );
+        },
       },
 
       /**
