@@ -483,6 +483,18 @@
             body: fd,
           });
         },
+        /**
+         * Set a file's container-level context toggle (CT-03): whether it is
+         * loaded into the chats under this workspace. Returns the updated file.
+         * @param {boolean} enabled
+         */
+        setEnabled(workspaceId, fileId, enabled) {
+          return request(
+            'PATCH',
+            `/api/workspaces/${encodeURIComponent(workspaceId)}/files/${encodeURIComponent(fileId)}`,
+            { body: { enabled } }
+          );
+        },
         delete(workspaceId, fileId) {
           return request(
             'DELETE',
@@ -533,6 +545,18 @@
           return request('POST', `/api/projects/${encodeURIComponent(projectId)}/files`, {
             body: fd,
           });
+        },
+        /**
+         * Set a file's container-level context toggle (CT-03): whether it is
+         * loaded into the chats in this project. Returns the updated file.
+         * @param {boolean} enabled
+         */
+        setEnabled(projectId, fileId, enabled) {
+          return request(
+            'PATCH',
+            `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`,
+            { body: { enabled } }
+          );
         },
         delete(projectId, fileId) {
           return request(

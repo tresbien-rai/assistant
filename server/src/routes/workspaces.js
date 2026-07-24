@@ -25,6 +25,7 @@
  * - GET    /api/workspaces/:id/files                  - List files (from SQLite)
  * - POST   /api/workspaces/:id/files                  - Upload a file to Drive (+ record)
  * - GET    /api/workspaces/:id/files/:fileId/content  - Stream a file's bytes
+ * - PATCH  /api/workspaces/:id/files/:fileId          - Set the context toggle (CT-03)
  * - DELETE /api/workspaces/:id/files/:fileId          - Delete from Drive + DB
  *
  * Drive folder creation is BEST-EFFORT: if Drive isn't connected (e.g. the
@@ -83,6 +84,9 @@ function formatWorkspaceFile(f) {
     filename: f.filename,
     mimeType: f.mime_type,
     sizeBytes: f.size_bytes,
+    // Context toggle (CT-01/CT-03): the container-level default. NULL reads as
+    // enabled, matching contextState's resolution.
+    enabled: f.enabled !== 0,
     createdAt: f.created_at,
   };
 }
@@ -390,6 +394,32 @@ router.post('/:id/files', upload.single('file'), fixUploadedFilename, handleUplo
     'Workspace file uploaded'
   );
   res.status(201).json(formatWorkspaceFile(fileRecord));
+}));
+
+/**
+ * PATCH /api/workspaces/:id/files/:fileId
+ * Set a file's container-level context default (CT-03): whether it is loaded
+ * into the chats under this workspace. Metadata only — the file itself, its
+ * Drive bytes, and its revision history are untouched, so this is freely
+ * reversible. A chat can still override it per-conversation (CT-04).
+ */
+router.patch('/:id/files/:fileId', asyncHandler(async (req, res) => {
+  requireWorkspace(req.params.id, req.user.userId);
+
+  if (typeof req.body.enabled !== 'boolean') {
+    throw AppError.validation('"enabled" must be true or false.');
+  }
+
+  if (!dal.setWorkspaceFileEnabled(req.params.fileId, req.params.id, req.body.enabled)) {
+    throw AppError.notFound('File');
+  }
+
+  const updated = dal.getWorkspaceFile(req.params.fileId, req.params.id);
+  logger.info(
+    { userId: req.user.userId, workspaceId: req.params.id, fileId: req.params.fileId, enabled: req.body.enabled },
+    'Workspace file context toggle set'
+  );
+  res.json(formatWorkspaceFile(updated));
 }));
 
 /**

@@ -307,6 +307,101 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
       assert.ok(!/stale\.md.*muted/.test(res.content), 'auto files carry no note');
     });
 
+    // -----------------------------------------------------------------------
+    console.log('\n8. the container PATCH endpoints (CT-03)...');
+    const wsRouter = require('../routes/workspaces');
+    const projRouter = require('../routes/projects');
+
+    /**
+     * Drive the PATCH handler directly off the router stack — enough to cover
+     * validation + the 404 path without standing up an HTTP server (the same
+     * trade the other route tests make).
+     */
+    function patchHandlerFor(router) {
+      const layer = router.stack.find(
+        (l) => l.route?.path === '/:id/files/:fileId' && l.route.methods.patch
+      );
+      assert.ok(layer, 'PATCH /:id/files/:fileId is registered');
+      const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+      return (params, body) =>
+        new Promise((resolve, reject) => {
+          const res = { json: (payload) => resolve({ status: 200, payload }) };
+          handler({ user: { userId }, params, body }, res, (err) => (err ? reject(err) : resolve({ next: true })));
+        });
+    }
+
+    const patchWorkspaceFile = patchHandlerFor(wsRouter);
+    const patchProjectFile = patchHandlerFor(projRouter);
+
+    await check('PATCH sets the toggle and echoes the updated file', async () => {
+      const { payload } = await patchWorkspaceFile({ id: workspace.id, fileId: alpha.id }, { enabled: false });
+      assert.strictEqual(payload.enabled, false, 'response carries the new state');
+      assert.strictEqual(payload.id, alpha.id);
+      assert.strictEqual(dal.getWorkspaceFile(alpha.id, workspace.id).enabled, 0, 'and it persisted');
+    });
+
+    await check('the toggle actually changes what gets injected', async () => {
+      clearCache();
+      const ctx = await ctxFor(wsChat.id, false);
+      assert.ok(!ctx.text.includes('ALPHA_CONTENT'), 'PATCH → excluded from the prompt');
+      await patchWorkspaceFile({ id: workspace.id, fileId: alpha.id }, { enabled: true });
+      clearCache();
+      const back = await ctxFor(wsChat.id, false);
+      assert.match(back.text, /ALPHA_CONTENT/, 'and back again');
+    });
+
+    await check('a non-boolean "enabled" is a validation error', async () => {
+      for (const body of [{}, { enabled: 'true' }, { enabled: 1 }, { enabled: null }]) {
+        await assert.rejects(
+          () => patchWorkspaceFile({ id: workspace.id, fileId: alpha.id }, body),
+          /enabled/,
+          `rejected ${JSON.stringify(body)}`
+        );
+      }
+    });
+
+    await check('an unknown file is a 404, not a silent no-op', async () => {
+      await assert.rejects(
+        () => patchWorkspaceFile({ id: workspace.id, fileId: 'nope' }, { enabled: false }),
+        /not found/i
+      );
+    });
+
+    await check('a file from another container is not reachable', async () => {
+      // alpha belongs to `workspace`, not `bare` — the scoped UPDATE matches
+      // nothing, so this must 404 rather than toggle another container's file.
+      await assert.rejects(
+        () => patchWorkspaceFile({ id: bare.id, fileId: alpha.id }, { enabled: false }),
+        /not found/i
+      );
+      assert.strictEqual(dal.getWorkspaceFile(alpha.id, workspace.id).enabled, 1, 'left alone');
+    });
+
+    await check('the project endpoint behaves the same way', async () => {
+      const proj = dal.createProject(userId, { name: 'P', workspaceId: workspace.id });
+      const pf = dal.addProjectFile(proj.id, { filename: 'p.md', driveFileId: mockDriveFile('P_CONTENT') });
+      const { payload } = await patchProjectFile({ id: proj.id, fileId: pf.id }, { enabled: false });
+      assert.strictEqual(payload.enabled, false);
+      assert.strictEqual(payload.projectId, proj.id);
+      await assert.rejects(
+        () => patchProjectFile({ id: proj.id, fileId: pf.id }, { enabled: 'no' }),
+        /enabled/
+      );
+    });
+
+    await check('list responses carry `enabled` for the checkbox to render', async () => {
+      const listLayer = wsRouter.stack.find(
+        (l) => l.route?.path === '/:id/files' && l.route.methods.get
+      );
+      const handler = listLayer.route.stack[listLayer.route.stack.length - 1].handle;
+      const payload = await new Promise((resolve, reject) => {
+        handler({ user: { userId }, params: { id: workspace.id }, body: {} },
+          { json: resolve }, (err) => reject(err || new Error('unexpected next()')));
+      });
+      assert.ok(payload.every((f) => typeof f.enabled === 'boolean'), 'every row has a boolean');
+      assert.strictEqual(payload.find((f) => f.id === beta.id).enabled, false, 'reflects the stored state');
+    });
+
   } catch (err) {
     console.error('\n✗ Context toggle test crashed:', err);
     failures++;
