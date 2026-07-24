@@ -5740,6 +5740,90 @@ body {
     display: none;
 }
 
+/* Not-loaded count (CT-06): sits at the BOTTOM-right and is muted + static, so
+   it can never be mistaken for the top-right accent activity dot. Persistent
+   (present while any file is off), where the dot is transient. */
+.files-explorer-count {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    background: var(--text-muted);
+    border: 1.5px solid var(--bg-primary);
+    color: var(--bg-primary);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.files-explorer-count[hidden] {
+    display: none;
+}
+
+/* Hover/focus popover naming the not-loaded files (CT-06). Read-only — the
+   button itself is the click target, so the popover needs no interactivity. */
+.fp-context-popover {
+    z-index: 200;
+    min-width: 200px;
+    max-width: 300px;
+    padding: 8px 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg, 0 6px 24px rgba(0, 0, 0, 0.28));
+    font-size: var(--text-xs);
+    pointer-events: none; /* purely informational; never eats a click */
+}
+
+.fp-context-popover-title {
+    padding: 2px 12px 6px;
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.fp-context-popover-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 12px;
+}
+
+.fp-cp-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+}
+
+.fp-cp-note {
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+/* Tools-off warning atop the context view (CT-06): the one case where an
+   unchecked file is truly unreachable rather than merely unloaded. */
+.fp-tools-off-note {
+    margin: 4px 14px 8px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--warning-subtle, rgba(230, 160, 30, 0.12));
+    border: 1px solid var(--warning-border, rgba(230, 160, 30, 0.35));
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+}
+
 @keyframes file-tab-pulse {
     0%, 100% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.35); opacity: 0.55; }

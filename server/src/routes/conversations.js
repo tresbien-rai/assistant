@@ -43,6 +43,11 @@ const {
   INJECT_MODES,
   KNOWLEDGE_SCOPES,
 } = require('../utils/contextState');
+// resolveToolsEnabled is the single source of the resolved file-tools state
+// (override → persona base). Reused here so the context view's `toolsEnabled`
+// can't drift from what the chat route actually advertises. No require cycle:
+// chat.js does not require this router (only index.js mounts both).
+const { resolveToolsEnabled } = require('./chat');
 
 const router = express.Router();
 
@@ -555,6 +560,11 @@ router.get('/:id/files', asyncHandler(async (req, res) => {
  * the client never has to re-derive the layering, which is resolved server-side
  * by the same utils/contextState the injection path uses.
  *
+ * `toolsEnabled` is the RESOLVED file-tools state for this chat (CT-06). The
+ * panel needs it for the "disabled but unreachable" note: with tools off there
+ * is no read_file, so a disabled knowledge file is genuinely invisible rather
+ * than merely unloaded — the one case worth warning about.
+ *
  * Deliberately no budget figures: computing "chars actually loaded" means
  * downloading and extracting every enabled file, far too expensive for opening
  * a panel. CT-06 can add a cheap approximation if the readout earns its keep.
@@ -592,6 +602,7 @@ router.get('/:id/context', asyncHandler(async (req, res) => {
     : null;
 
   res.json({
+    toolsEnabled: resolveToolsEnabled(userId, conversation),
     workspace: section(workspace, 'workspace', dal.listWorkspaceFiles),
     project: section(project, 'project', dal.listProjectFiles),
     chatFiles: dal.listConversationFiles(conversation.id).map((f) => ({
