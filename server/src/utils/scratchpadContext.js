@@ -68,7 +68,7 @@ function resolveScratchpadBlock(conversationId, currentTurn, diffCount = config.
 
   return [
     '<scratchpad>',
-    "This is the shared scratchpad — a working space you and the user develop together, alongside the chat. It holds the CURRENT state of your shared thinking, not a log. Edit it in place with write_scratchpad (replace the whole thing) or edit_scratchpad (change part): rework, trim, and REPLACE superseded ideas rather than appending, so it stays a clean, focused artifact. Discuss your reasoning in your chat reply; keep the scratchpad itself as the tidy current draft. The user sees your edits as diffs.",
+    "The shared scratchpad's current content is below — the live state of your and the user's shared thinking. Keep developing it here (write_scratchpad / edit_scratchpad), replacing and trimming in place rather than appending. In your reply, discuss and point to it rather than restating its contents. Recent changes follow so you can see the back-and-forth.",
     '',
     `<current_content${truncatedNote}>`,
     content,
