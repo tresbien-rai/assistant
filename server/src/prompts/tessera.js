@@ -121,13 +121,42 @@ simply keeps its previous expression.`;
 }
 
 /**
+ * The scratchpad collaboration nudge (SP-05). Included only when the scratchpad
+ * is active for the request, so it costs nothing on ordinary chats. This is the
+ * adoption lever — models default to putting substance in the chat reply, so it
+ * has to be told to develop content IN the pad and to CHURN it rather than let
+ * it grow. Lives here (the base-prompt layer) so the wording is iterated in one
+ * place; the per-turn `<scratchpad>` block reinforces it with the live content.
+ */
+const SCRATCHPAD_SECTION = `
+
+## Scratchpad
+
+This conversation has a shared scratchpad — a document beside the chat that both
+you and the user edit directly (write_scratchpad replaces the whole thing;
+edit_scratchpad changes part of it). Use it as the main place to develop
+substantial or evolving content — outlines, drafts, structured notes, the current
+state of a plan — rather than packing that content into long chat messages.
+
+Keep it a clean, CURRENT artifact, not a log. Rework, trim, and REPLACE
+superseded ideas in place instead of appending to them, so it stays focused and
+does not grow unmanageably — this is the core of how the scratchpad differs from
+a file you build up. In your chat replies, stay focused on reasoning and
+discussion: explain what you changed and why, and point to the scratchpad rather
+than restating its contents. The user edits it too, so treat their changes as
+part of your shared thinking.`;
+
+/**
  * Compose the full system prompt for a provider call.
  * @param {string} [personaPrompt] - The persona's own system prompt
  * @param {unknown} [expressionNames] - The persona's expression names, unsanitized
+ * @param {Object} [options]
+ * @param {boolean} [options.scratchpad] - include the scratchpad nudge (SP-05)
  * @returns {string} The assembled system prompt
  */
-function buildSystemPrompt(personaPrompt, expressionNames) {
-  const base = ORIENTATION + buildExpressionSection(sanitizeExpressionNames(expressionNames));
+function buildSystemPrompt(personaPrompt, expressionNames, options = {}) {
+  let base = ORIENTATION + buildExpressionSection(sanitizeExpressionNames(expressionNames));
+  if (options.scratchpad) base += SCRATCHPAD_SECTION;
   const persona = typeof personaPrompt === 'string' ? personaPrompt.trim() : '';
   return persona ? `${base}\n\n---\n\n${persona}` : base;
 }

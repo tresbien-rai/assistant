@@ -14,6 +14,7 @@ const dal = require('../db/dal');
 const config = require('../config');
 const { resolveScratchpadBlock } = require('./scratchpadContext');
 const { resolveScratchpadEnabled } = require('../routes/chat');
+const { buildSystemPrompt } = require('../prompts/tessera');
 const { executeWriteScratchpad, executeEditScratchpad } = require('../tools/scratchpad');
 
 let failures = 0;
@@ -124,6 +125,16 @@ function row(conversationId, userId) {
       assert.strictEqual(resolveScratchpadEnabled(userId, row(conv.id, userId)), false, 'empty → off');
       await executeWriteScratchpad({ content: 'the user started jotting' }, { userId, conversationId: conv.id, turnOrdinal: 1 });
       assert.strictEqual(resolveScratchpadEnabled(userId, row(conv.id, userId)), true, 'content → auto-armed');
+    });
+
+    console.log('\n3. System-prompt nudge (SP-05)...');
+    await check('scratchpad section is included only when active', () => {
+      const off = buildSystemPrompt('You are a test persona.', ['neutral']);
+      const on = buildSystemPrompt('You are a test persona.', ['neutral'], { scratchpad: true });
+      assert.ok(!/## Scratchpad/.test(off), 'absent when not active');
+      assert.ok(/## Scratchpad/.test(on), 'present when active');
+      assert.ok(/REPLACE/.test(on), 'carries the churn nudge');
+      assert.ok(on.includes('You are a test persona.'), 'persona still appended after the base layer');
     });
 
   } catch (err) {

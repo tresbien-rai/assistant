@@ -13,7 +13,7 @@ const assert = require('node:assert');
 const { getDb, closeDb } = require('../db/connection');
 const dal = require('../db/dal');
 const config = require('../config');
-const { executeWriteScratchpad, executeEditScratchpad } = require('./scratchpad');
+const { executeWriteScratchpad, executeEditScratchpad, applyScratchpadWrite, revertScratchpad } = require('./scratchpad');
 
 let failures = 0;
 async function check(label, fn) {
@@ -162,6 +162,38 @@ async function check(label, fn) {
       const res = await executeWriteScratchpad({ content: huge }, { userId, conversationId: conv5.id, turnOrdinal: 1 });
       assert.ok(res.isError, 'rejected');
       assert.match(res.content, /too large/);
+    });
+
+    console.log('\n8. Re-roll revert (SP-04): undo model pad writes at/after a turn...');
+    await check('restores the pre-turn snapshot and drops the undone revisions', async () => {
+      const conv = dal.createConversation(userId, { title: 'revert' });
+      // turn 1: user establishes content; turn 2 + 3: model churns it.
+      applyScratchpadWrite(conv.id, 'USER baseline', { author: 'user', op: 'write', turn: 1 });
+      await executeWriteScratchpad({ content: 'model v2' }, { userId, conversationId: conv.id, turnOrdinal: 2 });
+      await executeWriteScratchpad({ content: 'model v3' }, { userId, conversationId: conv.id, turnOrdinal: 3 });
+
+      const out = revertScratchpad(conv.id, 2); // re-roll from turn 2
+      assert.ok(out.reverted, 'reverted');
+      assert.strictEqual(dal.getScratchpad(conv.id).content, 'USER baseline', 'restored to the pre-turn (turn-1) state');
+      const revs = dal.listScratchpadRevisions(dal.getScratchpad(conv.id).id);
+      assert.ok(revs.every(r => r.turn < 2), 'revisions at/after turn 2 dropped');
+      assert.strictEqual(revs.length, 1, 'only the turn-1 user revision remains');
+    });
+
+    await check('no-op when the model did not touch the pad in the span', async () => {
+      const conv = dal.createConversation(userId, { title: 'revert-noop' });
+      applyScratchpadWrite(conv.id, 'only user wrote', { author: 'user', op: 'write', turn: 3 });
+      const out = revertScratchpad(conv.id, 2);
+      assert.ok(!out.reverted, 'nothing model-authored to undo');
+      assert.strictEqual(dal.getScratchpad(conv.id).content, 'only user wrote', 'user content preserved');
+    });
+
+    await check('restores to empty when the pad had no pre-turn content', async () => {
+      const conv = dal.createConversation(userId, { title: 'revert-empty' });
+      await executeWriteScratchpad({ content: 'model created it this turn' }, { userId, conversationId: conv.id, turnOrdinal: 2 });
+      const out = revertScratchpad(conv.id, 2);
+      assert.ok(out.reverted);
+      assert.strictEqual(dal.getScratchpad(conv.id).content, '', 'no earlier snapshot → cleared');
     });
 
   } catch (err) {

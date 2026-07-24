@@ -223,7 +223,7 @@ const CONTEXT_ACK = "Understood — I'll use the reference material above as bac
  *   base layer can name the ones that actually exist
  * @returns {{ system: string|undefined, messages: Array }}
  */
-function assembleProviderInput(requestContext, systemPrompt, messages = [], expressionNames = []) {
+function assembleProviderInput(requestContext, systemPrompt, messages = [], expressionNames = [], scratchpadEnabled = false) {
   const contextMessages = requestContext?.text
     ? [
         { role: 'user', content: requestContext.text },
@@ -231,7 +231,7 @@ function assembleProviderInput(requestContext, systemPrompt, messages = [], expr
       ]
     : [];
   return {
-    system: buildSystemPrompt(systemPrompt, expressionNames),
+    system: buildSystemPrompt(systemPrompt, expressionNames, { scratchpad: scratchpadEnabled }),
     messages: [...contextMessages, ...messages],
   };
 }
@@ -275,7 +275,7 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages, ex
   }
 
   const { system, messages: assembled } =
-    assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames);
+    assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames, scratchpadEnabled);
   return { system, messages: assembled, requestContext, currentTurn, scratchpadEnabled };
 }
 

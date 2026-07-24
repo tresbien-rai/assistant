@@ -25,7 +25,7 @@ const config = require('../config');
 const { resolveFileStore, resolveToolDriveAuth } = require('../tools/fileStore');
 const { saveTextOverFile, restoreFileRevision, writeContentToStore } = require('../tools/storeWriter');
 const { validateFilename, resolveMime } = require('../tools/createFile');
-const { applyScratchpadWrite } = require('../tools/scratchpad');
+const { applyScratchpadWrite, revertScratchpad } = require('../tools/scratchpad');
 const { revertConversationFiles } = require('../tools/revertFiles');
 const { formatFileRevision } = require('../utils/format');
 const { trashConversationFiles } = require('../tools/conversationCleanup');
@@ -564,7 +564,9 @@ router.get('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
  * POST /api/conversations/:id/files/revert
  * Roll back model-authored file changes at/after a turn (File Collaboration,
  * FC-06a) — called by the client BEFORE it re-rolls / edits-and-resends a turn,
- * so the re-run operates on the pre-turn file state. Body: { fromTurn: number }.
+ * so the re-run operates on the pre-turn file state. Also rolls back model
+ * scratchpad writes in the same span (SP-04), so one call reverts everything the
+ * re-run should not see. Body: { fromTurn: number }.
  */
 router.post('/:id/files/revert', asyncHandler(async (req, res) => {
   const userId = req.user.userId;
@@ -592,7 +594,9 @@ router.post('/:id/files/revert', asyncHandler(async (req, res) => {
     { userId, conversationId: req.params.id, project, workspace },
     fromTurn
   );
-  res.json(result);
+  // Roll the scratchpad back too (SP-04) — DB-only, so unaffected by Drive.
+  const scratchpad = revertScratchpad(req.params.id, fromTurn);
+  res.json({ ...result, scratchpadReverted: scratchpad.reverted });
 }));
 
 /**
