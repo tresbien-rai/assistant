@@ -374,6 +374,18 @@
           return `/api/conversations/${encodeURIComponent(conversationId)}/files/${encodeURIComponent(fileId)}/content`;
         },
       },
+
+      /**
+       * The per-conversation scratchpad (SP-03a). Deliberately exposes only a
+       * content URL: it follows the file panel's `/content` → `/revisions`
+       * convention, so API.files.fetchText / saveText / revisions /
+       * restoreRevision operate on the scratchpad unchanged.
+       */
+      scratchpad: {
+        contentUrl(conversationId) {
+          return `/api/conversations/${encodeURIComponent(conversationId)}/scratchpad/content`;
+        },
+      },
     },
 
     // -------------------------------------------------------------------------
