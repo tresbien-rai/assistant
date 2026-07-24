@@ -11,8 +11,10 @@ working file. Layers onto the File Collaboration system
 > layered; chat working files get **auto / pin / mute**; the "forgot I disabled
 > it" failure is answered by a **persistent count badge on the top-bar files
 > button** (human's idea, CT-06) rather than a toast. Prompt-cache invalidation
-> on toggle was reviewed and accepted as a fair trade. Nothing built yet. Build
-> order below (CT-01 → CT-06).
+> on toggle was reviewed and accepted as a fair trade. Open question 1 resolved:
+> **a newly uploaded file always arrives enabled**, even over budget.
+>
+> **Progress: CT-01 ✅ merged. CT-02 next.** Build order below.
 
 ---
 
@@ -377,7 +379,7 @@ Each slice is independently mergeable and leaves the app working.
 
 | Slice | Scope | Notes |
 |---|---|---|
-| **CT-01** | Data model + resolution. Migration 010, `conversation_context_overrides` table, DAL accessors, `utils/contextState.js`. | **No behaviour change** — everything resolves to on/auto. Pure foundation, easy to review. |
+| **CT-01** ✅ | Data model + resolution. Migration 010, `conversation_context_overrides` table, DAL accessors, `utils/contextState.js`, `test-contextstate.js`. | **No behaviour change** — everything resolves to on/auto. Override pruning lives inside `deleteProjectFile`/`deleteWorkspaceFile` so call sites can't forget it. |
 | **CT-02** | Injection honours state. `gatherFileTexts` filter + `<available_files>` manifest, `activeFiles` pin/mute, `list_files` state suffix. | Server-only; testable via `routes/test-context.js` before any UI exists. |
 | **CT-03** | Container page checkboxes + the two `PATCH .../files/:fileId` endpoints. | First user-visible slice. Delivers the workspace/project half on its own. |
 | **CT-04** | `GET /api/conversations/:id/context` + the chat panel rebuilt as a sectioned context view, with knowledge-file overrides. | The biggest slice. Split into 04a (endpoint + sectioned read-only render) and 04b (override toggles + reset) if it runs long. |
@@ -391,9 +393,10 @@ toggles). CT-04+ adds the per-chat layer.
 
 ## Open questions
 
-1. **Default for newly uploaded files** — on, always? Or inherit "off" if the
-   container is already over budget? Recommendation: always on; surprising
-   defaults are worse than a visible warning.
+1. ~~**Default for newly uploaded files.**~~ **RESOLVED 2026-07-24: always
+   enabled**, even when the container is already over budget. A file that
+   silently does nothing after upload is a worse surprise than a visible
+   truncation warning. Implemented as the column default (CT-01).
 2. **Bulk actions.** "Uncheck all / check all" per section is obvious once a
    workspace has 20 files. Deferred to CT-06 or later unless it bites early.
 3. **Does the persona get a say?** A persona could carry default-off patterns

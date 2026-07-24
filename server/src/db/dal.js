@@ -1142,6 +1142,11 @@ function getProjectFile(fileId, projectId) {
 function deleteProjectFile(fileId, projectId) {
   const db = getDb();
   const result = db.prepare('DELETE FROM project_files WHERE id = ? AND project_id = ?').run(fileId, projectId);
+  // Take any per-chat context overrides (CT-01) with it — only once we know the
+  // delete actually matched, so a mis-scoped call can't prune another
+  // container's state. Pruned here rather than at the call sites so it is
+  // impossible to forget.
+  if (result.changes > 0) deleteContextOverridesForFile('project', fileId);
   return result.changes > 0;
 }
 
@@ -1211,6 +1216,8 @@ function getWorkspaceFile(fileId, workspaceId) {
 function deleteWorkspaceFile(fileId, workspaceId) {
   const db = getDb();
   const result = db.prepare('DELETE FROM workspace_files WHERE id = ? AND workspace_id = ?').run(fileId, workspaceId);
+  // See deleteProjectFile — prune the file's per-chat overrides (CT-01).
+  if (result.changes > 0) deleteContextOverridesForFile('workspace', fileId);
   return result.changes > 0;
 }
 
@@ -1484,6 +1491,131 @@ function deleteConversationFile(fileId, conversationId) {
   const db = getDb();
   const result = db.prepare('DELETE FROM conversation_files WHERE id = ? AND conversation_id = ?').run(fileId, conversationId);
   return result.changes > 0;
+}
+
+// =============================================================================
+// CONTEXT TOGGLES (CT-01 — docs/CONTEXT_TOGGLES_DESIGN.md)
+// =============================================================================
+//
+// Three storage concerns behind the per-file context controls:
+//   1. the container DEFAULT for a knowledge file (project_files.enabled /
+//      workspace_files.enabled),
+//   2. the per-chat OVERRIDE of that default (conversation_context_overrides),
+//   3. a chat working file's INJECT MODE (conversation_files.inject_mode).
+//
+// These are raw accessors only — the layering rules (override → default → on)
+// live in utils/contextState.js, which is the single place that resolves them.
+//
+// Scoping follows the same contract as the file functions above: callers MUST
+// already have verified the container/conversation belongs to the user.
+
+/**
+ * Set a project file's container-level context default.
+ * @param {string} fileId - The file's UUID
+ * @param {string} projectId - The project's UUID (scopes the UPDATE)
+ * @param {boolean} enabled
+ * @returns {boolean} True if a row was updated, false if not found
+ */
+function setProjectFileEnabled(fileId, projectId, enabled) {
+  const db = getDb();
+  const result = db.prepare(`
+    UPDATE project_files SET enabled = ? WHERE id = ? AND project_id = ?
+  `).run(enabled ? 1 : 0, fileId, projectId);
+  return result.changes > 0;
+}
+
+/**
+ * Set a workspace file's container-level context default.
+ * @param {string} fileId - The file's UUID
+ * @param {string} workspaceId - The workspace's UUID (scopes the UPDATE)
+ * @param {boolean} enabled
+ * @returns {boolean} True if a row was updated, false if not found
+ */
+function setWorkspaceFileEnabled(fileId, workspaceId, enabled) {
+  const db = getDb();
+  const result = db.prepare(`
+    UPDATE workspace_files SET enabled = ? WHERE id = ? AND workspace_id = ?
+  `).run(enabled ? 1 : 0, fileId, workspaceId);
+  return result.changes > 0;
+}
+
+/**
+ * Set a chat working file's inject mode.
+ * @param {string} fileId - The file's UUID
+ * @param {string} conversationId - The chat's UUID (scopes the UPDATE)
+ * @param {'auto'|'pin'|'mute'} mode - 'auto' is stored as NULL (the default)
+ * @returns {boolean} True if a row was updated, false if not found
+ */
+function setConversationFileInjectMode(fileId, conversationId, mode) {
+  const db = getDb();
+  const result = db.prepare(`
+    UPDATE conversation_files SET inject_mode = ? WHERE id = ? AND conversation_id = ?
+  `).run(mode === 'auto' ? null : mode, fileId, conversationId);
+  return result.changes > 0;
+}
+
+/**
+ * Every per-chat knowledge-file override for a conversation. Returned as a
+ * whole set (rather than queried per file) so resolution can do one read and
+ * then resolve a whole file list in memory.
+ * @param {string} conversationId
+ * @returns {Array} conversation_context_overrides records
+ */
+function listConversationContextOverrides(conversationId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM conversation_context_overrides WHERE conversation_id = ?
+  `).all(conversationId);
+}
+
+/**
+ * Record that a conversation deviates from a knowledge file's container default.
+ * Upserts, so repeated toggling never accumulates rows.
+ * @param {string} conversationId
+ * @param {'workspace'|'project'} scope
+ * @param {string} fileId - row id in the matching *_files table
+ * @param {boolean} enabled
+ */
+function setConversationContextOverride(conversationId, scope, fileId, enabled) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO conversation_context_overrides (conversation_id, scope, file_id, enabled, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(conversation_id, scope, file_id) DO UPDATE SET enabled = excluded.enabled
+  `).run(conversationId, scope, fileId, enabled ? 1 : 0, now());
+}
+
+/**
+ * Drop a conversation's override so the file falls back to its container
+ * default ("reset to default" is a DELETE, by design).
+ * @param {string} conversationId
+ * @param {'workspace'|'project'} scope
+ * @param {string} fileId
+ * @returns {boolean} True if an override existed and was removed
+ */
+function clearConversationContextOverride(conversationId, scope, fileId) {
+  const db = getDb();
+  const result = db.prepare(`
+    DELETE FROM conversation_context_overrides
+    WHERE conversation_id = ? AND scope = ? AND file_id = ?
+  `).run(conversationId, scope, fileId);
+  return result.changes > 0;
+}
+
+/**
+ * Drop every conversation's overrides for one knowledge file. Called when the
+ * file itself is deleted — orphans are harmless (resolution iterates files, not
+ * overrides), but leaving them would let a re-used id inherit stale state.
+ * @param {'workspace'|'project'} scope
+ * @param {string} fileId
+ * @returns {number} How many override rows were removed
+ */
+function deleteContextOverridesForFile(scope, fileId) {
+  const db = getDb();
+  const result = db.prepare(`
+    DELETE FROM conversation_context_overrides WHERE scope = ? AND file_id = ?
+  `).run(scope, fileId);
+  return result.changes;
 }
 
 // =============================================================================
@@ -1915,6 +2047,15 @@ module.exports = {
   getConversationFileByName,
   updateConversationFileContent,
   deleteConversationFile,
+
+  // Context toggles (CT-01) — raw accessors; layering lives in utils/contextState.js
+  setProjectFileEnabled,
+  setWorkspaceFileEnabled,
+  setConversationFileInjectMode,
+  listConversationContextOverrides,
+  setConversationContextOverride,
+  clearConversationContextOverride,
+  deleteContextOverridesForFile,
 
   // File Revisions (File Collaboration, FC-02 — change log)
   addFileRevision,
