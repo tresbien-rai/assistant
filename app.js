@@ -6699,6 +6699,9 @@ async function revertConversationFilesForRerun(conversationId, fromTurn) {
         if (res && Array.isArray(res.warnings) && res.warnings.length > 0) {
             showToast(res.warnings.join(' '), { type: 'warning' });
         }
+        // SP-04: the scratchpad may have been rolled back to its pre-turn state;
+        // refresh it if it's open in view mode so the user sees the reverted pad.
+        if (res && res.scratchpadReverted) FilePanel.refreshScratchpadFromActivity(conversationId);
     } catch (err) {
         console.error('Failed to roll back files before re-roll:', err);
     }

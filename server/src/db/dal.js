@@ -1777,6 +1777,52 @@ function pruneScratchpadSnapshots(scratchpadId, keep) {
   `).run(scratchpadId, scratchpadId, keep);
 }
 
+/**
+ * Model-authored scratchpad revisions at/after a turn (SP-04, mirrors
+ * listModelRevisionsFromTurn) — the model pad writes to undo on a re-roll.
+ * @param {string} conversationId
+ * @param {number} fromTurn
+ * @returns {Array}
+ */
+function getScratchpadModelRevisionsFromTurn(conversationId, fromTurn) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM scratchpad_revisions
+    WHERE conversation_id = ? AND author = 'model' AND turn IS NOT NULL AND turn >= ?
+    ORDER BY created_at DESC
+  `).all(conversationId, fromTurn);
+}
+
+/**
+ * The newest scratchpad snapshot strictly BEFORE a turn — the pre-turn state to
+ * roll back to (SP-04, mirrors getSnapshotBeforeTurn).
+ * @param {string} scratchpadId
+ * @param {number} turn
+ * @returns {Object|undefined}
+ */
+function getScratchpadSnapshotBeforeTurn(scratchpadId, turn) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM scratchpad_revisions
+    WHERE scratchpad_id = ? AND content IS NOT NULL AND turn IS NOT NULL AND turn < ?
+    ORDER BY created_at DESC, rowid DESC LIMIT 1
+  `).get(scratchpadId, turn);
+}
+
+/**
+ * Delete scratchpad revisions at/after a turn (SP-04) — used after a re-roll
+ * rolls the pad back, to drop the undone history.
+ * @param {string} scratchpadId
+ * @param {number} fromTurn
+ * @returns {number} rows deleted
+ */
+function deleteScratchpadRevisionsFromTurn(scratchpadId, fromTurn) {
+  const db = getDb();
+  return db.prepare(
+    'DELETE FROM scratchpad_revisions WHERE scratchpad_id = ? AND turn IS NOT NULL AND turn >= ?'
+  ).run(scratchpadId, fromTurn).changes;
+}
+
 // =============================================================================
 // EXPORTS
 // =============================================================================
@@ -1892,4 +1938,7 @@ module.exports = {
   listScratchpadRevisions,
   getScratchpadRevisionById,
   pruneScratchpadSnapshots,
+  getScratchpadModelRevisionsFromTurn,
+  getScratchpadSnapshotBeforeTurn,
+  deleteScratchpadRevisionsFromTurn,
 };

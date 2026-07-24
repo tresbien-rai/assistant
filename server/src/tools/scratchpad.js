@@ -201,4 +201,43 @@ async function executeEditScratchpad(input, ctx) {
   };
 }
 
-module.exports = { executeWriteScratchpad, executeEditScratchpad, applyScratchpadWrite, _countOccurrences: countOccurrences };
+/**
+ * Roll the scratchpad back before a re-roll (SP-04, the DB-only analogue of
+ * FC-06a's revertConversationFiles — which routes through Drive and bails when
+ * it is unavailable, so the pad needs its own branch). Undoes MODEL pad writes
+ * at/after `fromTurn` by restoring the newest snapshot from before the turn
+ * (empty if the pad had no earlier content), then drops the undone revisions.
+ *
+ * Mirrors FC-06a's scope: a pad the model did NOT write to in the undone span is
+ * left alone (nothing to undo), so a user's own edits outside a model-churned
+ * span are preserved. Restoring writes NO new revision — an undo is not a change.
+ *
+ * @param {string} conversationId
+ * @param {number} fromTurn
+ * @returns {{ reverted: boolean }}
+ */
+function revertScratchpad(conversationId, fromTurn) {
+  if (!conversationId || !(fromTurn > 0)) return { reverted: false };
+  const pad = dal.getScratchpad(conversationId);
+  if (!pad) return { reverted: false };
+
+  // Only act if the model changed the pad in the undone span.
+  const modelRevs = dal.getScratchpadModelRevisionsFromTurn(conversationId, fromTurn);
+  if (modelRevs.length === 0) return { reverted: false };
+
+  const snap = dal.getScratchpadSnapshotBeforeTurn(pad.id, fromTurn);
+  const restored = snap && snap.content != null ? snap.content : '';
+  dal.updateScratchpadContent(conversationId, restored); // no revision (undo, not a change)
+  dal.deleteScratchpadRevisionsFromTurn(pad.id, fromTurn); // drop undone history
+
+  logger.info({ conversationId, fromTurn, restoredChars: restored.length }, 'reverted scratchpad');
+  return { reverted: true };
+}
+
+module.exports = {
+  executeWriteScratchpad,
+  executeEditScratchpad,
+  applyScratchpadWrite,
+  revertScratchpad,
+  _countOccurrences: countOccurrences,
+};
