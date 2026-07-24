@@ -1404,6 +1404,7 @@ const elements = {
     // tab as the single entry point + unseen-activity indicator.
     filesExplorerBtn: document.getElementById('filesExplorerBtn'),
     filesExplorerDot: document.getElementById('filesExplorerDot'),
+    filesExplorerCount: document.getElementById('filesExplorerCount'),
 
     // Name-only create modal (shared by workspace + project creation; the full
     // edit UI lives inline on the container page — WR-05).
@@ -4834,6 +4835,9 @@ function syncChatChrome() {
     }
     // File panel + explorer button follow the active chat (hidden while browsing).
     FilePanel.syncUi();
+    // The not-loaded count badge tracks the active chat even with the panel
+    // closed (CT-06). Fire-and-forget: it self-guards staleness.
+    FilePanel.syncContextBadge();
 }
 
 /**
@@ -7455,6 +7459,11 @@ const FilePanel = {
         const body = elements.filePanelBody;
         if (!body) return;
 
+        // Kept so an in-place toggle can recompute the count badge without a
+        // re-fetch: the row builders below mutate the very `f` objects this
+        // holds (CT-06).
+        this._browserContext = context;
+
         const list = document.createElement('div');
         list.className = 'fp-browser';
 
@@ -7474,6 +7483,19 @@ const FilePanel = {
             { scope: 'workspace', label: 'Workspace', data: context?.workspace },
             { scope: 'project', label: 'Project', data: context?.project },
         ].filter(s => s.data && s.data.files.length > 0);
+
+        // Tools-off note (CT-06): with file tools off there is no read_file, so an
+        // unchecked knowledge file is genuinely unreachable — not merely unloaded.
+        // This is the one case worth calling out; muted chat files stay reachable
+        // through this very panel, so they don't trigger it.
+        const hasDisabledKnowledge = knowledge.some(({ data }) => data.files.some(f => !f.enabled));
+        if (context && context.toolsEnabled === false && hasDisabledKnowledge) {
+            const note = document.createElement('p');
+            note.className = 'fp-tools-off-note';
+            note.textContent = 'File tools are off, so unchecked files below are fully excluded — '
+                + 'the assistant can\'t open them on request until you turn file tools on.';
+            list.appendChild(note);
+        }
 
         knowledge.forEach(({ scope, label, data }) => {
             list.appendChild(this.browserSectionHeader(`${label} · ${data.name}`));
@@ -7502,6 +7524,12 @@ const FilePanel = {
 
         body.innerHTML = '';
         body.appendChild(list);
+
+        // The panel's own fetch is the freshest read of this chat's context, so
+        // let it settle the badge too (CT-06) — and mark it current so a
+        // navigation-time sync won't re-fetch what we just rendered.
+        this._badgeConvId = conversationId;
+        this.applyContextBadge(this.contextNotLoadedItems(context));
     },
 
     /** A source divider in the browser list (CT-04). */
@@ -7630,6 +7658,7 @@ const FilePanel = {
         row.classList.toggle('is-overridden', source === 'chat');
         const btn = row.querySelector('.fp-reset-btn');
         if (btn) btn.hidden = source !== 'chat';
+        this.refreshBadgeFromBrowser(); // the count changed with the row (CT-06)
     },
 
     /**
@@ -7662,6 +7691,133 @@ const FilePanel = {
         btn.title = INJECT_MODE_TITLES[mode];
         btn.setAttribute('aria-label', `${f.filename}: ${INJECT_MODE_TITLES[mode]}`);
         row.classList.toggle('is-context-off', mode === 'mute');
+        this.refreshBadgeFromBrowser(); // muting/unmuting changes the count (CT-06)
+    },
+
+    // ---- Not-loaded count badge + popover (CT-06) ----
+
+    _badgeConvId: null,   // the chat the badge currently reflects (skip re-fetch)
+    _badgeSeq: 0,         // ignore stale badge fetches after rapid switches
+    _notLoaded: [],       // [{ name, note }] currently not loaded — feeds the popover
+    _contextPopover: null,
+    _browserContext: null,
+
+    /**
+     * The files not loaded into this chat, for the badge count + hover popover:
+     * disabled knowledge files (with where they live) and muted chat files.
+     * Pinned/auto/enabled files are loaded, so they don't appear.
+     * @param {Object} context - a /context response
+     * @returns {Array<{name: string, note: string}>}
+     */
+    contextNotLoadedItems(context) {
+        const items = [];
+        for (const [scope, label] of [['workspace', 'Workspace'], ['project', 'Project']]) {
+            const sec = context && context[scope];
+            if (!sec) continue;
+            for (const f of sec.files) {
+                if (!f.enabled) items.push({ name: f.filename, note: label });
+            }
+        }
+        for (const f of (context && context.chatFiles) || []) {
+            if (f.injectMode === 'mute') items.push({ name: f.filename, note: 'Muted' });
+        }
+        return items;
+    },
+
+    /** Recompute the badge from the panel's last-rendered context (no fetch). */
+    refreshBadgeFromBrowser() {
+        if (this._browserContext) this.applyContextBadge(this.contextNotLoadedItems(this._browserContext));
+    },
+
+    /**
+     * Write a not-loaded list onto the badge: count, visibility, the button's
+     * accessible name, and any open popover. Hidden entirely at zero, so a user
+     * who never touches a toggle never sees new chrome.
+     * @param {Array<{name: string, note: string}>} items
+     */
+    applyContextBadge(items) {
+        this._notLoaded = items || [];
+        const n = this._notLoaded.length;
+        const badge = elements.filesExplorerCount;
+        if (badge) {
+            badge.hidden = n === 0;
+            badge.textContent = n > 0 ? String(n) : '';
+        }
+        const btn = elements.filesExplorerBtn;
+        if (btn) {
+            const base = 'Files in this chat';
+            btn.setAttribute('aria-label', n > 0 ? `${base}, ${n} not loaded` : base);
+            // Drop the native title while the count popover covers the same
+            // ground, so the two tooltips don't stack; restore it at zero.
+            if (n > 0) btn.removeAttribute('title');
+            else btn.title = base;
+        }
+        if (this._contextPopover) this.renderContextPopover();
+    },
+
+    /**
+     * Refresh the badge for the active chat (CT-06). Called on navigation, when
+     * the panel may be closed — the whole point is a signal you can't miss
+     * without opening the panel. Skips the fetch when it already reflects this
+     * chat (an in-place toggle keeps it current).
+     */
+    async syncContextBadge() {
+        const inChat = (state.ui.mainView || {}).type === 'chat';
+        const conversationId = state.activeConversationId;
+        if (!inChat || !conversationId) {
+            this._badgeConvId = null;
+            this._browserContext = null;
+            this.hideContextPopover();
+            this.applyContextBadge([]);
+            return;
+        }
+        if (conversationId === this._badgeConvId) return; // already current
+
+        this._badgeConvId = conversationId;
+        const seq = ++this._badgeSeq;
+        let context;
+        try {
+            context = await API.conversations.context.get(conversationId);
+        } catch (err) {
+            console.error('Failed to load context badge:', err);
+            this._badgeConvId = null; // allow a retry on the next navigation
+            return;
+        }
+        if (seq !== this._badgeSeq || state.activeConversationId !== conversationId) return;
+        this.applyContextBadge(this.contextNotLoadedItems(context));
+    },
+
+    /** Show the hover/focus popover naming the not-loaded files. */
+    showContextPopover() {
+        if (!this._notLoaded || this._notLoaded.length === 0) return;
+        this.hideContextPopover();
+        const pop = document.createElement('div');
+        pop.className = 'fp-context-popover';
+        this._contextPopover = pop;
+        this.renderContextPopover();
+        positionPopover(pop, elements.filesExplorerBtn, 'right');
+    },
+
+    /** (Re)render the popover body from the current not-loaded list. */
+    renderContextPopover() {
+        const pop = this._contextPopover;
+        if (!pop) return;
+        const items = this._notLoaded || [];
+        if (items.length === 0) { this.hideContextPopover(); return; }
+        pop.innerHTML =
+            `<div class="fp-context-popover-title">Not loaded in this chat</div>`
+            + items.map(it =>
+                `<div class="fp-context-popover-row">`
+                + `<span class="fp-cp-name">${escapeHtml(it.name)}</span>`
+                + `<span class="fp-cp-note">${escapeHtml(it.note)}</span>`
+                + `</div>`).join('');
+    },
+
+    hideContextPopover() {
+        if (this._contextPopover) {
+            this._contextPopover.remove();
+            this._contextPopover = null;
+        }
     },
 
     /**
@@ -9439,6 +9595,12 @@ function setupEventListeners() {
     }
     if (elements.filesExplorerBtn) {
         elements.filesExplorerBtn.addEventListener('click', () => FilePanel.toggleExplorer());
+        // Hover/focus reveals the not-loaded popover (CT-06); clicking still
+        // opens the panel, so noticing and fixing are one gesture apart.
+        elements.filesExplorerBtn.addEventListener('mouseenter', () => FilePanel.showContextPopover());
+        elements.filesExplorerBtn.addEventListener('mouseleave', () => FilePanel.hideContextPopover());
+        elements.filesExplorerBtn.addEventListener('focus', () => FilePanel.showContextPopover());
+        elements.filesExplorerBtn.addEventListener('blur', () => FilePanel.hideContextPopover());
     }
     // File panel (user editing, slice 3): edit / save / cancel.
     if (elements.filePanelEditBtn) {

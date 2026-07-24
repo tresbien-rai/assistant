@@ -14,7 +14,7 @@ working file. Layers onto the File Collaboration system
 > on toggle was reviewed and accepted as a fair trade. Open question 1 resolved:
 > **a newly uploaded file always arrives enabled**, even over budget.
 >
-> **Progress: CT-01 ✅, CT-02 ✅, CT-03 ✅, CT-04 ✅, CT-05 ✅ merged — the feature is FUNCTIONALLY COMPLETE: container defaults, per-chat overrides, and chat-file auto/pin/mute all work end to end. Only CT-06 (the disabled-files badge + tools-off note) remains.** Build order below.
+> **Progress: CT-01 → CT-06 all ✅ merged — the feature is COMPLETE. Container defaults, per-chat overrides, chat-file auto/pin/mute, the disabled-files count badge + popover, and the tools-off note all ship. The budget readout was dropped (see CT-06). Owed: one LIVE pass with real provider keys — pin injection and the model actually calling read_file on a manifested file can only be checked there.** Build order below.
 
 ---
 
@@ -310,8 +310,10 @@ becomes **this chat's context**, in one scrollable list:
   One click, no menu, and the icon carries the state at a glance.
 - Section headers name the source container, which also answers a question the
   panel can't answer today: *where is this chat's context coming from?*
-- The header keeps a running `84 KB of 500 KB loaded` readout (CT-06), so
-  unchecking something produces visible feedback rather than an act of faith.
+- *(Dropped in CT-06.)* A running `84 KB of 500 KB loaded` readout in the header
+  was considered but cut — an honest figure means downloading and extracting
+  every enabled file, far too costly for opening a panel. The count badge is the
+  feedback that earns its keep.
 
 Rows stay keyboard-reachable; the checkbox is a real `<input type="checkbox">`
 with an `aria-label`, the cycle button a `<button>` with `aria-label` reflecting
@@ -384,7 +386,7 @@ Each slice is independently mergeable and leaves the app working.
 | **CT-03** ✅ | Container page checkboxes + the two `PATCH .../files/:fileId` endpoints; `enabled` added to both file-list formatters. | First user-visible slice; delivers the workspace/project half on its own. Optimistic toggle with revert-on-failure. Browser-verified: click → dim + persist, re-render keeps state, simulated network failure reverts cleanly, unchecking moves the file into the manifest, no overflow at 375px. |
 | **CT-04** ✅ | `GET /api/conversations/:id/context` (+ PATCH/DELETE override routes) and the chat panel rebuilt as a sectioned context view with per-chat override checkboxes and `↺` reset. | Shipped whole — the 04a/04b split proved unnecessary once the renderer was factored into `knowledgeRow`/`chatFileRow` helpers. The container is taken from the CONVERSATION's row, never the request, so a chat can only override a file it actually inherits. |
 | **CT-05** ✅ | Chat working file auto/pin/mute cycle button. | Landed with CT-04: same renderer, same optimistic-with-revert pattern, so splitting it into its own PR would have meant shipping a half-built list. |
-| **CT-06** | **Disabled-files count badge on the top-bar button** + hover popover naming them; budget readout in the panel header; tools-off note. | The badge is the slice's anchor, not optional polish — it is the only signal visible without opening the panel, and the agreed answer to the "forgot I disabled it" failure. The budget readout is the droppable half. |
+| **CT-06** ✅ | **Disabled-files count badge on the top-bar button** (bottom-right, muted, static — distinct from the transient top-right activity dot) + hover/focus popover naming the files; tools-off note in the context panel. `toolsEnabled` added to the `/context` response. | The badge tracks the active chat even with the panel closed, refreshes in place on toggle (no re-fetch), and clears when you leave the chat. **Budget readout dropped** — as flagged in CT-04, "chars loaded" needs downloading every file; the badge is the part that earns its keep. |
 
 CT-01 → CT-02 → CT-03 is a complete, shippable feature on its own (container-level
 toggles). CT-04+ adds the per-chat layer.

@@ -475,6 +475,17 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
       );
     });
 
+    await check('GET /context reports the resolved file-tools state (CT-06)', async () => {
+      // wsChat has no persona and no override, so tools resolve OFF.
+      let ctx = await getContext({ id: wsChat.id });
+      assert.strictEqual(ctx.toolsEnabled, false, 'no persona base, no override → off');
+      // Forcing the conversation override on flips it, without a persona.
+      dal.updateConversation(wsChat.id, userId, { toolsEnabled: true });
+      ctx = await getContext({ id: wsChat.id });
+      assert.strictEqual(ctx.toolsEnabled, true, 'override on → on');
+      dal.updateConversation(wsChat.id, userId, { toolsEnabled: null });
+    });
+
     await check('chat files come back with their inject mode', async () => {
       dal.setConversationFileInjectMode(fresh.id, chat.id, 'auto');
       const ctx = await getContext({ id: chat.id });
