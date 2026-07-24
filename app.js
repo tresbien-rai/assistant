@@ -826,6 +826,7 @@ async function createConversation(title = 'New Chat', container = null) {
         projectId: created.projectId,
         workspaceId: created.workspaceId,
         toolsEnabled: created.toolsEnabled ?? null,
+        scratchpadEnabled: created.scratchpadEnabled ?? null,
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
         messageCount: 0,
@@ -1397,6 +1398,7 @@ const elements = {
     filePanelCancelBtn: document.getElementById('filePanelCancelBtn'),
     filePanelSaveBtn: document.getElementById('filePanelSaveBtn'),
     filePanelBrowseBtn: document.getElementById('filePanelBrowseBtn'),
+    filePanelScratchpadToggle: document.getElementById('filePanelScratchpadToggle'),
     // Files explorer top-bar button (CF-01b) — replaces the panel's right-edge
     // tab as the single entry point + unseen-activity indicator.
     filesExplorerBtn: document.getElementById('filesExplorerBtn'),
@@ -1755,6 +1757,9 @@ function hydrateConversations(conversations) {
             // Track A per-chat file-tools override: null = inherit persona base,
             // true/false = forced. Preserved so the composer toggle reflects it.
             toolsEnabled: c.toolsEnabled ?? null,
+            // Scratchpad per-chat override (SP-03a): null = inherit persona base
+            // + auto-arm, true/false = forced. Drives the panel's Active toggle.
+            scratchpadEnabled: c.scratchpadEnabled ?? null,
             createdAt: c.createdAt,
             updatedAt: c.updatedAt,
             messageCount: c.messageCount || 0,
@@ -7180,6 +7185,108 @@ const FilePanel = {
         }
     },
 
+    // ---- Scratchpad (SP-03a) ----
+
+    /** Whether the panel is currently showing the conversation's scratchpad. */
+    isScratchpad() {
+        return !!(this.file && this.file.scratchpad);
+    },
+
+    /**
+     * Open the conversation's scratchpad in the panel. Modelled as a special
+     * "file" whose url is the /scratchpad/content endpoint, so the panel's
+     * load / edit / history / restore machinery (all url-convention-driven)
+     * works on it unchanged.
+     */
+    openScratchpad() {
+        if (!state.activeConversationId) return;
+        this.open({
+            fileName: 'Scratchpad',
+            url: API.conversations.scratchpad.contentUrl(state.activeConversationId),
+            mimeType: 'text/markdown',
+            scratchpad: true,
+        });
+    },
+
+    /**
+     * Effective scratchpad-enabled state, mirroring the server's
+     * resolveScratchpadEnabled: override ?? persona base ?? auto-arm on a
+     * non-empty pad. The auto-arm leg uses the loaded content (available
+     * whenever the toggle is shown, i.e. the pad is open), so a pad the model
+     * filled reads as active even before the user touches the toggle.
+     */
+    scratchpadEffectiveEnabled() {
+        const convo = state.conversations[state.activeConversationId];
+        if (!convo) return false;
+        if (convo.scratchpadEnabled === true) return true;
+        if (convo.scratchpadEnabled === false) return false;
+        const persona = getActivePersona();
+        if (persona?.modelConfig?.scratchpadEnabled === true) return true;
+        const cache = this._cache;
+        return !!(cache && this.file && cache.url === this.file.url && cache.text.trim() !== '');
+    },
+
+    /** Reflect the effective enabled state on the header toggle. */
+    syncScratchpadToggle() {
+        const btn = elements.filePanelScratchpadToggle;
+        if (!btn) return;
+        const on = this.scratchpadEffectiveEnabled();
+        btn.classList.toggle('on', on);
+        btn.setAttribute('aria-pressed', String(on));
+        const label = btn.querySelector('.scratchpad-toggle-label');
+        if (label) label.textContent = on ? 'Active' : 'Off';
+        btn.title = on
+            ? 'The assistant can see and edit this scratchpad — click to turn off'
+            : 'The assistant can’t see this scratchpad yet — click to turn on';
+    },
+
+    /** Flip the per-conversation scratchpad override and persist it. */
+    async toggleScratchpadEnabled() {
+        const convo = state.conversations[state.activeConversationId];
+        if (!convo) return;
+        const next = !this.scratchpadEffectiveEnabled();
+        convo.scratchpadEnabled = next;
+        this.syncScratchpadToggle();
+        try {
+            await API.conversations.update(convo.id, { scratchpadEnabled: next });
+        } catch (err) {
+            console.error('Failed to save scratchpad toggle:', err);
+        }
+    },
+
+    /**
+     * The model edited the scratchpad during its turn (SP-03a live refresh).
+     * If the pad is open in view mode, drop the stale cache and reload so the
+     * user sees the model's change without reopening. (The hard lock + richer
+     * conflict handling is SP-03b; here, edit mode is already blocked while a
+     * turn is in flight by the state.isLoading guards.)
+     */
+    refreshScratchpadFromActivity(convoId) {
+        if (!this.isScratchpad() || !this.isOpen) return;
+        if (convoId && convoId !== state.activeConversationId) return;
+        if (this.editMode) return;
+        this._cache = null;
+        if (this.historyMode) this.showHistory();
+        else this.loadContent();
+    },
+
+    /**
+     * Auto-arm (Decision 2): the first non-empty user Save of a pad with no
+     * explicit override flips the toggle on and persists it, so "using it
+     * enables it" — and it stays armed even if later cleared.
+     */
+    maybeAutoArmScratchpad(text) {
+        if (!this.isScratchpad()) return;
+        const convo = state.conversations[this.conversationId];
+        if (!convo || convo.scratchpadEnabled != null) return;
+        if (typeof text === 'string' && text.trim() !== '') {
+            convo.scratchpadEnabled = true;
+            this.syncScratchpadToggle();
+            API.conversations.update(convo.id, { scratchpadEnabled: true })
+                .catch(err => console.error('Failed to auto-arm scratchpad:', err));
+        }
+    },
+
     /** From the browser view, load and render the chat's files. */
     async loadBrowser() {
         const body = elements.filePanelBody;
@@ -7203,21 +7310,43 @@ const FilePanel = {
         this.renderBrowser(files, conversationId);
     },
 
-    /** Render the file list into the panel body (CF-01b). */
+    /** Render the file list into the panel body (CF-01b), with the scratchpad
+     * pinned at the top (SP-03a). */
     renderBrowser(files, conversationId) {
         const body = elements.filePanelBody;
         if (!body) return;
-        if (!Array.isArray(files) || files.length === 0) {
-            body.innerHTML = '<p class="file-panel-empty">No files in this chat yet.</p>';
+
+        const list = document.createElement('div');
+        list.className = 'fp-browser';
+
+        // Pinned scratchpad entry — always present (the shared thinking space),
+        // above the chat's files.
+        const padRow = document.createElement('div');
+        padRow.className = 'chat-file-row scratchpad-row';
+        padRow.title = 'The shared scratchpad for this chat';
+        padRow.innerHTML =
+            `<span class="project-file-badge">PAD</span>`
+            + `<button type="button" class="chat-file-name clickable">Scratchpad</button>`
+            + `<span class="project-file-size scratchpad-row-hint">shared notes</span>`;
+        padRow.querySelector('.chat-file-name').addEventListener('click', () => this.openScratchpad());
+        list.appendChild(padRow);
+
+        const hasFiles = Array.isArray(files) && files.length > 0;
+        if (!hasFiles) {
+            const note = document.createElement('p');
+            note.className = 'file-panel-empty fp-browser-empty';
+            note.textContent = 'No files in this chat yet.';
+            list.appendChild(note);
+            body.innerHTML = '';
+            body.appendChild(list);
             return;
         }
+
         // Newest first: in a chat the useful question is "what were we just
         // working on", not "what is this called".
         const sorted = [...files].sort((a, b) =>
             String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
-        const list = document.createElement('div');
-        list.className = 'fp-browser';
         sorted.forEach(f => {
             const href = API.conversations.files.contentUrl(conversationId, f.id);
             const label = getFileTypeLabel(f.filename, f.mimeType);
@@ -7370,7 +7499,8 @@ const FilePanel = {
                 elements.filePanelName.title = '';
             }
             [elements.filePanelEditBtn, elements.filePanelRawToggle,
-             elements.filePanelHistoryBtn, elements.filePanelDownload].forEach(el => {
+             elements.filePanelHistoryBtn, elements.filePanelDownload,
+             elements.filePanelScratchpadToggle].forEach(el => {
                 if (el) el.hidden = true;
             });
             return;
@@ -7378,18 +7508,29 @@ const FilePanel = {
 
         const f = this.file;
         if (!f) return;
+        const isPad = this.isScratchpad();
+
+        // Scratchpad "active" toggle: only for the pad.
+        if (elements.filePanelScratchpadToggle) {
+            elements.filePanelScratchpadToggle.hidden = !isPad || this.editMode || this.historyMode;
+            if (isPad) this.syncScratchpadToggle();
+        }
+
         if (elements.filePanelBadge) {
             elements.filePanelBadge.hidden = false;
-            elements.filePanelBadge.textContent = getFileTypeLabel(f.fileName, f.mimeType);
+            elements.filePanelBadge.textContent = isPad ? 'PAD' : getFileTypeLabel(f.fileName, f.mimeType);
         }
         if (elements.filePanelName) {
             elements.filePanelName.textContent = f.fileName || 'File';
             elements.filePanelName.title = f.fileName || 'File';
         }
         if (elements.filePanelDownload) {
-            elements.filePanelDownload.hidden = false;
-            elements.filePanelDownload.href = f.url;
-            elements.filePanelDownload.setAttribute('download', f.fileName || 'file');
+            // The scratchpad isn't a downloadable file.
+            elements.filePanelDownload.hidden = isPad;
+            if (!isPad) {
+                elements.filePanelDownload.href = f.url;
+                elements.filePanelDownload.setAttribute('download', f.fileName || 'file');
+            }
         }
         if (elements.filePanelRawToggle) {
             elements.filePanelRawToggle.hidden = this.editMode || this.historyMode || !this.isMarkdown();
@@ -7406,6 +7547,7 @@ const FilePanel = {
     },
 
     isMarkdown() {
+        if (this.isScratchpad()) return true; // the pad renders as markdown notes
         const name = (this.file && this.file.fileName || '').toLowerCase();
         return name.endsWith('.md') || name.endsWith('.markdown');
     },
@@ -7672,6 +7814,8 @@ const FilePanel = {
             // it under the PINNED url (url-keyed, so this can never mislabel
             // another file's content even after a mid-save switch).
             this._cache = { url: file.url, text };
+            // Auto-arm the scratchpad on its first non-empty save (SP-03a).
+            if (file.scratchpad) this.maybeAutoArmScratchpad(text);
             // Only repaint if the panel still shows the file we saved; a
             // mid-save conversation switch already tore the editor down.
             if (this.file === file && this.editMode) {
@@ -7715,12 +7859,22 @@ const FilePanel = {
             this._cache = { url: this.file.url, text };
         }
 
+        // Empty scratchpad: a hint instead of a blank pane (SP-03a).
+        if (this.isScratchpad() && text.trim() === '') {
+            elements.filePanelBody.innerHTML =
+                '<div class="file-panel-empty scratchpad-empty">The scratchpad is empty. Use the edit button to start jotting ideas — the assistant can see and edit it too.</div>';
+            this.syncScratchpadToggle();
+            return;
+        }
+
         let truncated = false;
         if (text.length > this.MAX_RENDER_CHARS) {
             text = text.slice(0, this.MAX_RENDER_CHARS);
             truncated = true;
         }
         this.renderContent(text, truncated);
+        // The auto-arm leg of the toggle depends on the now-loaded content.
+        if (this.isScratchpad()) this.syncScratchpadToggle();
     },
 
     renderContent(text, truncated) {
@@ -7792,6 +7946,9 @@ function renderLiveToolActivity(payload, convoId) {
     const att = toolEventToAttachment(payload);
     renderMessageAttachments([att], area);
     FilePanel.notifyActivity(att, convoId);
+    // Scratchpad writes carry a `scratchpad` marker (no url → a plain chip):
+    // refresh the pad if it's open so the user sees the model's edit live.
+    if (payload && payload.scratchpad) FilePanel.refreshScratchpadFromActivity(convoId);
     scrollToBottom();
 }
 
@@ -8183,6 +8340,8 @@ async function callAPI(userMessage, attachments = []) {
     // each one would fetch files that are immediately replaced on screen.
     const lastCreated = [...toolAttachments].reverse().find(a => a.type === 'created_file');
     if (lastCreated) FilePanel.notifyActivity(lastCreated, convoId);
+    // If the model wrote to the scratchpad, refresh it if it's open (SP-03a).
+    if ((res.toolEvents || []).some(ev => ev && ev.scratchpad)) FilePanel.refreshScratchpadFromActivity(convoId);
     const generatedAttachments = res.generatedImages
         ? await storeGeneratedImages(res.generatedImages)
         : [];
@@ -8979,6 +9138,10 @@ function setupEventListeners() {
     // CF-01b: the panel's browse toggle (list ⇄ file) and the top-bar entry point.
     if (elements.filePanelBrowseBtn) {
         elements.filePanelBrowseBtn.addEventListener('click', () => FilePanel.toggleExplorer());
+    }
+    // SP-03a: the scratchpad "active" toggle in the panel header.
+    if (elements.filePanelScratchpadToggle) {
+        elements.filePanelScratchpadToggle.addEventListener('click', () => FilePanel.toggleScratchpadEnabled());
     }
     if (elements.filesExplorerBtn) {
         elements.filesExplorerBtn.addEventListener('click', () => FilePanel.toggleExplorer());

@@ -489,6 +489,13 @@ When responding, you may optionally include an expression tag like [expression: 
                 </button>
                 <span class="att-badge" id="filePanelBadge"></span>
                 <span class="file-panel-name" id="filePanelName" title=""></span>
+                <!-- Scratchpad "active" toggle (SP-03a): shown only for the
+                     scratchpad. Reflects whether the assistant sees + can edit
+                     the pad; click flips the per-conversation override. -->
+                <button class="file-panel-btn scratchpad-toggle" id="filePanelScratchpadToggle" type="button" hidden aria-pressed="false">
+                    <span class="scratchpad-toggle-dot" aria-hidden="true"></span>
+                    <span class="scratchpad-toggle-label">Active</span>
+                </button>
                 <button class="file-panel-btn" id="filePanelEditBtn" type="button" title="Edit this file" aria-label="Edit this file" hidden>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </button>

@@ -21,9 +21,11 @@ const drive = require('../utils/drive');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
+const config = require('../config');
 const { resolveFileStore, resolveToolDriveAuth } = require('../tools/fileStore');
 const { saveTextOverFile, restoreFileRevision, writeContentToStore } = require('../tools/storeWriter');
 const { validateFilename, resolveMime } = require('../tools/createFile');
+const { applyScratchpadWrite } = require('../tools/scratchpad');
 const { revertConversationFiles } = require('../tools/revertFiles');
 const { formatFileRevision } = require('../utils/format');
 const { trashConversationFiles } = require('../tools/conversationCleanup');
@@ -645,6 +647,102 @@ router.put('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
     throw AppError.validation(result.reason);
   }
   res.json(formatConversationFile(result.record));
+}));
+
+// =============================================================================
+// SCRATCHPAD (docs/SCRATCHPAD_DESIGN.md, SP-03a)
+//
+// User-facing endpoints for the per-conversation scratchpad. They follow the
+// file panel's `/content` → `/revisions` URL convention deliberately, so the
+// existing API.files.fetchText / saveText / revisions / restoreRevision client
+// helpers (and the FilePanel that uses them) work on the scratchpad unchanged.
+// The scratchpad is DB-resident (no Drive), so none of this needs Drive auth.
+// =============================================================================
+
+/** Owner check → the conversations row, or 404. */
+function requireConversation(userId, conversationId) {
+  const conversation = dal.getConversationMeta(conversationId, userId);
+  if (!conversation) throw AppError.notFound('Conversation');
+  return conversation;
+}
+
+/**
+ * GET /api/conversations/:id/scratchpad/content
+ * The scratchpad's current text (empty string when there is no pad yet).
+ * Served as text/plain so API.files.fetchText reads it like a file body.
+ */
+router.get('/:id/scratchpad/content', asyncHandler(async (req, res) => {
+  requireConversation(req.user.userId, req.params.id);
+  const pad = dal.getScratchpad(req.params.id);
+  res.type('text/plain; charset=utf-8').send(pad ? pad.content : '');
+}));
+
+/**
+ * PUT /api/conversations/:id/scratchpad/content
+ * A user Save of the scratchpad. Body: { content }. Writes through the shared
+ * scratchpad path (author 'user'), logging a revision + snapshot stamped at the
+ * current turn — so the model sees the diff of what the user changed next turn,
+ * and (via auto-arm) a non-empty pad activates the scratchpad tools.
+ */
+router.put('/:id/scratchpad/content', asyncHandler(async (req, res) => {
+  requireConversation(req.user.userId, req.params.id);
+  const content = req.body?.content;
+  if (typeof content !== 'string') {
+    throw AppError.validation('content must be a string of the complete scratchpad text.');
+  }
+  const bytes = Buffer.byteLength(content, 'utf8');
+  if (bytes > config.scratchpad.maxBytes) {
+    const mb = (config.scratchpad.maxBytes / (1024 * 1024)).toFixed(1);
+    throw AppError.validation(`The scratchpad is too large (limit ${mb}MB). Trim it, or save finished content as a file.`);
+  }
+
+  const current = dal.getScratchpad(req.params.id);
+  applyScratchpadWrite(req.params.id, content, {
+    author: 'user',
+    op: 'write',
+    turn: dal.countUserMessages(req.params.id),
+    oldContent: current ? current.content : '',
+  });
+
+  res.json({ sizeBytes: bytes, updatedAt: dal.getScratchpad(req.params.id).updated_at });
+}));
+
+/**
+ * GET /api/conversations/:id/scratchpad/revisions
+ * The scratchpad's change history (same shape as file revisions, so the version
+ * rail renders it unchanged). Oldest-first; empty when there is no pad.
+ */
+router.get('/:id/scratchpad/revisions', asyncHandler(async (req, res) => {
+  requireConversation(req.user.userId, req.params.id);
+  const pad = dal.getScratchpad(req.params.id);
+  const revisions = pad ? dal.listScratchpadRevisions(pad.id) : [];
+  res.json(revisions.map(formatFileRevision));
+}));
+
+/**
+ * POST /api/conversations/:id/scratchpad/revisions/:revId/restore
+ * Restore the scratchpad to a stored version. Append-only: the restored content
+ * is written back as a NEW revision (restoring is itself a change).
+ */
+router.post('/:id/scratchpad/revisions/:revId/restore', asyncHandler(async (req, res) => {
+  requireConversation(req.user.userId, req.params.id);
+  const pad = dal.getScratchpad(req.params.id);
+  const rev = pad ? dal.getScratchpadRevisionById(req.params.revId) : null;
+  if (!rev || rev.scratchpad_id !== pad.id) {
+    throw AppError.notFound('Revision');
+  }
+  if (rev.content == null) {
+    throw AppError.validation('That version is no longer stored, so it can’t be restored.');
+  }
+
+  applyScratchpadWrite(req.params.id, rev.content, {
+    author: 'user',
+    op: 'write',
+    turn: dal.countUserMessages(req.params.id),
+    oldContent: pad.content,
+  });
+
+  res.json({ sizeBytes: Buffer.byteLength(rev.content, 'utf8'), updatedAt: dal.getScratchpad(req.params.id).updated_at });
 }));
 
 module.exports = router;
