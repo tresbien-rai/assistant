@@ -1397,6 +1397,7 @@ const elements = {
     filePanelConflict: document.getElementById('filePanelConflict'),
     filePanelCancelBtn: document.getElementById('filePanelCancelBtn'),
     filePanelSaveBtn: document.getElementById('filePanelSaveBtn'),
+    filePanelLockNote: document.getElementById('filePanelLockNote'),
     filePanelBrowseBtn: document.getElementById('filePanelBrowseBtn'),
     filePanelScratchpadToggle: document.getElementById('filePanelScratchpadToggle'),
     // Files explorer top-bar button (CF-01b) — replaces the panel's right-edge
@@ -2785,6 +2786,9 @@ function updateSendButtonState() {
     const notLoading = !state.isLoading;
 
     elements.sendButton.disabled = !(hasApiKey && (hasMessage || hasAttachments) && notLoading);
+    // Lock/unlock the file panel editor in step with the turn (SP-03b). This is
+    // the one place isLoading transitions are always reflected in the UI.
+    FilePanel.syncTurnLock();
 }
 
 // ===== Expression Management =====
@@ -6741,6 +6745,9 @@ async function sendMessageFromText(text, attachments = []) {
     const provider = modelConfig.provider;
     if (!state.apiKeyStatus[provider]?.hasKey || state.isLoading) return;
 
+    // Commit a dirty scratchpad draft first (Decision 11), same as sendMessage.
+    await FilePanel.autoSaveScratchpadOnSend();
+
     state.isLoading = true;
     updateSendButtonState();
 
@@ -7073,6 +7080,7 @@ const FilePanel = {
     historyRevisions: [],  // FC-06b: fetched revisions, NEWEST first
     selectedRevId: null,   // the version shown in the detail pane
     conflict: false, // the assistant rewrote the file mid-edit (Save confirms)
+    locked: false,   // SP-03b: editor read-only while the model's turn is in flight
     _fetchSeq: 0,    // ignore stale fetch responses after rapid updates
     _cache: null,    // { url, text } — last fetched content, so raw/rendered
                      // toggles and card re-clicks don't re-download
@@ -7112,7 +7120,9 @@ const FilePanel = {
         if (this.editMode) {
             if (this.file && this.file.url === att.url) {
                 this.conflict = true;
-                if (elements.filePanelConflict) elements.filePanelConflict.hidden = false;
+                // While locked (SP-03b) the lock note is shown instead; the
+                // conflict note is revealed when the turn ends (syncTurnLock).
+                if (elements.filePanelConflict && !this.locked) elements.filePanelConflict.hidden = false;
             } else {
                 this._pendingActivity = { att, convoId };
             }
@@ -7268,6 +7278,59 @@ const FilePanel = {
         this._cache = null;
         if (this.historyMode) this.showHistory();
         else this.loadContent();
+    },
+
+    /**
+     * Auto-save a dirty scratchpad draft before a send (Decision 11): for the
+     * pad, sending IS the commit gesture, so the model gets the committed
+     * content rather than stale pre-draft text. Awaited by the send path so the
+     * write lands before the server assembles the request. Returns the pad to
+     * view mode either way (a send closes the editor).
+     */
+    async autoSaveScratchpadOnSend() {
+        if (!this.isScratchpad() || !this.editMode) return;
+        const ta = document.getElementById('filePanelEditor');
+        if (!ta) return;
+        const file = this.file;
+        const text = ta.value;
+        const dirty = typeof this._draftBaseline === 'string' && text !== this._draftBaseline;
+        if (dirty) {
+            try {
+                await API.files.saveText(file.url, text);
+                this._cache = { url: file.url, text };
+                this.maybeAutoArmScratchpad(text);
+            } catch (err) {
+                console.error('Auto-save scratchpad on send failed:', err);
+                showToast('Could not save the scratchpad before sending.', { type: 'warning' });
+            }
+        }
+        if (this.file === file) this.returnToView();
+    },
+
+    /**
+     * Lock the panel editor while the model's turn is in flight (Decision 10):
+     * an open editor goes read-only with a note, and unlocks when the turn ends.
+     * Simultaneous editing has no benefit and several failure modes, so it is
+     * simply prevented. Driven from state.isLoading via updateSendButtonState,
+     * so every turn start/end syncs it. (The scratchpad also auto-saves on send,
+     * so it is in view mode during the turn; this covers a file editor left open
+     * across a send.)
+     */
+    syncTurnLock() {
+        const locked = !!state.isLoading;
+        if (this.locked === locked) return;
+        this.locked = locked;
+        const ta = document.getElementById('filePanelEditor');
+        if (ta) ta.readOnly = locked;
+        if (elements.filePanelSaveBtn) elements.filePanelSaveBtn.disabled = locked;
+        if (elements.filePanel) elements.filePanel.classList.toggle('is-locked', locked);
+        if (elements.filePanelLockNote) elements.filePanelLockNote.hidden = !(locked && this.editMode);
+        // The lock note supersedes the file conflict note while a turn runs; when
+        // the turn ends, reveal the conflict note if the model changed this file
+        // meanwhile (the "you were locked out, saving overwrites" signal).
+        if (elements.filePanelConflict) {
+            elements.filePanelConflict.hidden = locked ? true : !(this.conflict && this.editMode);
+        }
     },
 
     /**
@@ -8068,6 +8131,10 @@ async function sendMessage() {
     if ((!userMessage && !hasAttachments) || !hasApiKey || state.isLoading) {
         return;
     }
+
+    // Commit a dirty scratchpad draft first (Decision 11) so the model sees it
+    // this turn, not stale content. Awaited before the request is built.
+    await FilePanel.autoSaveScratchpadOnSend();
 
     elements.messageInput.value = '';
     elements.messageInput.style.height = 'auto';
