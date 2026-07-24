@@ -5674,6 +5674,19 @@ body {
     color: var(--warning);
 }
 
+/* SP-03b: editor locked while the model's turn is in flight. */
+.file-panel-lock-note {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.file-panel.is-locked .file-panel-editor {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* The rendered-markdown view reuses the .message-content class (same
    renderer and typography as chat bubbles) — no panel-specific rules. */
 

@@ -514,6 +514,8 @@ When responding, you may optionally include an expression tag like [expression: 
             <!-- Edit-mode footer (slice 3): conflict note + Save/Cancel. -->
             <div class="file-panel-footer" id="filePanelFooter" hidden>
                 <span class="file-panel-conflict" id="filePanelConflict" hidden>The assistant updated this file while you were editing — saving will overwrite its version.</span>
+                <!-- SP-03b: shown while the model's turn is in flight; the editor is read-only until it finishes. -->
+                <span class="file-panel-lock-note" id="filePanelLockNote" hidden>The assistant is working — the editor is locked until it finishes.</span>
                 <button class="modal-btn secondary" id="filePanelCancelBtn" type="button">Cancel</button>
                 <button class="modal-btn primary" id="filePanelSaveBtn" type="button">Save</button>
             </div>
