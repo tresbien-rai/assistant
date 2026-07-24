@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS workspace_files (
     mime_type       TEXT DEFAULT '',
     size_bytes      INTEGER DEFAULT 0,
     drive_file_id   TEXT DEFAULT '',
+    enabled         INTEGER DEFAULT 1,  -- context toggle (CT-01): 1/NULL = loaded into chats, 0 = listed only (migration 010 backfills old DBs)
     created_at      INTEGER NOT NULL
 );
 
@@ -135,6 +136,7 @@ CREATE TABLE IF NOT EXISTS project_files (
     mime_type       TEXT DEFAULT '',
     size_bytes      INTEGER DEFAULT 0,
     drive_file_id   TEXT DEFAULT '',
+    enabled         INTEGER DEFAULT 1,  -- context toggle (CT-01): 1/NULL = loaded into chats, 0 = listed only (migration 010 backfills old DBs)
     created_at      INTEGER NOT NULL
 );
 
@@ -173,10 +175,36 @@ CREATE TABLE IF NOT EXISTS conversation_files (
     size_bytes        INTEGER DEFAULT 0,
     drive_file_id     TEXT DEFAULT '',
     last_touched_turn INTEGER,
+    inject_mode       TEXT,             -- context toggle (CT-01): NULL/'auto' = recency window, 'pin' = every turn, 'mute' = never (migration 010 backfills old DBs)
     created_at        INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversation_files_conversation_id ON conversation_files(conversation_id);
+
+-- Per-chat knowledge-file overrides (Context toggles, CT-01): one row per file a
+-- conversation DISAGREES with its container about. Absence = inherit the
+-- container default (project_files.enabled / workspace_files.enabled), so
+-- "reset to default" is a DELETE and a container-level change propagates to
+-- every chat that has not explicitly opted out.
+--
+-- `scope` is 'workspace' | 'project'; `file_id` is the row id in the matching
+-- *_files table. There is no FK for file_id (it spans two tables, same
+-- compromise as file_revisions), but conversation_id carries one so a deleted
+-- chat's overrides cascade away. A row orphaned by a deleted FILE is harmless:
+-- resolution always iterates the file list and looks overrides up, never the
+-- reverse. Container file deletion prunes matching rows anyway.
+-- New table => created here on boot; no migration needed (user_files precedent).
+CREATE TABLE IF NOT EXISTS conversation_context_overrides (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    scope           TEXT NOT NULL,      -- 'workspace' | 'project'
+    file_id         TEXT NOT NULL,      -- row id in workspace_files / project_files
+    enabled         INTEGER NOT NULL,   -- 1 | 0
+    created_at      INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, scope, file_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_context_overrides_conversation_id ON conversation_context_overrides(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_context_overrides_file ON conversation_context_overrides(scope, file_id);
 
 -- File revisions (File Collaboration, FC-02): an append-only change log across
 -- every file scope. Each create_file / edit_file / user panel Save appends one
