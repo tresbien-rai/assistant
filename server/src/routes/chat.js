@@ -172,26 +172,35 @@ function resolveRequestContainers(req) {
  * A project-level chat inherits both; a workspace-level chat only the
  * workspace; an unfiled chat neither.
  *
+ * Per-file context toggles (CT-02) are applied inside the assemblers: they need
+ * the conversation (to resolve per-chat overrides) and whether file tools are
+ * advertised (to decide whether naming a disabled file in `<available_files>`
+ * is actionable or just noise).
+ *
  * @param {Object} req - Express request (req.user, req.body)
  * @param {Object} [containers] - resolveRequestContainers(req) result, when
  *   the caller already resolved it (avoids double lookups)
+ * @param {boolean} [toolsEnabled] - whether file tools are advertised this
+ *   request; defaults to false, which suppresses the manifest
  * @returns {Promise<{ text: string, warning: string|null }|null>} null when
  *   there is nothing to inject
  */
-async function resolveRequestContext(req, containers = null) {
+async function resolveRequestContext(req, containers = null, toolsEnabled = false) {
   const userId = req.user.userId;
-  const { workspace, project } = containers || resolveRequestContainers(req);
+  const resolved = containers || resolveRequestContainers(req);
+  const { workspace, project } = resolved;
+  const toggleOpts = { conversationId: resolved.conversation?.id || null, toolsEnabled };
 
   const blocks = [];
   const warnings = [];
 
   if (workspace) {
-    const wc = await assembleWorkspaceContext(userId, workspace);
+    const wc = await assembleWorkspaceContext(userId, workspace, toggleOpts);
     if (wc?.text) blocks.push(wc.text);
     if (wc?.warning) warnings.push(wc.warning);
   }
   if (project) {
-    const pc = await assembleProjectContext(userId, project);
+    const pc = await assembleProjectContext(userId, project, toggleOpts);
     if (pc?.text) blocks.push(pc.text);
     if (pc?.warning) warnings.push(pc.warning);
   }
@@ -247,11 +256,19 @@ function countUserTurns(messages) {
  * message, then fold the KB into synthetic leading turns. Returns everything the
  * callers need: the final `system`/`messages`, the KB `requestContext` (for the
  * warning header), and `currentTurn` (stamped onto tool writes this request).
- * @returns {Promise<{ system: string|undefined, messages: Array, requestContext: object|null, currentTurn: number }>}
+ *
+ * `toolsEnabled` is resolved HERE rather than by each endpoint (CT-02) because
+ * the KB assembly needs it — the `<available_files>` manifest is only emitted
+ * when the model actually has read_file to call. It is returned alongside
+ * `scratchpadEnabled` so the endpoints use one resolution rather than repeating
+ * it and risking drift.
+ *
+ * @returns {Promise<{ system: string|undefined, messages: Array, requestContext: object|null, currentTurn: number, toolsEnabled: boolean, scratchpadEnabled: boolean }>}
  */
 async function assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames }) {
   const userId = req.user.userId;
-  const requestContext = await resolveRequestContext(req, containers);
+  const toolsEnabled = resolveToolsEnabled(userId, containers.conversation);
+  const requestContext = await resolveRequestContext(req, containers, toolsEnabled);
 
   const currentTurn = countUserTurns(messages);
   const conversationId = containers.conversation?.id || null;
@@ -276,7 +293,7 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages, ex
 
   const { system, messages: assembled } =
     assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames, scratchpadEnabled);
-  return { system, messages: assembled, requestContext, currentTurn, scratchpadEnabled };
+  return { system, messages: assembled, requestContext, currentTurn, toolsEnabled, scratchpadEnabled };
 }
 
 /**
@@ -502,9 +519,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
   // Assemble the request (FC-03a KB relocation + FC-03b active-file injection).
   const containers = resolveRequestContainers(req);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn, scratchpadEnabled } =
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn, toolsEnabled, scratchpadEnabled } =
     await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
-  const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
   const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
 
   logger.info({
@@ -586,9 +602,8 @@ router.post('/stream', asyncHandler(async (req, res) => {
   // Assemble the request (FC-03a KB relocation + FC-03b active-file injection).
   // Resolved before any SSE headers are sent so the warning header is valid.
   const containers = resolveRequestContainers(req);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn, scratchpadEnabled } =
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn, toolsEnabled, scratchpadEnabled } =
     await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
-  const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
   const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
 
   if (requestContext?.warning) {
@@ -713,9 +728,8 @@ router.post('/preview', asyncHandler(async (req, res) => {
   // prefill) exactly as a real tools-on send would build them, plus the KB
   // relocation and active-file injection.
   const containers = resolveRequestContainers(req);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, scratchpadEnabled } =
+  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, toolsEnabled, scratchpadEnabled } =
     await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
-  const toolsEnabled = resolveToolsEnabled(req.user.userId, containers.conversation);
   const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
   const anyTools = advertisedTools.length > 0;
 

@@ -5,11 +5,18 @@
  * that the chat route prepends to the persona's system prompt. This works
  * identically for every provider because it produces plain text.
  *
- * v1 strategy = FULL-CONTEXT INJECTION: download every file, extract its text,
- * and include it (within a budget). The "gather candidate text" step is
+ * v1 strategy = FULL-CONTEXT INJECTION: download every ENABLED file, extract its
+ * text, and include it (within a budget). The "gather candidate text" step is
  * deliberately isolated in `gatherFileTexts()` so a future retrieval/RAG path
  * (chunk + embed + top-k) can replace it without touching the chat route or the
  * frontend (Phase 1 decision #1).
+ *
+ * Which files count as enabled is resolved by utils/contextState.js (Context
+ * toggles, CT-02): a per-chat override, else the container default, else on.
+ * Disabled files are not downloaded at all — they cost nothing but their name in
+ * the `<available_files>` manifest, and only when file tools are on to make that
+ * name actionable. When retrieval lands, this same partition becomes "what is
+ * eligible for the index", so the toggle keeps its meaning.
  *
  * Resilience: a project must never break a conversation. Drive being
  * unreachable, a single corrupt file, or an oversized knowledge base all
@@ -19,7 +26,13 @@
 const config = require('../config');
 const dal = require('../db/dal');
 const drive = require('./drive');
+const { partitionKnowledgeFiles } = require('./contextState');
 const { logger } = require('./logger');
+
+// How many disabled filenames the <available_files> manifest names before it
+// summarises the rest. The manifest is meant to cost ~one line, not to become a
+// second knowledge base for a container with hundreds of files.
+const MANIFEST_MAX_NAMES = 50;
 
 // pdf-parse is required lazily (and via its lib entry, which avoids the package
 // index's debug-mode test-file read) so the dependency only loads when a PDF is
@@ -186,6 +199,31 @@ function wrapWorkspaceBlock(workspace, sections) {
 }
 
 /**
+ * Build the `<available_files>` manifest for the files a chat has toggled off,
+ * or null when there is nothing to name. Deliberately cheap: names only, capped,
+ * and one instruction on how to get the content.
+ * @param {Object} container - the container the files belong to
+ * @param {Array} notLoaded - the disabled file rows
+ * @param {string} nounLower - 'project' | 'workspace', for the sentence
+ * @returns {string|null}
+ */
+function buildAvailableFilesSection(container, notLoaded, nounLower) {
+  if (notLoaded.length === 0) return null;
+
+  const names = notLoaded.slice(0, MANIFEST_MAX_NAMES).map((f) => f.filename);
+  const overflow = notLoaded.length - names.length;
+  const tail = overflow > 0 ? `, and ${overflow} more` : '';
+
+  return [
+    '<available_files>',
+    `These files exist in the ${nounLower} "${container.name}" but are NOT loaded ` +
+      `into this conversation. Their content is not shown above. If you need one, ` +
+      `call read_file with its exact name: ${names.join(', ')}${tail}.`,
+    '</available_files>',
+  ].join('\n');
+}
+
+/**
  * Assemble a container's full context block (instructions + Drive-backed files),
  * shared by projects and workspaces — they differ only in which files to list,
  * the section/wrapper labels, and the warning noun.
@@ -197,14 +235,31 @@ function wrapWorkspaceBlock(workspace, sections) {
  * @param {string} opts.heading - instructions section heading ("Project Instructions")
  * @param {(container, sections: string[]) => string} opts.wrap - block wrapper
  * @param {string} opts.noun - capitalized container noun for warnings ("Project")
+ * @param {'workspace'|'project'} opts.scope - knowledge scope for override lookup
+ * @param {string|null} [opts.conversationId] - the chat, for per-chat overrides;
+ *   null resolves every file to its container default
+ * @param {boolean} [opts.toolsEnabled] - whether file tools are advertised this
+ *   request. Gates the `<available_files>` manifest: with no read_file to call,
+ *   naming an unreachable file is noise and an invitation to invent its contents.
  * @returns {Promise<{ text: string, warning: string|null }|null>} null when there
- *   is nothing to inject (no instructions and no files).
+ *   is nothing to inject (no instructions, no enabled files, nothing to list).
  */
-async function assembleContextBlock(userId, container, { listFiles, heading, wrap, noun }) {
-  const files = listFiles(container.id);
+async function assembleContextBlock(
+  userId,
+  container,
+  { listFiles, heading, wrap, noun, scope, conversationId = null, toolsEnabled = false }
+) {
+  const allFiles = listFiles(container.id);
   const instructions = (container.instructions || '').trim();
 
-  if (!instructions && files.length === 0) {
+  // Context toggles (CT-02): disabled files are never downloaded, so they cost
+  // neither budget nor a Drive round trip.
+  const { loaded, notLoaded } = partitionKnowledgeFiles(dal, conversationId, scope, allFiles);
+  const manifest = toolsEnabled
+    ? buildAvailableFilesSection(container, notLoaded, noun.toLowerCase())
+    : null;
+
+  if (!instructions && loaded.length === 0 && !manifest) {
     return null;
   }
 
@@ -221,13 +276,18 @@ async function assembleContextBlock(userId, container, { listFiles, heading, wra
   let skipped = [];
   let driveFailed = false;
 
-  if (files.length > 0) {
-    const result = await gatherFileTexts(userId, container, files, budget - used);
+  if (loaded.length > 0) {
+    const result = await gatherFileTexts(userId, container, loaded, budget - used);
     sections.push(...result.sections);
     used += result.usedChars;
     skipped = result.skipped;
     driveFailed = result.driveFailed;
   }
+
+  // The manifest goes last, after the content it is the counterpart to. Not
+  // budgeted: it is names-only and capped, so it cannot meaningfully compete
+  // with file content for space.
+  if (manifest) sections.push(manifest);
 
   const text = wrap(container, sections);
 
@@ -245,14 +305,20 @@ async function assembleContextBlock(userId, container, { listFiles, heading, wra
  * Assemble the full project-context block (instructions + project files).
  * @param {string} userId
  * @param {Object} project - projects row (must include id, name, instructions)
+ * @param {{conversationId?: string|null, toolsEnabled?: boolean}} [opts] - context
+ *   toggle inputs (CT-02); omitted means "no chat, no manifest" — every file
+ *   resolves to its container default.
  * @returns {Promise<{ text: string, warning: string|null }|null>}
  */
-function assembleProjectContext(userId, project) {
+function assembleProjectContext(userId, project, opts = {}) {
   return assembleContextBlock(userId, project, {
     listFiles: dal.listProjectFiles,
     heading: 'Project Instructions',
     wrap: wrapProjectBlock,
     noun: 'Project',
+    scope: 'project',
+    conversationId: opts.conversationId ?? null,
+    toolsEnabled: opts.toolsEnabled === true,
   });
 }
 
@@ -261,14 +327,19 @@ function assembleProjectContext(userId, project) {
  * Layered BEFORE the project block and the persona prompt.
  * @param {string} userId
  * @param {Object} workspace - workspaces row (must include id, name, instructions)
+ * @param {{conversationId?: string|null, toolsEnabled?: boolean}} [opts] - see
+ *   assembleProjectContext
  * @returns {Promise<{ text: string, warning: string|null }|null>}
  */
-function assembleWorkspaceContext(userId, workspace) {
+function assembleWorkspaceContext(userId, workspace, opts = {}) {
   return assembleContextBlock(userId, workspace, {
     listFiles: dal.listWorkspaceFiles,
     heading: 'Workspace Instructions',
     wrap: wrapWorkspaceBlock,
     noun: 'Workspace',
+    scope: 'workspace',
+    conversationId: opts.conversationId ?? null,
+    toolsEnabled: opts.toolsEnabled === true,
   });
 }
 
@@ -281,4 +352,6 @@ module.exports = {
   // exported for tests
   _isPdf: isPdf,
   _textCache: textCache,
+  _buildAvailableFilesSection: buildAvailableFilesSection,
+  _MANIFEST_MAX_NAMES: MANIFEST_MAX_NAMES,
 };

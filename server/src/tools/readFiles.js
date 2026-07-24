@@ -15,10 +15,43 @@
  */
 
 const config = require('../config');
+const dal = require('../db/dal');
 const { extractFileText } = require('../utils/projectContext');
 const { formatFileSize } = require('../utils/format');
+const { resolveKnowledgeFiles, resolveInjectMode, isKnowledgeScope } = require('../utils/contextState');
 const { resolveReadStores, findAcrossStores, resolveToolDriveAuth } = require('./fileStore');
 const { logger } = require('../utils/logger');
+
+/**
+ * Annotate one store's files with their context state (CT-02), resolved for the
+ * whole store in one pass rather than per row.
+ *
+ * Only the NOT-LOADED states get a note: a model that sees a file listed but
+ * finds no matching content in its context would otherwise be left to guess why,
+ * and guessing tends to mean inventing the contents. A pinned or normally-loaded
+ * file needs no explanation — its content is right there.
+ *
+ * @param {Object} store - the FileStore
+ * @param {Array} files - store.list() rows
+ * @param {string|null} conversationId
+ * @returns {Array<{ file: Object, note: string }>}
+ */
+function annotateStoreFiles(store, files, conversationId) {
+  if (isKnowledgeScope(store.kind)) {
+    return resolveKnowledgeFiles(dal, conversationId, store.kind, files).map(({ file, enabled }) => ({
+      file,
+      note: enabled ? '' : 'not loaded into this conversation — read_file to load it',
+    }));
+  }
+  if (store.kind === 'conversation') {
+    return files.map((file) => ({
+      file,
+      note: resolveInjectMode(file) === 'mute' ? 'muted — not loaded automatically, read_file to load it' : '',
+    }));
+  }
+  // Downloads is never auto-injected, so there is no state to report.
+  return files.map((file) => ({ file, note: '' }));
+}
 
 /**
  * Execute one read_file call.
@@ -99,12 +132,19 @@ async function executeListFiles(_input, ctx) {
 
   const rows = [];
   for (const store of stores) {
-    for (const f of store.list()) {
-      rows.push({ filename: f.filename, sizeBytes: f.size_bytes, mimeType: f.mime_type, source: store.kind });
+    for (const { file, note } of annotateStoreFiles(store, store.list(), ctx.conversationId || null)) {
+      rows.push({
+        filename: file.filename,
+        sizeBytes: file.size_bytes,
+        mimeType: file.mime_type,
+        source: store.kind,
+        note,
+      });
     }
   }
 
-  logger.info({ userId: ctx.userId, count: rows.length }, 'list_files executed');
+  const notLoaded = rows.filter((r) => r.note).length;
+  logger.info({ userId: ctx.userId, count: rows.length, notLoaded }, 'list_files executed');
 
   if (rows.length === 0) {
     return {
@@ -117,12 +157,12 @@ async function executeListFiles(_input, ctx) {
     const meta = [formatFileSize(r.sizeBytes)];
     if (r.mimeType) meta.push(r.mimeType);
     if (showSource) meta.push(`in ${r.source}`);
-    return `- ${r.filename} (${meta.join(', ')})`;
+    return `- ${r.filename} (${meta.join(', ')})${r.note ? ` — ${r.note}` : ''}`;
   });
 
   return {
     content: `Files available in this conversation (${rows.length}):\n${lines.join('\n')}`,
-    display: { count: rows.length },
+    display: { count: rows.length, ...(notLoaded > 0 ? { notLoaded } : {}) },
   };
 }
 
