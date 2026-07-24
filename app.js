@@ -5753,6 +5753,7 @@ function renderContainerPage(kind, id) {
                     <button type="button" class="file-upload-btn" id="cpUploadBtn">${CONTAINER_UPLOAD_SVG} Upload files</button>
                 </div>
                 <p class="help-text">Text, code, and PDF files up to 10MB each.</p>
+                <p class="help-text" id="cpFilesToggleHint" hidden>Unchecked files stay here but aren't loaded into chats. The assistant can still open one on request when file tools are on.</p>
             </div>
 
             ${listsHTML}
@@ -5935,6 +5936,9 @@ async function loadContainerFiles(kind, id) {
     if (!listEl.isConnected) return; // navigated away during the await
     listEl.innerHTML = '';
     const noEl = document.getElementById('cpNoFiles');
+    // The toggle hint only makes sense once there are checkboxes to explain.
+    const hintEl = document.getElementById('cpFilesToggleHint');
+    if (hintEl) hintEl.hidden = files.length === 0;
 
     if (files.length === 0) {
         if (noEl) noEl.hidden = false;
@@ -5944,13 +5948,18 @@ async function loadContainerFiles(kind, id) {
 
     files.forEach(f => {
         const row = document.createElement('div');
-        row.className = 'project-file-item';
+        // enabled is undefined on any response predating CT-03 — treat as on,
+        // matching the server's "NULL means loaded" rule.
+        const enabled = f.enabled !== false;
+        row.className = `project-file-item${enabled ? '' : ' is-context-off'}`;
         const label = getFileTypeLabel(f.filename, f.mimeType);
         const href = containerFilesApi(kind).contentUrl(id, f.id);
         // Text files open in the file panel for view/edit/history (FC-04); PDFs
         // and other binaries are download-only.
         const viewable = !/\.pdf$/i.test(f.filename || '');
         row.innerHTML = `
+            <input type="checkbox" class="project-file-toggle" ${enabled ? 'checked' : ''}
+                   aria-label="Load ${escapeHtml(f.filename)} into chats" title="${CONTEXT_TOGGLE_TITLE}">
             <span class="project-file-badge">${escapeHtml(label)}</span>
             <span class="project-file-name${viewable ? ' clickable' : ''}" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
             <span class="project-file-size">${escapeHtml(formatFileSize(f.sizeBytes))}</span>
@@ -5962,10 +5971,45 @@ async function loadContainerFiles(kind, id) {
                 FilePanel.openStandalone({ fileName: f.filename, url: href, mimeType: f.mimeType, sizeBytes: f.sizeBytes });
             });
         }
+        row.querySelector('.project-file-toggle')
+            .addEventListener('change', (e) => toggleContainerFileContext(kind, id, f, e.target, row));
         row.querySelector('.project-file-delete')
             .addEventListener('click', () => deleteContainerFilePrompt(kind, id, f.id, f.filename));
         listEl.appendChild(row);
     });
+}
+
+/** Tooltip shared by every context-toggle checkbox. */
+const CONTEXT_TOGGLE_TITLE =
+    'Load this file into chats. Unchecking keeps the file but leaves its ' +
+    'contents out of the conversation.';
+
+/**
+ * Flip a container file's context toggle (CT-03). Optimistic: the row updates
+ * immediately and reverts if the server refuses, because the action is free to
+ * undo and a round trip per click would feel broken.
+ * @param {'workspace'|'project'} kind
+ * @param {string} id - container id
+ * @param {Object} file - the file row from the list
+ * @param {HTMLInputElement} checkbox
+ * @param {HTMLElement} row
+ */
+async function toggleContainerFileContext(kind, id, file, checkbox, row) {
+    const enabled = checkbox.checked;
+    row.classList.toggle('is-context-off', !enabled);
+    checkbox.disabled = true;
+
+    try {
+        const updated = await containerFilesApi(kind).setEnabled(id, file.id, enabled);
+        file.enabled = updated.enabled; // keep the cached row honest for re-renders
+    } catch (err) {
+        console.error('Failed to set file context toggle:', err);
+        checkbox.checked = !enabled;
+        row.classList.toggle('is-context-off', enabled);
+        displayError(err, { action: 'update the file' });
+    } finally {
+        checkbox.disabled = false;
+    }
 }
 
 /**

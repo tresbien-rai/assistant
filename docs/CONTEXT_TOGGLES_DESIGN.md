@@ -14,7 +14,7 @@ working file. Layers onto the File Collaboration system
 > on toggle was reviewed and accepted as a fair trade. Open question 1 resolved:
 > **a newly uploaded file always arrives enabled**, even over budget.
 >
-> **Progress: CT-01 ✅, CT-02 ✅ merged — the server now honours the toggles end to end. CT-03 (container-page checkboxes) next.** Build order below.
+> **Progress: CT-01 ✅, CT-02 ✅, CT-03 ✅ merged — the container-level half of the feature is COMPLETE and usable. CT-04 (the chat context panel + per-chat overrides) next.** Build order below.
 
 ---
 
@@ -381,7 +381,7 @@ Each slice is independently mergeable and leaves the app working.
 |---|---|---|
 | **CT-01** ✅ | Data model + resolution. Migration 010, `conversation_context_overrides` table, DAL accessors, `utils/contextState.js`, `test-contextstate.js`. | **No behaviour change** — everything resolves to on/auto. Override pruning lives inside `deleteProjectFile`/`deleteWorkspaceFile` so call sites can't forget it. |
 | **CT-02** ✅ | Injection honours state. Partition in `assembleContextBlock` + `<available_files>` manifest (capped at 50 names), `activeFiles` pin/mute, `list_files` state notes. `toolsEnabled` resolution moved into `assembleChatRequest`. | Server-only. `test-contexttoggles.js` (24 checks) + a live `/api/chat/preview` pass confirming the manifest appears with tools on and vanishes with tools off. |
-| **CT-03** | Container page checkboxes + the two `PATCH .../files/:fileId` endpoints. | First user-visible slice. Delivers the workspace/project half on its own. |
+| **CT-03** ✅ | Container page checkboxes + the two `PATCH .../files/:fileId` endpoints; `enabled` added to both file-list formatters. | First user-visible slice; delivers the workspace/project half on its own. Optimistic toggle with revert-on-failure. Browser-verified: click → dim + persist, re-render keeps state, simulated network failure reverts cleanly, unchecking moves the file into the manifest, no overflow at 375px. |
 | **CT-04** | `GET /api/conversations/:id/context` + the chat panel rebuilt as a sectioned context view, with knowledge-file overrides. | The biggest slice. Split into 04a (endpoint + sectioned read-only render) and 04b (override toggles + reset) if it runs long. |
 | **CT-05** | Chat working file auto/pin/mute control. | Small once CT-04's rendering exists. |
 | **CT-06** | **Disabled-files count badge on the top-bar button** + hover popover naming them; budget readout in the panel header; tools-off note. | The badge is the slice's anchor, not optional polish — it is the only signal visible without opening the panel, and the agreed answer to the "forgot I disabled it" failure. The budget readout is the droppable half. |

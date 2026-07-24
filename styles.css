@@ -1316,6 +1316,33 @@ body {
     color: var(--text-muted);
 }
 
+/* Context toggle (CT-03): whether this file is loaded into chats. Sits at the
+   row's left edge, before the type badge. */
+.project-file-toggle {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.project-file-toggle:disabled {
+    cursor: progress;
+    opacity: 0.5;
+}
+
+/* An unloaded file stays fully legible (it is still a real file you may want to
+   open, download, or delete) but reads as inactive at a glance. */
+.project-file-item.is-context-off .project-file-name,
+.project-file-item.is-context-off .project-file-badge {
+    opacity: 0.55;
+}
+
+.project-file-item.is-context-off .project-file-name {
+    font-style: italic;
+}
+
 .project-file-download,
 .project-file-delete {
     flex-shrink: 0;
