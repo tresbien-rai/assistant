@@ -1,9 +1,9 @@
 /**
  * API Client
  *
- * Frontend wrapper for all backend API calls. Exposes a single `window.API`
- * object that subsequent frontend tasks (P0-14 onward) will use to replace
- * direct localStorage / IndexedDB / external provider calls.
+ * Frontend wrapper for all backend API calls. Exports a single `API` object;
+ * import it (`import { API } from './api-client.js'`) rather than reaching for
+ * the `window.API` mirror kept at the foot of this file for console debugging.
  *
  * Authentication is handled via an httpOnly `token` cookie set by the
  * backend after Google OAuth. Browsers attach the cookie automatically
@@ -16,7 +16,7 @@
  * where `code` matches the backend AppError codes (AUTH_ERROR,
  * PROVIDER_ERROR, VALIDATION_ERROR, NOT_FOUND, RATE_LIMITED, SERVER_ERROR).
  */
-(function () {
+const API = (function () {
   'use strict';
 
   // ===========================================================================
@@ -841,12 +841,16 @@
     },
   };
 
-  // Expose globally for the non-module frontend.
+  // Still mirrored on `window` — not because anything imports it that way
+  // (nothing does; `js/main.js` imports the module), but because it keeps the
+  // browser console able to poke at the API by hand, which is how most of this
+  // app's bugs have been found. Drop it once that stops being useful.
   if (typeof window !== 'undefined') {
     window.API = API;
   }
-  // Also export for module-aware environments (e.g., future bundling, tests).
-  if (typeof module !== 'undefined' && module.exports) {
-    module.exports = API;
-  }
+
+  return API;
 })();
+
+export { API };
+export default API;
