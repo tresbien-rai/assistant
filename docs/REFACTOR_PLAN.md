@@ -9,7 +9,9 @@ each slice is independently shippable and says what "done" means.
 > **F-02 ✅ merged (PR #126)** — the smoke harness runs, and reports **1 pass /
 > 3 fail**: the three known bugs are now red on demand instead of anecdotal.
 > **R-00 ✅** — the frontend is an ES module (`js/main.js` + `js/api-client.js`),
-> harness identical before and after. Next up: **R-01**.
+> harness identical before and after.
+> **R-01 ✅** — `util/markdown`, `util/image-store`, `components/menus` extracted;
+> dialogs + toast deferred to R-02 (they need `dom.js`). Next up: **R-02**.
 >
 > Ordering decision: the live provider blocker (F-01) and the test harness (F-02)
 > ship **before** any code moves; the stream-orphaning fix (F-03) ships **after**
@@ -158,8 +160,8 @@ Each row is one branch, one PR. Harness green before and after.
 | ☑ | **F-01** | top_p/temperature fix + server test | trivial — ship first |
 | ☑ | **F-02** | Frontend smoke harness; 3 bugs encoded as failing checks | none (additive) |
 | ☑ | **R-00** | `<script type="module">`; `api-client.js` → module. No code moves | low — proves loading |
-| ☐ | **R-01** | Extract `util/`, `components/` (leaves, no deps) | low |
-| ☐ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs` | medium |
+| ☑ | **R-01** | Extract `util/markdown`, `util/image-store`, `components/menus` (true leaves) | low |
+| ☐ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs`, **then** `components/dialogs` + `components/toast` | medium |
 | ☐ | **R-03** | Extract `file-panel/` — biggest single win, already cohesive | medium |
 | ☐ | **R-04** | Extract `views/` + `router.js` | medium |
 | ☐ | **R-05** | Extract `chat/` — the tangled part, deliberately last | high |
@@ -262,7 +264,49 @@ verified in the browser — which is the property later slices depend on.
 and the harness reports the same **1 pass / 3 fail** with byte-identical detail
 strings before and after.
 
-### R-01 → R-05 — extraction
+### R-01 — leaf modules ✅
+
+Three modules, ~405 lines, moved out of `main.js`:
+
+| module | from | contents |
+|---|---|---|
+| `js/util/markdown.js` | app.js 69–151 | `marked`/`hljs` setup, `renderMarkdown`, `ICON_SVG`, `messageActionsHTML` |
+| `js/util/image-store.js` | app.js 457–722 | the `ImageStore` IndexedDB wrapper |
+| `js/components/menus.js` | app.js 3785–3840 | `positionPopover`, `attachPopoverOutsideClose` |
+
+**Scope changed from the original plan, deliberately.** `components/dialogs.js`
+(`confirmDialog` / `promptName`) and `components/toast.js` (`showToast` /
+`showCriticalBanner`) both need the `elements` DOM cache, which R-02 extracts.
+Importing it back from `main.js` would create precisely the cycle rule 3
+forbids, so those two modules move in **R-02, immediately after `dom.js`**, where
+they cost one import line each. R-01 ships only what genuinely has zero
+dependencies.
+
+`ICON_SVG` and `messageActionsHTML` came along with `markdown.js` because
+`ICON_SVG.copy` is used by the code-block renderer — they are really chat-surface
+helpers and should land in `chat/thread.js` in R-05.
+
+**Method worth reusing for R-02…R-05.** Two throwaway scripts did the work and
+made the result checkable rather than trusted:
+
+1. A dependency reporter — for a line range, list what it declares, what it uses
+   from outside (→ imports), and what the outside uses from it (→ exports). Keep
+   it crude: strip whole-line comments only. Anything cleverer misreads this file
+   (a `/*` inside a CSS string swallows hundreds of real lines; template literals
+   hold most of the app's call sites). Over-report, never under-report.
+2. A cutter that slices the byte range out and writes it to the new file, so the
+   moved code is provably the original rather than retyped. Then diff the new
+   file against `git show main:js/main.js | sed -n 'a,bp'` to prove it.
+
+For this slice that diff came back **identical modulo blank lines** for all
+three, and `main.js` gained nothing but three `import` lines and a two-line
+comment. That is what an R-slice diff should look like.
+
+**Verified:** `node --check` on all four files, app boots with no console errors,
+markdown renders, the avatar popover positions and outside-closes, and the
+harness reports the same **1 pass / 3 fail**.
+
+### R-02 → R-05 — extraction
 
 Mechanical. Move code, add `import`/`export`, change nothing else. Take the
 `elements` cache (`app.js` ~1370–1500) with `dom.js` in R-02 — most modules need

@@ -56,8 +56,10 @@ Tessera - a personal, server-backed AI chat interface with Google OAuth authenti
 |----------------|---------|--------------|
 | `index.html` | Frontend structure | Sidebar, chat area, floating avatar, modals, login screen |
 | `styles.css` | Frontend styling | CSS variables for theming, responsive design, animations |
-| `js/main.js` | Frontend logic | State management, UI updates, API client calls |
+| `js/main.js` | Frontend logic (module entry point) | State management, UI updates, API client calls. Being carved up per `docs/REFACTOR_PLAN.md` |
 | `js/api-client.js` | API wrapper | All backend API calls (auth, personas, chat, etc.) |
+| `js/util/` | Dependency-free helpers | `markdown.js` (marked/hljs setup + `renderMarkdown`), `image-store.js` (IndexedDB blobs) |
+| `js/components/` | Reusable UI primitives | `menus.js` (popover positioning + outside-close) |
 | `server/` | Backend directory | Express server, database, API routes |
 | `server/src/index.js` | Server entry point | Express app setup, middleware, route mounting |
 | `server/src/config.js` | Configuration | Environment variables, constants |
