@@ -10472,5 +10472,26 @@ async function bootstrap() {
     }
 }
 
+// ===== Test seam (F-02) =====
+// The single, DELIBERATE handle the frontend smoke harness reaches through
+// (`tests/frontend-smoke.js`). It exists so the harness never depends on
+// incidental globals: today everything in this file happens to be global, but
+// after the module refactor (docs/REFACTOR_PLAN.md, R-00…R-05) nothing will be.
+// Keeping the harness pointed at ONE seam means it survives the extraction
+// unchanged — and a slice that forgets to wire something here fails loudly
+// instead of silently losing coverage. Nothing secret lives here; the browser
+// console already has the same reach.
+window.__tessera = {
+    get state() { return state; },
+    get elements() { return elements; },
+    API,
+    // Actions the harness drives. Getters, not values, so they keep resolving
+    // to the live implementation as these move between modules.
+    get sendMessage() { return sendMessage; },
+    get switchConversation() { return switchConversation; },
+    get navigate() { return navigate; },
+    get getActiveModelConfig() { return getActiveModelConfig; },
+};
+
 // ===== Start the App =====
 document.addEventListener('DOMContentLoaded', bootstrap);
