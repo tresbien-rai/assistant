@@ -36,6 +36,12 @@ import {
     getFileCategory, getFileIcon, getFileTypeLabel,
 } from './util/format.js';
 import { FilePanel } from './file-panel/index.js';
+import { navigate, currentSection, registerShell } from './shell.js';
+
+// Register this file's shell implementations with the seam, before anything can
+// call through it. Function declarations hoist, so they are already defined.
+// R-04b moves these three into js/router.js and this call goes with them.
+registerShell({ renderShell, renderMainView, updateUI });
 
 // ===== Conversation Helpers =====
 
@@ -3692,31 +3698,12 @@ async function setExpression(exprName) {
 // is a section rail that navigates between views. navigate() is the single entry
 // point: it sets the view, repaints the shell (rail highlight + contextual top
 // bar) and the main content, and closes the mobile drawer.
-
-/**
- * Navigate the main area to a view and repaint the shell.
- * @param {{type:string, id?:string}} view
- */
-function navigate(view) {
-    state.ui.mainView = view || { type: 'chats' };
-    renderShell();
-    renderMainView();
-    closeSidebar();
-}
-
-/** Which rail section the current view belongs to (for rail highlighting). */
-function currentSection() {
-    const v = state.ui.mainView || {};
-    if (v.type === 'settings') return 'settings';
-    if (v.type === 'models') return 'models';
-    if (v.type === 'personas' || v.type === 'persona-edit') return 'personas';
-    if (v.type === 'workspaces' || v.type === 'workspace' || v.type === 'project') return 'workspaces';
-    if (v.type === 'chat') {
-        const c = state.conversations[v.id];
-        return (c && (c.workspaceId || c.projectId)) ? 'workspaces' : 'chats';
-    }
-    return 'chats'; // 'chats' (and any fallback)
-}
+//
+// `navigate()` and `currentSection()` now live in js/shell.js, and the three
+// implementations below are registered there at import time (see the top of
+// this file). Callers reach them through the seam so that a view never has to
+// import the router — see js/shell.js for why. R-04b moves what remains of this
+// section into js/router.js, which will do the registering instead.
 
 /** Repaint the navigation shell: rail highlight + contextual top bar + chrome. */
 function renderShell() {

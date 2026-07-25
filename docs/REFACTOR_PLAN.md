@@ -16,7 +16,10 @@ each slice is independently shippable and says what "done" means.
 > deferred components.
 > **R-03 ✅** — `file-panel/` (1,300 lines) plus `util/format`, `util/diff` and
 > `components/errors`. `main.js` is down to **7,382** lines from 10,497 — the
-> halfway mark. Next up: **R-04** (`views/` + `router.js`).
+> halfway mark.
+> **R-04a ✅** — the shell seam (`js/shell.js`). R-04 turned out to be
+> unreachable as a pure move; see below. Next up: **R-04b** (`views/` +
+> `router.js`, now splittable).
 >
 > Ordering decision: the live provider blocker (F-01) and the test harness (F-02)
 > ship **before** any code moves; the stream-orphaning fix (F-03) ships **after**
@@ -168,7 +171,8 @@ Each row is one branch, one PR. Harness green before and after.
 | ☑ | **R-01** | Extract `util/markdown`, `util/image-store`, `components/menus` (true leaves) | low |
 | ☑ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs` / `sidebar`, then `components/dialogs` + `components/toast` | medium |
 | ☑ | **R-03** | Extract `file-panel/` + the helpers it stands on (`util/format`, `util/diff`, `components/errors`) | medium |
-| ☐ | **R-04** | Extract `views/` + `router.js` | medium |
+| ☑ | **R-04a** | Shell seam (`js/shell.js`) — a **change**, not a move; breaks the 60-function knot | low |
+| ☐ | **R-04b** | Extract `views/` + `router.js`, now that they can be split | medium |
 | ☐ | **R-05** | Extract `chat/` — the tangled part, deliberately last | high |
 | ☐ | **F-03** | Fix stream orphaning (bug 1) | low once R-05 lands |
 | ☐ | **F-04** | Draft + attachments per conversation (bug 2) | low |
@@ -457,7 +461,74 @@ It did catch four real hygiene defects, all fixed before merge:
 never used in the body), so R-04 and R-05 catch this class automatically instead
 of needing an agent to notice.
 
-### R-04 → R-05 — extraction
+### R-04a — the shell seam ✅ (a change, not a move)
+
+**R-04 as written could not be done.** Not "was hard" — could not be done as a
+move. Measuring the top-level call graph of `main.js` and computing its
+strongly-connected components found **one mutually recursive cluster of 60
+functions**: the view layer, the router and the settings-persistence code all
+call each other. Any boundary drawn through that cluster puts each half
+importing the other, which is exactly the cycle rule 3 forbids. 206 of the 273
+declarations are in no cycle at all; the tangle is concentrated and specific.
+
+Cutting single edges from the graph showed what holds it together — three
+"repaint everything" calls, and nothing else comes close:
+
+| edges cut | largest remaining cluster |
+|---|---|
+| none | **60** |
+| `navigate` | 44 |
+| `navigate` + `updateUI` | 21 |
+| `navigate` + `updateUI` + `renderMainView` | **13** |
+
+So `js/shell.js` now owns `navigate` and `currentSection` outright and exposes
+`renderShell` / `renderMainView` / `updateUI` as a facade over implementations
+registered once at boot. A view imports `navigate` from the seam and stays
+ignorant of the router; the router registers itself. The implementations still
+live in `main.js` and move to `js/router.js` in R-04b, which will do the
+registering instead — nothing else about them changes.
+
+This is **rule 2 made enforceable** rather than merely stated, and it is the
+same seam F-03 needs: to stop a streaming reply being written into a detached
+node, the send path must be able to ask which view is showing without reaching
+into the router.
+
+**Deliberately shipped as a change commit, alone.** No code moved in this slice.
+The one thing to know when reading it: `renderShell` / `renderMainView` /
+`updateUI` are now declared in two places — the facade in `shell.js` and the
+implementation in `main.js`. That is the point of a facade, and it keeps every
+existing call site reading identically, but the cross-module checker flags it as
+a duplicate name, correctly. Expect that warning until R-04b.
+
+**Verified:** all five rail sections navigate and highlight correctly through
+the seam (which exercises `currentSection`), opening a chat still paints its 23
+messages and shows the composer, `updateUI()` through the facade still returns
+its promise, no console errors, harness unchanged at 1 pass / 3 fail.
+
+A review agent checked the change specifically for behaviour identity and found
+no defect: `navigate`/`currentSection` byte-identical to the originals,
+`closeSidebar` resolving to literally the same binding, registration provably
+ordered before any possible call (`main.js` is the **only** importer of
+`shell.js`, and its only other top-level statement is the `DOMContentLoaded`
+hook), no shadowing or self-recursion, the async promise passing through the
+facade untouched, and the `window.__tessera` getter still resolving now that
+`navigate` is an imported binding.
+
+**Three notes it left for R-04b:**
+
+1. The `updateUI` facade is not load-bearing yet — nothing imports it, because
+   `main.js` still calls its own local copy. R-04b is what activates it.
+2. The guard in `call()` throws **synchronously**. Harmless today (unreachable,
+   and no caller does `updateUI().catch(...)`), but if R-04b introduces a caller
+   that only `await`s, a missed registration would surface as an uncaught error
+   rather than a rejected promise. Make the guard async-safe if that happens.
+3. `main.js`'s own `renderShell()` / `updateUI()` calls still bind to its local
+   declarations rather than going through `impl`. Correct while they *are* the
+   registered functions — and moot once R-04b moves them wholesale into
+   `router.js` — but it means the seam currently redirects external callers
+   only.
+
+### R-04b → R-05 — extraction
 
 Mechanical. Move code, add `import`/`export`, change nothing else. (`dom.js`
 landed in R-02, as planned — the view slices need it.)
