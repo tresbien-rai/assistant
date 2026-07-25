@@ -179,3 +179,11 @@ export const elements = {
     criticalBannerDismiss: document.getElementById('criticalBannerDismiss')
 };
 
+/**
+ * Pin the message thread to the bottom. Lives here rather than with the chat
+ * code because it is a bare DOM operation on a cached element, and both the
+ * thread and components/errors.js need it.
+ */
+export function scrollToBottom() {
+    elements.messagesContainer.scrollTop = elements.messagesContainer.scrollHeight;
+}

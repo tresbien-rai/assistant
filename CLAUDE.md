@@ -63,8 +63,9 @@ Tessera - a personal, server-backed AI chat interface with Google OAuth authenti
 | `js/dom.js` | Cached DOM refs | the `elements` lookup table |
 | `js/ui-prefs.js` | Device-local prefs | `UiPrefs` (localStorage), themes, OKLCH palette engine |
 | `js/sidebar.js` | Sidebar drawer | open/close/overlay/resize |
-| `js/util/` | Dependency-free helpers | `markdown.js` (marked/hljs setup + `renderMarkdown`), `image-store.js` (IndexedDB blobs) |
-| `js/components/` | Reusable UI primitives | `dialogs.js` (`confirmDialog`/`promptName`), `toast.js` (`showToast`/critical banner), `menus.js` (popover positioning) |
+| `js/file-panel/` | The file panel | `index.js` — viewer, editor, revision history, context toggle (~1,300 lines) |
+| `js/util/` | Dependency-free helpers | `markdown.js` (marked/hljs setup + `renderMarkdown`), `format.js` (sizes, times, escaping, file types), `diff.js` (rich diff rendering), `image-store.js` (IndexedDB blobs) |
+| `js/components/` | Reusable UI primitives | `dialogs.js` (`confirmDialog`/`promptName`), `toast.js` (`showToast`/critical banner), `errors.js` (`displayError` dispatcher + inline chat errors), `menus.js` (popover positioning) |
 | `server/` | Backend directory | Express server, database, API routes |
 | `server/src/index.js` | Server entry point | Express app setup, middleware, route mounting |
 | `server/src/config.js` | Configuration | Environment variables, constants |
@@ -167,7 +168,7 @@ AppError.notFound(resource)    // 404
 AppError.server(message)       // 500
 ```
 
-Frontend displays errors via: toast notifications (transient), inline chat errors (conversation-related), or modal/banner (critical, requires action).
+Frontend displays errors via: toast notifications (transient), inline chat errors (conversation-related), or modal/banner (critical, requires action). Route them through `displayError(err, context)` in `js/components/errors.js` — it picks the surface from the `AppError` code — rather than calling a surface directly.
 
 ### Expression System
 

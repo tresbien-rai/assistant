@@ -13,8 +13,10 @@ each slice is independently shippable and says what "done" means.
 > **R-01 ✅** — `util/markdown`, `util/image-store`, `components/menus` extracted;
 > dialogs + toast deferred to R-02 (they need `dom.js`).
 > **R-02 ✅** — `config` / `state` / `dom` / `ui-prefs` / `sidebar` + the two
-> deferred components. `main.js` is down to 9,081 lines from 10,497. Next up:
-> **R-03** (`file-panel/`).
+> deferred components.
+> **R-03 ✅** — `file-panel/` (1,300 lines) plus `util/format`, `util/diff` and
+> `components/errors`. `main.js` is down to **7,382** lines from 10,497 — the
+> halfway mark. Next up: **R-04** (`views/` + `router.js`).
 >
 > Ordering decision: the live provider blocker (F-01) and the test harness (F-02)
 > ship **before** any code moves; the stream-orphaning fix (F-03) ships **after**
@@ -165,7 +167,7 @@ Each row is one branch, one PR. Harness green before and after.
 | ☑ | **R-00** | `<script type="module">`; `api-client.js` → module. No code moves | low — proves loading |
 | ☑ | **R-01** | Extract `util/markdown`, `util/image-store`, `components/menus` (true leaves) | low |
 | ☑ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs` / `sidebar`, then `components/dialogs` + `components/toast` | medium |
-| ☐ | **R-03** | Extract `file-panel/` — biggest single win, already cohesive | medium |
+| ☑ | **R-03** | Extract `file-panel/` + the helpers it stands on (`util/format`, `util/diff`, `components/errors`) | medium |
 | ☐ | **R-04** | Extract `views/` + `router.js` | medium |
 | ☐ | **R-05** | Extract `chat/` — the tangled part, deliberately last | high |
 | ☐ | **F-03** | Fix stream orphaning (bug 1) | low once R-05 lands |
@@ -382,11 +384,55 @@ but deleting it is a *change*, and mixing one into a move slice forfeits the
 byte-identity proof for `dom.js`. It wants a small cleanup slice of its own —
 along with the stray `nul` file and the junk "SP-04/05" chat below.
 
-### R-03 → R-05 — extraction
+### R-03 — file panel ✅
 
-Mechanical. Move code, add `import`/`export`, change nothing else. Take the
-`elements` cache (`app.js` ~1370–1500) with `dom.js` in R-02 — most modules need
-it, so it must land before the view slices.
+`FilePanel` needed **eleven** things from `main.js`, so the slice is "the panel
+plus the helpers it stands on":
+
+| module | contents |
+|---|---|
+| `js/file-panel/index.js` | the `FilePanel` object + the `INJECT_MODE_*` constants (nothing else used them) |
+| `js/util/format.js` | `formatFileSize`, `formatTimeAgo`, `formatBytes`, `formatRelativeTime`, `escapeHtml`, `getFileCategory`, `getFileIcon`, `getFileTypeLabel` |
+| `js/util/diff.js` | `diffStats` … `buildRichDiff` — a pure leaf |
+| `js/components/errors.js` | `appendErrorMessage`, `displayError` |
+| `js/dom.js` (+) | `scrollToBottom` — a bare DOM op both the thread and errors.js need |
+| `js/state.js` (+) | `getActivePersona` — a derived getter, which is what state.js is for |
+
+`main.js`: 9,082 → **7,382** lines. Its whole diff is nine import lines, two
+comment headers, and deletions.
+
+**Gathering the formatters exposed two near-duplicate pairs:** `formatFileSize`
+vs `formatBytes`, and `formatTimeAgo` vs `formatRelativeTime` — same jobs,
+different rounding and wording, written months apart in different parts of the
+file. Left alone here (merging them is a behaviour change), but they are an easy
+cleanup once the extraction is done, and they are now sitting next to each other
+where the duplication is obvious.
+
+**The slice that proved why the byte-identity check exists.** One cut used line
+numbers computed *before* an earlier cut in the same batch had shifted them by
+two, which sliced `formatRelativeTime` in half: its signature stayed in
+`main.js`, its body moved to `format.js`. `node --check` caught it immediately
+(both files failed to parse), and the repair was verified against
+`git show main:js/main.js`. **Re-derive line numbers after every cut** — or cut
+strictly bottom-up, which is what the rest of the batch did safely.
+
+**Review agents were run on this slice** (the first time), on top of the
+mechanical checks: one on the extraction as a whole, one on the file panel's
+module boundary specifically.
+
+The boundary audit came back clean — all 16 imports used, every free identifier
+accounted for (including inside string-built HTML and `catch` blocks), no
+top-level side effects, `marked`/`hljs` provably defined before any module
+evaluates, and all 27 `FilePanel.*` call sites in `main.js` resolving to real
+methods. It also found one thing the mechanical checks would never surface:
+`FilePanel.revisionsUrl()` (`js/file-panel/index.js:955`) **has no callers
+anywhere in the repo**. It predates the move, so it stays for now — see the
+cleanup list in Open items.
+
+### R-04 → R-05 — extraction
+
+Mechanical. Move code, add `import`/`export`, change nothing else. (`dom.js`
+landed in R-02, as planned — the view slices need it.)
 
 R-05 is last and hardest because `sendMessage` ([app.js:8533](../app.js#L8533)),
 `sendMessageFromText` ([app.js:6795](../app.js#L6795)), `appendMessage`, and the
@@ -442,10 +488,19 @@ the preference survives a reload.
 - **Junk test data.** The **"SP-04/05"** chat in the local dev DB holds ~17
   throwaway messages from the 2026-07-24 investigation (it was empty before).
   Harmless; delete the chat whenever convenient.
-- **Dead cache entries.** `elements.settingsModal` / `closeSettingsModal` are
-  cached but the node is removed at load ([app.js:9522](../app.js#L9522)). Sweep
-  during R-02.
-- **Stray `nul` file** in the repo root (Windows `> nul` redirect artifact).
-- **Not yet decided:** whether `file-panel/index.js` should be split further
-  (viewer / browser / history) during R-03 or left as one file. Recommend leaving
-  it whole in R-03 and revisiting once it stands alone.
+- **A cleanup slice is owed** — everything below is a *change*, not a move, so
+  none of it belongs in an R-slice. Do them together once the extraction is done:
+  - `elements.closeSettingsModal` (`js/dom.js`) is dead: the button lives inside
+    the `#settingsModal` shell that `main.js` removes at load. (`settingsModal`
+    itself is still used — it's what does the removing.)
+  - `FilePanel.revisionsUrl()` (`js/file-panel/index.js:955`) has no callers
+    anywhere in the repo. Found by the R-03 review agent.
+  - Two near-duplicate formatter pairs now sitting side by side in
+    `js/util/format.js`: `formatFileSize`/`formatBytes` and
+    `formatTimeAgo`/`formatRelativeTime`.
+  - The stray `nul` file in the repo root (Windows `> nul` redirect artifact).
+- **Decided:** `file-panel/index.js` stays **one file**. It moved whole in R-03
+  and the boundary audit found it genuinely self-contained (16 imports, all used,
+  no top-level side effects), so splitting it into viewer/browser/history would
+  be a design change with no dependency pressure behind it. Revisit only if it
+  grows.
