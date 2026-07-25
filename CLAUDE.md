@@ -56,8 +56,8 @@ Tessera - a personal, server-backed AI chat interface with Google OAuth authenti
 |----------------|---------|--------------|
 | `index.html` | Frontend structure | Sidebar, chat area, floating avatar, modals, login screen |
 | `styles.css` | Frontend styling | CSS variables for theming, responsive design, animations |
-| `app.js` | Frontend logic | State management, UI updates, API client calls |
-| `api-client.js` | API wrapper | All backend API calls (auth, personas, chat, etc.) |
+| `js/main.js` | Frontend logic | State management, UI updates, API client calls |
+| `js/api-client.js` | API wrapper | All backend API calls (auth, personas, chat, etc.) |
 | `server/` | Backend directory | Express server, database, API routes |
 | `server/src/index.js` | Server entry point | Express app setup, middleware, route mounting |
 | `server/src/config.js` | Configuration | Environment variables, constants |
@@ -86,7 +86,7 @@ api_keys (id, user_id, provider, encrypted_key, created_at, updated_at)
 
 All tables include `user_id` for multi-user data isolation.
 
-### Frontend State Object (`state` in app.js)
+### Frontend State Object (`state` in js/main.js)
 
 ```javascript
 state = {
@@ -102,7 +102,7 @@ state = {
 }
 ```
 
-### API Client (`api-client.js`)
+### API Client (`js/api-client.js`)
 
 All backend calls go through the API client module:
 
@@ -176,24 +176,24 @@ Frontend displays errors via: toast notifications (transient), inline chat error
 1. Create or modify route file in `server/src/routes/`
 2. Add DAL functions in `server/src/db/dal.js` if needed
 3. Mount route in `server/src/index.js`
-4. Add corresponding method to `api-client.js`
-5. Use in `app.js`
+4. Add corresponding method to `js/api-client.js`
+5. Use in `js/main.js`
 
 ### Adding a New Setting
 
 1. Add column to `settings` table (add migration if schema exists)
 2. Update DAL functions in `server/src/db/dal.js`
 3. Update `server/src/routes/settings.js` to handle the field
-4. Update `API.settings` methods in `api-client.js`
+4. Update `API.settings` methods in `js/api-client.js`
 5. Add HTML input in sidebar (index.html)
-6. Update `app.js` to read/save the setting
+6. Update `js/main.js` to read/save the setting
 
 ### Adding a New Persona Field
 
 1. Add column to `personas` table in `server/src/db/schema.sql`
 2. Update DAL functions for persona CRUD
 3. Update the personas route
-4. Update `api-client.js` if needed
+4. Update `js/api-client.js` if needed
 5. Update UI to edit the field
 
 ### Adding a New AI Provider
@@ -264,12 +264,20 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
 - Use structured logging via pino
 
 ### Frontend
+- **ES modules.** `index.html` loads one script,
+  `<script type="module" src="js/main.js">`. Nothing in `js/` is global — a
+  sibling module gets what it needs via `import`/`export`. The one deliberate
+  global is `window.__tessera` at the foot of `js/main.js`, the seam the smoke
+  harness (`tests/frontend-smoke.js`) reaches through; keep it wired as code
+  moves out of `main.js`. `js/main.js` is still the bulk of the frontend and is
+  being carved up per `docs/REFACTOR_PLAN.md` — check that plan before adding a
+  large new chunk of frontend code, and put it in the module it belongs to.
 - DOM elements cached in `elements` object
 - **No native dialogs.** Never use `confirm()`, `alert()`, or `prompt()`.
   Browsers let users permanently suppress them ("prevent this page from creating
   additional dialogs"), after which `confirm()` returns `false` forever and every
   guarded action silently does nothing. Use `confirmDialog()` (promise-based,
-  themed, in `app.js`) for confirmations, `showToast()` for transient notices,
+  themed, in `js/main.js`) for confirmations, `showToast()` for transient notices,
   and `promptName()` for a name/text input.
 - **Modal chrome.** `.modal-footer` right-aligns its buttons; add `.split` only
   to hold a destructive action away from the primary one. `.modal-btn.danger`
@@ -277,7 +285,7 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
   next to a primary. Nothing inside `.modal-overlay` may use `transition: all`
   — it delays the inherited `visibility` flip and makes the element
   unfocusable when the modal opens (see `docs/CONFIRM_DIALOG_PLAN.md`).
-- All data operations go through `api-client.js`
+- All data operations go through `js/api-client.js`
 - State loaded from server on init, kept in memory during session
 - Event listeners set up in `setupEventListeners()`
 

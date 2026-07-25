@@ -4,15 +4,20 @@ Splitting `app.js` (10,476 lines / 450 KB) into modules, and fixing the class of
 bug that its size has been hiding. Written to be picked up cold in a new session:
 each slice is independently shippable and says what "done" means.
 
-> **Status (2026-07-24):** Plan **locked** with the human.
+> **Status (2026-07-25):** Plan **locked** with the human.
 > **F-01 ✅ merged (PR #125)** — Anthropic sends work again with stock params.
-> **F-02 ✅ merged** — the smoke harness runs, and reports **1 pass / 3 fail**:
-> the three known bugs are now red on demand instead of anecdotal.
-> Next up: **R-00**.
+> **F-02 ✅ merged (PR #126)** — the smoke harness runs, and reports **1 pass /
+> 3 fail**: the three known bugs are now red on demand instead of anecdotal.
+> **R-00 ✅** — the frontend is an ES module (`js/main.js` + `js/api-client.js`),
+> harness identical before and after. Next up: **R-01**.
 >
 > Ordering decision: the live provider blocker (F-01) and the test harness (F-02)
 > ship **before** any code moves; the stream-orphaning fix (F-03) ships **after**
 > the extraction, because the fix *is* the boundary being drawn.
+>
+> **Note on line references below:** every `../app.js#Lnnnn` link predates R-00.
+> That file is now `js/main.js` and the numbers have shifted slightly. The
+> function names are the reliable handle — grep for those.
 
 ---
 
@@ -152,7 +157,7 @@ Each row is one branch, one PR. Harness green before and after.
 |---|---|---|---|
 | ☑ | **F-01** | top_p/temperature fix + server test | trivial — ship first |
 | ☑ | **F-02** | Frontend smoke harness; 3 bugs encoded as failing checks | none (additive) |
-| ☐ | **R-00** | `<script type="module">`; `api-client.js` → module. No code moves | low — proves loading |
+| ☑ | **R-00** | `<script type="module">`; `api-client.js` → module. No code moves | low — proves loading |
 | ☐ | **R-01** | Extract `util/`, `components/` (leaves, no deps) | low |
 | ☐ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs` | medium |
 | ☐ | **R-03** | Extract `file-panel/` — biggest single win, already cohesive | medium |
@@ -212,8 +217,10 @@ active chat, the draft and the current view are all captured and restored.
 Reaches the app through **one deliberate seam**, `window.__tessera` (added at the
 foot of `app.js`), rather than incidental globals — so the harness survives
 R-00…R-05 unchanged, and a slice that forgets to wire something fails loudly
-instead of silently losing coverage. **Re-wire this seam in `main.js` during
-R-00.**
+instead of silently losing coverage. (R-00 turned out to need no re-wiring — the
+seam rode along with the file rename into `js/main.js`. **R-01 onward is where it
+matters:** as each function moves out, `main.js` must import it back so the seam
+keeps resolving.)
 
 Current result — **1 pass, 3 fail**, which is the point:
 
@@ -228,7 +235,34 @@ The non-streaming check **empirically confirmed** what was previously only
 read-confirmed: a reply really does render into the workspaces list
 (`1 chat message(s) rendered into the workspaces list`).
 
-### R-00 → R-05 — extraction
+### R-00 — ES module boot ✅
+
+`app.js` → `js/main.js`, `api-client.js` → `js/api-client.js` (git-tracked
+renames), the two classic `<script>` tags replaced by one
+`<script type="module" src="js/main.js">`, and `api-client.js` now `export`s the
+`API` object that `main.js` imports. No code moved between files. The files land
+in `js/` now rather than at the root so that R-01…R-05 extract *sideways* into
+siblings, with import paths that never have to change again.
+
+One real thing fell out of it. `blobToBase64` was **declared twice** at the top
+level of `app.js` (~5367 and ~9407). Legal in a classic script — the later
+declaration silently wins — but a module is strict, where a duplicate top-level
+function declaration is a hard `SyntaxError` that stops the whole app loading.
+The earlier copy was therefore already dead code and was deleted; the surviving
+implementation, the one that has always actually run, is untouched. Worth knowing
+for later slices: **run `node --check` on the file as `.mjs` before loading it**,
+which is how this was caught rather than discovered as a white screen.
+
+`window.API` is still mirrored for console debugging. Every other former global
+(`state`, `CONFIG`, `sendMessage`, `FilePanel`, …) is now gone from `window` —
+verified in the browser — which is the property later slices depend on.
+
+**Verified:** app boots, no console errors, one module script tag, the
+`window.__tessera` seam intact (no re-wiring needed — it lives in the same file),
+and the harness reports the same **1 pass / 3 fail** with byte-identical detail
+strings before and after.
+
+### R-01 → R-05 — extraction
 
 Mechanical. Move code, add `import`/`export`, change nothing else. Take the
 `elements` cache (`app.js` ~1370–1500) with `dom.js` in R-02 — most modules need

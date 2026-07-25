@@ -3,7 +3,7 @@
 A follow-along guide for shipping Tessera to Railway.
 
 This app is **one Express service** that does two jobs at once: it serves the API
-(`/api/...`) *and* the frontend files (`index.html`, `app.js`, `styles.css`). So you
+(`/api/...`) *and* the frontend files (`index.html`, `js/`, `styles.css`). So you
 only deploy one thing. The tricky parts are (1) telling Railway to build/run the code
 that lives in the `server/` subfolder, (2) giving it a **persistent disk** so your
 database and avatar images survive restarts, and (3) wiring up **Google OAuth** with the

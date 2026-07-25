@@ -1,13 +1,21 @@
 /**
  * Tessera - Main Application Logic
- * 
+ *
  * Features:
  * - Multi-provider API support (Claude, with OpenAI/Gemini coming)
  * - Customizable personas with system prompts
  * - Floating avatar with expression system
  * - Status bar with session info
  * - Settings persistence via the server API (api-client.js → /api/*)
+ *
+ * This is the ES module entry point (`<script type="module">` in index.html).
+ * It is still the whole frontend in one file; docs/REFACTOR_PLAN.md (R-01…R-05)
+ * carves it into `js/views/`, `js/chat/`, `js/file-panel/` and friends. Nothing
+ * here is global any more, so anything a sibling module needs must be exported
+ * explicitly — that constraint is the point of the refactor.
  */
+
+import { API } from './api-client.js';
 
 // ===== Configuration =====
 // Provider endpoints are gone from the frontend after P0-16 — all chat and
@@ -5351,22 +5359,12 @@ async function normalizeImageBlob(blob) {
     return out || blob;
 }
 
-/**
- * Base64 (no data: prefix) for a blob.
- * @param {Blob} blob
- * @returns {Promise<string>}
- */
-function blobToBase64(blob) {
-    return new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = String(reader.result || '');
-            resolve(result.slice(result.indexOf(',') + 1));
-        };
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(blob);
-    });
-}
+// `blobToBase64` used to be declared here as well as further down (~line 9390).
+// Two top-level function declarations of the same name are legal in a classic
+// script — the later one silently wins — so this copy was already dead code and
+// every caller, including the exporter below, has always run the other one. A
+// module is strict, where the duplicate is a hard SyntaxError, so this copy is
+// gone. No behaviour change: the surviving implementation is unmodified.
 
 /**
  * Build and download a `.tessera` bundle for a persona.
