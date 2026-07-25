@@ -78,7 +78,15 @@ function buildRequestBody(params) {
     if (modelParams.temperatureEnabled !== false && modelParams.temperature !== undefined) {
       body.temperature = modelParams.temperature;
     }
-    if (modelParams.topPEnabled !== false && modelParams.topP !== undefined) {
+    // `temperature` and `top_p` are MUTUALLY EXCLUSIVE for Anthropic — Claude
+    // 4.5+ rejects a body carrying both with a 400. The stock profile enables
+    // all three sampling params, so without this guard every send fails.
+    // Temperature wins: it's the parameter users actually reach for, and the
+    // per-parameter toggles in the model detail view are how you opt into top_p
+    // instead (turn temperature off). Gemini has no such restriction and still
+    // sends both.
+    if (body.temperature === undefined
+      && modelParams.topPEnabled !== false && modelParams.topP !== undefined) {
       body.top_p = modelParams.topP;
     }
     if (modelParams.topKEnabled !== false && modelParams.topK !== undefined) {
