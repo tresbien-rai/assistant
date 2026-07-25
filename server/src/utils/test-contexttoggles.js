@@ -433,6 +433,18 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
       assert.strictEqual(row.source, 'chat', 'and reported as this chat disagreeing');
     });
 
+    await check('each file carries its container default (containerEnabled) for the panel', async () => {
+      // The panel uses this to reset (not re-override) when toggled back to the
+      // default. beta is currently overridden ON but its CONTAINER default is off.
+      const ctx = await getContext({ id: wsChat.id });
+      const betaRow = ctx.workspace.files.find((f) => f.id === beta.id);
+      const alphaRow = ctx.workspace.files.find((f) => f.id === alpha.id);
+      assert.strictEqual(betaRow.containerEnabled, false, 'reflects the container default, not the resolved value');
+      assert.notStrictEqual(betaRow.containerEnabled, betaRow.enabled, 'differs from the override in effect');
+      assert.strictEqual(alphaRow.containerEnabled, true, 'an un-overridden file matches its default');
+      // Read-only: the override on beta stays for the sibling/reset checks below.
+    });
+
     await check('the override is invisible to a sibling chat', async () => {
       const ctx = await getContext({ id: otherChat.id });
       const row = ctx.workspace.files.find((f) => f.id === beta.id);

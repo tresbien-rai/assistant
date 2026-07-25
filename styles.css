@@ -5747,20 +5747,22 @@ body {
     position: absolute;
     bottom: 0;
     right: 0;
-    min-width: 14px;
-    height: 14px;
+    min-width: 15px;
+    height: 15px;
     padding: 0 3px;
     box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 7px;
+    border-radius: 8px;
     background: var(--text-muted);
     border: 1.5px solid var(--bg-primary);
     color: var(--bg-primary);
     font-size: 9px;
     font-weight: 700;
-    line-height: 1;
+    /* Digit glyphs sit optically high in their line box; a 0 line-height lets
+       flexbox center the ink rather than the (taller) line box. */
+    line-height: 0;
 }
 
 .files-explorer-count[hidden] {

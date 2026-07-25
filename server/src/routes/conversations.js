@@ -40,6 +40,7 @@ const {
   resolveInjectMode,
   isValidInjectMode,
   isKnowledgeScope,
+  containerDefaultEnabled,
   INJECT_MODES,
   KNOWLEDGE_SCOPES,
 } = require('../utils/contextState');
@@ -590,6 +591,11 @@ router.get('/:id/context', asyncHandler(async (req, res) => {
         sizeBytes: file.size_bytes,
         enabled,
         source,
+        // The container default itself (CT-04 polish): lets the panel drop the
+        // override instead of writing a redundant one when the user toggles a
+        // file back to match its default — keeping "an override exists only when
+        // the chat deviates" true, so no phantom override marker lingers.
+        containerEnabled: containerDefaultEnabled(file),
       })),
     };
   };

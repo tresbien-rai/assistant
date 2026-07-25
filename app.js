@@ -918,6 +918,7 @@ async function toggleChatTools() {
     if (convo) {
         convo.toolsEnabled = next;
         syncToolsToggle();
+        FilePanel.onToolsToggled(next); // refresh the tools-off note if the panel is open (CT-06)
         try {
             await API.conversations.update(convo.id, { toolsEnabled: next });
         } catch (err) {
@@ -7615,10 +7616,19 @@ const FilePanel = {
     async setKnowledgeOverride(f, scope, conversationId, checkbox, row) {
         const enabled = checkbox.checked;
         const prev = { enabled: f.enabled, source: f.source };
-        this.applyKnowledgeRowState(row, f, { enabled, source: 'chat' });
+        // Toggling back to the container default is a RESET, not an override:
+        // an override that equals the default is a phantom (it would show the
+        // "overridden" marker while deviating from nothing). Keeps the panel
+        // faithful to "an override exists only when the chat deviates".
+        const matchesDefault = f.containerEnabled !== undefined && enabled === f.containerEnabled;
+        this.applyKnowledgeRowState(row, f, { enabled, source: matchesDefault ? 'container' : 'chat' });
         checkbox.disabled = true;
         try {
-            await API.conversations.context.setEnabled(conversationId, scope, f.id, enabled);
+            if (matchesDefault) {
+                await API.conversations.context.reset(conversationId, scope, f.id);
+            } else {
+                await API.conversations.context.setEnabled(conversationId, scope, f.id, enabled);
+            }
         } catch (err) {
             console.error('Failed to set per-chat context override:', err);
             checkbox.checked = prev.enabled;
@@ -7727,6 +7737,22 @@ const FilePanel = {
     /** Recompute the badge from the panel's last-rendered context (no fetch). */
     refreshBadgeFromBrowser() {
         if (this._browserContext) this.applyContextBadge(this.contextNotLoadedItems(this._browserContext));
+    },
+
+    /**
+     * React to the chat's file-tools state changing (CT-06). The tools-off note
+     * lives in the browser view, so an open list must re-render to show or hide
+     * it — otherwise a user who flips tools off with the panel open never sees
+     * the warning that their disabled files are now truly unreachable. We know
+     * the new value, so update the cached context and re-render without a fetch.
+     * @param {boolean} enabled - the new effective file-tools state
+     */
+    onToolsToggled(enabled) {
+        if (!this._browserContext) return;
+        this._browserContext.toolsEnabled = enabled;
+        if (this.isOpen && this.browseMode && this.conversationId) {
+            this.renderBrowser(this._browserContext, this.conversationId);
+        }
     },
 
     /**
