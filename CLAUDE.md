@@ -58,8 +58,13 @@ Tessera - a personal, server-backed AI chat interface with Google OAuth authenti
 | `styles.css` | Frontend styling | CSS variables for theming, responsive design, animations |
 | `js/main.js` | Frontend logic (module entry point) | State management, UI updates, API client calls. Being carved up per `docs/REFACTOR_PLAN.md` |
 | `js/api-client.js` | API wrapper | All backend API calls (auth, personas, chat, etc.) |
+| `js/config.js` | Config + defaults | `CONFIG`, `getDefaultModelConfig()` |
+| `js/state.js` | The state object | `state` — imported and mutated by everything; never reassigned |
+| `js/dom.js` | Cached DOM refs | the `elements` lookup table |
+| `js/ui-prefs.js` | Device-local prefs | `UiPrefs` (localStorage), themes, OKLCH palette engine |
+| `js/sidebar.js` | Sidebar drawer | open/close/overlay/resize |
 | `js/util/` | Dependency-free helpers | `markdown.js` (marked/hljs setup + `renderMarkdown`), `image-store.js` (IndexedDB blobs) |
-| `js/components/` | Reusable UI primitives | `menus.js` (popover positioning + outside-close) |
+| `js/components/` | Reusable UI primitives | `dialogs.js` (`confirmDialog`/`promptName`), `toast.js` (`showToast`/critical banner), `menus.js` (popover positioning) |
 | `server/` | Backend directory | Express server, database, API routes |
 | `server/src/index.js` | Server entry point | Express app setup, middleware, route mounting |
 | `server/src/config.js` | Configuration | Environment variables, constants |
@@ -88,7 +93,7 @@ api_keys (id, user_id, provider, encrypted_key, created_at, updated_at)
 
 All tables include `user_id` for multi-user data isolation.
 
-### Frontend State Object (`state` in js/main.js)
+### Frontend State Object (`state` in js/state.js)
 
 ```javascript
 state = {
@@ -274,13 +279,14 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
   moves out of `main.js`. `js/main.js` is still the bulk of the frontend and is
   being carved up per `docs/REFACTOR_PLAN.md` — check that plan before adding a
   large new chunk of frontend code, and put it in the module it belongs to.
-- DOM elements cached in `elements` object
+- DOM elements cached in the `elements` object (`js/dom.js`)
 - **No native dialogs.** Never use `confirm()`, `alert()`, or `prompt()`.
   Browsers let users permanently suppress them ("prevent this page from creating
   additional dialogs"), after which `confirm()` returns `false` forever and every
   guarded action silently does nothing. Use `confirmDialog()` (promise-based,
-  themed, in `js/main.js`) for confirmations, `showToast()` for transient notices,
-  and `promptName()` for a name/text input.
+  themed, in `js/components/dialogs.js`) for confirmations, `showToast()`
+  (`js/components/toast.js`) for transient notices, and `promptName()` for a
+  name/text input.
 - **Modal chrome.** `.modal-footer` right-aligns its buttons; add `.split` only
   to hold a destructive action away from the primary one. `.modal-btn.danger`
   is a solid destructive button, `.danger-quiet` a destructive one that sits

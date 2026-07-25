@@ -11,7 +11,10 @@ each slice is independently shippable and says what "done" means.
 > **R-00 ✅** — the frontend is an ES module (`js/main.js` + `js/api-client.js`),
 > harness identical before and after.
 > **R-01 ✅** — `util/markdown`, `util/image-store`, `components/menus` extracted;
-> dialogs + toast deferred to R-02 (they need `dom.js`). Next up: **R-02**.
+> dialogs + toast deferred to R-02 (they need `dom.js`).
+> **R-02 ✅** — `config` / `state` / `dom` / `ui-prefs` / `sidebar` + the two
+> deferred components. `main.js` is down to 9,081 lines from 10,497. Next up:
+> **R-03** (`file-panel/`).
 >
 > Ordering decision: the live provider blocker (F-01) and the test harness (F-02)
 > ship **before** any code moves; the stream-orphaning fix (F-03) ships **after**
@@ -161,7 +164,7 @@ Each row is one branch, one PR. Harness green before and after.
 | ☑ | **F-02** | Frontend smoke harness; 3 bugs encoded as failing checks | none (additive) |
 | ☑ | **R-00** | `<script type="module">`; `api-client.js` → module. No code moves | low — proves loading |
 | ☑ | **R-01** | Extract `util/markdown`, `util/image-store`, `components/menus` (true leaves) | low |
-| ☐ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs`, **then** `components/dialogs` + `components/toast` | medium |
+| ☑ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs` / `sidebar`, then `components/dialogs` + `components/toast` | medium |
 | ☐ | **R-03** | Extract `file-panel/` — biggest single win, already cohesive | medium |
 | ☐ | **R-04** | Extract `views/` + `router.js` | medium |
 | ☐ | **R-05** | Extract `chat/` — the tangled part, deliberately last | high |
@@ -306,7 +309,80 @@ comment. That is what an R-slice diff should look like.
 markdown renders, the avatar popover positions and outside-closes, and the
 harness reports the same **1 pass / 3 fail**.
 
-### R-02 → R-05 — extraction
+### R-02 — core modules ✅
+
+Seven modules, ~1,000 lines. The dependency graph they form is the whole point,
+so it is worth stating — it is acyclic and shallow:
+
+```
+config.js ──> state.js
+dom.js ──┬─> ui-prefs.js ──> sidebar.js ──> components/dialogs.js
+         ├─> components/toast.js
+         └─> components/dialogs.js
+```
+
+| module | from | notes |
+|---|---|---|
+| `js/config.js` | 23–70, 727–766 | `CONFIG` + `getDefaultModelConfig()`, which is only CONFIG.defaults reshaped |
+| `js/state.js` | 376–461 | the `state` object; imports config for its seed values |
+| `js/dom.js` | 1018–1186 | the `elements` cache; a leaf |
+| `js/ui-prefs.js` | 72–375 | `UiPrefs` + themes + the OKLCH palette engine |
+| `js/sidebar.js` | 9694–9767 | drawer open/close/overlay/resize |
+| `js/components/toast.js` | 5809–5952 | `showToast`, critical banner |
+| `js/components/dialogs.js` | 5122–5281 | `confirmDialog`, `promptName` |
+
+**Two judgement calls.**
+
+`sidebar.js` is a new module the target tree doesn't list. It exists because
+`dialogs.js` calls `closeSidebar()` (dismissing the mobile drawer), and the
+sidebar functions need both `elements` and `UiPrefs` while `ui-prefs.js` already
+needs `elements`. Folding them into `dom.js` would have created a cycle;
+a module between the two does not.
+
+`getDefaultModelConfig()` went to `config.js` rather than staying with the
+persona helpers, because `state.js` calls it at module-evaluation time to seed
+`state.currentModelConfig`. It depends on nothing but `CONFIG`, so this keeps
+`state.js`'s only import pointing at a leaf.
+
+**Shared mutable state across modules is fine here, and it was checked, not
+assumed.** `state` and `elements` are imported by everything and mutated
+constantly. An ES module import is a live binding: importers may mutate the
+object's properties but may never reassign the binding itself. The codebase does
+exactly that — 97 property writes to `state`, one to `elements`, and zero
+reassignments of either.
+
+**A third script joined the toolkit:** a cross-module wiring checker. For every
+file it reports names used but not imported (the way an extraction breaks at
+runtime rather than at parse time), duplicate top-level names, and import
+cycles. `main.js` came back with zero missing imports and the graph came back
+acyclic. It also over-reports — object keys and method names that happen to
+match a function name elsewhere — which is the right direction.
+
+Same lesson as R-01, learned again the same way: the checker's first version
+missed a real import because the word "import" appeared in a doc comment and its
+regex swallowed the statement that followed. Parse from comment-stripped text.
+
+**Verified at runtime, module by module:** app boots clean; theme switch and
+restore (`ui-prefs`); mobile drawer opens, builds its overlay, and closes
+(`sidebar`); the rename prompt opens focused and dismisses (`dialogs`); a delete
+confirm renders the right text, gates the action on Cancel, and performs it on
+confirm (`dialogs`); toast and critical banner show and dismiss (`toast`); and
+the harness reports the same **1 pass / 3 fail**.
+
+Two things that look like regressions in a headless pane and are not: CSS
+transitions never advance while `document.hidden` is true, so a modal reads
+`opacity: 0` even though its class and rule are correct; and
+`navigator.clipboard.writeText` rejects with `NotAllowedError` when the document
+isn't focused, so the copy button's toast never fires. Check the class list, not
+the computed style.
+
+**Left deliberately undone:** `elements.closeSettingsModal` really is dead (the
+button lives inside the `#settingsModal` shell that `main.js` removes at load),
+but deleting it is a *change*, and mixing one into a move slice forfeits the
+byte-identity proof for `dom.js`. It wants a small cleanup slice of its own —
+along with the stray `nul` file and the junk "SP-04/05" chat below.
+
+### R-03 → R-05 — extraction
 
 Mechanical. Move code, add `import`/`export`, change nothing else. Take the
 `elements` cache (`app.js` ~1370–1500) with `dom.js` in R-02 — most modules need
