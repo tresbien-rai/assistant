@@ -95,3 +95,14 @@ export const state = {
     // Attachment state
     pendingAttachments: [] // Array of { id, file, previewUrl, type, mimeType, fileName, fileSize }
 };
+
+/**
+ * Get the currently active persona object
+ * @returns {Object|null} The active persona or null if none
+ */
+export function getActivePersona() {
+    if (!state.activePersonaId) {
+        return null;
+    }
+    return state.personas[state.activePersonaId] || null;
+}
