@@ -4,7 +4,12 @@ Splitting `app.js` (10,476 lines / 450 KB) into modules, and fixing the class of
 bug that its size has been hiding. Written to be picked up cold in a new session:
 each slice is independently shippable and says what "done" means.
 
-> **Status (2026-07-24):** Plan **locked** with the human. Nothing built yet.
+> **Status (2026-07-24):** Plan **locked** with the human.
+> **F-01 ✅ merged (PR #125)** — Anthropic sends work again with stock params.
+> **F-02 ✅ merged** — the smoke harness runs, and reports **1 pass / 3 fail**:
+> the three known bugs are now red on demand instead of anecdotal.
+> Next up: **R-00**.
+>
 > Ordering decision: the live provider blocker (F-01) and the test harness (F-02)
 > ship **before** any code moves; the stream-orphaning fix (F-03) ships **after**
 > the extraction, because the fix *is* the boundary being drawn.
@@ -50,8 +55,8 @@ reload**. No typing dots, no cursor, no bubble. Later turns show the index gap
 The same defect seen from the other side: [`appendMessage`](../app.js#L6148)
 appends to `elements.messagesContainer` with no check of which view is showing,
 so on the **non-streaming** path the reply arrives seconds after you've navigated
-and renders *inside the Chats/Personas/Workspaces list*. (Read-confirmed; the
-scripted repro of this variant was blocked by a permission prompt.)
+and renders *inside the Chats/Personas/Workspaces list*. (Confirmed by the F-02
+harness: `1 chat message(s) rendered into the workspaces list`.)
 
 ### Bug 2 — composer draft bleeds across chats (confirmed)
 
@@ -145,8 +150,8 @@ Each row is one branch, one PR. Harness green before and after.
 
 | | Slice | What | Risk |
 |---|---|---|---|
-| ☐ | **F-01** | top_p/temperature fix + server test | trivial — ship first |
-| ☐ | **F-02** | Frontend smoke harness; 3 bugs encoded as failing checks | none (additive) |
+| ☑ | **F-01** | top_p/temperature fix + server test | trivial — ship first |
+| ☑ | **F-02** | Frontend smoke harness; 3 bugs encoded as failing checks | none (additive) |
 | ☐ | **R-00** | `<script type="module">`; `api-client.js` → module. No code moves | low — proves loading |
 | ☐ | **R-01** | Extract `util/`, `components/` (leaves, no deps) | low |
 | ☐ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs` | medium |
@@ -174,35 +179,54 @@ Each row is one branch, one PR. Harness green before and after.
 
 ## Slice detail
 
-### F-01 — top_p blocker
+### F-01 — top_p blocker ✅ (PR #125)
 
-Guard the Anthropic provider so `temperature` and `top_p` are never both sent.
-Prefer `temperature` when both are enabled (it's the one users actually tune).
-Add a case to the provider tests. Consider whether the Models detail UI should
-show the two as mutually exclusive — worth a note, not necessarily this slice.
+`buildRequestBody` in the Anthropic provider now sends `top_p` only when
+`temperature` is absent. Temperature wins when both toggles are on; turning
+temperature off in the model detail view is how you opt into `top_p` instead.
+Gemini untouched (no such restriction).
 
-**Done when:** a real Anthropic send succeeds with stock default model params.
+`server/src/providers/test-modelparams.js` — 11 checks: the exclusion both ways,
+the `temperature: 0` falsy trap, `top_k`/`stop_sequences`/`max_tokens`
+unaffected, the streaming body guarded identically, Gemini still sending both.
+In `npm test`; suite green. Live-verified on dev login with stock params.
 
-### F-02 — frontend smoke harness
+**Still open (deliberately not in this slice):** the Models detail UI doesn't
+show the two as mutually exclusive, so a user who wants `top_p` sampling has to
+know to disable temperature first. Worth a hint line there eventually.
 
-The investigation already produced ~80% of this: stub `API.chat.stream`, drive
-the real UI through send / navigate / switch sequences, assert invariants.
+### F-02 — frontend smoke harness ✅
 
-Checks to encode (all three currently **fail**, which is the point):
+`tests/frontend-smoke.js`. Load it into the running app from the console:
 
-- `messagesContainer` message count === `state.conversations[id].messages.length`
-  after any navigation round-trip during a live turn.
-- No orphaned `state.streamingMessageDiv` (`document.contains()` must hold while
-  a turn is in flight).
-- `data-msg-index` values are contiguous from 0.
-- Composer draft and `state.pendingAttachments` are empty after switching to a
-  different conversation.
-- The rail round-trip (compose → tab → back → send) leaves the composer visible,
-  `messagesContainer` unhidden, and send enabled. *(This one already passes for
-  all five rail destinations — worth locking in so the refactor can't break it.)*
+```js
+const t = await import('/tests/frontend-smoke.js'); await t.run();
+```
 
-**Done when:** the harness runs from the browser console (or headlessly), reports
-pass/fail per check, and the three known bugs show red.
+Drives the real UI — real router, real send path, real DOM — with the provider
+stubbed. **Safe to run any time:** it creates two throwaway conversations, works
+only in those, and deletes them in a `finally` (verified: server conversation
+count unchanged across runs). Stubs, API-key status, the streaming flag, the
+active chat, the draft and the current view are all captured and restored.
+
+Reaches the app through **one deliberate seam**, `window.__tessera` (added at the
+foot of `app.js`), rather than incidental globals — so the harness survives
+R-00…R-05 unchanged, and a slice that forgets to wire something fails loudly
+instead of silently losing coverage. **Re-wire this seam in `main.js` during
+R-00.**
+
+Current result — **1 pass, 3 fail**, which is the point:
+
+| check | status | covers |
+|---|---|---|
+| `rail-round-trip` | ✅ pass | regression lock on the path from the original report |
+| `stream-survives-navigation` | ❌ fail | bug 1 |
+| `non-streaming-reply-lands-in-the-chat` | ❌ fail | bug 1, other face |
+| `draft-is-per-conversation` | ❌ fail | bug 2 |
+
+The non-streaming check **empirically confirmed** what was previously only
+read-confirmed: a reply really does render into the workspaces list
+(`1 chat message(s) rendered into the workspaces list`).
 
 ### R-00 → R-05 — extraction
 
