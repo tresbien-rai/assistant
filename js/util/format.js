@@ -75,8 +75,6 @@ export function formatRelativeTime(ms) {
     return new Date(ms).toLocaleDateString();
 }
 
-
-
 // --- HTML escaping ---
 
 /**

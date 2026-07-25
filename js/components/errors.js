@@ -12,13 +12,10 @@ import { elements, scrollToBottom } from '../dom.js';
 import { state } from '../state.js';
 import { showToast, showCriticalBanner } from './toast.js';
 
-// ===== Error Display System (P0-17): the chat-thread surface =====
-// The chrome-level surfaces — showToast() and showCriticalBanner() — moved to
-// components/toast.js in R-02. What stays here writes into the message thread:
-// appendErrorMessage() renders an inline error turn, and displayError() is the
-// central dispatcher that routes any thrown error to the right surface.
-
-export function appendErrorMessage(error, opts = {}) {
+// `appendErrorMessage` is deliberately not exported: `displayError` is the only
+// way in. The chat thread gains a legitimate reason to render one directly in
+// R-05, and that is when it should become public.
+function appendErrorMessage(error, opts = {}) {
     const isApiError = error && error.name === 'ApiError';
     const code = isApiError ? error.code : null;
     const message = (typeof error === 'string')

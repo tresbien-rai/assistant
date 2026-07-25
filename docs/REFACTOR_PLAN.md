@@ -429,6 +429,34 @@ methods. It also found one thing the mechanical checks would never surface:
 anywhere in the repo**. It predates the move, so it stays for now — see the
 cleanup list in Open items.
 
+The whole-slice review found no runtime defect either, and contributed a check
+stronger than byte-identity: **two-way line accounting.** Every one of the 1,570
+non-blank lines deleted from `main.js` was matched to a line in the new modules
+(the only 17 exceptions being declarations that gained `export `), and every
+non-blank line in the new modules was traced back to deleted `main.js` text
+(exceptions: file headers and import lines). Byte-identity proves what moved
+arrived intact; this also proves **nothing was dropped in the cut and nothing was
+invented in the paste**. Worth running on R-04 and R-05.
+
+It did catch four real hygiene defects, all fixed before merge:
+
+- **Four dead imports in `main.js`** — `showCriticalBanner`, `formatRelativeTime`,
+  `diffStats`, `buildRichDiff`. Each was imported because `main.js` *used* to
+  need it, and its last caller left in the same slice. `node --check` can't see
+  this, and it inflates the module's apparent dependency surface — the exact
+  thing this refactor exists to make legible. (`hideCriticalBanner` is still
+  live: the `criticalBannerDismiss` listener.)
+- `appendErrorMessage` was exported with no importer. It is now module-private;
+  `displayError` is the only way in, and R-05 can make it public when the chat
+  thread has a real reason to call it.
+- A carried-over section header in `errors.js` that still said "what stays here"
+  — true in `main.js`, meaningless in its new home.
+- A three-blank-line seam in `format.js`.
+
+**The wiring checker now detects stale imports itself** (a name imported but
+never used in the body), so R-04 and R-05 catch this class automatically instead
+of needing an agent to notice.
+
 ### R-04 → R-05 — extraction
 
 Mechanical. Move code, add `import`/`export`, change nothing else. (`dom.js`

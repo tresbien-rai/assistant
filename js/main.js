@@ -9,8 +9,8 @@
  * - Settings persistence via the server API (api-client.js → /api/*)
  *
  * This is the ES module entry point (`<script type="module">` in index.html).
- * It is still the whole frontend in one file; docs/REFACTOR_PLAN.md (R-01…R-05)
- * carves it into `js/views/`, `js/chat/`, `js/file-panel/` and friends. Nothing
+ * It is still the bulk of the frontend; docs/REFACTOR_PLAN.md (R-04, R-05)
+ * carves the rest into `js/views/` and `js/chat/`. Nothing
  * here is global any more, so anything a sibling module needs must be exported
  * explicitly — that constraint is the point of the refactor.
  */
@@ -26,16 +26,15 @@ import { createSidebarOverlay, openSidebar, closeSidebar, setupSidebarResize } f
 import { renderMarkdown, ICON_SVG, messageActionsHTML } from './util/markdown.js';
 import { ImageStore } from './util/image-store.js';
 import { positionPopover, attachPopoverOutsideClose } from './components/menus.js';
-import { showToast, showCriticalBanner, hideCriticalBanner } from './components/toast.js';
+import { showToast, hideCriticalBanner } from './components/toast.js';
 import {
     confirmDialog, closeConfirmDialog, promptName, closeNameModal, submitNameModal,
 } from './components/dialogs.js';
 import { displayError } from './components/errors.js';
 import {
-    escapeHtml, formatFileSize, formatBytes, formatTimeAgo, formatRelativeTime,
+    escapeHtml, formatFileSize, formatBytes, formatTimeAgo,
     getFileCategory, getFileIcon, getFileTypeLabel,
 } from './util/format.js';
-import { diffStats, buildRichDiff } from './util/diff.js';
 import { FilePanel } from './file-panel/index.js';
 
 // ===== Conversation Helpers =====
