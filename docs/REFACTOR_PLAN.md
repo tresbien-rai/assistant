@@ -505,6 +505,29 @@ the seam (which exercises `currentSection`), opening a chat still paints its 23
 messages and shows the composer, `updateUI()` through the facade still returns
 its promise, no console errors, harness unchanged at 1 pass / 3 fail.
 
+A review agent checked the change specifically for behaviour identity and found
+no defect: `navigate`/`currentSection` byte-identical to the originals,
+`closeSidebar` resolving to literally the same binding, registration provably
+ordered before any possible call (`main.js` is the **only** importer of
+`shell.js`, and its only other top-level statement is the `DOMContentLoaded`
+hook), no shadowing or self-recursion, the async promise passing through the
+facade untouched, and the `window.__tessera` getter still resolving now that
+`navigate` is an imported binding.
+
+**Three notes it left for R-04b:**
+
+1. The `updateUI` facade is not load-bearing yet — nothing imports it, because
+   `main.js` still calls its own local copy. R-04b is what activates it.
+2. The guard in `call()` throws **synchronously**. Harmless today (unreachable,
+   and no caller does `updateUI().catch(...)`), but if R-04b introduces a caller
+   that only `await`s, a missed registration would surface as an uncaught error
+   rather than a rejected promise. Make the guard async-safe if that happens.
+3. `main.js`'s own `renderShell()` / `updateUI()` calls still bind to its local
+   declarations rather than going through `impl`. Correct while they *are* the
+   registered functions — and moot once R-04b moves them wholesale into
+   `router.js` — but it means the seam currently redirects external callers
+   only.
+
 ### R-04b → R-05 — extraction
 
 Mechanical. Move code, add `import`/`export`, change nothing else. (`dom.js`
