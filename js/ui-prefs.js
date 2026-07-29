@@ -26,6 +26,11 @@ export const UiPrefs = {
         devMode: false,           // show developer tools (e.g. request inspector)
         textareaHeights: {},      // dragged heights by textarea id, px
         filePanelMode: 'auto',    // auto (open on file creation) | click (edge-tab alert only)
+        // F-05. false = Shift+Enter sends, plain Enter inserts a newline (the
+        // long-standing default, deliberately kept). true = Enter sends.
+        // Device-local on purpose: a phone keyboard and a desktop keyboard want
+        // different answers, so syncing this to the account would fight the user.
+        enterToSend: false,
     },
     _data: null,
     load() {
@@ -298,6 +303,17 @@ export function syncAppearanceControls() {
     document.querySelectorAll('#filePanelModeOptions button').forEach(b => {
         b.classList.toggle('active', b.dataset.filePanelMode === panelMode);
     });
+    const enterBehaviour = d.enterToSend === true ? 'enter' : 'shift';
+    document.querySelectorAll('#enterBehaviourOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.enterBehaviour === enterBehaviour);
+    });
+    // The composer placeholder names the shortcut, so it has to follow the
+    // setting — otherwise the app tells the user the wrong key.
+    if (elements.messageInput) {
+        elements.messageInput.placeholder = enterBehaviour === 'enter'
+            ? 'Type your message... (Enter to send)'
+            : 'Type your message... (Shift+Enter to send)';
+    }
     const cp = d.customPalette;
     if (elements.paletteBase) elements.paletteBase.value = cp.base;
     if (elements.paletteTint) elements.paletteTint.value = cp.tint;

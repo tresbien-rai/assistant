@@ -1729,6 +1729,14 @@ function setupEventListeners() {
             syncAppearanceControls();
         });
     });
+    // F-05: Enter behaviour. Stored device-local, read by the composer keydown
+    // handler on every keystroke, so there is no state to keep in sync.
+    document.querySelectorAll('#enterBehaviourOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('enterToSend', btn.dataset.enterBehaviour === 'enter');
+            syncAppearanceControls();
+        });
+    });
 
     // File panel (viewer): close, raw/rendered toggle, and the edge tab.
     if (elements.filePanelClose) {
@@ -2031,9 +2039,16 @@ function setupEventListeners() {
     });
 
     elements.messageInput.addEventListener('keydown', (e) => {
-        // Shift+Enter sends; plain Enter inserts a newline. This guards against
-        // accidentally firing off a long, multi-paragraph message mid-thought.
-        if (e.key === 'Enter' && e.shiftKey) {
+        if (e.key !== 'Enter') return;
+        // F-05. Default: Shift+Enter sends and plain Enter inserts a newline,
+        // which guards against firing off a long, multi-paragraph message
+        // mid-thought. The Accessibility setting flips it for people who find
+        // reaching Shift awkward. Either way the OTHER combination inserts a
+        // newline, and a modifier we do not own (ctrl/alt/meta) is left alone.
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+        const sendsOnPlainEnter = UiPrefs.load().enterToSend === true;
+        const shouldSend = sendsOnPlainEnter ? !e.shiftKey : e.shiftKey;
+        if (shouldSend) {
             e.preventDefault();
             sendMessage();
         }
