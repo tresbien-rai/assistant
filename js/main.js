@@ -37,7 +37,14 @@ import {
 } from './util/format.js';
 import { FilePanel } from './file-panel/index.js';
 import {
-    persistSettings, autoSaveSettings, savePersonas, hydrateApiKeyStatus,
+    createPersona, applyPersonaModelSettings, hydratePersonas, personaAvatarHTML,
+} from './persona-helpers.js';
+import {
+    createConversation, restoreConversationModel, loadConversationMessages, saveConversations,
+    switchConversation, renderChatsListMain, renderConversation,
+    renderConversationList, } from './views/chats.js';
+import {
+    autoSaveSettings, savePersonas, hydrateApiKeyStatus,
 } from './settings-store.js';
 import {
     renderModelsView, saveCustomModels, modelModalProvider, openModelModal,
@@ -45,8 +52,7 @@ import {
 } from './views/models.js';
 import { navigate, currentSection, registerShell, renderModelsCatalog } from './shell.js';
 import {
-    PROVIDERS, providerIconHtml, findModelProvider, getModelDisplayName, getCatalogEntry,
-    getActiveModelConfig, personaModelMode, applyModelToLayer, loadModelProfileIntoLayer,
+    PROVIDERS, providerIconHtml, getModelDisplayName, getActiveModelConfig, personaModelMode, loadModelProfileIntoLayer,
     mirrorLayerToModelProfile, mergeModelConfig, formatNumber,
     updateSendButtonState,
 } from './model-layer.js';
@@ -59,55 +65,6 @@ import {
 registerShell({ renderShell, renderMainView, updateUI, updateSettingsUI });
 
 // ===== Conversation Helpers =====
-
-/**
- * Create a new conversation server-side and set it as active.
- * The server generates the id — callers must await this.
- * @param {string} [title] - Optional title, defaults to "New Chat"
- * @returns {Promise<string>} The server-generated conversation ID
- */
-async function createConversation(title = 'New Chat', container = null) {
-    // Container is explicit (caller decides the home): the Chats tab creates
-    // unfiled chats; the Workspaces drill-in creates workspace-/project-level
-    // ones. The server derives workspace_id from a project. Persona is always
-    // the currently-active one (P2-U3b model).
-    const target = container || {};
-    const created = await API.conversations.create({
-        personaId: state.activePersonaId,
-        projectId: target.projectId || null,
-        workspaceId: target.workspaceId || null,
-        title,
-    });
-    state.conversations[created.id] = {
-        id: created.id,
-        title: created.title,
-        personaId: created.personaId,
-        projectId: created.projectId,
-        workspaceId: created.workspaceId,
-        toolsEnabled: created.toolsEnabled ?? null,
-        scratchpadEnabled: created.scratchpadEnabled ?? null,
-        createdAt: created.createdAt,
-        updatedAt: created.updatedAt,
-        messageCount: 0,
-        messages: [],
-    };
-    state.activeConversationId = created.id;
-
-    // Apply a per-chat file-tools override chosen BEFORE the chat was persisted
-    // (the toggle was flipped on a fresh, unsaved chat).
-    if (state.pendingToolsOverride != null) {
-        const override = state.pendingToolsOverride;
-        state.pendingToolsOverride = undefined;
-        state.conversations[created.id].toolsEnabled = override;
-        try {
-            await API.conversations.update(created.id, { toolsEnabled: override });
-        } catch (err) {
-            console.error('Failed to persist pending tools override:', err);
-        }
-    }
-
-    return created.id;
-}
 
 // ===== File-tools toggle (Track A, P2-05b) =====
 
@@ -259,71 +216,9 @@ function generateConversationTitle(content) {
 
 // ===== Persona Helpers =====
 
-/**
- * Create a new persona server-side and set it as active.
- * Server generates the id — callers must await this.
- * @param {string} [name] - Optional name, defaults to "Assistant"
- * @returns {Promise<string>} The server-generated persona ID
- */
-async function createPersona(name = CONFIG.defaults.assistantName) {
-    // New personas are pure skin: shared model mode, no pin. Engine settings
-    // (params, prefill) live on model profiles, not here.
-    const modelConfig = {};
-    const expressions = { ...CONFIG.defaultExpressions };
-
-    const created = await API.personas.create({
-        name,
-        systemPrompt: CONFIG.defaults.systemPrompt,
-        prefill: '',
-        expressions,
-        modelConfig,
-    });
-
-    state.personas[created.id] = {
-        id: created.id,
-        name: created.name,
-        tagline: created.tagline || '',
-        roleLabel: created.roleLabel || '',
-        systemPrompt: created.systemPrompt || '',
-        prefill: created.prefill || '',
-        avatarFilename: created.avatarFilename || '',
-        expressions: (created.expressions && typeof created.expressions === 'object')
-            ? created.expressions
-            : expressions,
-        modelConfig: (created.modelConfig && typeof created.modelConfig === 'object')
-            ? created.modelConfig
-            : modelConfig,
-        createdAt: created.createdAt,
-        updatedAt: created.updatedAt,
-    };
-    state.activePersonaId = created.id;
-    return created.id;
-}
-
 // ===== Model profiles: the parts that touch a conversation =====
 // The profile machinery itself now lives in js/model-layer.js; what stays here
 // is the conversation-facing edge of it.
-
-/**
- * Restore a chat's model on open: the model that produced its last assistant
- * reply (per-message tag, WR-14) becomes the active model again, profile and
- * all — so coming back to a conversation keeps the engine it was running on.
- * Skipped when the chat's persona pins a model (fixed mode wins), when the
- * chat has no tagged replies yet, or when the tagged model is no longer in
- * the catalog. Requires convo.messages to be loaded.
- */
-function restoreConversationModel(convo) {
-    if (!convo || !Array.isArray(convo.messages)) return;
-    if (personaModelMode(getActivePersona()) === 'fixed') return;
-    const lastTagged = [...convo.messages].reverse()
-        .find(m => m.role === 'assistant' && m.model);
-    if (!lastTagged) return;
-    const provider = findModelProvider(lastTagged.model);
-    if (!provider) return; // removed from the catalog — keep the current model
-    if (applyModelToLayer(provider, lastTagged.model)) {
-        persistSettings();
-    }
-}
 
 // ===== Persona model-settings mode (WR-12, reshaped by model profiles) =====
 // A persona's modelConfig JSON is now a PIN, not a snapshot:
@@ -343,33 +238,6 @@ function layerFromPersona(persona) {
     const cfg = mergeModelConfig(persona?.modelConfig);
     delete cfg.mode;
     return cfg;
-}
-
-/**
- * Apply a persona's model-settings mode on activation: 'fixed' selects its
- * pinned model (loading that model's profile); 'shared' leaves the layer
- * untouched.
- */
-function applyPersonaModelSettings(persona) {
-    if (!persona || personaModelMode(persona) !== 'fixed') return;
-    const pin = persona.modelConfig || {};
-    if (!pin.provider || !pin.model) return;
-    // One-time legacy migration: pre-profiles fixed personas snapshotted full
-    // params. Seed the pinned model's profile from them (unless it already
-    // has one), fold in the persona's old prefill, then slim to a pure pin.
-    if (pin.modelParams) {
-        const entry = getCatalogEntry(pin.provider, pin.model);
-        if (entry && !entry.params) {
-            entry.params = JSON.parse(JSON.stringify(pin.modelParams));
-            if (persona.prefill && entry.params.prefill === undefined) {
-                entry.params.prefill = persona.prefill;
-            }
-        }
-        persona.modelConfig = { mode: 'fixed', provider: pin.provider, model: pin.model };
-        persona.updatedAt = Date.now();
-    }
-    applyModelToLayer(pin.provider, pin.model);
-    persistSettings();
 }
 
 /** Reflect the active persona's model-settings mode into the editor toggle. */
@@ -581,51 +449,6 @@ function hydrateSettings(settings) {
         : null;
 }
 
-function hydratePersonas(personas) {
-    state.personas = {};
-    for (const p of (personas || [])) {
-        // Server returns `expressions` as a parsed object. Backfill defaults
-        // when it is missing OR an empty object. Server-created default
-        // personas (e.g. the one made during the OAuth callback) have no
-        // expressions, which the DAL JSON-parses to `{}`. An empty object is
-        // truthy, so without the key-count check the persona would run with no
-        // expressions and the UI would crash reading e.g. expressions.neutral.emoji.
-        const hasExpressions = p.expressions
-            && typeof p.expressions === 'object'
-            && Object.keys(p.expressions).length > 0;
-        const expressions = hasExpressions
-            ? p.expressions
-            : { ...CONFIG.defaultExpressions };
-        // The generating slot must always exist — otherwise setExpression()
-        // silently no-ops while the model works and the slot never appears in
-        // the expression editor. Personas predating it get it backfilled.
-        // Note this deliberately leaves any existing `thinking` entry alone:
-        // it used to be this reserved slot, and now demotes to an ordinary
-        // expression, art and all.
-        if (!expressions[CONFIG.generatingExpression]) {
-            expressions[CONFIG.generatingExpression] = { ...CONFIG.defaultExpressions.generating };
-        }
-        state.personas[p.id] = {
-            id: p.id,
-            name: p.name,
-            tagline: p.tagline || '',
-            roleLabel: p.roleLabel || '',
-            systemPrompt: p.systemPrompt || '',
-            prefill: p.prefill || '',
-            avatarFilename: p.avatarFilename || '',
-            expressions,
-            // Model profiles: a persona's modelConfig is a slim pin
-            // ({ mode:'fixed', provider, model }) or {} for shared. Kept raw —
-            // legacy full snapshots keep their modelParams so
-            // applyPersonaModelSettings can seed the pinned model's profile
-            // once, then slims them down.
-            modelConfig: (p.modelConfig && typeof p.modelConfig === 'object') ? p.modelConfig : {},
-            createdAt: p.createdAt,
-            updatedAt: p.updatedAt,
-        };
-    }
-}
-
 function hydrateConversations(conversations) {
     state.conversations = {};
     for (const c of (conversations || [])) {
@@ -754,23 +577,6 @@ function pickActiveConversation() {
     state.activeConversationId = mostRecent.id;
 }
 
-/**
- * Lazy-load a conversation's full message history. Idempotent: if messages
- * are already loaded (or being loaded), returns without an extra fetch.
- */
-async function loadConversationMessages(conversationId) {
-    const convo = state.conversations[conversationId];
-    if (!convo) return;
-    if (convo.messages !== undefined) return; // already loaded
-    try {
-        const full = await API.conversations.get(conversationId);
-        convo.messages = (full && full.messages) || [];
-    } catch (err) {
-        console.error(`Failed to load messages for ${conversationId}:`, err);
-        convo.messages = []; // surface as empty rather than retry-storming
-    }
-}
-
 // ===== Settings Management =====
 
 /**
@@ -799,25 +605,6 @@ function updateSettingsUI() {
     // Keep the Models catalog's key badges current while it's open (e.g. a
     // key was just typed — the optimistic hasKey update lands on this path).
     if ((state.ui.mainView || {}).type === 'models') renderModelsCatalog();
-}
-
-/**
- * Persist conversation metadata for the active conversation (title, personaId).
- * Fire-and-forget. Per-message persistence is NOT handled here — see
- * persistMessage() for that path. Most call sites just want "I tweaked the
- * conversation; flush it" and that's what this does.
- */
-function saveConversations() {
-    const id = state.activeConversationId;
-    if (!id) return;
-    const convo = state.conversations[id];
-    if (!convo) return;
-    API.conversations.update(id, {
-        title: convo.title,
-        personaId: convo.personaId,
-    }).catch(err => {
-        console.error(`Failed to persist conversation ${id}:`, err);
-    });
 }
 
 /**
@@ -1690,325 +1477,6 @@ function handleAddModelManually() {
  */
 function switchTab(tabName) {
     navigate({ type: tabName === 'projects' ? 'workspaces' : 'chats' });
-}
-
-/**
- * Inner avatar markup (img or emoji) for a persona. Shared by the persona-
- * grouped chat list and the workspace chat rows.
- * @param {Object} persona
- * @returns {string}
- */
-function personaAvatarHTML(persona) {
-    if (!persona) return `<span class="avatar-emoji">🤖</span>`;
-    if (persona.avatarFilename) {
-        // Cache-bust by updatedAt so a re-upload is reflected immediately.
-        const cacheBust = persona.updatedAt ? `?v=${persona.updatedAt}` : '';
-        const imageUrl = `${API.avatars.getUrl(persona.id)}${cacheBust}`;
-        return `<img src="${imageUrl}" alt="${escapeHtml(persona.name || '')}">`;
-    }
-    const firstExpr = Object.values(persona.expressions || {})[0];
-    const avatarEmoji = firstExpr?.emoji || '🤖';
-    return `<span class="avatar-emoji">${avatarEmoji}</span>`;
-}
-
-/**
- * Markup for a single conversation row. `showPersonaAvatar` adds the owning
- * persona's avatar (used in the workspace list where personas are mixed; the
- * home list shows the avatar on the group header instead).
- * @param {Object} convo
- * @param {boolean} showPersonaAvatar
- * @returns {string}
- */
-function conversationRowHTML(convo, showPersonaAvatar) {
-    const timeAgo = formatTimeAgo(convo.updatedAt || convo.createdAt);
-    const active = convo.id === state.activeConversationId ? 'active' : '';
-    const avatar = showPersonaAvatar
-        ? `<div class="conversation-persona-avatar">${personaAvatarHTML(state.personas[convo.personaId])}</div>`
-        : '';
-    return `
-        <div class="conversation-item ${active}" data-conversation-id="${convo.id}">
-            ${avatar}
-            <div class="conversation-info" data-conversation-id="${convo.id}">
-                <span class="conversation-title">${escapeHtml(convo.title || 'New Chat')}</span>
-                <span class="conversation-time">${timeAgo}</span>
-            </div>
-            <button class="conversation-menu-btn" data-conversation-id="${convo.id}" title="Options">⋯</button>
-        </div>
-    `;
-}
-
-/**
- * Wire click + menu listeners for all conversation rows currently in `container`.
- * @param {HTMLElement} container
- */
-function wireConversationRows(container) {
-    container.querySelectorAll('.conversation-info').forEach(info => {
-        info.addEventListener('click', () => switchConversation(info.dataset.conversationId));
-    });
-    container.querySelectorAll('.conversation-menu-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showConversationMenu(btn, btn.dataset.conversationId);
-        });
-    });
-}
-
-/**
- * Refresh the chats list if it's the view currently showing in the main area.
- * (WR-07: the unfiled chat list lives in the main area, not the sidebar; many
- * callers poke this after a conversation mutation, so it no-ops when a different
- * view is open.)
- */
-function renderConversationList() {
-    if ((state.ui.mainView || {}).type === 'chats') renderChatsListMain();
-}
-
-/**
- * Home ("Chats") view: only UNFILED chats — those not in any workspace or
- * project — grouped by persona under collapsible headers ("chats with X").
- * Workspace/project chats live in their own container, never here (Workspace
- * Restructure: a chat appears in exactly one home, no cross-container leakage).
- * The active persona's group sorts first, the rest by most-recent activity.
- * @param {HTMLElement} container
- */
-function renderGroupedChatList(container) {
-    const all = Object.values(state.conversations)
-        .filter(c => !c.projectId && !c.workspaceId);
-
-    if (all.length === 0) {
-        container.innerHTML = `<p class="empty-state small">No chats yet. Start a new one above.</p>`;
-        return;
-    }
-
-    // Group conversations by persona, tracking each group's latest activity.
-    const groups = new Map(); // personaId -> { convos: [], latest }
-    for (const c of all) {
-        const pid = c.personaId || '__none__';
-        if (!groups.has(pid)) groups.set(pid, { convos: [], latest: 0 });
-        const g = groups.get(pid);
-        g.convos.push(c);
-        g.latest = Math.max(g.latest, c.updatedAt || c.createdAt || 0);
-    }
-
-    // Order: active persona first, then by most-recent activity.
-    const ordered = [...groups.entries()].sort((a, b) => {
-        if (a[0] === state.activePersonaId) return -1;
-        if (b[0] === state.activePersonaId) return 1;
-        return b[1].latest - a[1].latest;
-    });
-
-    let html = '';
-    for (const [pid, g] of ordered) {
-        const persona = state.personas[pid];
-        const name = persona ? (persona.name || 'Untitled') : 'No persona';
-        const collapsed = state.ui.collapsedPersonaGroups.has(pid);
-        const rows = g.convos
-            .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-            .map(c => conversationRowHTML(c, false))
-            .join('');
-        html += `
-            <div class="persona-group" data-persona-id="${escapeHtml(pid)}">
-                <button class="persona-group-header" data-persona-id="${escapeHtml(pid)}" type="button">
-                    <svg class="group-chevron ${collapsed ? 'collapsed' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    <div class="conversation-persona-avatar">${personaAvatarHTML(persona)}</div>
-                    <span class="persona-group-name">${escapeHtml(name)}</span>
-                    <span class="persona-group-count">${g.convos.length}</span>
-                </button>
-                <div class="persona-group-body" ${collapsed ? 'hidden' : ''}>${rows}</div>
-            </div>
-        `;
-    }
-    container.innerHTML = html;
-
-    // Collapse/expand on header click.
-    container.querySelectorAll('.persona-group-header').forEach(header => {
-        header.addEventListener('click', () => {
-            const pid = header.dataset.personaId;
-            if (state.ui.collapsedPersonaGroups.has(pid)) {
-                state.ui.collapsedPersonaGroups.delete(pid);
-            } else {
-                state.ui.collapsedPersonaGroups.add(pid);
-            }
-            renderConversationList();
-        });
-    });
-
-    wireConversationRows(container);
-}
-
-/**
- * Switch to a different conversation. Lazy-loads its messages on first
- * access — without this, renderConversation crashes on `messages.length`
- * because hydrateConversations seeds messages=undefined as a "not loaded"
- * sentinel for non-active conversations.
- * @param {string} conversationId
- */
-async function switchConversation(conversationId) {
-    if (!state.conversations[conversationId]) return;
-
-    state.activeConversationId = conversationId;
-
-    // Track the chat's container so breadcrumb + restore have context.
-    const convo = state.conversations[conversationId];
-    state.activeProjectId = convo.projectId || null;
-    state.activeWorkspaceId = convo.workspaceId || (convo.projectId && state.projects[convo.projectId] ? state.projects[convo.projectId].workspaceId : null) || null;
-
-    // Also switch to the persona that owns this conversation. activePersonaId
-    // is session state — not persisted server-side — so no savePersonas() call
-    // is needed (and including one would also re-PUT every persona, wasting
-    // bandwidth and risking cross-write clobbers).
-    if (convo.personaId && convo.personaId !== state.activePersonaId) {
-        state.activePersonaId = convo.personaId;
-        // A fixed-mode persona brings its own model settings along (WR-12).
-        applyPersonaModelSettings(getActivePersona());
-    }
-
-    // Lazy-load messages if this is the first time we're activating this
-    // conversation in the session.
-    await loadConversationMessages(conversationId);
-
-    // The chat also remembers its engine: reactivate the model that wrote its
-    // last reply (unless the persona above pinned one — fixed mode wins).
-    restoreConversationModel(convo);
-
-    navigate({ type: 'chat', id: conversationId });
-    updateUI();
-}
-
-/**
- * Show context menu for a conversation
- * @param {HTMLElement} anchorEl - The button that was clicked
- * @param {string} conversationId
- */
-function showConversationMenu(anchorEl, conversationId) {
-    // Remove any existing menu
-    const existingMenu = document.querySelector('.context-menu');
-    if (existingMenu) existingMenu.remove();
-
-    const menu = document.createElement('div');
-    menu.className = 'context-menu';
-    menu.innerHTML = `
-        <button class="context-menu-item" data-action="rename">Rename</button>
-        <button class="context-menu-item danger" data-action="delete">Delete</button>
-    `;
-
-    // Position the menu
-    const rect = anchorEl.getBoundingClientRect();
-    menu.style.position = 'fixed';
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${rect.left - 80}px`;
-
-    document.body.appendChild(menu);
-
-    // Handle menu item clicks
-    menu.querySelectorAll('.context-menu-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const action = item.dataset.action;
-            menu.remove();
-
-            if (action === 'rename') {
-                renameConversationPrompt(conversationId);
-            } else if (action === 'delete') {
-                deleteConversationPrompt(conversationId);
-            }
-        });
-    });
-
-    // Close menu on outside click
-    setTimeout(() => {
-        document.addEventListener('click', function closeMenu(e) {
-            if (!menu.contains(e.target)) {
-                menu.remove();
-                document.removeEventListener('click', closeMenu);
-            }
-        });
-    }, 0);
-}
-
-/**
- * Prompt to rename a conversation
- * @param {string} conversationId
- */
-async function renameConversationPrompt(conversationId) {
-    const convo = state.conversations[conversationId];
-    if (!convo) return;
-
-    const newTitle = await promptName({
-        title: 'Rename chat',
-        label: 'Chat name',
-        value: convo.title || 'New Chat',
-        confirmLabel: 'Rename',
-    });
-    if (!newTitle) return;
-
-    // Prompting is async now — the chat may have been deleted meanwhile.
-    if (!state.conversations[conversationId]) return;
-
-    convo.title = newTitle;
-    convo.updatedAt = Date.now();
-    saveConversations();
-    renderConversationList();
-}
-
-/**
- * Prompt to delete a conversation. Server delete first (so the local state
- * never goes out of sync with the server on failure), then local cleanup.
- * @param {string} conversationId
- */
-async function deleteConversationPrompt(conversationId) {
-    const convo = state.conversations[conversationId];
-    if (!convo) return;
-
-    const ok = await confirmDialog({
-        title: 'Delete chat?',
-        body: `"${convo.title || 'New Chat'}" and all of its messages will be deleted. This can't be undone.`,
-        confirmLabel: 'Delete',
-        danger: true,
-    });
-    if (!ok) return;
-
-    try {
-        await API.conversations.delete(conversationId);
-    } catch (err) {
-        console.error('Failed to delete conversation:', err);
-        displayError(err, { action: 'delete conversation' });
-        return;
-    }
-
-    delete state.conversations[conversationId];
-
-    // If we deleted the active conversation, switch to another or clear.
-    if (state.activeConversationId === conversationId) {
-        const remaining = Object.values(state.conversations);
-        if (remaining.length > 0) {
-            const mostRecent = remaining.reduce((a, b) =>
-                (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-            );
-            state.activeConversationId = mostRecent.id;
-            // Lazy-load the newly-active conversation's messages.
-            await loadConversationMessages(state.activeConversationId);
-        } else {
-            state.activeConversationId = null;
-        }
-    }
-
-    renderConversationList();
-    renderConversation();
-}
-
-/**
- * Create a new conversation and switch to it
- */
-async function startNewConversation() {
-    try {
-        await createConversation('New Chat');
-    } catch (err) {
-        console.error('Failed to create conversation:', err);
-        return;
-    }
-    state.activeProjectId = null;
-    state.activeWorkspaceId = null;
-    navigate({ type: 'chat', id: state.activeConversationId });
 }
 
 /**
@@ -2943,16 +2411,6 @@ function renderMainView() {
     renderChatsListMain();
 }
 
-/**
- * Back-compat shim. Older call sites call renderConversation() to mean "repaint
- * the main area"; route them through the view dispatcher (+ shell) so the rail
- * and top bar stay in sync.
- */
-function renderConversation() {
-    renderShell();
-    renderMainView();
-}
-
 /** Render the active conversation's message thread into the main area. */
 function renderChatThread() {
     elements.messagesContainer.innerHTML = '';
@@ -3008,22 +2466,6 @@ function renderTopBar() {
 function setModelIndicator(name) {
     if (elements.modelIndicator) elements.modelIndicator.textContent = name;
     if (elements.composerModelName) elements.composerModelName.textContent = name;
-}
-
-/** Main-area "Chats" section: unfiled chats grouped by persona + a New-chat action. */
-function renderChatsListMain() {
-    const c = elements.messagesContainer;
-    c.innerHTML = `
-        <div class="section-view">
-            <div class="section-head">
-                <h1 class="section-title">Chats</h1>
-                <button class="section-new-btn" id="chatsNewBtn" type="button">+ New chat</button>
-            </div>
-            <div class="section-list" id="chatsListBody"></div>
-        </div>`;
-    renderGroupedChatList(c.querySelector('#chatsListBody'));
-    const nb = c.querySelector('#chatsNewBtn');
-    if (nb) nb.addEventListener('click', startNewConversation);
 }
 
 /** Main-area "Workspaces" section: the list of workspaces + a New-workspace action. */
