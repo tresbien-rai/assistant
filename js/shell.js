@@ -59,6 +59,7 @@ const impl = {
     updateSettingsUI: null,
     renderModelsCatalog: null,
     refreshAddModelModal: null,
+    renderChatThread: null,
 };
 
 /**
@@ -147,4 +148,17 @@ export function renderModelsCatalog() {
 /** Repaint the add-model modal's provider list, if that modal is open. */
 export function refreshAddModelModal() {
     return call('refreshAddModelModal', arguments);
+}
+
+/**
+ * Repaint the message thread for the active conversation.
+ *
+ * Seamed so the router can paint a chat view without importing the chat code —
+ * it is the last edge that kept js/router.js tangled with the send path. It is
+ * also the call F-03 turns into the fix: once the in-progress reply is
+ * derivable from state, this is what paints it on return, and the send path
+ * stops holding a DOM pointer across an await.
+ */
+export function renderChatThread() {
+    return call('renderChatThread', arguments);
 }
