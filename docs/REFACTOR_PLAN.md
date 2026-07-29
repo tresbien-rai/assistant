@@ -172,7 +172,7 @@ Each row is one branch, one PR. Harness green before and after.
 | ☑ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs` / `sidebar`, then `components/dialogs` + `components/toast` | medium |
 | ☑ | **R-03** | Extract `file-panel/` + the helpers it stands on (`util/format`, `util/diff`, `components/errors`) | medium |
 | ☑ | **R-04a** | Shell seam (`js/shell.js`) — a **change**, not a move; breaks the 60-function knot | low |
-| ☐ | **R-04b** | Extract `views/` + `router.js`, now that they can be split | medium |
+| ◐ | **R-04b** | Extract the view layer + `router.js`, bottom-up. `model-layer.js` ✅; next the view clusters, router last | medium |
 | ☐ | **R-05** | Extract `chat/` — the tangled part, deliberately last | high |
 | ☐ | **F-03** | Fix stream orphaning (bug 1) | low once R-05 lands |
 | ☐ | **F-04** | Draft + attachments per conversation (bug 2) | low |
@@ -528,7 +528,61 @@ facade untouched, and the `window.__tessera` getter still resolving now that
    `router.js` — but it means the seam currently redirects external callers
    only.
 
-### R-04b → R-05 — extraction
+### R-04b — the view layer, bottom-up (in progress)
+
+With the seam in place the knot decomposes into clusters that map onto real
+modules. Measured after R-04a, treating `navigate`/`updateUI`/`renderMainView`
+as seam calls:
+
+| cluster | size | becomes |
+|---|---|---|
+| models + settings persistence | 13 | `views/models.js` (+ its service layer, below) |
+| chats list | 7 | `views/chats.js` |
+| model detail | 3 | `views/models.js` |
+| personas import | 3 | `views/personas.js` |
+| send/retry/re-roll | 3 | R-05, `chat/` |
+
+Each cluster must move as a unit — that is what "mutually recursive" means — but
+the clusters are independent of each other. **Order is bottom-up: services
+first, view clusters next, `router.js` last**, since the router imports the views
+and nothing imports the router.
+
+#### `js/model-layer.js` ✅
+
+23 declarations, ~160 lines of logic (340 with the param descriptors), **called
+from 38 places**: the provider catalog, the active model layer, profile
+load/mirror, and the param-path helpers the detail view reads and writes
+through. It is what the models view, the personas view and the chat send path
+all stand on, so it comes out first.
+
+One passenger, documented in the file: `updateSendButtonState` is composer
+chrome, but `applyModelToLayer` refreshes it on a provider switch and that is
+the only edge tying it here. It belongs in `chat/composer.js` in R-05.
+
+**Two tooling lessons, both from this one module.**
+
+*A blind spot that had been there all along.* The checker's guard against
+counting property accesses (`obj.foo`) excludes an identifier preceded by a dot
+— which also silently excludes **spread syntax** (`...FOO`). `PROVIDERS` is
+built as `[...SAMPLING_PARAMS, ...BEHAVIOUR_PARAMS, …]`, so five constants it
+depends on were invisible to every dependency script. The module parsed, the
+checker was clean, and it threw `SAMPLING_PARAMS is not defined` on first load.
+Fixed in all four scripts: `(?:(?<![\w$.])|(?<=\.\.\.))`. Worth remembering that
+the SCC and closure numbers quoted above were computed with that blind spot —
+they under-count spread edges.
+
+*Cut by name, not by line number.* After R-03 sliced a function in half with
+stale line numbers, extraction is now done by naming the declarations; the tool
+recomputes spans itself, takes each declaration with its doc comment, and
+refuses to run if two spans overlap. No line arithmetic survives to be wrong.
+
+**Verified:** all 24 moved declarations byte-identical; no cycles, no missing or
+stale imports; the app boots; `PROVIDERS` resolves its param lists
+(`anthropic:9`, `google:14` — the exact thing the spread bug broke); the models
+catalog paints 4 cards and 4 provider chips; the model detail view opens with
+its param controls; harness unchanged at 1 pass / 3 fail.
+
+### R-04b (remaining) → R-05 — extraction
 
 Mechanical. Move code, add `import`/`export`, change nothing else. (`dom.js`
 landed in R-02, as planned — the view slices need it.)
