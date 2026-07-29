@@ -4,24 +4,23 @@ Splitting `app.js` (10,476 lines / 450 KB) into modules, and fixing the class of
 bug that its size has been hiding. Written to be picked up cold in a new session:
 each slice is independently shippable and says what "done" means.
 
-> **Status (2026-07-25):** Plan **locked** with the human.
-> **F-01 ✅ merged (PR #125)** — Anthropic sends work again with stock params.
-> **F-02 ✅ merged (PR #126)** — the smoke harness runs, and reports **1 pass /
-> 3 fail**: the three known bugs are now red on demand instead of anecdotal.
-> **R-00 ✅** — the frontend is an ES module (`js/main.js` + `js/api-client.js`),
-> harness identical before and after.
-> **R-01 ✅** — `util/markdown`, `util/image-store`, `components/menus` extracted;
-> dialogs + toast deferred to R-02 (they need `dom.js`).
-> **R-02 ✅** — `config` / `state` / `dom` / `ui-prefs` / `sidebar` + the two
-> deferred components.
-> **R-03 ✅** — `file-panel/` (1,300 lines) plus `util/format`, `util/diff` and
-> `components/errors`. `main.js` is down to **7,382** lines from 10,497 — the
-> halfway mark.
-> **R-04a ✅** — the shell seam (`js/shell.js`). R-04 turned out to be
-> unreachable as a pure move; see below.
-> **R-04b ✅** — the whole view layer plus `js/router.js`, in five PRs
-> (#132–#136). `main.js` is down to **4,244** lines from 10,497. Next up:
-> **R-05** (`chat/`), then the F-slices.
+> **Status: PLAN COMPLETE (2026-07-29).** Every slice shipped, in 20 PRs
+> (#125–#144).
+>
+> `app.js` was 10,476 lines in one scope. `js/main.js` is now **2,504** lines
+> beside 24 sibling modules, and `styles.css` (5,957 lines) is 9 files under
+> `styles/`.
+>
+> **The smoke harness is 4 pass / 0 fail**, from 1 pass / 3 fail when F-02 first
+> encoded the bugs. Both bugs that motivated the plan are fixed: the live reply
+> survives navigation (F-03) and drafts belong to a conversation (F-04). The
+> third, the Anthropic `top_p` blocker, went first (F-01).
+>
+> The three rules held. State is the only source of truth — the DOM pointer that
+> caused bug 1 is gone. One owner per DOM region — `js/router.js` decides, and
+> the module graph enforces it. Dependencies point one way — the checker reports
+> no cycles across 25 modules. The one cycle anything created (F-04, via a
+> helper parked in a view) was caught before merge.
 >
 > Ordering decision: the live provider blocker (F-01) and the test harness (F-02)
 > ship **before** any code moves; the stream-orphaning fix (F-03) ships **after**
@@ -175,7 +174,7 @@ Each row is one branch, one PR. Harness green before and after.
 | ☑ | **R-03** | Extract `file-panel/` + the helpers it stands on (`util/format`, `util/diff`, `components/errors`) | medium |
 | ☑ | **R-04a** | Shell seam (`js/shell.js`) — a **change**, not a move; breaks the 60-function knot | low |
 | ☑ | **R-04b** | View layer + `router.js`, bottom-up: model-layer, settings-store, models, persona-helpers, chats, personas, workspaces, router | medium |
-| ☐ | **R-05** | Extract `chat/` — the tangled part, deliberately last | high |
+| ☑ | **R-05** | Extract `chat/` (expressions, thread, send, composer) + `avatar`, `status-bar` | high |
 | ☑ | **F-03** | Fix stream orphaning (bug 1) — harness 1 pass → 3 pass | low once R-05 lands |
 | ☑ | **F-04** | Draft + attachments per conversation (bug 2) — harness 4 pass / 0 fail | low |
 | ☑ | **F-05** | Accessibility section + Enter-behaviour toggle | low |
