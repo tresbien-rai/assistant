@@ -1,13 +1,13 @@
 /**
  * Formatting and escaping helpers (R-03, moved verbatim from main.js).
  *
- * All pure functions of their arguments — the leaf the file panel and the
- * views stand on. Gathered here from four different places in the old file,
- * which is how the near-duplicates below became visible: formatFileSize vs
- * formatBytes, and formatTimeAgo vs formatRelativeTime, are two pairs that do
- * almost the same job with different rounding and wording. Left as they are —
- * merging them is a behaviour change and this is a move slice — but they are a
- * ready-made cleanup once the extraction is done.
+ * All pure functions of their arguments — the leaf the file panel and the views
+ * stand on. Gathering them here from four different places in the old file
+ * exposed two pairs of near-duplicates, which the cleanup slice then merged:
+ * formatBytes folded into formatFileSize (one decimal place everywhere), and
+ * formatRelativeTime into formatTimeAgo (one wording everywhere). Each pair did
+ * almost the same job with different rounding and capitalisation, written months
+ * apart, because nothing had ever put them side by side.
  */
 
 // --- Sizes ---
@@ -53,27 +53,7 @@ export function formatTimeAgo(timestamp) {
     return date.toLocaleDateString();
 }
 
-// --- Byte counts (the other one) ---
-/** Human-readable byte count. */
-export function formatBytes(bytes) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
 
-// --- Relative time ---
-/** Compact relative time for version labels: "2m ago", "3h ago", "2d ago". */
-export function formatRelativeTime(ms) {
-    const diff = Date.now() - ms;
-    if (diff < 60000) return 'just now';
-    const m = Math.floor(diff / 60000);
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    const d = Math.floor(h / 24);
-    if (d < 7) return `${d}d ago`;
-    return new Date(ms).toLocaleDateString();
-}
 
 // --- HTML escaping ---
 

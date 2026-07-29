@@ -24,7 +24,6 @@ export const elements = {
 
     // Settings modal (relocated out of the sidebar)
     settingsModal: document.getElementById('settingsModal'),
-    closeSettingsModal: document.getElementById('closeSettingsModal'),
 
     // Appearance controls
     paletteBase: document.getElementById('paletteBase'),

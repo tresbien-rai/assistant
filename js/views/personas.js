@@ -13,7 +13,7 @@ import { state } from '../state.js';
 import { elements } from '../dom.js';
 import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
-import { navigate, updateUI, switchTab } from '../shell.js';
+import { navigate, updateUI } from '../shell.js';
 import { getActivePersona } from '../state.js';
 import {
     personaAvatarHTML, createPersona, applyPersonaModelSettings, hydratePersonas,
@@ -21,7 +21,7 @@ import {
 import { savePersonas } from '../settings-store.js';
 import { renderConversationList, renderConversation } from './chats.js';
 import { UiPrefs } from '../ui-prefs.js';
-import { escapeHtml, formatBytes } from '../util/format.js';
+import { escapeHtml, formatFileSize } from '../util/format.js';
 import { blobToBase64 } from '../util/blob.js';
 import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
 import { showToast } from '../components/toast.js';
@@ -50,7 +50,7 @@ export async function switchPersona(personaId) {
 
     savePersonas();
     await updateUI();
-    await switchTab('chats');
+    navigate({ type: 'chats' });
 
     const groupEl = document.querySelector(`.persona-group[data-persona-id="${CSS.escape(personaId)}"]`);
     if (groupEl) groupEl.scrollIntoView({ block: 'nearest' });
@@ -380,7 +380,7 @@ async function exportPersona(personaId, opts = {}) {
         const json = JSON.stringify(bundle, null, 2);
         const filename = `${(persona.name || 'persona').replace(/[^\w-]+/g, '_')}.tessera`;
         downloadBlob(new Blob([json], { type: 'application/json' }), filename);
-        showToast(`Exported ${filename} (${formatBytes(json.length)})`, { type: 'success' });
+        showToast(`Exported ${filename} (${formatFileSize(json.length)})`, { type: 'success' });
     } catch (err) {
         console.error('Failed to export persona:', err);
         displayError(err, { action: 'export this persona' });

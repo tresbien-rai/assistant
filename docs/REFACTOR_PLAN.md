@@ -643,17 +643,26 @@ the preference survives a reload.
 - **Junk test data.** The **"SP-04/05"** chat in the local dev DB holds ~17
   throwaway messages from the 2026-07-24 investigation (it was empty before).
   Harmless; delete the chat whenever convenient.
-- **A cleanup slice is owed** — everything below is a *change*, not a move, so
-  none of it belongs in an R-slice. Do them together once the extraction is done:
-  - `elements.closeSettingsModal` (`js/dom.js`) is dead: the button lives inside
-    the `#settingsModal` shell that `main.js` removes at load. (`settingsModal`
-    itself is still used — it's what does the removing.)
-  - `FilePanel.revisionsUrl()` (`js/file-panel/index.js:955`) has no callers
-    anywhere in the repo. Found by the R-03 review agent.
-  - Two near-duplicate formatter pairs now sitting side by side in
-    `js/util/format.js`: `formatFileSize`/`formatBytes` and
-    `formatTimeAgo`/`formatRelativeTime`.
-  - The stray `nul` file in the repo root (Windows `> nul` redirect artifact).
+- **Cleanup slice ✅ done.** All of it, in one PR:
+  - `elements.closeSettingsModal` removed — the button lives inside the
+    `#settingsModal` shell that `main.js` deletes at load, so the cache entry had
+    always been null after boot.
+  - `FilePanel.revisionsUrl()` removed — no callers anywhere in the repo.
+  - `switchTab` inlined at its single call site and deleted from `shell.js`. It
+    was a two-line shim over `navigate()` left from the old sidebar-tab UI.
+  - **Both near-duplicate formatter pairs merged**, which is a visible change and
+    the reason they were left alone during the move slices: `formatBytes` folded
+    into `formatFileSize`, so the persona-export toast now reads `12.3 KB`
+    instead of `12 KB`; `formatRelativeTime` folded into `formatTimeAgo`, so file
+    version labels read `Just now` instead of `just now`. One rounding rule and
+    one wording, everywhere.
+  - The stray `nul` file (captured `curl -V` output from a Windows `> nul`
+    redirect) deleted. It was never tracked by git.
+- **Still open, deliberately:** `showConversationMenu` positions its menu inline
+  (`menu.style.position = 'fixed'`) instead of using `positionPopover`, so it
+  misses the shared helper's flip-above-the-anchor behaviour near the viewport
+  bottom. Switching it over changes where a menu appears, so it wants its own
+  look rather than a line in a cleanup PR.
 - **Decided:** `file-panel/index.js` stays **one file**. It moved whole in R-03
   and the boundary audit found it genuinely self-contained (16 imports, all used,
   no top-level side effects), so splitting it into viewer/browser/history would
