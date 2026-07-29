@@ -1,0 +1,229 @@
+/* ===== CSS Variables (Easy theming later) ===== */
+:root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-tertiary: #0f1729;
+    --text-primary: #eaeaea;
+    --text-secondary: #a0a0a0;
+    --text-muted: #666;
+    --accent: #6c63ff;
+    --accent-hover: #5a52d9;
+    --accent-subtle: rgba(108, 99, 255, 0.2);
+    --accent-light: #8b85ff;   /* link color on themed surfaces (lighter on dark themes, darker on light ones) */
+    --on-accent: #ffffff;      /* text/icons sitting on an accent-colored background */
+    --user-bubble: var(--accent); /* follows the accent color (may be a deeper shade in some themes) */
+    --user-bubble-text: #ffffff;  /* always chosen to contrast with --user-bubble */
+    --assistant-bubble: #2d2d44;
+    --border-color: #2d2d44;
+    --error: #ff6b6b;
+    --on-error: #2a1214;       /* text sitting on an --error background (light coral needs a dark label) */
+    --success: #51cf66;
+    --warning: #ffd43b;
+    --info: #4dabf7;
+
+    --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    --font-mono: 'Fira Code', 'Consolas', monospace;
+
+    /* Type scale (modular ~1.25; rem-based) */
+    --text-xs: 0.75rem;    /* 12px — timestamps, badges, help text */
+    --text-sm: 0.875rem;   /* 14px — labels, sidebar items, buttons */
+    --text-base: 1rem;     /* 16px — message/body text */
+    --text-lg: 1.125rem;   /* 18px — sub-headings */
+    --text-xl: 1.375rem;   /* 22px — modal/section titles */
+    --text-2xl: 1.75rem;   /* 28px — welcome heading */
+
+    /* Spacing scale (4px grid) */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+
+    --sidebar-width: 240px;
+    --status-bar-height: 56px;
+    --input-height: 80px;
+    --chat-max-width: 780px; /* shared by the message column and the composer */
+    --section-max-width: 720px; /* shared by every main-area view (section lists, container pages, settings, persona editor) */
+
+    /* Corner radii — softer/rounder; text buttons use --radius-full (pills) */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 18px;
+    --radius-full: 9999px;
+
+    /* Elevation — subtle for resting surfaces, deeper for floating ones */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+    --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+    /* Code backgrounds (themed; syntax token colors come from highlight.js) */
+    --code-bg: rgba(0, 0, 0, 0.4);
+    --code-inline-bg: rgba(0, 0, 0, 0.3);
+
+    /* Scrollbar thumb (track uses --bg-tertiary) */
+    --scrollbar-thumb: #3a3f5c;
+    --scrollbar-thumb-hover: #4a4f72;
+
+    /* Avatar sizes */
+    --avatar-small: 80px;
+    --avatar-medium: 120px;
+    --avatar-large: 180px;
+    --avatar-xlarge: 240px;
+}
+
+/* ===== Themes (device-local; applied via data-theme on <html>) ===== */
+/* Midnight is the default (:root above). Each theme overrides the palette,
+   including its own default accent; a custom accent picked by the user is set
+   inline by JS and wins over all of these. Every theme must keep the
+   --user-bubble / --user-bubble-text pair readable (>= ~4.5:1). */
+[data-theme="light"] {
+    --bg-primary: #f4f6fb;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #eaecf3;
+    --text-primary: #1b1d29;
+    --text-secondary: #565a6e;
+    --text-muted: #8a8fa3;
+    --accent-subtle: rgba(108, 99, 255, 0.12);
+    --accent-light: #5a52d9; /* links darken (not lighten) on light surfaces */
+    --assistant-bubble: #eceefb;
+    --border-color: #d9dded;
+    --shadow-sm: 0 1px 3px rgba(20, 22, 40, 0.06);
+    --shadow: 0 4px 6px rgba(20, 22, 40, 0.08);
+    --shadow-lg: 0 8px 32px rgba(20, 22, 40, 0.14);
+    --code-bg: #eef0f6;
+    --code-inline-bg: rgba(27, 29, 41, 0.06);
+    --scrollbar-thumb: #c2c7d6;
+    --scrollbar-thumb-hover: #a9afc4;
+}
+
+/* Theme cross-fade: transitions enabled only briefly while switching themes
+   (the `theme-transition` class is added by JS for ~300ms). Skipped entirely
+   for users who prefer reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+    html.theme-transition,
+    html.theme-transition *,
+    html.theme-transition *::before,
+    html.theme-transition *::after {
+        transition: background-color 0.45s ease, border-color 0.45s ease,
+                    color 0.45s ease, fill 0.45s ease, stroke 0.45s ease !important;
+    }
+}
+
+/* Slate — graphite neutrals with a cool steel-blue accent. The accent is a
+   bright pastel (dark text on it); user bubbles use a deeper steel shade so
+   white text stays readable. */
+[data-theme="slate"] {
+    --bg-primary: #1e2229;
+    --bg-secondary: #262b33;
+    --bg-tertiary: #171a20;
+    --text-primary: #e6e8ec;
+    --text-secondary: #9aa1ad;
+    --text-muted: #6b7280;
+    --accent: #7aa2f7;
+    --accent-hover: #6690e8;
+    --accent-subtle: rgba(122, 162, 247, 0.16);
+    --accent-light: #8fb3f9;
+    --on-accent: #10161f;
+    --user-bubble: #3b5b8c;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #2b313b;
+    --border-color: #343a45;
+    --scrollbar-thumb: #3a414d;
+    --scrollbar-thumb-hover: #4b5360;
+}
+
+/* Forest — deep evergreen dark theme with a moss/emerald accent. */
+[data-theme="forest"] {
+    --bg-primary: #17211a;
+    --bg-secondary: #1d2a21;
+    --bg-tertiary: #101812;
+    --text-primary: #e3ebe4;
+    --text-secondary: #9db2a2;
+    --text-muted: #6a7d6f;
+    --accent: #52b788;
+    --accent-hover: #429b72;
+    --accent-subtle: rgba(82, 183, 136, 0.16);
+    --accent-light: #74c9a0;
+    --on-accent: #0c1810;
+    --user-bubble: #2d6a4f;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #223227;
+    --border-color: #2e4234;
+    --scrollbar-thumb: #3a5243;
+    --scrollbar-thumb-hover: #4a6754;
+}
+
+/* Ocean — deep sea navy-teal dark theme with a bright cyan accent. */
+[data-theme="ocean"] {
+    --bg-primary: #0f1c26;
+    --bg-secondary: #142838;
+    --bg-tertiary: #0a141c;
+    --text-primary: #dce8f0;
+    --text-secondary: #92a7b8;
+    --text-muted: #5f7383;
+    --accent: #35c0ce;
+    --accent-hover: #2ba9b6;
+    --accent-subtle: rgba(53, 192, 206, 0.15);
+    --accent-light: #64d2dd;
+    --on-accent: #07181c;
+    --user-bubble: #175f75;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #182f3d;
+    --border-color: #233a49;
+    --scrollbar-thumb: #2e4a5c;
+    --scrollbar-thumb-hover: #3c5d72;
+}
+
+/* Parchment — warm cream reading theme with a terracotta accent. */
+[data-theme="parchment"] {
+    --bg-primary: #f3ecdd;
+    --bg-secondary: #faf5ea;
+    --bg-tertiary: #e9dfc9;
+    --text-primary: #3b3021;
+    --text-secondary: #71624b;
+    --text-muted: #9d8f74;
+    --accent: #9c4a2f;
+    --accent-hover: #863f28;
+    --accent-subtle: rgba(156, 74, 47, 0.12);
+    --accent-light: #8a4229;
+    --on-accent: #ffffff;
+    --user-bubble: #9c4a2f;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #ece3cd;
+    --border-color: #dcd0b6;
+    --shadow-sm: 0 1px 3px rgba(75, 60, 35, 0.08);
+    --shadow: 0 4px 6px rgba(75, 60, 35, 0.1);
+    --shadow-lg: 0 8px 32px rgba(75, 60, 35, 0.16);
+    --code-bg: #ece4d0;
+    --code-inline-bg: rgba(59, 48, 33, 0.07);
+    --scrollbar-thumb: #cbbc9c;
+    --scrollbar-thumb-hover: #b5a583;
+}
+
+/* Rosé — soft blush light theme with a deep rose accent. */
+[data-theme="rose"] {
+    --bg-primary: #f9f1f3;
+    --bg-secondary: #fffafb;
+    --bg-tertiary: #f0e3e7;
+    --text-primary: #38262f;
+    --text-secondary: #6f5a64;
+    --text-muted: #a18d96;
+    --accent: #b02a5b;
+    --accent-hover: #96234d;
+    --accent-subtle: rgba(176, 42, 91, 0.11);
+    --accent-light: #9c2451;
+    --on-accent: #ffffff;
+    --user-bubble: #b02a5b;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #f3e1e8;
+    --border-color: #e6d2da;
+    --shadow-sm: 0 1px 3px rgba(60, 30, 45, 0.06);
+    --shadow: 0 4px 6px rgba(60, 30, 45, 0.08);
+    --shadow-lg: 0 8px 32px rgba(60, 30, 45, 0.14);
+    --code-bg: #f3e7eb;
+    --code-inline-bg: rgba(56, 38, 47, 0.07);
+    --scrollbar-thumb: #d8c2cb;
+    --scrollbar-thumb-hover: #c5aab6;
+}
+

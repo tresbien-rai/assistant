@@ -1,0 +1,986 @@
+/* ===== Input Area ===== */
+.input-container {
+    padding: 16px 20px;
+    background-color: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+/* Composer field wrapper (P2-05a) — a two-row box: textarea on top, the
+   control row beneath. Owns the rounded border and clips the textarea's
+   scrollbar to the corners (same approach as the settings textboxes). */
+.composer-field {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    /* Match the message column width and center it for an in-line look. */
+    max-width: var(--chat-max-width);
+    margin-inline: auto;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.composer-field:focus-within {
+    border-color: var(--accent);
+}
+
+.composer-field textarea {
+    width: 100%;
+    padding: 12px 16px 6px;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-base);
+    resize: none;
+    /* Auto-grows with content (JS) up to ~1/3 of the viewport, then scrolls. */
+    max-height: 30dvh;
+    overflow-y: auto;
+}
+
+.composer-field textarea:focus {
+    outline: none;
+}
+
+/* Control row: attach + tools toggle left, model chip + send/stop right. */
+.composer-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px 8px;
+}
+
+/* File-tools toggle pill. Ships disabled until the tool backend (Track A
+   P2-02) lands; .on is the enabled/accent state used from P2-05b onward. */
+.tools-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+}
+
+.tools-toggle:hover:not(:disabled) {
+    color: var(--text-secondary);
+    border-color: var(--text-muted);
+}
+
+.tools-toggle.on {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-color: transparent;
+}
+
+.tools-toggle:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.tools-toggle svg {
+    flex-shrink: 0;
+}
+
+/* Composer model chip: same accent pill as the top-bar model button, sized
+   down for the control row; long model names truncate instead of wrapping.
+   margin-left: auto pushes the chip + send/stop to the right edge. */
+.composer-controls .model-button {
+    padding: 5px 12px;
+    /* Transparent border matches the tools pill's box height exactly. */
+    border: 1px solid transparent;
+    min-width: 0;
+    margin-left: auto;
+}
+
+.composer-controls .model-badge {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.send-button {
+    width: 34px;
+    height: 34px;
+    background-color: var(--accent);
+    border: none;
+    border-radius: 50%;
+    color: var(--on-accent);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.send-button:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+    transform: scale(1.05);
+}
+
+.send-button:disabled {
+    background-color: var(--border-color);
+    cursor: not-allowed;
+}
+
+.send-button svg,
+.stop-button svg {
+    display: block;
+}
+
+/* ===== Modal ===== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    opacity: 0;
+    visibility: hidden;
+    /* `visibility` is animatable, so `transition: all` makes hidden -> visible
+       take effect only once the transition passes 0 — a frame later. Until then
+       the modal is computed-hidden and nothing inside it can take focus, so a
+       .focus() on open silently does nothing. Flip visibility instantly on
+       open, and delay it on close so the opacity fade-out still plays. */
+    transition: opacity 0.3s, visibility 0s linear 0.3s;
+}
+
+.modal-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.3s, visibility 0s;
+}
+
+/* Secondary modals can be opened from within the settings modal, so they must
+   stack above it (the settings modal is moved to the end of <body>, which would
+   otherwise put it on top at equal z-index). */
+#modelModal,
+#expressionModal {
+    z-index: 250;
+}
+
+.modal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    width: 90%;
+    max-width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg); /* lift floating modals (hybrid depth) */
+    transform: scale(0.9);
+    transition: transform 0.3s;
+}
+
+.modal-overlay.visible .modal-content {
+    transform: scale(1);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    /* Not `all` — same reason as .modal-btn: it would delay the visibility
+       flip inherited from .modal-overlay and make this unfocusable on open. */
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.modal-close:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-body label {
+    display: block;
+    font-size: var(--text-sm);
+    margin-bottom: 6px;
+    color: var(--text-primary);
+}
+
+.modal-body input {
+    width: 100%;
+    padding: 10px 12px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+}
+
+.modal-body input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Right-aligned by default: a footer's choices read as a group. Use .split for
+   the exception — a destructive action that should be held away from the
+   primary one (see the expression modal's Delete vs Save). */
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-color);
+    gap: 12px;
+}
+
+.modal-footer.split {
+    justify-content: space-between;
+}
+
+.modal-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    /* Not `all`: that would include the visibility flip inherited from
+       .modal-overlay and leave the button unfocusable for a frame on open. */
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s, filter 0.2s;
+}
+
+.modal-btn.primary {
+    background-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.modal-btn.primary:hover {
+    background-color: var(--accent-hover);
+}
+
+.modal-btn.secondary {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.modal-btn.secondary:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+/* A destructive action sitting alongside a primary one: quiet at rest, so it
+   doesn't compete, and unmistakably destructive on hover. This is what
+   .secondary:hover used to do for every secondary button, including plain
+   Cancel/Close ones where "destructive" was the wrong signal. */
+.modal-btn.danger-quiet:hover {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+/* ===== Confirm Dialog ===== */
+/* Stacks above every other modal — it can be opened from inside one (e.g. the
+   delete button in the expression modal, which is itself at z-index 250). */
+#confirmModal {
+    z-index: 300;
+}
+
+/* The dialog deliberately focuses Cancel so a stray Enter is safe. Opening it
+   by mouse means :focus-visible won't match, hiding the ring — and an invisible
+   focus position makes that safety invisible too. Show it on plain :focus. */
+#confirmModal .modal-btn:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.modal-confirm .modal-body p {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.modal-btn.danger {
+    background-color: var(--error);
+    color: var(--on-error);
+}
+
+.modal-btn.danger:hover {
+    filter: brightness(1.08);
+}
+
+/* ===== Model Management Modal ===== */
+.modal-large {
+    max-width: 600px;
+}
+
+/* Settings checkbox row (e.g. developer-mode toggle) */
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    margin-top: 12px;
+}
+
+.checkbox-row input {
+    width: auto;
+    margin: 0;
+}
+
+/* Request inspector: scrollable, monospaced JSON dump */
+.request-inspector-pre {
+    max-height: 60vh;
+    overflow: auto;
+    margin: 8px 0 0;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    /* Wrap like chat code blocks do — long strings (system prompts, file
+       contents) would otherwise force a very wide horizontal scroll. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text-primary);
+}
+
+/* Request inspector modal: wider than other modals — it shows a full request
+   body, so use the desktop real estate now that the JSON wraps. */
+.modal-content.modal-xl {
+    max-width: 1100px;
+    width: 95%;
+}
+
+/* Settings modal: roomy, with a fixed header and a scrolling body. */
+.modal-content.modal-settings {
+    max-width: 680px;
+    width: 92vw;
+    max-height: 88vh;
+    overflow: hidden; /* the body scrolls instead of the whole content */
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-content.modal-settings .modal-header {
+    flex-shrink: 0;
+}
+
+.settings-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* The settings sections were styled for the sidebar; the first one shouldn't
+   add a top border/gap at the top of the modal body. */
+.settings-modal-body .settings-section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+/* ===== Main-area form panels (WR-07b Settings, persona editor) ===== */
+/* Same max-width + padding as .section-view / .container-page so every main-area
+   view shares one spacing system. */
+.main-view-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 24px 60px;
+}
+
+.main-view-panel[hidden] {
+    display: none;
+}
+
+.settings-view-crumb {
+    max-width: var(--section-max-width);
+    margin: 0 auto 8px;
+}
+
+.settings-view-title {
+    max-width: var(--section-max-width);
+    margin: 0 auto 16px;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.main-view-panel .settings-modal-body {
+    max-width: var(--section-max-width);
+    margin: 0 auto;
+    padding: 0;
+    overflow: visible;
+}
+
+.manage-models-btn {
+    width: 100%;
+    padding: 8px 12px;
+    margin-top: 8px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.manage-models-btn:hover {
+    background-color: var(--bg-secondary);
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.model-section {
+    margin-bottom: 20px;
+}
+
+.model-section h4 {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+}
+
+.modal-divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 20px 0;
+}
+
+/* The add-model modal's provider picker (Slice 7): the catalog chips, but
+   single-select and laid out for a modal rather than the centred tab column. */
+.provider-chips.single {
+    max-width: none;
+    margin: 0;
+}
+
+.empty-state {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+    padding: 20px;
+    background-color: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+}
+
+/* Fetch Models Section */
+.fetch-models-section {
+    margin-bottom: 16px;
+}
+
+/* One primary slot, two states: #fetchModelsBtn or #modalKeyBtn, never both
+   (renderFetchSection toggles `hidden`), so this styles whichever is showing. */
+.fetch-models-btn {
+    width: 100%;
+    padding: 10px 16px;
+    background-color: var(--accent);
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--on-accent);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.fetch-models-btn:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+}
+
+.fetch-models-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Available Models Grid */
+.available-models-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.available-model-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: all 0.2s;
+}
+
+.available-model-card:hover:not(.already-added) {
+    border-color: var(--accent);
+}
+
+.available-model-card.already-added {
+    opacity: 0.6;
+}
+
+.available-model-name {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.available-model-id {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    word-break: break-all;
+}
+
+.add-available-model-btn {
+    margin-top: 6px;
+    padding: 6px 10px;
+    background-color: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--on-accent);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-available-model-btn:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+}
+
+.add-available-model-btn:disabled {
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: default;
+}
+
+/* Manual Add Divider */
+.manual-add-divider {
+    display: flex;
+    align-items: center;
+    margin: 20px 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+
+.manual-add-divider::before,
+.manual-add-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.manual-add-divider span {
+    padding: 0 12px;
+}
+
+/* Manual Add Form */
+.manual-add-form {
+    display: flex;
+    flex-direction: column;
+}
+
+.add-model-btn {
+    padding: 10px 16px;
+    background-color: var(--accent);
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--on-accent);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-model-btn:hover {
+    background-color: var(--accent-hover);
+}
+
+/* ===== Overlay for sidebar ===== */
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 99;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+}
+
+.sidebar-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* ===== Responsive ===== */
+@media (min-width: 768px) {
+    .sidebar {
+        position: relative;
+        left: 0;
+        z-index: auto;
+        flex-shrink: 0;
+        box-shadow: none; /* inline column on desktop uses the border, not a shadow */
+    }
+
+    /* Sidebar always visible on desktop - no hiding rule */
+
+    .close-sidebar {
+        display: none;
+    }
+
+    .sidebar-overlay {
+        display: none;
+    }
+
+    /* Hide hamburger button on desktop - sidebar is always visible */
+    .menu-button {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .status-center {
+        display: none;
+    }
+
+    .message {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    /* A touch more room for the composer on small screens (~1/3 of viewport) */
+    .composer-field textarea {
+        max-height: 33dvh;
+    }
+
+    /* Auto-shrink avatar on mobile */
+    .floating-avatar .avatar-image {
+        width: var(--avatar-small) !important;
+        height: var(--avatar-small) !important;
+        font-size: 2rem !important;
+    }
+
+    .avatar-label {
+        display: none;
+    }
+}
+
+@media (max-width: 480px) {
+    /* Top-bar model button only — the composer model chip stays (truncated)
+       so small phones keep a model control in chat (they had none before). */
+    .status-bar .model-button {
+        display: none;
+    }
+
+    .composer-controls .model-badge {
+        max-width: 110px;
+    }
+
+    .tools-toggle span {
+        display: none; /* icon-only pill on small phones */
+    }
+}
+
+/* ===== Scrollbar Styling (Chromium) =====
+   Defined track + inset rounded thumb + triangle arrow buttons top/bottom,
+   styled after the Claude desktop scrollbar. Theme-aware via --scrollbar-thumb.
+   Note: do NOT also set the standard scrollbar-width/scrollbar-color, or
+   Chromium ignores these ::-webkit rules (incl. the arrow buttons). */
+::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 8px;
+    border: 3px solid var(--bg-tertiary); /* inset padding so the thumb floats */
+    min-height: 36px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+    background: var(--bg-tertiary);
+}
+
+/* Arrow buttons: hide everything by default, then show up/down triangles on
+   vertical scrollbars (horizontal scrollbars stay arrow-less). */
+::-webkit-scrollbar-button {
+    display: none;
+}
+
+::-webkit-scrollbar-button:single-button:vertical:decrement,
+::-webkit-scrollbar-button:single-button:vertical:increment {
+    display: block;
+    width: 14px;
+    height: 14px;
+    background-color: var(--bg-tertiary);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 8px 8px;
+}
+
+::-webkit-scrollbar-button:single-button:vertical:decrement {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%238a8fa3' d='M4 2 L7 6 L1 6 Z'/%3E%3C/svg%3E");
+}
+
+::-webkit-scrollbar-button:single-button:vertical:increment {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%238a8fa3' d='M1 2 L7 2 L4 6 Z'/%3E%3C/svg%3E");
+}
+
+/* ===== Advanced Settings / Model Parameters ===== */
+.param-group {
+    margin-bottom: 1rem;
+}
+
+.param-group label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.param-value {
+    color: var(--accent);
+    font-weight: 500;
+    font-size: var(--text-sm);
+}
+
+/* Sliders */
+.param-group input[type="range"] {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    outline: none;
+    margin-top: 0.5rem;
+    -webkit-appearance: none;
+}
+
+.param-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.param-group input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.param-group input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+}
+
+/* Number inputs */
+.param-group input[type="number"] {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+}
+
+.param-group input[type="number"]:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+/* Toggle labels */
+.toggle-label {
+    display: flex !important;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+
+/* Tag input for stop sequences */
+.tag-input-container {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.5rem;
+    min-height: 40px;
+}
+
+.tags-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.tags-wrapper:empty {
+    display: none;
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    background: var(--accent);
+    color: var(--on-accent);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.tag:hover {
+    opacity: 0.8;
+}
+
+.tag::after {
+    content: '×';
+    margin-left: 0.5rem;
+    font-weight: bold;
+}
+
+.tag-input-container input {
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    width: 100%;
+    padding: 0.25rem 0;
+    font-size: var(--text-sm);
+}
+
+.tag-input-container input:focus {
+    outline: none;
+}
+
+.tag-input-container input::placeholder {
+    color: var(--text-secondary);
+}
+
+/* Provider-specific sections */
+.provider-params {
+    border-top: 1px solid var(--border-color);
+    margin-top: 1rem;
+    padding-top: 1rem;
+}
+
+.provider-params h4 {
+    margin: 0 0 1rem 0;
+    color: var(--accent);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+/* Safety settings collapsible */
+.safety-settings {
+    margin-top: 1rem;
+}
+
+.safety-settings summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0.5rem 0;
+    user-select: none;
+}
+
+.safety-settings summary:hover {
+    color: var(--text-primary);
+}
+
+.safety-settings[open] summary {
+    margin-bottom: 1rem;
+}
+
+.safety-settings .param-group {
+    margin-bottom: 0.75rem;
+}
+
+.safety-settings select {
+    width: 100%;
+    padding: 0.4rem;
+    font-size: var(--text-sm);
+}
+
+/* Disabled parameter groups */
+.param-group.disabled input[type="range"],
+.param-group.disabled input[type="number"] {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.param-group.disabled .param-value {
+    opacity: 0.4;
+}
+
+.param-group.disabled .help-text {
+    opacity: 0.4;
+}
+
+/* Enable checkbox in param labels */
+.param-group label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    accent-color: var(--accent);
+    vertical-align: middle;
+}
+

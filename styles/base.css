@@ -1,0 +1,400 @@
+/* ===== Appearance controls (theme / accent / chat width) ===== */
+.appearance-options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.appearance-options button {
+    flex: 1;
+    min-width: 72px;
+    padding: 8px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.appearance-options button:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.appearance-options button.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Theme buttons preview their own palette: a small dot split between the
+   theme's background and its accent. Colors are hardcoded per theme because
+   each button shows a palette other than the active one. */
+#themeOptions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    /* The generic .appearance-options rule sets min-width: 72px, which lets a
+       button shrink below its content — so a long label ("Parchment") plus the
+       swatch dot spilled outside the button. fit-content keeps each button at
+       least as wide as its own label+dot; flex:1 still grows them to fill the
+       row, and flex-wrap drops overflow onto the next line. */
+    min-width: fit-content;
+    white-space: nowrap;
+}
+
+#themeOptions button::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+    background: linear-gradient(135deg, var(--swatch-bg) 50%, var(--swatch-accent) 50%);
+}
+
+#themeOptions button[data-theme-name="midnight"]  { --swatch-bg: #1a1a2e; --swatch-accent: #6c63ff; }
+#themeOptions button[data-theme-name="slate"]     { --swatch-bg: #1e2229; --swatch-accent: #7aa2f7; }
+#themeOptions button[data-theme-name="forest"]    { --swatch-bg: #17211a; --swatch-accent: #52b788; }
+#themeOptions button[data-theme-name="ocean"]     { --swatch-bg: #0f1c26; --swatch-accent: #35c0ce; }
+#themeOptions button[data-theme-name="light"]     { --swatch-bg: #f4f6fb; --swatch-accent: #6c63ff; }
+#themeOptions button[data-theme-name="parchment"] { --swatch-bg: #f3ecdd; --swatch-accent: #9c4a2f; }
+#themeOptions button[data-theme-name="rose"]      { --swatch-bg: #f9f1f3; --swatch-accent: #b02a5b; }
+
+/* Custom palette controls: base color porthole, dark/light mode, tint slider.
+   Interacting with any of them activates the Custom theme. */
+.palette-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+/* Files-in-context: number input + trailing label (FC-03b) */
+.active-file-turns-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.active-file-turns-row input[type="number"] {
+    width: 72px;
+}
+
+.palette-row input[type="color"] {
+    width: 48px;
+    height: 36px;
+    padding: 0;
+    border: none; /* no outer box — the swatch itself is the porthole */
+    border-radius: var(--radius-md);
+    background: none;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+/* Round/border the native swatch directly so there's no rounded-outer /
+   square-inner clash (no double packaging). */
+.palette-row input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+.palette-row input[type="color"]::-webkit-color-swatch {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+.palette-row input[type="color"]::-moz-color-swatch {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.palette-row .appearance-options {
+    margin-bottom: 0;
+    flex: 1;
+}
+
+.palette-tint-label {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.palette-row input[type="range"] {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.palette-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.palette-row input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.palette-row input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+}
+
+.palette-reset-btn {
+    height: 36px;
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: all 0.2s;
+    flex: 0 0 auto;
+}
+
+.palette-reset-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ===== Reset & Base ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-main);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    height: 100vh; /* fallback for browsers without dvh */
+    height: 100dvh; /* dynamic viewport: accounts for mobile browser chrome */
+    overflow: hidden;
+}
+
+/* Ensure the HTML5 `hidden` attribute always wins over component display rules */
+[hidden] {
+    display: none !important;
+}
+
+/* Keyboard focus ring — shows only for keyboard navigation, not mouse clicks.
+   :where() keeps specificity low so components can still opt out if needed. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Respect users who prefer reduced motion: near-instant transitions/animations. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ===== App Layout ===== */
+.app-container {
+    display: flex;
+    height: 100vh; /* fallback */
+    height: 100dvh;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+    /* Cap at 85vw so a wide desktop width can't overflow a phone's drawer. */
+    width: min(var(--sidebar-width), 85vw);
+    background-color: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: calc(-1 * var(--sidebar-width));
+    top: 0;
+    height: 100vh; /* fallback */
+    height: 100dvh;
+    z-index: 100;
+    box-shadow: var(--shadow-lg); /* lifts the off-canvas drawer (mobile); removed on desktop */
+    transition: left 0.3s ease;
+    overflow-y: auto;
+}
+
+.sidebar.open {
+    left: 0;
+}
+
+/* Sidebar resize handle — only meaningful on desktop, where the sidebar is
+   an in-flow column. Hidden on mobile (sidebar is an off-canvas overlay). */
+.sidebar-resize-handle {
+    display: none;
+}
+
+@media (min-width: 768px) {
+    .sidebar-resize-handle {
+        display: block;
+        flex: 0 0 6px;
+        align-self: stretch;
+        cursor: col-resize;
+        position: relative;
+        z-index: 50;
+        touch-action: none;
+    }
+
+    .sidebar-resize-handle::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2px;
+        background: var(--border-color);
+        transition: background 0.2s ease, width 0.2s ease;
+    }
+
+    .sidebar-resize-handle:hover::before,
+    .sidebar-resize-handle.dragging::before {
+        background: var(--accent);
+        width: 4px;
+    }
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    z-index: 1;
+}
+
+.sidebar-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.close-sidebar {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+}
+
+.close-sidebar:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+/* ===== Sidebar Tabs ===== */
+.sidebar-tabs {
+    display: flex;
+    align-items: center;
+    padding: 8px 8px 0 8px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.sidebar-tab {
+    flex: 1;
+    padding: 12px 8px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.2s;
+}
+
+.sidebar-tab:hover {
+    color: var(--text-primary);
+}
+
+.sidebar-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.sidebar-tabs .close-sidebar {
+    flex: 0;
+    padding: 8px 12px;
+    margin-left: 4px;
+}
+
+/* ===== Section rail (WR-07) — the sidebar is now a thin section switcher ===== */
+.rail {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 8px;
+    gap: 2px;
+}
+
+.rail-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: none;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.rail-item:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.rail-item.active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+}
+
+.rail-icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+}
+
+.rail .close-sidebar {
+    align-self: flex-end;
+    margin-top: 8px;
+}
+

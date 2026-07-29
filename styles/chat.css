@@ -1,0 +1,1324 @@
+/* ===== Main Chat Container ===== */
+.chat-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100vh; /* fallback */
+    height: 100dvh;
+    min-width: 0; /* Prevent flex item from overflowing */
+    overflow-x: hidden;
+}
+
+/* ===== Status Bar ===== */
+.status-bar {
+    height: var(--status-bar-height);
+    background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    flex-shrink: 0;
+}
+
+.status-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.menu-button {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.2s;
+}
+
+.menu-button:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.menu-button svg {
+    display: block;
+}
+
+.assistant-name-display {
+    font-weight: 600;
+    font-size: var(--text-base);
+}
+
+/* Top-bar persona button (wraps the assistant name + chevron) */
+.persona-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    padding: 4px 8px;
+    cursor: pointer;
+    max-width: 220px;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+.persona-button:hover {
+    background-color: var(--bg-tertiary);
+    border-color: var(--border-color);
+}
+
+.persona-button .assistant-name-display {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.persona-button .chevron,
+.model-button .chevron {
+    width: 14px;
+    height: 14px;
+    opacity: 0.6;
+    flex: 0 0 auto;
+}
+
+.status-center {
+    display: flex;
+    gap: 24px;
+}
+
+.status-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.status-label {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.status-value {
+    font-size: var(--text-xs);
+    color: var(--text-primary);
+}
+
+.status-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.model-badge {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    padding: 6px 12px;
+    border-radius: var(--radius-full);
+    font-size: var(--text-xs);
+    font-weight: 500;
+}
+
+/* Top-bar model button: the accent pill is now the clickable button, with the
+   inner badge reduced to plain text and a chevron alongside it. */
+.model-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent-subtle);
+    border: none;
+    padding: 6px 12px;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: filter 0.15s;
+}
+
+.model-button:hover {
+    filter: brightness(1.08);
+}
+
+.model-button .model-badge {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+}
+
+.model-button .chevron {
+    color: var(--accent);
+    width: 13px;
+    height: 13px;
+    opacity: 0.8;
+}
+
+.avatar-toggle-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-base);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.avatar-toggle-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.avatar-toggle-btn.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.avatar-toggle-btn svg {
+    display: block;
+}
+
+/* ===== Chat Area ===== */
+.chat-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.welcome-message {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-secondary);
+}
+
+.welcome-message h1 {
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    line-height: 1.25;
+    margin-bottom: var(--space-3);
+    color: var(--text-primary);
+}
+
+/* Workspace home panel (main area when a workspace is entered, no chat open) */
+/* ===== Inline container page (workspace / project) — WR-05 ===== */
+/* Rendered into the main messages area in place of a chat; edits name +
+   instructions + files inline and lists the container's projects/chats. */
+.container-page {
+    width: 100%; /* flex item of the centered .messages-container — see .section-view */
+    max-width: var(--section-max-width);
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.cp-breadcrumb {
+    margin-bottom: 4px;
+}
+
+.cp-crumb {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+.cp-crumb:hover {
+    color: var(--accent);
+}
+
+.cp-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cp-icon {
+    width: 26px;
+    height: 26px;
+    color: var(--text-secondary);
+    flex: 0 0 auto;
+}
+
+.cp-name {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: none;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.cp-name:hover {
+    border-color: var(--border-color);
+}
+
+.cp-name:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--bg-secondary);
+}
+
+.cp-inherit-note {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    margin: 0 0 4px;
+}
+
+.cp-label {
+    margin-top: 10px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.cp-instructions {
+    width: 100%;
+}
+
+.cp-save-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.cp-save-btn {
+    padding: 6px 18px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: background-color 0.15s, opacity 0.15s;
+}
+
+.cp-save-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.cp-save-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.cp-save-hint {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.cp-section {
+    margin-top: 24px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+}
+
+.cp-section-label {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.cp-row-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.cp-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 8px;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    background: none;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.15s;
+}
+
+.cp-row:hover {
+    background: var(--bg-tertiary);
+}
+
+.cp-row-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cp-row-meta {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.cp-add-btn {
+    align-self: flex-start;
+    margin-top: 6px;
+    padding: 6px 4px;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+.cp-add-btn:hover {
+    text-decoration: underline;
+}
+
+/* Small modal variant for the name-only create step. */
+.modal-content.modal-small {
+    max-width: 420px;
+}
+
+/* Messages */
+.message {
+    width: min(100%, var(--chat-max-width));
+    padding: 12px 16px;
+    border-radius: var(--radius-lg);
+    animation: fadeIn 0.3s ease;
+    position: relative;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message.user {
+    background-color: var(--user-bubble);
+    color: var(--user-bubble-text);
+    padding-left: 32px;
+    margin-left: 1%;
+}
+
+/* Links and secondary bits inside the colored user bubble can't use the
+   theme-wide accent/secondary colors (no contrast against the bubble) — they
+   inherit the bubble's text color instead. */
+.message.user .message-content a {
+    color: var(--user-bubble-text);
+    text-decoration: underline;
+}
+
+/* Code sits on the code-block surface (--code-bg / --code-inline-bg), not on
+   the accent bubble, so it must not inherit the bubble's white text — that
+   vanished on light themes. Theme-aware primary reads on both. highlight.js
+   token spans still win via their own direct color rules. */
+.message.user .message-content code {
+    color: var(--text-primary);
+}
+
+/* Action buttons render in a floating popover backed by --bg-secondary, NOT on
+   the colored bubble — so they must NOT inherit the bubble's white text (that
+   was invisible on light themes). They use the same theme-aware colors as the
+   assistant buttons; the only user-specific touch is the softer idle opacity. */
+.message.user .message-action-btn {
+    opacity: 0.7;
+}
+
+.message.user .message-action-btn:hover {
+    opacity: 1;
+}
+
+.message.assistant {
+    background-color: var(--assistant-bubble);
+    padding-right: 32px;
+    margin-right: 1%;
+}
+
+.message.error {
+    background-color: color-mix(in srgb, var(--error) 20%, transparent);
+    border: 1px solid var(--error);
+    color: var(--error);
+}
+
+/* Message speaker label */
+.message-label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+}
+
+.message.user .message-label {
+    color: var(--user-bubble-text);
+    opacity: 0.85;
+}
+
+.message-content {
+    word-break: break-word;
+    line-height: 1.6;
+}
+
+/* Paragraphs */
+.message-content p {
+    margin: 0 0 12px 0;
+}
+
+.message-content p:last-child {
+    margin-bottom: 0;
+}
+
+/* Headings */
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+    margin: 16px 0 8px 0;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.message-content h1:first-child,
+.message-content h2:first-child,
+.message-content h3:first-child {
+    margin-top: 0;
+}
+
+.message-content h1 { font-size: 1.5em; }
+.message-content h2 { font-size: 1.3em; }
+.message-content h3 { font-size: 1.15em; }
+.message-content h4 { font-size: 1em; }
+.message-content h5 { font-size: 0.9em; }
+.message-content h6 { font-size: 0.85em; color: var(--text-secondary); }
+
+/* Inline code */
+.message-content code {
+    background-color: var(--code-inline-bg);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+}
+
+/* Code blocks — positioned wrapper hosts the floating copy button. */
+.code-block {
+    position: relative;
+    margin: 12px 0;
+}
+
+.message-content .code-block pre {
+    margin: 0;
+}
+
+.message-content pre {
+    background-color: var(--code-bg);
+    padding: 12px;
+    border-radius: var(--radius-md);
+    margin: 12px 0;
+}
+
+.message-content pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.85em;
+    line-height: 1.5;
+    /* Wrap long lines instead of scrolling off to the right. Preserves the
+       code's own newlines/indentation while breaking overly long tokens. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* Floating "copy" button, top-right of each code block. */
+.code-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.code-block:hover .code-copy-btn,
+.code-copy-btn:focus-visible {
+    opacity: 1;
+}
+
+.code-copy-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.code-copy-btn.copied {
+    color: var(--accent);
+    border-color: var(--accent);
+    opacity: 1;
+}
+
+.code-copy-btn svg {
+    width: 15px;
+    height: 15px;
+}
+
+/* Touch devices have no hover — keep the button visible so it stays reachable. */
+@media (hover: none) {
+    .code-copy-btn { opacity: 1; }
+}
+
+/* Lists */
+.message-content ul,
+.message-content ol {
+    margin: 8px 0;
+    padding-left: 24px;
+}
+
+.message-content li {
+    margin: 4px 0;
+}
+
+.message-content li > ul,
+.message-content li > ol {
+    margin: 4px 0;
+}
+
+/* Blockquotes */
+.message-content blockquote {
+    margin: 12px 0;
+    padding: 8px 16px;
+    border-left: 3px solid var(--accent);
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.message-content blockquote p {
+    margin: 0;
+}
+
+/* Links */
+.message-content a {
+    color: var(--accent-light);
+    text-decoration: none;
+}
+
+.message-content a:hover {
+    text-decoration: underline;
+}
+
+/* Tables */
+.message-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 0.9em;
+}
+
+.message-content th,
+.message-content td {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    text-align: left;
+}
+
+.message-content th {
+    background-color: rgba(0, 0, 0, 0.3);
+    font-weight: 600;
+}
+
+.message-content tr:nth-child(even) {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Horizontal rules */
+.message-content hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+}
+
+/* Images */
+.message-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+    margin: 8px 0;
+}
+
+/* Strong and emphasis */
+.message-content strong {
+    font-weight: 600;
+}
+
+.message-content em {
+    font-style: italic;
+}
+
+/* Strikethrough */
+.message-content del {
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+/* Message action buttons */
+.message-actions {
+    display: none;
+    position: absolute;
+    bottom: -12px;
+    right: 8px;
+    gap: 2px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 2px 4px;
+    box-shadow: var(--shadow);
+    z-index: 5;
+}
+
+.message:hover .message-actions {
+    display: flex;
+}
+
+.message.streaming .message-actions {
+    display: none !important;
+}
+
+.message-action-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 5px;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, color 0.2s;
+    line-height: 1;
+}
+
+.message-action-btn svg {
+    width: 15px;
+    height: 15px;
+    display: block;
+}
+
+.message-action-btn:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.message-action-btn.danger:hover {
+    color: var(--error);
+    background-color: color-mix(in srgb, var(--error) 10%, transparent);
+}
+
+/* In-place message editing */
+.message-edit-textarea {
+    width: 100%;
+    min-height: 75px;
+    padding: 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: inherit;
+    line-height: 1.6;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.message-edit-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    justify-content: flex-end;
+}
+
+.message-edit-actions button {
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    border: none;
+    cursor: pointer;
+    font-size: var(--text-sm);
+    transition: background-color 0.2s;
+}
+
+.message-edit-save {
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+.message-edit-save:hover {
+    filter: brightness(1.1);
+}
+
+.message-edit-cancel {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color) !important;
+}
+
+.message-edit-cancel:hover {
+    background: var(--bg-secondary);
+}
+
+/* Streaming cursor. Suppressed before the first token arrives (the typing
+   dots stand in for that phase \u2014 see startStreamingMessage). */
+.message.assistant.streaming:not(.awaiting-first-token) .message-content::after {
+    content: '\u258C';
+    animation: blink 1s step-end infinite;
+    color: var(--accent);
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
+/* Stop generation button */
+.stop-button {
+    width: 34px;
+    height: 34px;
+    background-color: var(--error);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    color: white;
+    font-size: 1.1rem;
+    transition: background-color 0.2s, transform 0.1s;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.stop-button:hover {
+    /* Derived from --error rather than a hand-picked hex, so the hover shade
+       follows if the error color ever changes. */
+    background-color: color-mix(in srgb, var(--error) 90%, black);
+    transform: scale(1.05);
+}
+
+/* Message attachments in sent messages */
+/* ===== Shared attachment-card pieces (composer tray + in-message) ===== */
+.att-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 2;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    line-height: 1.5;
+}
+
+.att-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.9rem;
+    color: var(--text-secondary);
+}
+
+.att-name {
+    padding: 6px 10px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+    background: var(--bg-secondary);
+}
+
+/* ===== In-message attachments ===== */
+.message-attachments {
+    display: flex;
+    flex-wrap: nowrap;          /* many attachments scroll horizontally, not wrap */
+    align-items: flex-start;    /* keep card heights natural (don't stretch files) */
+    gap: 10px;
+    margin-bottom: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;        /* room for the scrollbar */
+}
+
+/* Image cards: fixed-width framed preview + filename caption. Fixed width so a
+   long filename can't stretch the card (the caption truncates instead). */
+.message-attachment {
+    position: relative;
+    flex-shrink: 0;
+    width: 240px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    cursor: pointer;
+}
+
+.message-attachment img {
+    display: block;
+    margin: 0 auto;             /* center portrait images within the fixed card */
+    max-width: 100%;
+    max-height: 200px;
+}
+
+/* File cards: slightly narrower fixed card with badge + icon + name (no preview). */
+.message-attachment--file {
+    width: 200px;
+    flex-shrink: 0;
+    cursor: default;
+}
+
+.message-attachment--file .att-icon {
+    height: 72px;
+}
+
+/* Track A: model-created file card is a download link (cookie-authed href). */
+.tool-file-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.tool-file-card:hover {
+    border-color: var(--accent);
+    background: var(--bg-tertiary);
+}
+
+.tool-file-card .tool-file-dl {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    font-size: var(--text-sm);
+    color: var(--accent);
+    opacity: 0.85;
+}
+
+/* The card body is a real <button> (opens the file panel) — strip the native
+   button chrome so it renders exactly like the old card content. */
+.tool-file-view {
+    display: block;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+}
+
+/* Track A: compact chip for a tool action (read/list, or a failure). Rendered
+   in the message-attachments row alongside any created-file cards. */
+.tool-chip {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    align-self: center;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+}
+
+.tool-chip code {
+    background: none;
+    padding: 0;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+}
+
+.tool-chip-icon {
+    color: var(--accent);
+}
+
+.tool-chip.is-error {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.tool-chip.is-error .tool-chip-icon {
+    color: var(--error);
+}
+
+/* AI Generated images */
+.message-attachment.generated-image {
+    position: relative;
+    border: 2px solid var(--accent);
+    border-radius: var(--radius-md);
+}
+
+.message-attachment.generated-image::before {
+    content: 'AI Generated';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: var(--text-xs);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    z-index: 1;
+}
+
+.attachment-image-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.attachment-image-wrapper .download-btn {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.attachment-image-wrapper:hover .download-btn {
+    opacity: 1;
+}
+
+.attachment-image-wrapper .download-btn:hover {
+    background: rgba(0, 0, 0, 0.9);
+}
+
+/* Attachment input area (circular, sized for the composer control row) */
+.attach-button {
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    border-radius: 50%;
+    transition: color 0.2s, background-color 0.2s;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.attach-button:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-tertiary);
+}
+
+.attach-button svg {
+    display: block;
+    width: 16px;
+    height: 16px;
+}
+
+.file-input-hidden {
+    display: none;
+}
+
+.attachment-preview-area {
+    display: flex;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 10px; /* separate the tray from the input field */
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+}
+
+/* Fixed-size card so the tray doesn't expand with filename length. */
+.attachment-preview-item {
+    position: relative;
+    width: 120px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.attachment-preview-item img {
+    width: 100%;
+    height: 72px;
+    object-fit: cover;
+    display: block;
+}
+
+.attachment-preview-item .att-icon {
+    height: 72px;
+}
+
+.attachment-preview-item .remove-attachment {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: var(--text-xs);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.attachment-preview-item .remove-attachment:hover {
+    background: color-mix(in srgb, var(--error) 80%, transparent);
+}
+
+/* Drag and drop overlay */
+.drag-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: var(--accent-subtle);
+    border: 2px dashed var(--accent);
+    border-radius: var(--radius-lg);
+    z-index: 50;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    color: var(--accent);
+    pointer-events: none;
+}
+
+.drag-overlay.visible {
+    display: flex;
+}
+
+/* Typing indicator */
+.typing-indicator {
+    display: flex;
+    gap: 6px;
+    padding: 16px;
+}
+
+.typing-indicator span {
+    width: 11px;
+    height: 11px;
+    background-color: var(--accent);
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+
+/* ===== Floating Avatar ===== */
+.floating-avatar {
+    position: absolute;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: all 0.3s ease;
+    pointer-events: none;
+}
+
+.floating-avatar.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.8);
+}
+
+/* The frame is the draggable target (the wrapper stays pointer-events:none so
+   it doesn't block clicks on messages outside the box). */
+.floating-avatar .avatar-frame {
+    pointer-events: auto;
+    cursor: grab;
+    touch-action: none;
+}
+
+.floating-avatar.dragging {
+    transition: none; /* track the pointer without the 0.3s position easing */
+}
+
+.floating-avatar.dragging .avatar-frame {
+    cursor: grabbing;
+}
+
+/* "Thinking" state (P2-U2): a gentle bob + accent glow while the model
+   generates. Plays regardless of whether the persona has a custom thinking
+   image. Skip the bob when the avatar is being dragged. */
+.floating-avatar.generating:not(.dragging) .avatar-frame {
+    animation: avatar-thinking 1.6s ease-in-out infinite;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-subtle), var(--shadow-lg);
+}
+
+@keyframes avatar-thinking {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .floating-avatar.generating .avatar-frame { animation: none; }
+}
+
+/* Position classes */
+.floating-avatar.top-left {
+    top: 20px;
+    left: 20px;
+}
+
+.floating-avatar.top-right {
+    top: 20px;
+    right: 20px;
+}
+
+.floating-avatar.bottom-left {
+    bottom: 20px;
+    left: 20px;
+}
+
+.floating-avatar.bottom-right {
+    bottom: 20px;
+    right: 20px;
+}
+
+.avatar-frame {
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 8px;
+    box-shadow: var(--shadow-lg);
+}
+
+.avatar-image {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    /* Anchors the mood badge, and lets it scale in cq units — the avatar is
+       user-resizable from 32px to 480px, so the badge can't be a fixed size. */
+    position: relative;
+    container-type: inline-size;
+}
+
+.avatar-emoji {
+    color: var(--on-accent); /* sits on the accent-gradient avatar circle */
+}
+
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Avatar size classes */
+.avatar-image.size-small {
+    width: var(--avatar-small);
+    height: var(--avatar-small);
+    font-size: 2rem;
+}
+
+.avatar-image.size-medium {
+    width: var(--avatar-medium);
+    height: var(--avatar-medium);
+    font-size: 3rem;
+}
+
+.avatar-image.size-large {
+    width: var(--avatar-large);
+    height: var(--avatar-large);
+    font-size: 4.5rem;
+}
+
+.avatar-image.size-xlarge {
+    width: var(--avatar-xlarge);
+    height: var(--avatar-xlarge);
+    font-size: 6rem;
+}
+
+.avatar-label {
+    margin-top: 8px;
+    text-align: center;
+}
+
+.avatar-name {
+    font-weight: 600;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+}
+
+.avatar-expression {
+    font-size: var(--text-xs);
+    color: var(--accent);
+    margin-top: 2px;
+}
+
