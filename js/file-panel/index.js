@@ -15,7 +15,7 @@ import { elements } from '../dom.js';
 import { API } from '../api-client.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { renderMarkdown } from '../util/markdown.js';
-import { escapeHtml, formatFileSize, formatRelativeTime, getFileTypeLabel } from '../util/format.js';
+import { escapeHtml, formatFileSize, formatTimeAgo, getFileTypeLabel } from '../util/format.js';
 import { diffStats, buildRichDiff } from '../util/diff.js';
 import { positionPopover } from '../components/menus.js';
 import { showToast } from '../components/toast.js';
@@ -951,10 +951,6 @@ export const FilePanel = {
 
     // ---- Change history (FC-04) ----
 
-    /** The file's revisions URL, derived from its content URL (all scopes). */
-    revisionsUrl() {
-        return this.file ? this.file.url.replace(/\/content$/, '/revisions') : null;
-    },
 
     /** Toggle between the file's content and its revision history. */
     toggleHistory() {
@@ -1023,7 +1019,7 @@ export const FilePanel = {
                 + (i === 0 ? `<span class="fp-version-current">current</span>` : '')
                 + `</span>`
                 + `<span class="fp-version-line fp-version-sub">`
-                + `<span class="fp-version-when">${escapeHtml(formatRelativeTime(rev.createdAt))}</span>`
+                + `<span class="fp-version-when">${escapeHtml(formatTimeAgo(rev.createdAt))}</span>`
                 + `<span class="fp-version-stat">`
                 + (adds ? `<span class="fp-add">+${adds}</span>` : '')
                 + (dels ? `<span class="fp-del">−${dels}</span>` : '')
