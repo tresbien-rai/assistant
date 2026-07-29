@@ -66,6 +66,8 @@ Tessera - a personal, server-backed AI chat interface with Google OAuth authenti
 | `js/settings-store.js` | Persistence | Settings, personas, catalog and API keys; the debounced auto-save |
 | `js/views/models.js` | Models view | Provider chips, catalog, per-model detail + params, add-model modal, key popover |
 | `js/views/chats.js` | Chats view | Chat list + the conversation lifecycle: create, switch, load, save, model restore |
+| `js/views/personas.js` | Personas view | Tile grid, card menu, create/edit/delete, `.tessera` bundle export/import |
+| `js/views/workspaces.js` | Workspaces view | Workspace/project lists, breadcrumb, container pages, container files |
 | `js/persona-helpers.js` | Shared persona ops | create/hydrate personas, avatar markup, apply a persona's model settings |
 | `js/ui-prefs.js` | Device-local prefs | `UiPrefs` (localStorage), themes, OKLCH palette engine |
 | `js/sidebar.js` | Sidebar drawer | open/close/overlay/resize |
