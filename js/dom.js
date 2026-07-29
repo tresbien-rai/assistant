@@ -31,6 +31,7 @@ export const elements = {
     paletteTint: document.getElementById('paletteTint'),
     paletteResetBtn: document.getElementById('paletteResetBtn'),
     devModeToggle: document.getElementById('devModeToggle'),
+    enterBehaviourOptions: document.getElementById('enterBehaviourOptions'),
 
     // Request inspector (developer mode)
     viewRequestBtn: document.getElementById('viewRequestBtn'),
