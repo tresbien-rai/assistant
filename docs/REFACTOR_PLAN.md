@@ -177,7 +177,7 @@ Each row is one branch, one PR. Harness green before and after.
 | ☑ | **R-04b** | View layer + `router.js`, bottom-up: model-layer, settings-store, models, persona-helpers, chats, personas, workspaces, router | medium |
 | ☐ | **R-05** | Extract `chat/` — the tangled part, deliberately last | high |
 | ☑ | **F-03** | Fix stream orphaning (bug 1) — harness 1 pass → 3 pass | low once R-05 lands |
-| ☐ | **F-04** | Draft + attachments per conversation (bug 2) | low |
+| ☑ | **F-04** | Draft + attachments per conversation (bug 2) — harness 4 pass / 0 fail | low |
 | ☐ | **F-05** | Accessibility section + Enter-behaviour toggle | low |
 | ☐ | **S-01** | Split `styles.css` (5,957 lines) into `styles/` + `<link>` tags | low, independent |
 
