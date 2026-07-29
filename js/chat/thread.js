@@ -31,7 +31,7 @@ import { escapeHtml, getFileIcon, getFileTypeLabel } from '../util/format.js';
 import { showToast } from '../components/toast.js';
 import { ImageStore } from '../util/image-store.js';
 import { FilePanel } from '../file-panel/index.js';
-import { stripExpressionTag } from './expressions.js';
+import { stripExpressionTag, stripPrefillText, splitLeadingExpressionTag } from './expressions.js';
 
 /**
  * Generate a title from the first user message
@@ -77,6 +77,97 @@ export function modelTagLabel(modelId) {
 }
 
 /** Render the active conversation's message thread into the main area. */
+/**
+ * Is the message thread for `convoId` the thing currently on screen?
+ *
+ * F-03. The router owns the main area, so "is my chat showing?" is a question
+ * about `state.ui.mainView` — not something the chat code may assume. Every DOM
+ * write below is gated on this; the state updates happen regardless.
+ */
+export function threadIsVisible(convoId = state.activeConversationId) {
+    const v = state.ui.mainView || {};
+    return v.type === 'chat' && v.id === convoId;
+}
+
+/**
+ * The live streaming bubble, RE-DERIVED from the DOM rather than remembered.
+ *
+ * This replaces `state.streamingMessageDiv`, a DOM node the send path used to
+ * hold across every await of a response. Navigating away detached that node and
+ * the rest of the reply was written into an orphan (bug 1). Looking it up on
+ * each use means a detached node simply cannot be found: the writer no-ops on
+ * the DOM, state keeps accumulating, and the bubble is repainted from state on
+ * return.
+ */
+export function streamingBubble() {
+    if (!state.streamingConversationId) return null;
+    if (!threadIsVisible(state.streamingConversationId)) return null;
+    return elements.messagesContainer.querySelector('.message.assistant.streaming');
+}
+
+/**
+ * Render the accumulated stream text into the live bubble, if it is showing.
+ * Shared by the first paint and by every subsequent chunk.
+ */
+export function renderStreamingContent() {
+    const bubble = streamingBubble();
+    if (!bubble) return;
+    const contentDiv = bubble.querySelector('.message-content');
+    if (!contentDiv) return;
+
+    let displayText = state.streamingAccumulator || '';
+    if (state.currentPrefill) displayText = stripPrefillText(displayText, state.currentPrefill);
+    const { display, expression, pending } = splitLeadingExpressionTag(displayText);
+    // Parsed but deliberately not applied yet: the avatar holds `generating`
+    // for the whole response, and finalizeStreamingMessage re-reads it.
+    if (expression) state.streamingDeclaredExpression = expression;
+
+    // Nothing yet, or still deciding whether the opening text is a tag: show the
+    // typing dots rather than flashing a partial "[expre" on screen.
+    if (!display || pending) {
+        bubble.classList.add('awaiting-first-token');
+        contentDiv.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+        return;
+    }
+    bubble.classList.remove('awaiting-first-token');
+    contentDiv.innerHTML = renderMarkdown(display);
+}
+
+/**
+ * Paint (or repaint) the in-progress reply from `state.streamingAccumulator`.
+ *
+ * Called when a stream starts, and again by renderChatThread() when the user
+ * comes back to a chat mid-response — which is what makes the live reply
+ * survive navigation.
+ */
+export function paintStreamingBubble() {
+    if (!state.streamingConversationId) return null;
+    if (!threadIsVisible(state.streamingConversationId)) return null;
+    const existing = streamingBubble();
+    if (existing) return existing;
+
+    const welcome = elements.messagesContainer.querySelector('.welcome-message');
+    if (welcome) welcome.remove();
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant streaming awaiting-first-token';
+
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'message-label';
+    const persona = getActivePersona();
+    labelDiv.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
+    messageDiv.appendChild(labelDiv);
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    messageDiv.appendChild(contentDiv);
+    elements.messagesContainer.appendChild(messageDiv);
+
+    renderStreamingContent();
+    scrollToBottom();
+    return messageDiv;
+}
+
 export function renderChatThread() {
     elements.messagesContainer.innerHTML = '';
 
@@ -85,7 +176,7 @@ export function renderChatThread() {
     const persona = getActivePersona();
     const assistantName = persona ? persona.name : CONFIG.defaults.assistantName;
 
-    if (messages.length === 0) {
+    if (messages.length === 0 && !threadIsVisible(state.streamingConversationId)) {
         const modelConfig = getActiveModelConfig();
         const provider = modelConfig.provider;
         const hasApiKey = !!state.apiKeyStatus[provider]?.hasKey;
@@ -102,11 +193,24 @@ export function renderChatThread() {
         appendMessage(msg.role, msg.content, false, index, msg.attachments, msg.model || null);
     });
 
+    // F-03: a reply may be streaming into this conversation right now. It is not
+    // in `messages` yet — finalizeStreamingMessage pushes it at the end — so
+    // paint it from the accumulator. This is what makes leaving and returning
+    // mid-response show a live, still-growing bubble.
+    paintStreamingBubble();
+
     scrollToBottom();
 }
 
 export async function appendMessage(role, content, save = true, explicitIndex = null, attachments = null, model = null) {
-    const welcome = elements.messagesContainer.querySelector('.welcome-message');
+    // F-03: only touch the DOM when this conversation's thread is the view on
+    // screen. Without this, a reply arriving after the user navigated away is
+    // appended into whatever list is showing — the defect the harness reports as
+    // "1 chat message(s) rendered into the workspaces list". State and
+    // persistence below are unconditional; only rendering is gated.
+    const visible = threadIsVisible();
+
+    const welcome = visible && elements.messagesContainer.querySelector('.welcome-message');
     if (welcome) {
         welcome.remove();
     }
@@ -165,7 +269,7 @@ export async function appendMessage(role, content, save = true, explicitIndex = 
         messageDiv.appendChild(actionsDiv);
     }
 
-    elements.messagesContainer.appendChild(messageDiv);
+    if (visible) elements.messagesContainer.appendChild(messageDiv);
 
     if (save) {
         // Auto-create conversation if none exists. createConversation is now
@@ -226,11 +330,14 @@ export async function appendMessage(role, content, save = true, explicitIndex = 
         }
     }
 
-    scrollToBottom();
+    if (visible) scrollToBottom();
     return messageDiv;
 }
 
 export function showTypingIndicator() {
+    // F-03: same rule as appendMessage — never write into a thread that is not
+    // the view on screen.
+    if (!threadIsVisible()) return;
     const indicator = document.createElement('div');
     indicator.className = 'message assistant typing-indicator-container';
     indicator.id = 'typingIndicator';

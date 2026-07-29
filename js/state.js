@@ -89,7 +89,10 @@ export const state = {
     // Streaming state. abortController is no longer needed in the frontend —
     // api-client.js manages its own AbortController for the chat stream, and
     // stopGeneration() just calls API.chat.abort().
-    streamingMessageDiv: null,
+    // F-03: the in-flight reply is described by state, not by a DOM pointer.
+    // `streamingConversationId` says which chat the turn belongs to; the bubble
+    // is re-derived from the DOM when it is needed (js/chat/thread.js).
+    streamingConversationId: null,
     streamingAccumulator: '',
     streamingGeneratedImages: [],
     // Attachment state
