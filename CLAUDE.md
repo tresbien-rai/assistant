@@ -74,6 +74,8 @@ Tessera - a personal, server-backed AI chat interface with Google OAuth authenti
 | `js/status-bar.js` | Status bar | The running token estimate |
 | `js/chat/expressions.js` | Expression protocol | `[expression: name]` detect/strip, partial-tag handling for streaming |
 | `js/chat/thread.js` | Message thread | renderChatThread, appendMessage, attachment cards, tool chips, typing indicator, persistMessage |
+| `js/chat/send.js` | Send path | Request build, provider call, streaming render, re-run/retry, stop |
+| `js/chat/composer.js` | Composer attachments | Previews, IndexedDB round trip, content blocks, textarea resize |
 | `js/ui-prefs.js` | Device-local prefs | `UiPrefs` (localStorage), themes, OKLCH palette engine |
 | `js/sidebar.js` | Sidebar drawer | open/close/overlay/resize |
 | `js/file-panel/` | The file panel | `index.js` — viewer, editor, revision history, context toggle (~1,300 lines) |
