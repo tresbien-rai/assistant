@@ -58,6 +58,7 @@ const impl = {
     updateUI: null,
     updateSettingsUI: null,
     renderModelsCatalog: null,
+    refreshAddModelModal: null,
 };
 
 /**
@@ -128,4 +129,9 @@ export function updateSettingsUI() {
 /** Repaint the models catalog after a catalog or API-key mutation. */
 export function renderModelsCatalog() {
     return call('renderModelsCatalog', arguments);
+}
+
+/** Repaint the add-model modal's provider list, if that modal is open. */
+export function refreshAddModelModal() {
+    return call('refreshAddModelModal', arguments);
 }
