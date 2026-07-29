@@ -230,9 +230,11 @@ Frontend displays errors via: toast notifications (transient), inline chat error
 
 Styles live in `styles/`, split into 9 files and linked from `index.html` in
 cascade order (S-01). **That link order is the cascade** — concatenating the
-files in it reproduces the original single stylesheet byte for byte, so
-reordering them changes which rules win. Put a new rule in the file whose
-section it belongs to rather than appending to the last one.
+files in it reproduces the original single stylesheet rule for rule (same 757
+selector blocks, same bodies, same order; the files are larger only because each
+gained a header comment), so reordering them changes which rules win. Put a new
+rule in the file whose section it belongs to rather than appending to the last
+one.
 
 CSS variables live in `styles/tokens.css`:
 - `--accent`: Primary purple (#6c63ff)

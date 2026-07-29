@@ -117,10 +117,11 @@ export function renderStreamingContent() {
 
     let displayText = state.streamingAccumulator || '';
     if (state.currentPrefill) displayText = stripPrefillText(displayText, state.currentPrefill);
-    const { display, expression, pending } = splitLeadingExpressionTag(displayText);
-    // Parsed but deliberately not applied yet: the avatar holds `generating`
-    // for the whole response, and finalizeStreamingMessage re-reads it.
-    if (expression) state.streamingDeclaredExpression = expression;
+    // `expression` is parsed here only so the tag can be kept OUT of `display`.
+    // It is deliberately not applied: the avatar holds `generating` for the whole
+    // response, and finalizeStreamingMessage re-detects the expression from the
+    // completed text via detectExpression().
+    const { display, pending } = splitLeadingExpressionTag(displayText);
 
     // Nothing yet, or still deciding whether the opening text is a tag: show the
     // typing dots rather than flashing a partial "[expre" on screen.

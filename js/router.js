@@ -8,15 +8,20 @@
  * docs/REFACTOR_PLAN.md, now enforced by the module graph rather than
  * convention.
  *
- * It imports every view; nothing imports it. Views reach navigation through
+ * It imports every view, and no view imports it: views reach navigation through
  * js/shell.js instead, which is what keeps that arrow pointing one way. The
- * three shell implementations registered at the foot of this file used to live
- * in main.js.
+ * shell implementations registered at the foot of this file used to live in
+ * main.js.
  *
- * Passengers to re-home in R-05: the file-tools toggle helpers
+ * The one exception, and it is a wart: js/chat/thread.js and js/chat/send.js
+ * import `getActiveConversation` from here. That is a state getter which belongs
+ * in state.js — see below — and moving it there is what would make the "nothing
+ * imports the router" rule true without qualification.
+ *
+ * Passengers still to re-home: the file-tools toggle helpers
  * (`personaToolsBase` … `syncToolsToggle`) are composer concerns that arrived
  * here because `syncChatChrome` refreshes the toggle, and `getActiveConversation`
- * is a state getter that belongs with state.js.
+ * is the state getter above.
  */
 
 import { state } from './state.js';

@@ -989,10 +989,13 @@ function renderAvailableModelsGrid(models, provider) {
         const alreadyAdded = providerModels.some(m => m.id === model.id);
         const card = document.createElement('div');
         card.className = `available-model-card ${alreadyAdded ? 'already-added' : ''}`;
+        // Escaped like every other interpolation in the app: this text comes
+        // from the provider's model list, and an unescaped quote in a display
+        // name would break out of the data-model-name attribute below.
         card.innerHTML = `
-            <span class="available-model-name">${model.display_name}</span>
-            <span class="available-model-id">${model.id}</span>
-            <button class="add-available-model-btn" data-model-id="${model.id}" data-model-name="${model.display_name}" ${alreadyAdded ? 'disabled' : ''}>
+            <span class="available-model-name">${escapeHtml(model.display_name)}</span>
+            <span class="available-model-id">${escapeHtml(model.id)}</span>
+            <button class="add-available-model-btn" data-model-id="${escapeHtml(model.id)}" data-model-name="${escapeHtml(model.display_name)}" ${alreadyAdded ? 'disabled' : ''}>
                 ${alreadyAdded ? 'Added' : '+ Add'}
             </button>
         `;

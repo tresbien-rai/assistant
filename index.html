@@ -90,13 +90,14 @@
                 <button class="close-sidebar" id="closeSidebar" type="button" aria-label="Close menu">×</button>
             </nav>
 
-            <!-- Settings Modal (moved to <body> on load to escape the sidebar stacking context) -->
+            <!-- Settings: this modal shell is a CARRIER, not a modal. On load,
+                 setupEventListeners() re-parents .settings-modal-body into the
+                 main-area panel #settingsView and removes what is left, so
+                 Settings is a router view (WR-07b). The header below is never
+                 shown and carried a #closeSettingsModal button that no code
+                 referenced and no user could reach. -->
             <div class="modal-overlay" id="settingsModal">
               <div class="modal-content modal-settings">
-                <div class="modal-header">
-                    <h3>Settings</h3>
-                    <button class="modal-close" id="closeSettingsModal" aria-label="Close settings">×</button>
-                </div>
                 <div class="settings-modal-body">
                 <!-- Appearance (device-local) -->
                 <div class="settings-section">
