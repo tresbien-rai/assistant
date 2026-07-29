@@ -35,11 +35,29 @@
 import { state } from './state.js';
 import { closeSidebar } from './sidebar.js';
 
-/** Filled by registerShell() at boot. */
+/**
+ * Filled by registerShell() at boot.
+ *
+ * The last two are region repaints rather than whole-shell ones, and they are
+ * here for the same reason as the first three. Saving a setting repaints the
+ * settings surface; saving or clearing an API key repaints the models catalog.
+ * Those calls run inside the persistence code, so without a seam the settings
+ * store and the models view import each other:
+ *
+ *     persistSettings → updateSettingsUI → renderModelsCatalog
+ *                     → saveCatalogProviders → autoSaveSettings → persistSettings
+ *
+ * Routed through here, the store depends on the seam and the view registers
+ * with it. Same shape as the navigation hubs, same reason. Expect this list to
+ * grow by one or two as the remaining view clusters come out — the recurring
+ * pattern is "mutate state, then repaint the region that shows it".
+ */
 const impl = {
     renderShell: null,
     renderMainView: null,
     updateUI: null,
+    updateSettingsUI: null,
+    renderModelsCatalog: null,
 };
 
 /**
@@ -100,4 +118,14 @@ export function renderMainView() {
 /** Global repaint after a state mutation. Returns the implementation's promise. */
 export function updateUI() {
     return call('updateUI', arguments);
+}
+
+/** Repaint the settings surface after a settings mutation. */
+export function updateSettingsUI() {
+    return call('updateSettingsUI', arguments);
+}
+
+/** Repaint the models catalog after a catalog or API-key mutation. */
+export function renderModelsCatalog() {
+    return call('renderModelsCatalog', arguments);
 }

@@ -48,7 +48,10 @@ import {
 // Register this file's shell implementations with the seam, before anything can
 // call through it. Function declarations hoist, so they are already defined.
 // R-04b moves these three into js/router.js and this call goes with them.
-registerShell({ renderShell, renderMainView, updateUI });
+registerShell({
+    renderShell, renderMainView, updateUI,
+    updateSettingsUI, renderModelsCatalog, refreshAddModelModal,
+});
 
 // ===== Conversation Helpers =====
 
