@@ -8,25 +8,27 @@
  * docs/REFACTOR_PLAN.md, now enforced by the module graph rather than
  * convention.
  *
- * It imports every view, and no view imports it: views reach navigation through
+ * It imports every view, and NOTHING imports it except js/main.js, the entry
+ * point, which imports everything by definition. Views reach navigation through
  * js/shell.js instead, which is what keeps that arrow pointing one way. The
  * shell implementations registered at the foot of this file used to live in
  * main.js.
  *
- * The one exception, and it is a wart: js/chat/thread.js and js/chat/send.js
- * import `getActiveConversation` from here. That is a state getter which belongs
- * in state.js — see below — and moving it there is what would make the "nothing
- * imports the router" rule true without qualification.
+ * That rule used to hold only with an asterisk: js/chat/thread.js and
+ * js/chat/send.js imported `getActiveConversation` from here, because it landed
+ * in this file when R-04b moved the block of main.js it happened to sit in. It
+ * is a pure state read with nothing to do with routing, and it now lives beside
+ * its twin getActivePersona() in state.js — see the note there for why that edge
+ * was the one thing standing between this codebase and a real import cycle.
  *
- * Passengers still to re-home: the file-tools toggle helpers
+ * Passenger still to re-home: the file-tools toggle helpers
  * (`personaToolsBase` … `syncToolsToggle`) are composer concerns that arrived
- * here because `syncChatChrome` refreshes the toggle, and `getActiveConversation`
- * is the state getter above.
+ * here because `syncChatChrome` refreshes the toggle.
  */
 
 import { state } from './state.js';
 import { elements } from './dom.js';
-import { getActivePersona } from './state.js';
+import { getActivePersona, getActiveConversation } from './state.js';
 import { currentSection, navigate, renderChatThread, registerShell } from './shell.js';
 import { renderChatsListMain } from './views/chats.js';
 import { renderWorkspacesListMain, renderBreadcrumb, renderContainerPage } from './views/workspaces.js';
@@ -87,17 +89,6 @@ export function syncToolsToggle() {
     btn.setAttribute('aria-pressed', String(on));
     const source = overridden ? 'this chat' : 'persona default';
     btn.title = `File tools ${on ? 'on' : 'off'} (${source}) — click to turn ${on ? 'off' : 'on'}`;
-}
-
-/**
- * Get the currently active conversation object
- * @returns {Object|null} The active conversation or null if none
- */
-export function getActiveConversation() {
-    if (!state.activeConversationId) {
-        return null;
-    }
-    return state.conversations[state.activeConversationId] || null;
 }
 
 /** Keep the persona editor's page title in sync with the active persona's name. */

@@ -117,3 +117,33 @@ export function getActivePersona() {
     }
     return state.personas[state.activePersonaId] || null;
 }
+
+/**
+ * Get the currently active conversation object.
+ *
+ * The twin of getActivePersona() above, and it belongs beside it: both are pure
+ * reads of an `active*Id` against the map it indexes into. It spent a while in
+ * js/router.js purely because it happened to sit in the block of main.js that
+ * moved during R-04b, which meant js/chat/send.js and js/chat/thread.js had to
+ * import the ROUTER to ask which conversation was open — an arrow pointing back
+ * up into the module that is supposed to sit at the top of the graph.
+ *
+ * That edge was the only thing standing between this codebase and a real import
+ * cycle. The router reaches the chat thread through the js/shell.js seam rather
+ * than importing it; had anyone ever shortcut that seam, router → send → router
+ * would have closed the loop. Circular ES imports do not error, they hand you
+ * `undefined` bindings mid-evaluation — and this app does work at import time
+ * (the registerShell calls), so the failure would have surfaced as a missing
+ * shell implementation somewhere far from the cause.
+ *
+ * state.js imports only config.js, so nothing that imports from here can ever
+ * form a cycle. That is the whole reason this is the right home.
+ *
+ * @returns {Object|null} The active conversation or null if none
+ */
+export function getActiveConversation() {
+    if (!state.activeConversationId) {
+        return null;
+    }
+    return state.conversations[state.activeConversationId] || null;
+}

@@ -20,6 +20,7 @@ import {
 } from '../persona-helpers.js';
 import { savePersonas } from '../settings-store.js';
 import { renderConversationList, renderConversation } from './chats.js';
+import { setActiveConversation, forgetConversationDraft } from '../active-conversation.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { escapeHtml, formatFileSize } from '../util/format.js';
 import { blobToBase64 } from '../util/blob.js';
@@ -159,9 +160,12 @@ async function deletePersonaPrompt(personaId) {
         return;
     }
 
-    // Local cleanup mirrors the server cascade.
+    // Local cleanup mirrors the server cascade. Each cascaded chat's draft goes
+    // with it — otherwise the draft store keeps an entry (and the File objects
+    // and blob URLs it holds) keyed by an id that no longer resolves.
     linkedConvos.forEach(convo => {
         delete state.conversations[convo.id];
+        forgetConversationDraft(convo.id);
     });
     delete state.personas[personaId];
 
@@ -172,9 +176,12 @@ async function deletePersonaPrompt(personaId) {
         applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
     }
 
-    // Clear active conversation if it was deleted by the cascade.
+    // Clear the active conversation if the cascade took it. 'discard' rather than
+    // 'stash': the open chat has just been deleted, so leaving its draft in the
+    // composer would let a half-typed message be sent into an unrelated chat —
+    // the same defect F-04 fixed for switching, which this path used to miss.
     if (state.activeConversationId && !state.conversations[state.activeConversationId]) {
-        state.activeConversationId = null;
+        setActiveConversation(null, { outgoing: 'discard' });
     }
 
     // The persona editor always shows the active persona, which just got

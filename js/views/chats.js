@@ -19,7 +19,7 @@ import {
     personaModelMode, findModelProvider, applyModelToLayer,
     } from '../model-layer.js';
 import { persistSettings } from '../settings-store.js';
-import { stashDraft, restoreDraft, clearDraft } from '../chat/composer.js';
+import { setActiveConversation, forgetConversationDraft } from '../active-conversation.js';
 import { personaAvatarHTML, applyPersonaModelSettings } from '../persona-helpers.js';
 import { escapeHtml, formatTimeAgo } from '../util/format.js';
 import { displayError } from '../components/errors.js';
@@ -57,20 +57,11 @@ export async function createConversation(title = 'New Chat', container = null) {
         messageCount: 0,
         messages: [],
     };
-    // F-04: creating a chat makes it active, so it is a conversation CHANGE and
-    // the composer has to move with it — same rule switchConversation follows.
-    // Without this the outgoing chat's half-typed message stays in the box and
-    // becomes the new chat's draft, which is the defect F-04 set out to fix.
-    //
-    // On the auto-create path inside a send (appendMessage → here) the composer
-    // has already been emptied and its draft dropped, so there is nothing to
-    // stash and nothing to restore — both calls run but change nothing.
-    const leavingConvoId = state.activeConversationId;
-    if (leavingConvoId !== created.id) stashDraft(leavingConvoId);
-
-    state.activeConversationId = created.id;
-
-    if (leavingConvoId !== created.id) restoreDraft(created.id);
+    // Creating a chat makes it active, which is a conversation change like any
+    // other — the composer moves with it (F-04). On the auto-create path inside a
+    // send (appendMessage → here) the composer has already been emptied and its
+    // draft dropped, so the transition runs but has nothing to move.
+    setActiveConversation(created.id);
 
     // Apply a per-chat file-tools override chosen BEFORE the chat was persisted
     // (the toggle was flipped on a fresh, unsaved chat).
@@ -280,19 +271,11 @@ export function renderGroupedChatList(container) {
 export async function switchConversation(conversationId) {
     if (!state.conversations[conversationId]) return;
 
-    // F-04: the composer belongs to the conversation you are leaving. Stash it
-    // before the active id moves, then restore the incoming chat's draft below.
-    //
-    // Only when the conversation actually CHANGES. switchConversation is also
-    // how you return to the chat you were already on (from Workspaces, say),
-    // and activeConversationId stays set the whole time you are away — so an
-    // early return here silently stops navigating back, and stashing on a
-    // same-chat switch would round-trip the draft for nothing.
-    const leaving = state.activeConversationId;
-    const changed = leaving !== conversationId;
-    if (changed) stashDraft(leaving);
-
-    state.activeConversationId = conversationId;
+    // The composer travels with the user (F-04). setActiveConversation handles the
+    // same-chat case: switchConversation is also how you return to the chat you
+    // were already on (from Workspaces, say), so it must not early-return — there
+    // is simply no draft to move when the conversation has not changed.
+    setActiveConversation(conversationId);
 
     // Track the chat's container so breadcrumb + restore have context.
     const convo = state.conversations[conversationId];
@@ -316,8 +299,6 @@ export async function switchConversation(conversationId) {
     // The chat also remembers its engine: reactivate the model that wrote its
     // last reply (unless the persona above pinned one — fixed mode wins).
     restoreConversationModel(convo);
-
-    if (changed) restoreDraft(conversationId);
 
     navigate({ type: 'chat', id: conversationId });
     updateUI();
@@ -497,29 +478,24 @@ export async function deleteConversationPrompt(conversationId) {
         return;
     }
 
+    const wasActive = state.activeConversationId === conversationId;
     delete state.conversations[conversationId];
-    // F-04: the chat is gone, so its draft must go too — otherwise the Map holds
-    // the text plus its pending File objects (and their un-revoked blob URLs)
-    // for the rest of the session.
-    clearDraft(conversationId);
 
-    // If we deleted the active conversation, switch to another or clear.
-    if (state.activeConversationId === conversationId) {
+    if (wasActive) {
+        // 'discard': the chat is gone, so its draft must not be stashed for a
+        // return that can never happen — and must not be left in the composer,
+        // where it could be sent into whichever chat we land on instead.
         const remaining = Object.values(state.conversations);
-        if (remaining.length > 0) {
-            const mostRecent = remaining.reduce((a, b) =>
-                (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
-            );
-            state.activeConversationId = mostRecent.id;
-            // Lazy-load the newly-active conversation's messages.
-            await loadConversationMessages(state.activeConversationId);
-        } else {
-            state.activeConversationId = null;
-        }
-        // F-04: the composer is still showing the DELETED chat's draft. Repoint
-        // it at whatever is active now (or clear it when nothing is left), so a
-        // half-typed message can't be sent into an unrelated chat.
-        restoreDraft(state.activeConversationId);
+        const next = remaining.length > 0
+            ? remaining.reduce((a, b) => ((b.updatedAt || 0) > (a.updatedAt || 0) ? b : a)).id
+            : null;
+        setActiveConversation(next, { outgoing: 'discard' });
+        // Lazy-load the newly-active conversation's messages.
+        if (next) await loadConversationMessages(next);
+    } else {
+        // Deleted from the list while a different chat is open: the active
+        // conversation does not move, but this one's draft still has to go.
+        forgetConversationDraft(conversationId);
     }
 
     renderConversationList();
