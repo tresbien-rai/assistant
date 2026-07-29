@@ -1,18 +1,29 @@
 /**
- * Tessera - Main Application Logic
+ * Tessera — the frontend entry point.
  *
- * Features:
- * - Multi-provider API support (Claude, with OpenAI/Gemini coming)
- * - Customizable personas with system prompts
- * - Floating avatar with expression system
- * - Status bar with session info
- * - Settings persistence via the server API (api-client.js → /api/*)
+ * Loaded as the single `<script type="module">` in index.html. It exports
+ * NOTHING and nothing imports it: this file is the sink of the module graph,
+ * which is why anything that outgrows it can be moved out safely — there are no
+ * consumers to update.
  *
- * This is the ES module entry point (`<script type="module">` in index.html).
- * It is still the bulk of the frontend; docs/REFACTOR_PLAN.md (R-04, R-05)
- * carves the rest into `js/views/` and `js/chat/`. Nothing
- * here is global any more, so anything a sibling module needs must be exported
- * explicitly — that constraint is the point of the refactor.
+ * WHAT BELONGS HERE. The refactor (docs/REFACTOR_PLAN.md, complete) gave every
+ * feature an owning module, so this file is no longer "the app" — it is the four
+ * jobs only an entry point can do:
+ *
+ *   1. bootstrap()            the auth gate, and deciding login screen vs app
+ *   2. init()                 fetch server state, hydrate `state`, wire the UI
+ *   3. setupEventListeners()  the startup DOM re-parenting, plus listeners
+ *   4. window.__tessera       the deliberate test seam (F-02)
+ *
+ * plus `updateUI` / `updateSettingsUI`, which are registered with the shell seam
+ * (js/shell.js) because a global repaint is genuinely nobody else's job.
+ *
+ * WHAT DOES NOT. A feature's behaviour belongs with its module, not here. This
+ * file has twice drifted into a grab-bag — six unreachable functions accumulated
+ * in it unnoticed, and a stretch of stale section banners came to describe code
+ * that had long since moved — because nothing owned it. If you are adding
+ * something and it is not one of the four jobs above, it goes in the module that
+ * owns the feature. Sections still awaiting a home are marked TODO(ownership).
  */
 
 import { API } from './api-client.js';
@@ -86,8 +97,6 @@ import {
 // them; renderModelsCatalog and refreshAddModelModal by js/views/models.js.
 registerShell({ updateUI, updateSettingsUI });
 
-// ===== Conversation Helpers =====
-
 // ===== File-tools toggle (Track A, P2-05b) =====
 
 /**
@@ -137,12 +146,6 @@ function syncPersonaToolsBaseControl() {
 // A generic `updateConversation(id, updates)` used to sit here with no callers.
 // Every real call site mutates the conversation object it already holds and then
 // flushes with saveConversations(), which is both narrower and clearer.
-
-// ===== Persona Helpers =====
-
-// ===== Model profiles: the parts that touch a conversation =====
-// The profile machinery itself now lives in js/model-layer.js; what stays here
-// is the conversation-facing edge of it.
 
 // ===== Persona model-settings mode (WR-12, reshaped by model profiles) =====
 // A persona's modelConfig JSON is now a PIN, not a snapshot:
@@ -589,13 +592,10 @@ async function updateUI() {
     renderConversationList();
 }
 
-// ===== Per-model detail view (Models tab redesign, Slice 5) =====
-// The static Advanced Settings section is gone. A model's params are edited in a
-// descriptor-driven detail view rendered from PROVIDERS[provider].params — the
-// first real consumer of the param-descriptor engine set up in Slice 1. Provider
-// alignment is by omission (a provider lists fewer descriptors); showWhen gates
-// dependent params (Anthropic thinking budget, Gemini thinking mode); enableKey
-// is the per-param on/off override for temp/topP/topK.
+// ===== Persona editor: the avatar card + field counters =====
+// Both are pure reflections of the active persona into the editor panel, called
+// from updateUI. (The per-model detail view that used to be described here lives
+// in js/views/models.js — renderModelDetail.)
 
 function updateAvatarPreview() {
     const preview = elements.avatarPreview;
@@ -633,10 +633,6 @@ function syncPersonaFieldCounters() {
     }
 }
 
-// ===== Avatar display setters =====
-// Shared by the Settings "Avatar Display" controls and the top-bar avatar
-// popover (WR-10). The sync helpers above match buttons by class, so both
-// UIs stay consistent whichever one made the change.
 
 // ===== Expression Management =====
 /**
@@ -1095,8 +1091,6 @@ function handleAddModelManually() {
     }
 }
 
-// ===== Sidebar Tab Management =====
-
 // ===== Top-bar popovers (P2-U3a) =====
 // The positioning/dismissal primitives these all call live in
 // components/menus.js; what stays here is each menu's own content.
@@ -1257,61 +1251,6 @@ function showModelMenu(anchorEl, { showAll = false } = {}) {
 
     attachPopoverOutsideClose(menu, anchorEl);
 }
-
-// ===== Workspace/project row helpers (shared by the main-area lists + pages) =====
-
-// ===== Workspace create + edit =====
-// Name + shared instructions + reference files are all edited inline on the
-// workspace page (renderContainerPage). Creation is a name-only step that lands
-// on that page.
-
-// ===== Breadcrumb + container navigation (WR-07) =====
-// The hierarchy is workspace ⊃ project ⊃ chat. activeWorkspaceId/activeProjectId
-// track the container the current view is about (set by openContainerPage and on
-// opening a chat) — used for restore and for where "New chat/project" land.
-
-// `enterWorkspace`, `enterProject` and `backToWorkspaces` were thin wrappers with
-// no callers left — js/views/workspaces.js owns container navigation now
-// (openContainerPage / backToWorkspace). Keeping dead copies of navigation logic
-// invites editing the copy that nothing runs.
-
-// ===== Main-area router (WR-07) =====
-// The main area shows exactly one view, chosen by state.ui.mainView. The sidebar
-// is a section rail that navigates between views. navigate() is the single entry
-// point: it sets the view, repaints the shell (rail highlight + contextual top
-// bar) and the main content, and closes the mobile drawer.
-//
-// `navigate()` and `currentSection()` now live in js/shell.js, and the three
-// implementations below are registered there at import time (see the top of
-// this file). Callers reach them through the seam so that a view never has to
-// import the router — see js/shell.js for why. R-04b moves what remains of this
-// section into js/router.js, which will do the registering instead.
-
-/** Per-card context menu on the Personas section: Edit (→ Settings) / Delete. */
-// ===== Persona export / import (`.tessera` bundles) =====
-// A bundle is one self-contained JSON file: persona text plus its art inlined
-// as base64. Built in the browser rather than on the server because <canvas>
-// gives us resizing and WebP encoding for free — doing it server-side would
-// mean adding a native image library (sharp) for what the browser already has.
-
-// `blobToBase64` used to be declared here as well as further down (~line 9390).
-// Two top-level function declarations of the same name are legal in a classic
-// script — the later one silently wins — so this copy was already dead code and
-// every caller, including the exporter below, has always run the other one. A
-// module is strict, where the duplicate is a hard SyntaxError, so this copy is
-// gone. No behaviour change: the surviving implementation is unmodified.
-
-// ===== Inline container pages (workspace / project) =====
-// A workspace/project page is a main-area router view (WR-07): renderMainView
-// calls renderContainerPage for mainView {type:'workspace'|'project'}. The page
-// edits name + instructions + files inline and lists the container's projects/
-// chats. Entry points: the workspaces list, the in-chat breadcrumb, the project
-// rows, and the name-only create step (which lands here after creating).
-
-// ===== Thread status chrome =====
-// The typing indicator and the legacy showNotification() wrapper. They stay
-// here rather than moving with components/errors.js because they write into
-// the message thread — they belong with chat/ in R-05.
 
 // ===== Message Actions =====
 function handleMessageAction(messageDiv, action, msgIndex) {
@@ -1522,10 +1461,6 @@ function closeRequestInspectorModal() {
         elements.requestInspectorModal.classList.remove('visible');
     }
 }
-
-// ===== Streaming UI helpers =====
-// These render and finalize the in-progress assistant message bubble while
-// API.chat.stream forwards SSE events to callAPIStreaming.
 
 // ===== File Attachment Handling =====
 
