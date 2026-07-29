@@ -86,7 +86,11 @@ function assertDomMatchesState(context) {
     const dom = domMessages().length;
     const st = stateMessages().length;
     const { state } = app();
-    const streaming = !!state.streamingMessageDiv;
+    // A turn is in flight for THIS conversation. (Before F-03 this was read off
+    // `state.streamingMessageDiv`, a raw DOM node the send path held onto; the
+    // fix replaced it with a conversation id, and the bubble is re-derived.)
+    const inFlight = state.streamingConversationId;
+    const streaming = !!inFlight && inFlight === state.activeConversationId;
     const allowed = streaming ? [st, st + 1] : [st];
     if (!allowed.includes(dom)) {
         fail(
@@ -97,14 +101,42 @@ function assertDomMatchesState(context) {
     }
 }
 
-/** The bug-1 root cause, checked directly: a DOM pointer that left the document. */
-function assertNoOrphanedBubble(context) {
-    const { state } = app();
-    const div = state.streamingMessageDiv;
-    if (div && !document.contains(div)) {
+/**
+ * The bug-1 invariant, checked at the level that actually matters to a user:
+ * while a turn is in flight for the conversation on screen, its live bubble
+ * must be IN the document and must be showing the text accumulated so far.
+ *
+ * This used to assert the root cause instead — that `state.streamingMessageDiv`
+ * had not become detached. F-03 deleted that field (the reply is now described
+ * by `streamingConversationId` + `streamingAccumulator`, and the bubble is
+ * re-derived on each use), so the check asserts the behaviour the field was a
+ * proxy for. It fails on the old code for the same reason it always did: after
+ * navigating away and back, nothing was on screen.
+ */
+function assertLiveBubbleIsRendered(context) {
+    const { state, elements } = app();
+    // Only meaningful while the streaming chat is the view on screen. Note this
+    // is a question about `state.ui.mainView`, NOT about activeConversationId,
+    // which stays set while the user is off looking at another section — the
+    // same distinction F-03 had to make in the app itself.
+    const v = state.ui.mainView || {};
+    const showing = v.type === 'chat' && v.id === state.streamingConversationId;
+    if (!showing) return;
+    const bubble = elements.messagesContainer.querySelector('.message.assistant.streaming');
+    if (!bubble) {
+        fail(`${context}: a reply is streaming into this chat but no live bubble is on screen`);
+        return;
+    }
+    if (!document.contains(bubble)) {
+        fail(`${context}: the live bubble is detached from the document`);
+        return;
+    }
+    const shown = bubble.textContent || '';
+    const accumulated = (state.streamingAccumulator || '').trim();
+    if (accumulated && !shown.includes(accumulated.slice(-12))) {
         fail(
-            `${context}: state.streamingMessageDiv is detached from the document ` +
-            '— stream chunks are being written into an orphaned node'
+            `${context}: the live bubble is on screen but stale — ` +
+            `it does not show the end of the accumulated reply`
         );
     }
 }
@@ -235,17 +267,17 @@ const CHECKS = [
             const pending = typeAndSend('stream survives navigation?');
 
             await sleep(250);                       // mid-response
-            assertNoOrphanedBubble('while streaming, before navigating');
+            assertLiveBubbleIsRendered('while streaming, before navigating');
 
             railClick('personas');                  // leave mid-response
             await sleep(200);
-            assertNoOrphanedBubble('after navigating away mid-response');
+            assertLiveBubbleIsRendered('after navigating away mid-response');
 
             railClick('chats');
             await sleep(80);
             openChatRow(ctx.chatA);
             await sleep(250);                       // back, still mid-response
-            assertNoOrphanedBubble('after returning mid-response');
+            assertLiveBubbleIsRendered('after returning mid-response');
             assertDomMatchesState('after returning mid-response');
 
             await pending;

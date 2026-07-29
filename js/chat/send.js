@@ -5,15 +5,16 @@
  * reply as it arrives, live tool activity, re-runs and retries, and stopping a
  * turn.
  *
- * THIS IS WHERE BUG 1 LIVES. `startStreamingMessage` stores a raw DOM node in
- * `state.streamingMessageDiv` and `appendStreamChunk` writes into it for the
- * whole response — a DOM pointer held across an await, which the refactor's
- * rule 1 forbids. Navigating away detaches that node and the reply is written
- * into an orphan. F-03 fixes it here: park the accumulating text on the
- * conversation so the thread can repaint it from state on return.
+ * BUG 1 WAS FIXED HERE (F-03). This code used to store a raw DOM node in
+ * `state.streamingMessageDiv` and write into it for the whole response — a DOM
+ * pointer held across an await, which rule 1 forbids. Navigating away detached
+ * that node and the rest of the reply went into an orphan.
  *
- * Nothing was changed in this move. The harness checks for bug 1 stay red until
- * F-03.
+ * Now `state.streamingAccumulator` plus `state.streamingConversationId` are the
+ * truth, and the bubble is RE-DERIVED on each use via `streamingBubble()`. If
+ * the chat is not the view on screen there is simply nothing to paint into: the
+ * turn keeps running, state keeps accumulating, and renderChatThread() paints
+ * the live bubble when the user returns.
  */
 
 import { state } from '../state.js';
@@ -33,12 +34,12 @@ import { displayError } from '../components/errors.js';
 import {
     appendMessage, persistMessage, showTypingIndicator, hideTypingIndicator,
     generateConversationTitle, toolEventToAttachment, truncateMessagesFrom,
-    renderMessageAttachments,
+    renderMessageAttachments, streamingBubble, paintStreamingBubble,
+    renderStreamingContent, threadIsVisible, renderChatThread,
 } from './thread.js';
 import {
     detectExpression, setExpression, settleGeneratingExpression,
-    stripExpressionTag, stripPrefillText, splitLeadingExpressionTag,
-    } from './expressions.js';
+    stripExpressionTag, stripPrefillText, } from './expressions.js';
 import {
     buildAttachmentContentBlocks, storeAttachmentsToIndexedDB, renderAttachmentPreviews,
     isTextWorkingFileUpload, createWorkingFilesFromUploads,
@@ -147,10 +148,9 @@ export async function sendMessageFromText(text, attachments = []) {
                 // Real error (network / 4xx / 5xx) — abort is no longer
                 // surfaced here because API.chat.stream returns normally on
                 // user-initiated abort.
-                if (state.streamingMessageDiv) {
-                    state.streamingMessageDiv.remove();
-                    state.streamingMessageDiv = null;
-                }
+                const failedBubble = streamingBubble();
+                if (failedBubble) failedBubble.remove();
+                state.streamingConversationId = null;
                 throw error;
             } finally {
                 if (elements.stopButton) elements.stopButton.style.display = 'none';
@@ -191,13 +191,14 @@ export async function sendMessageFromText(text, attachments = []) {
  * in, so the file panel ignores events from a chat the user has left.
  */
 export function renderLiveToolActivity(payload, convoId) {
-    if (!state.streamingMessageDiv) return;
-    let area = state.streamingMessageDiv.querySelector('.message-attachments');
+    const bubble = streamingBubble();
+    if (!bubble) return; // off screen: finalize re-renders attachments from state
+    let area = bubble.querySelector('.message-attachments');
     if (!area) {
         area = document.createElement('div');
         area.className = 'message-attachments';
-        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
-        state.streamingMessageDiv.insertBefore(area, contentDiv);
+        const contentDiv = bubble.querySelector('.message-content');
+        bubble.insertBefore(area, contentDiv);
     }
     const att = toolEventToAttachment(payload);
     renderMessageAttachments([att], area);
@@ -304,10 +305,9 @@ export async function sendMessage() {
             await finalizeStreamingMessage(result.text || '', result.generatedImages || [], targetConvoId);
         } catch (error) {
             // Real error path; abort flows through normally now.
-            if (state.streamingMessageDiv) {
-                state.streamingMessageDiv.remove();
-                state.streamingMessageDiv = null;
-            }
+            const abortedBubble = streamingBubble();
+            if (abortedBubble) abortedBubble.remove();
+            state.streamingConversationId = null;
             hideTypingIndicator();
             settleGeneratingExpression();
             displayError(error, { surface: 'chat', retryHandler: retryLastUserMessage });
@@ -599,69 +599,28 @@ export async function storeGeneratedImages(generatedImages) {
 }
 
 export function startStreamingMessage() {
-    const welcome = elements.messagesContainer.querySelector('.welcome-message');
-    if (welcome) welcome.remove();
-
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message assistant streaming';
-
-    const labelDiv = document.createElement('div');
-    labelDiv.className = 'message-label';
-    const persona = getActivePersona();
-    labelDiv.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
-    messageDiv.appendChild(labelDiv);
-
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-content';
-    // Pre-token placeholder: show the animated "typing" dots until the first
-    // chunk arrives (appendStreamChunk overwrites this). The `awaiting-first-token`
-    // class suppresses the trailing block cursor so we don't show both.
-    messageDiv.classList.add('awaiting-first-token');
-    contentDiv.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
-    messageDiv.appendChild(contentDiv);
-    elements.messagesContainer.appendChild(messageDiv);
-
-    state.streamingMessageDiv = messageDiv;
+    // F-03: record WHICH conversation this turn belongs to, reset the
+    // accumulators, then ask the thread to paint. The bubble is created only if
+    // that conversation is the view on screen; if not, the turn still runs and
+    // renderChatThread() paints it when the user comes back.
+    state.streamingConversationId = state.activeConversationId;
     state.streamingAccumulator = '';
     state.streamingDeclaredExpression = null;
     state.streamingGeneratedImages = [];
     state.streamingToolEvents = [];
 
-    scrollToBottom();
+    paintStreamingBubble();
 }
 
 export function appendStreamChunk(text) {
+    // Accumulate unconditionally — this is the source of truth for the reply,
+    // and it must keep growing whether or not the chat is on screen.
     state.streamingAccumulator += text;
-    if (state.streamingMessageDiv) {
-        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
-        if (contentDiv) {
-            let displayText = state.streamingAccumulator;
-            if (state.currentPrefill) {
-                displayText = stripPrefillText(displayText, state.currentPrefill);
-            }
-
-            const { display, expression, pending } = splitLeadingExpressionTag(displayText);
-            // Still waiting to see if this is a tag — keep the typing dots up
-            // rather than flashing a partial "[expre" on screen.
-            if (pending) {
-                scrollToBottom();
-                return;
-            }
-            // The tag is parsed and stripped here but deliberately NOT applied
-            // yet: the avatar holds the `generating` state for the whole
-            // response, so "working on it" stays legible instead of flickering
-            // for the four tokens it takes the tag to close. The declared
-            // expression lands in finalizeStreamingMessage, which re-reads it
-            // from the full text via detectExpression.
-            if (expression) state.streamingDeclaredExpression = expression;
-
-            // First real content: drop the pre-token placeholder state so the
-            // trailing block cursor takes over from the typing dots.
-            state.streamingMessageDiv.classList.remove('awaiting-first-token');
-            contentDiv.innerHTML = renderMarkdown(display);
-        }
-        scrollToBottom();
-    }
+    // Render if the thread is showing. renderStreamingContent() re-derives the
+    // bubble each time, so a chat left mid-stream simply has nothing to paint
+    // into, instead of writing into a detached node.
+    renderStreamingContent();
+    if (streamingBubble()) scrollToBottom();
 }
 
 /**
@@ -677,9 +636,12 @@ export function appendStreamChunk(text) {
  *   Falls back to active for callers that don't pass it.
  */
 export async function finalizeStreamingMessage(fullText, generatedImages = [], targetConvoId = null) {
-    if (!state.streamingMessageDiv) return;
-
-    state.streamingMessageDiv.classList.remove('streaming');
+    // F-03: `bubble` may be null because the user navigated away mid-response.
+    // That must NOT stop the reply being assembled, persisted and pushed into
+    // state — only the DOM work below is skipped, and renderChatThread() paints
+    // the finished message when they come back.
+    const bubble = streamingBubble();
+    if (bubble) bubble.classList.remove('streaming');
 
     const detectedExpr = detectExpression(fullText);
     setExpression(detectedExpr);
@@ -703,8 +665,8 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
     // arrived). Persisting an empty assistant turn would pollute the
     // conversation context on the next send. Remove the empty bubble too.
     if (!cleanText.trim() && attachments.length === 0) {
-        state.streamingMessageDiv.remove();
-        state.streamingMessageDiv = null;
+        if (bubble) bubble.remove();
+        state.streamingConversationId = null;
         state.streamingAccumulator = '';
         state.streamingGeneratedImages = [];
         state.streamingToolEvents = [];
@@ -714,17 +676,17 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
     // Reconcile the attachments row to the authoritative set: drop any live
     // tool chips rendered mid-stream and re-render everything once, so the DOM
     // matches exactly what a reload will produce from the persisted data.
-    const liveArea = state.streamingMessageDiv.querySelector('.message-attachments');
+    const liveArea = bubble && bubble.querySelector('.message-attachments');
     if (liveArea) liveArea.remove();
-    if (attachments.length > 0) {
+    if (bubble && attachments.length > 0) {
         const attachDiv = document.createElement('div');
         attachDiv.className = 'message-attachments';
         renderMessageAttachments(attachments, attachDiv);
-        const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
-        if (contentDiv) state.streamingMessageDiv.insertBefore(attachDiv, contentDiv);
+        const contentDiv = bubble.querySelector('.message-content');
+        if (contentDiv) bubble.insertBefore(attachDiv, contentDiv);
     }
 
-    const contentDiv = state.streamingMessageDiv.querySelector('.message-content');
+    const contentDiv = bubble && bubble.querySelector('.message-content');
     if (contentDiv) {
         if (!cleanText && imageAttachments.length > 0) {
             contentDiv.innerHTML = '<em>Generated image(s)</em>';
@@ -733,10 +695,12 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
         }
     }
 
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'message-actions';
-    actionsDiv.innerHTML = messageActionsHTML('Regenerate');
-    state.streamingMessageDiv.appendChild(actionsDiv);
+    if (bubble) {
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'message-actions';
+        actionsDiv.innerHTML = messageActionsHTML('Regenerate');
+        bubble.appendChild(actionsDiv);
+    }
 
     // Persist to server + local state. Awaits persistMessage so the server-
     // generated id is set on the local msg before any subsequent edit/delete.
@@ -749,7 +713,7 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
     if (targetConvo) {
         const msg = { role: 'assistant', content: cleanText, attachments };
         targetConvo.messages.push(msg);
-        state.streamingMessageDiv.dataset.msgIndex = targetConvo.messages.length - 1;
+        if (bubble) bubble.dataset.msgIndex = targetConvo.messages.length - 1;
         targetConvo.updatedAt = Date.now();
         try {
             const saved = await persistMessage(targetConvo.id, msg);
@@ -762,10 +726,17 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
     state.estimatedTokens += Math.ceil(fullText.length / 4);
     updateStatusBar();
 
-    state.streamingMessageDiv = null;
+    const finishedIn = state.streamingConversationId;
+    state.streamingConversationId = null;
     state.streamingAccumulator = '';
     state.streamingGeneratedImages = [];
     state.streamingToolEvents = [];
+
+    // F-03: if this conversation is on screen, repaint from state so the
+    // finished message is rendered exactly as a reload would render it. This is
+    // also what makes a reply that completed while the user was elsewhere
+    // appear the moment they return.
+    if (threadIsVisible(finishedIn)) renderChatThread();
 }
 
 /**
