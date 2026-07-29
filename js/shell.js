@@ -92,6 +92,19 @@ export function navigate(view) {
     closeSidebar();
 }
 
+// Legacy shim from the old sidebar-tab UI: two call sites still speak in tab
+// names. It lives here rather than with a view because it is nothing but a
+// navigate() call, and every view would otherwise import it from a sibling.
+// Inline it in the cleanup slice.
+/**
+ * Back-compat shim: the old sidebar tabs ('chats' / 'projects') map to the
+ * WR-07 main-area router sections.
+ * @param {string} tabName - 'chats' or 'projects'
+ */
+export function switchTab(tabName) {
+    navigate({ type: tabName === 'projects' ? 'workspaces' : 'chats' });
+}
+
 /** Which rail section the current view belongs to (for rail highlighting). */
 export function currentSection() {
     const v = state.ui.mainView || {};
