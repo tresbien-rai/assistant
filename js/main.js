@@ -18,6 +18,7 @@
 import { API } from './api-client.js';
 import { CONFIG } from './config.js';
 import { state, getActivePersona, getActiveConversation } from './state.js';
+import { setActiveConversation } from './active-conversation.js';
 import { elements } from './dom.js';
 import {
     UiPrefs, applyTheme, withThemeTransition, applyChatWidth, syncAppearanceControls,
@@ -442,7 +443,9 @@ function restoreActiveContainer() {
             ? convo.projectId === state.activeProjectId
             : (state.activeWorkspaceId ? convo.workspaceId === state.activeWorkspaceId : false);
         if (!inContainer && (state.activeProjectId || state.activeWorkspaceId)) {
-            state.activeConversationId = null;
+            // 'none': boot is ESTABLISHING the active conversation, not switching
+            // away from one — there is no outgoing draft to preserve.
+            setActiveConversation(null, { outgoing: 'none' });
         }
     }
 
@@ -473,14 +476,16 @@ function pickActivePersona() {
 
 function pickActiveConversation() {
     const convos = Object.values(state.conversations);
+    // 'none' on both: this runs during init, so there is no conversation being
+    // left and no draft to carry — see setActiveConversation.
     if (convos.length === 0) {
-        state.activeConversationId = null;
+        setActiveConversation(null, { outgoing: 'none' });
         return;
     }
     const mostRecent = convos.reduce((a, b) =>
         (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
     );
-    state.activeConversationId = mostRecent.id;
+    setActiveConversation(mostRecent.id, { outgoing: 'none' });
 }
 
 // ===== Settings Management =====
