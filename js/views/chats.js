@@ -19,7 +19,7 @@ import {
     personaModelMode, findModelProvider, applyModelToLayer,
     } from '../model-layer.js';
 import { persistSettings } from '../settings-store.js';
-import { stashDraft, restoreDraft } from '../chat/composer.js';
+import { stashDraft, restoreDraft, clearDraft } from '../chat/composer.js';
 import { personaAvatarHTML, applyPersonaModelSettings } from '../persona-helpers.js';
 import { escapeHtml, formatTimeAgo } from '../util/format.js';
 import { displayError } from '../components/errors.js';
@@ -56,7 +56,20 @@ export async function createConversation(title = 'New Chat', container = null) {
         messageCount: 0,
         messages: [],
     };
+    // F-04: creating a chat makes it active, so it is a conversation CHANGE and
+    // the composer has to move with it — same rule switchConversation follows.
+    // Without this the outgoing chat's half-typed message stays in the box and
+    // becomes the new chat's draft, which is the defect F-04 set out to fix.
+    //
+    // On the auto-create path inside a send (appendMessage → here) the composer
+    // has already been emptied and its draft dropped, so there is nothing to
+    // stash and nothing to restore — both calls run but change nothing.
+    const leavingConvoId = state.activeConversationId;
+    if (leavingConvoId !== created.id) stashDraft(leavingConvoId);
+
     state.activeConversationId = created.id;
+
+    if (leavingConvoId !== created.id) restoreDraft(created.id);
 
     // Apply a per-chat file-tools override chosen BEFORE the chat was persisted
     // (the toggle was flipped on a fresh, unsaved chat).
@@ -410,6 +423,10 @@ export async function deleteConversationPrompt(conversationId) {
     }
 
     delete state.conversations[conversationId];
+    // F-04: the chat is gone, so its draft must go too — otherwise the Map holds
+    // the text plus its pending File objects (and their un-revoked blob URLs)
+    // for the rest of the session.
+    clearDraft(conversationId);
 
     // If we deleted the active conversation, switch to another or clear.
     if (state.activeConversationId === conversationId) {
@@ -424,6 +441,10 @@ export async function deleteConversationPrompt(conversationId) {
         } else {
             state.activeConversationId = null;
         }
+        // F-04: the composer is still showing the DELETED chat's draft. Repoint
+        // it at whatever is active now (or clear it when nothing is left), so a
+        // half-typed message can't be sent into an unrelated chat.
+        restoreDraft(state.activeConversationId);
     }
 
     renderConversationList();
