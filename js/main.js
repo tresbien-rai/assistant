@@ -36,26 +36,30 @@ import {
 } from './util/format.js';
 import { FilePanel } from './file-panel/index.js';
 import {
+    effectiveToolsEnabled, syncToolsToggle, getActiveConversation,
+    syncPersonaEditTitle, setModelIndicator, personaToolsBase,
+} from './router.js';
+import {
     applyPersonaModelSettings, hydratePersonas, } from './persona-helpers.js';
 import {
     createConversation, restoreConversationModel, loadConversationMessages, saveConversations,
-    switchConversation, renderChatsListMain, renderConversation,
+    switchConversation, renderConversation,
     renderConversationList, } from './views/chats.js';
 import {
-    showPersonaPopover, renderPersonasListMain, blobToBase64,
+    showPersonaPopover, blobToBase64,
 } from './views/personas.js';
 import {
-    updateWorkspaceUI, renderBreadcrumb, renderWorkspacesListMain, openContainerPage,
-    renderContainerPage, setupTextareaResizers,
+    updateWorkspaceUI, openContainerPage,
+    setupTextareaResizers,
 } from './views/workspaces.js';
 import {
     autoSaveSettings, savePersonas, hydrateApiKeyStatus,
 } from './settings-store.js';
 import {
-    renderModelsView, saveCustomModels, modelModalProvider, openModelModal,
+    saveCustomModels, modelModalProvider, openModelModal,
     selectModel, showProviderKeyPopover,
 } from './views/models.js';
-import { navigate, currentSection, registerShell, renderModelsCatalog } from './shell.js';
+import { navigate, registerShell, renderModelsCatalog } from './shell.js';
 import {
     PROVIDERS, providerIconHtml, getModelDisplayName, getActiveModelConfig, personaModelMode, loadModelProfileIntoLayer,
     mirrorLayerToModelProfile, mergeModelConfig, formatNumber,
@@ -67,68 +71,13 @@ import {
 // R-04b moves these three into js/router.js and this call goes with them.
 // renderModelsCatalog and refreshAddModelModal are registered by
 // js/views/models.js, which owns them.
-registerShell({
-    renderShell, renderMainView, updateUI, updateSettingsUI, renderChatThread,
-});
+// renderShell and renderMainView are registered by js/router.js, which owns
+// them; renderModelsCatalog and refreshAddModelModal by js/views/models.js.
+registerShell({ updateUI, updateSettingsUI, renderChatThread });
 
 // ===== Conversation Helpers =====
 
 // ===== File-tools toggle (Track A, P2-05b) =====
-
-/**
- * The persona's base file-tools setting (its default for new chats). Stored in
- * the persona's model_config JSON; absent = off.
- * @param {Object} persona
- * @returns {boolean}
- */
-function personaToolsBase(persona) {
-    return persona?.modelConfig?.toolsEnabled === true;
-}
-
-/**
- * The active chat's per-conversation file-tools override: the saved
- * conversation value, or the pending choice for a fresh unsaved chat.
- * true/false = forced, null/undefined = inherit the persona base.
- */
-function getToolsOverride() {
-    const convo = getActiveConversation();
-    return convo ? convo.toolsEnabled : state.pendingToolsOverride;
-}
-
-/**
- * The EFFECTIVE file-tools state for the active chat: the per-conversation
- * override wins, else the active persona's base. Mirrors the server's
- * resolveToolsEnabled precedence so the UI matches what a send will do.
- * @returns {boolean}
- */
-function effectiveToolsEnabled() {
-    const override = getToolsOverride();
-    if (override === true) return true;
-    if (override === false) return false;
-    return personaToolsBase(getActivePersona());
-}
-
-/** Whether the effective state comes from a per-chat override vs the persona base. */
-function toolsOverrideActive() {
-    const override = getToolsOverride();
-    return override === true || override === false;
-}
-
-/**
- * Reflect the effective file-tools state on the composer toggle: filled when
- * on, muted when off, with a tooltip naming the source (persona default vs
- * this-chat override).
- */
-function syncToolsToggle() {
-    const btn = elements.toolsToggleBtn;
-    if (!btn) return;
-    const on = effectiveToolsEnabled();
-    const overridden = toolsOverrideActive();
-    btn.classList.toggle('on', on);
-    btn.setAttribute('aria-pressed', String(on));
-    const source = overridden ? 'this chat' : 'persona default';
-    btn.title = `File tools ${on ? 'on' : 'off'} (${source}) — click to turn ${on ? 'off' : 'on'}`;
-}
 
 /**
  * Composer toggle click: flip the EFFECTIVE state and pin it as a per-chat
@@ -172,17 +121,6 @@ function syncPersonaToolsBaseControl() {
     if (elements.personaToolsBase) {
         elements.personaToolsBase.checked = personaToolsBase(getActivePersona());
     }
-}
-
-/**
- * Get the currently active conversation object
- * @returns {Object|null} The active conversation or null if none
- */
-function getActiveConversation() {
-    if (!state.activeConversationId) {
-        return null;
-    }
-    return state.conversations[state.activeConversationId] || null;
 }
 
 /**
@@ -1477,14 +1415,6 @@ function handleAddModelManually() {
 
 // ===== Sidebar Tab Management =====
 
-/** Keep the persona editor's page title in sync with the active persona's name. */
-function syncPersonaEditTitle() {
-    const title = document.getElementById('personaEditTitle');
-    if (!title) return;
-    const persona = getActivePersona();
-    title.textContent = persona ? (persona.name || 'Untitled') : 'Persona';
-}
-
 // ===== Top-bar popovers (P2-U3a) =====
 // The positioning/dismissal primitives these all call live in
 // components/menus.js; what stays here is each menu's own content.
@@ -1764,97 +1694,6 @@ async function setExpression(exprName) {
 // import the router — see js/shell.js for why. R-04b moves what remains of this
 // section into js/router.js, which will do the registering instead.
 
-/** Repaint the navigation shell: rail highlight + contextual top bar + chrome. */
-function renderShell() {
-    renderRail();
-    renderTopBar();
-    renderBreadcrumb();
-    syncChatChrome();
-}
-
-/**
- * Show the message composer + floating avatar only in a chat view — they're
- * irrelevant (and visually noisy) on the lists / settings / container pages.
- */
-function syncChatChrome() {
-    const inChat = (state.ui.mainView || {}).type === 'chat';
-    if (elements.inputContainer) elements.inputContainer.hidden = !inChat;
-    if (elements.floatingAvatar) {
-        elements.floatingAvatar.classList.toggle('hidden', !inChat || !state.settings.showAvatar);
-    }
-    // Reflect this chat's effective file-tools state on the composer toggle.
-    if (inChat) syncToolsToggle();
-    // The files explorer needs a saved conversation to list files for; a fresh
-    // unsaved chat has no id yet (CF-01b).
-    if (elements.filesExplorerBtn) {
-        elements.filesExplorerBtn.disabled = !state.activeConversationId;
-    }
-    // File panel + explorer button follow the active chat (hidden while browsing).
-    FilePanel.syncUi();
-    // The not-loaded count badge tracks the active chat even with the panel
-    // closed (CT-06). Fire-and-forget: it self-guards staleness.
-    FilePanel.syncContextBadge();
-}
-
-/**
- * Render the active main-area view. Guards against views whose entity was
- * deleted by falling back to the owning list.
- */
-function renderMainView() {
-    const v = state.ui.mainView || { type: 'chats' };
-
-    // Toggle the two persistent main-area panels: the messages/lists surface vs
-    // the settings form (which lives in #settingsView so its inputs + listeners
-    // survive — it is shown, not re-rendered).
-    const isSettings = v.type === 'settings';
-    const isPersonaEdit = v.type === 'persona-edit';
-    const isModels = v.type === 'models';
-    if (elements.settingsView) elements.settingsView.hidden = !isSettings;
-    if (elements.personaEditView) elements.personaEditView.hidden = !isPersonaEdit;
-    if (elements.modelsView) elements.modelsView.hidden = !isModels;
-    if (elements.messagesContainer) elements.messagesContainer.hidden = isSettings || isPersonaEdit || isModels;
-    if (isModels) {
-        renderModelsView();
-        return;
-    }
-    if (isPersonaEdit) {
-        // The editor's inputs always edit the *active* persona (editPersona
-        // activates before navigating); the title just needs to match it.
-        if (!getActivePersona()) return navigate({ type: 'personas' });
-        syncPersonaEditTitle();
-        return;
-    }
-    if (isSettings) return;
-
-    if (v.type === 'workspace') {
-        if (!state.workspaces[v.id]) return navigate({ type: 'workspaces' });
-        elements.messagesContainer.innerHTML = '';
-        renderContainerPage('workspace', v.id);
-        return;
-    }
-    if (v.type === 'project') {
-        if (!state.projects[v.id]) return navigate({ type: 'workspaces' });
-        elements.messagesContainer.innerHTML = '';
-        renderContainerPage('project', v.id);
-        return;
-    }
-    if (v.type === 'workspaces') {
-        renderWorkspacesListMain();
-        return;
-    }
-    if (v.type === 'personas') {
-        renderPersonasListMain();
-        return;
-    }
-    if (v.type === 'chat') {
-        if (!state.conversations[v.id]) return navigate({ type: 'chats' });
-        renderChatThread();
-        return;
-    }
-    // 'chats' (default)
-    renderChatsListMain();
-}
-
 /** Render the active conversation's message thread into the main area. */
 function renderChatThread() {
     elements.messagesContainer.innerHTML = '';
@@ -1882,34 +1721,6 @@ function renderChatThread() {
     });
 
     scrollToBottom();
-}
-
-/** Highlight the rail item for the section the current view belongs to. */
-function renderRail() {
-    const section = currentSection();
-    document.querySelectorAll('.rail-item[data-section]').forEach(b =>
-        b.classList.toggle('active', b.dataset.section === section));
-}
-
-/**
- * Contextual top bar (WR-07, amended by P2-05a): in a chat show only the
- * workspace breadcrumb — the model chip lives in the composer's control row.
- * While browsing (composer hidden) show the persona selector (who the next
- * chat will be) plus the model button, since there's no composer to host it.
- */
-function renderTopBar() {
-    const inChat = (state.ui.mainView || {}).type === 'chat';
-    if (elements.personaButton) elements.personaButton.hidden = inChat;
-    if (elements.workspaceBreadcrumb) elements.workspaceBreadcrumb.hidden = !inChat;
-    if (elements.modelButton) elements.modelButton.hidden = inChat;
-    // Files explorer (CF-01b): per-conversation, so only in a chat.
-    if (elements.filesExplorerBtn) elements.filesExplorerBtn.hidden = !inChat;
-}
-
-/** Update the model name shown on the top-bar button and the composer chip. */
-function setModelIndicator(name) {
-    if (elements.modelIndicator) elements.modelIndicator.textContent = name;
-    if (elements.composerModelName) elements.composerModelName.textContent = name;
 }
 
 /** Per-card context menu on the Personas section: Edit (→ Settings) / Delete. */
