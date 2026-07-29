@@ -17,10 +17,10 @@ export const elements = {
     openSidebar: document.getElementById('openSidebar'),
     closeSidebar: document.getElementById('closeSidebar'),
 
-    // Sidebar tabs (Personas tab retired in P2-U3b part 2 — persona management
-    // now lives in the top-bar persona popover)
-    chatsTab: document.getElementById('chatsTab'),
-    projectsTab: document.getElementById('projectsTab'),
+    // (The sidebar tabs are gone entirely. `chatsTab` and `projectsTab` stayed
+    // here after the markup was removed, resolving to null on every load — a
+    // trap for the first code to assume a cached ref is an element. The sidebar
+    // is a section rail now; the router decides what the main area shows.)
 
     // Settings modal (relocated out of the sidebar)
     settingsModal: document.getElementById('settingsModal'),

@@ -61,8 +61,7 @@ import {
 import {
     showPersonaPopover, } from './views/personas.js';
 import {
-    updateWorkspaceUI, openContainerPage,
-    setupTextareaResizers,
+    updateWorkspaceUI, setupTextareaResizers,
 } from './views/workspaces.js';
 import {
     autoSaveSettings, savePersonas, hydrateApiKeyStatus,
@@ -134,25 +133,9 @@ function syncPersonaToolsBaseControl() {
     }
 }
 
-/**
- * Update a conversation with partial data
- * @param {string} id - The conversation ID to update
- * @param {Object} updates - Partial updates to apply
- */
-function updateConversation(id, updates) {
-    if (!state.conversations[id]) {
-        console.warn(`Conversation ${id} not found`);
-        return;
-    }
-
-    state.conversations[id] = {
-        ...state.conversations[id],
-        ...updates,
-        updatedAt: Date.now()
-    };
-
-    saveConversations();
-}
+// A generic `updateConversation(id, updates)` used to sit here with no callers.
+// Every real call site mutates the conversation object it already holds and then
+// flushes with saveConversations(), which is both narrower and clearer.
 
 // ===== Persona Helpers =====
 
@@ -219,25 +202,8 @@ function setPersonaModelMode(mode) {
     syncPersonaModelModeControls();
 }
 
-/**
- * Update a persona with partial data
- * @param {string} id - The persona ID to update
- * @param {Object} updates - Partial updates to apply
- */
-function updatePersona(id, updates) {
-    if (!state.personas[id]) {
-        console.warn(`Persona ${id} not found`);
-        return;
-    }
-
-    state.personas[id] = {
-        ...state.personas[id],
-        ...updates,
-        updatedAt: Date.now()
-    };
-
-    savePersonas();
-}
+// Likewise `updatePersona(id, updates)` — no callers. Persona edits go through
+// the fields they touch plus savePersonas().
 
 // ===== Initialization =====
 // init() is called by bootstrap() in the auth-gate block (P0-14) once the
@@ -1023,10 +989,13 @@ function renderAvailableModelsGrid(models, provider) {
         const alreadyAdded = providerModels.some(m => m.id === model.id);
         const card = document.createElement('div');
         card.className = `available-model-card ${alreadyAdded ? 'already-added' : ''}`;
+        // Escaped like every other interpolation in the app: this text comes
+        // from the provider's model list, and an unescaped quote in a display
+        // name would break out of the data-model-name attribute below.
         card.innerHTML = `
-            <span class="available-model-name">${model.display_name}</span>
-            <span class="available-model-id">${model.id}</span>
-            <button class="add-available-model-btn" data-model-id="${model.id}" data-model-name="${model.display_name}" ${alreadyAdded ? 'disabled' : ''}>
+            <span class="available-model-name">${escapeHtml(model.display_name)}</span>
+            <span class="available-model-id">${escapeHtml(model.id)}</span>
+            <button class="add-available-model-btn" data-model-id="${escapeHtml(model.id)}" data-model-name="${escapeHtml(model.display_name)}" ${alreadyAdded ? 'disabled' : ''}>
                 ${alreadyAdded ? 'Added' : '+ Add'}
             </button>
         `;
@@ -1296,24 +1265,10 @@ function showModelMenu(anchorEl, { showAll = false } = {}) {
 // track the container the current view is about (set by openContainerPage and on
 // opening a chat) — used for restore and for where "New chat/project" land.
 
-/** Open a workspace's page (its instructions/files/projects/chats). */
-function enterWorkspace(workspaceId) {
-    openContainerPage('workspace', workspaceId);
-}
-
-/** Open a project's page (its instructions/files/chats). */
-function enterProject(projectId) {
-    openContainerPage('project', projectId);
-}
-
-/** Go to the workspaces list. */
-function backToWorkspaces() {
-    state.activeProjectId = null;
-    state.activeWorkspaceId = null;
-    UiPrefs.set('activeProject', null);
-    UiPrefs.set('activeWorkspace', null);
-    navigate({ type: 'workspaces' });
-}
+// `enterWorkspace`, `enterProject` and `backToWorkspaces` were thin wrappers with
+// no callers left — js/views/workspaces.js owns container navigation now
+// (openContainerPage / backToWorkspace). Keeping dead copies of navigation logic
+// invites editing the copy that nothing runs.
 
 // ===== Main-area router (WR-07) =====
 // The main area shows exactly one view, chosen by state.ui.mainView. The sidebar
@@ -2239,31 +2194,8 @@ function clearExpressionImage() {
     elements.expressionImagePreview.innerHTML = '<span class="preview-placeholder">No image</span>';
 }
 
-async function clearConversation() {
-    const ok = await confirmDialog({
-        title: 'Clear this conversation?',
-        body: "Every message in this chat will be removed and the chat reset to a new one. This can't be undone.",
-        confirmLabel: 'Clear',
-        danger: true,
-    });
-    if (!ok) return;
-
-    // Clear the active conversation's messages
-    const activeConvo = getActiveConversation();
-    if (activeConvo) {
-        activeConvo.messages = [];
-        activeConvo.title = 'New Chat';
-        activeConvo.updatedAt = Date.now();
-        saveConversations();
-    }
-
-    state.estimatedTokens = 0;
-    state.currentExpression = 'neutral';
-    renderConversation();
-    updateStatusBar();
-    await updateFloatingAvatar();
-    closeSidebar();
-}
+// `clearConversation()` lived here with no caller. It is now
+// clearConversationPrompt() in js/views/chats.js, wired to the per-chat row menu.
 
 // ===== Auth Gate (P0-14) =====
 // Decides whether to show the login screen or the main app on page load.

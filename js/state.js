@@ -95,8 +95,16 @@ export const state = {
     streamingConversationId: null,
     streamingAccumulator: '',
     streamingGeneratedImages: [],
+    // Track A tool activity for the in-flight turn: the tool_activity payloads
+    // seen so far, which finalizeStreamingMessage turns into the message's
+    // persisted chip/card attachments.
+    streamingToolEvents: [],
     // Attachment state
-    pendingAttachments: [] // Array of { id, file, previewUrl, type, mimeType, fileName, fileSize }
+    pendingAttachments: [], // Array of { id, file, previewUrl, type, mimeType, fileName, fileSize }
+    // The per-chat file-tools choice made on a chat that does not exist yet
+    // (the composer toggle flipped before the first send). createConversation
+    // applies and clears it. undefined = no pending choice; true/false = forced.
+    pendingToolsOverride: undefined
 };
 
 /**

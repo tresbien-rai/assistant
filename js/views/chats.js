@@ -19,11 +19,12 @@ import {
     personaModelMode, findModelProvider, applyModelToLayer,
     } from '../model-layer.js';
 import { persistSettings } from '../settings-store.js';
-import { stashDraft, restoreDraft } from '../chat/composer.js';
+import { stashDraft, restoreDraft, clearDraft } from '../chat/composer.js';
 import { personaAvatarHTML, applyPersonaModelSettings } from '../persona-helpers.js';
 import { escapeHtml, formatTimeAgo } from '../util/format.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
+import { updateStatusBar } from '../status-bar.js';
 
 /**
  * Create a new conversation server-side and set it as active.
@@ -56,7 +57,20 @@ export async function createConversation(title = 'New Chat', container = null) {
         messageCount: 0,
         messages: [],
     };
+    // F-04: creating a chat makes it active, so it is a conversation CHANGE and
+    // the composer has to move with it — same rule switchConversation follows.
+    // Without this the outgoing chat's half-typed message stays in the box and
+    // becomes the new chat's draft, which is the defect F-04 set out to fix.
+    //
+    // On the auto-create path inside a send (appendMessage → here) the composer
+    // has already been emptied and its draft dropped, so there is nothing to
+    // stash and nothing to restore — both calls run but change nothing.
+    const leavingConvoId = state.activeConversationId;
+    if (leavingConvoId !== created.id) stashDraft(leavingConvoId);
+
     state.activeConversationId = created.id;
+
+    if (leavingConvoId !== created.id) restoreDraft(created.id);
 
     // Apply a per-chat file-tools override chosen BEFORE the chat was persisted
     // (the toggle was flipped on a fresh, unsaved chat).
@@ -323,6 +337,7 @@ export function showConversationMenu(anchorEl, conversationId) {
     menu.className = 'context-menu';
     menu.innerHTML = `
         <button class="context-menu-item" data-action="rename">Rename</button>
+        <button class="context-menu-item" data-action="clear">Clear messages</button>
         <button class="context-menu-item danger" data-action="delete">Delete</button>
     `;
 
@@ -342,6 +357,8 @@ export function showConversationMenu(anchorEl, conversationId) {
 
             if (action === 'rename') {
                 renameConversationPrompt(conversationId);
+            } else if (action === 'clear') {
+                clearConversationPrompt(conversationId);
             } else if (action === 'delete') {
                 deleteConversationPrompt(conversationId);
             }
@@ -385,6 +402,77 @@ export async function renameConversationPrompt(conversationId) {
 }
 
 /**
+ * Prompt to empty a conversation, keeping the chat itself.
+ *
+ * Re-homed from an orphaned `clearConversation()` in main.js that had lost its
+ * entry point — and fixed on the way: that version only spliced the messages out
+ * of local state and called saveConversations(), which persists title and
+ * personaId only. The messages were never deleted server-side, so they came
+ * straight back on the next reload. Each one is deleted explicitly here.
+ *
+ * @param {string} conversationId
+ */
+export async function clearConversationPrompt(conversationId) {
+    const convo = state.conversations[conversationId];
+    if (!convo) return;
+
+    const ok = await confirmDialog({
+        title: 'Clear this conversation?',
+        body: `Every message in "${convo.title || 'New Chat'}" will be removed. The chat itself stays. This can't be undone.`,
+        confirmLabel: 'Clear',
+        danger: true,
+    });
+    if (!ok) return;
+
+    // Confirming is async — the chat may have been deleted while the dialog was
+    // open, so re-resolve rather than trusting the captured reference.
+    const stillThere = state.conversations[conversationId];
+    if (!stillThere) return;
+
+    // Messages are only loaded lazily; a chat cleared without ever being opened
+    // has `messages === undefined` and nothing to enumerate.
+    await loadConversationMessages(conversationId);
+
+    const persisted = (stillThere.messages || []).filter(m => m.id);
+    if (persisted.length > 0) {
+        const results = await Promise.all(persisted.map(m =>
+            API.messages.delete(conversationId, m.id)
+                .then(() => true)
+                .catch(err => {
+                    console.error(`Failed to delete message ${m.id}:`, err);
+                    return false;
+                })
+        ));
+        // If the server kept any of them, stop rather than show an empty thread
+        // that refills on reload.
+        if (results.some(ok => !ok)) {
+            displayError(new Error('Some messages could not be deleted.'), { action: 'clear conversation' });
+            return;
+        }
+    }
+
+    stillThere.messages = [];
+    stillThere.title = 'New Chat';
+    stillThere.updatedAt = Date.now();
+    // Addressed directly rather than via saveConversations(), which only ever
+    // flushes the ACTIVE conversation — clearing a chat from the list while a
+    // different one is open would otherwise re-PUT the wrong chat's title.
+    API.conversations.update(conversationId, {
+        title: stillThere.title,
+        personaId: stillThere.personaId,
+    }).catch(err => {
+        console.error(`Failed to persist cleared conversation ${conversationId}:`, err);
+    });
+
+    if (state.activeConversationId === conversationId) {
+        state.estimatedTokens = 0;
+        updateStatusBar();
+        renderConversation();
+    }
+    renderConversationList();
+}
+
+/**
  * Prompt to delete a conversation. Server delete first (so the local state
  * never goes out of sync with the server on failure), then local cleanup.
  * @param {string} conversationId
@@ -410,6 +498,10 @@ export async function deleteConversationPrompt(conversationId) {
     }
 
     delete state.conversations[conversationId];
+    // F-04: the chat is gone, so its draft must go too — otherwise the Map holds
+    // the text plus its pending File objects (and their un-revoked blob URLs)
+    // for the rest of the session.
+    clearDraft(conversationId);
 
     // If we deleted the active conversation, switch to another or clear.
     if (state.activeConversationId === conversationId) {
@@ -424,6 +516,10 @@ export async function deleteConversationPrompt(conversationId) {
         } else {
             state.activeConversationId = null;
         }
+        // F-04: the composer is still showing the DELETED chat's draft. Repoint
+        // it at whatever is active now (or clear it when nothing is left), so a
+        // half-typed message can't be sent into an unrelated chat.
+        restoreDraft(state.activeConversationId);
     }
 
     renderConversationList();

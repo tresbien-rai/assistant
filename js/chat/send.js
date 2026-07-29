@@ -608,7 +608,6 @@ export function startStreamingMessage() {
     // renderChatThread() paints it when the user comes back.
     state.streamingConversationId = state.activeConversationId;
     state.streamingAccumulator = '';
-    state.streamingDeclaredExpression = null;
     state.streamingGeneratedImages = [];
     state.streamingToolEvents = [];
 
