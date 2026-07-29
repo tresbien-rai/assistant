@@ -17,7 +17,7 @@
 
 import { API } from './api-client.js';
 import { CONFIG } from './config.js';
-import { state, getActivePersona } from './state.js';
+import { state, getActivePersona, getActiveConversation } from './state.js';
 import { elements } from './dom.js';
 import {
     UiPrefs, applyTheme, withThemeTransition, applyChatWidth, syncAppearanceControls,
@@ -49,7 +49,7 @@ import {
     autoResizeTextarea, renderAttachmentPreviews,
     } from './chat/composer.js';
 import {
-    effectiveToolsEnabled, syncToolsToggle, getActiveConversation,
+    effectiveToolsEnabled, syncToolsToggle,
     syncPersonaEditTitle, setModelIndicator, personaToolsBase,
 } from './router.js';
 import {
