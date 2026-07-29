@@ -18,8 +18,10 @@ each slice is independently shippable and says what "done" means.
 > `components/errors`. `main.js` is down to **7,382** lines from 10,497 — the
 > halfway mark.
 > **R-04a ✅** — the shell seam (`js/shell.js`). R-04 turned out to be
-> unreachable as a pure move; see below. Next up: **R-04b** (`views/` +
-> `router.js`, now splittable).
+> unreachable as a pure move; see below.
+> **R-04b ✅** — the whole view layer plus `js/router.js`, in five PRs
+> (#132–#136). `main.js` is down to **4,244** lines from 10,497. Next up:
+> **R-05** (`chat/`), then the F-slices.
 >
 > Ordering decision: the live provider blocker (F-01) and the test harness (F-02)
 > ship **before** any code moves; the stream-orphaning fix (F-03) ships **after**
@@ -172,7 +174,7 @@ Each row is one branch, one PR. Harness green before and after.
 | ☑ | **R-02** | Extract `config` / `state` / `dom` / `ui-prefs` / `sidebar`, then `components/dialogs` + `components/toast` | medium |
 | ☑ | **R-03** | Extract `file-panel/` + the helpers it stands on (`util/format`, `util/diff`, `components/errors`) | medium |
 | ☑ | **R-04a** | Shell seam (`js/shell.js`) — a **change**, not a move; breaks the 60-function knot | low |
-| ◐ | **R-04b** | Extract the view layer + `router.js`, bottom-up. `model-layer.js` ✅; next the view clusters, router last | medium |
+| ☑ | **R-04b** | View layer + `router.js`, bottom-up: model-layer, settings-store, models, persona-helpers, chats, personas, workspaces, router | medium |
 | ☐ | **R-05** | Extract `chat/` — the tangled part, deliberately last | high |
 | ☐ | **F-03** | Fix stream orphaning (bug 1) | low once R-05 lands |
 | ☐ | **F-04** | Draft + attachments per conversation (bug 2) | low |
