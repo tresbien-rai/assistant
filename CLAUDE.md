@@ -55,7 +55,7 @@ Tessera - a personal, server-backed AI chat interface with Google OAuth authenti
 | File/Directory | Purpose | Key Contents |
 |----------------|---------|--------------|
 | `index.html` | Frontend structure | Sidebar, chat area, floating avatar, modals, login screen |
-| `styles.css` | Frontend styling | CSS variables for theming, responsive design, animations |
+| `styles/` | Frontend styling | 9 files linked in cascade order: `tokens`, `base`, `views`, `models`, `chat`, `forms`, `system`, `buttons`, `file-panel`. **Link order in index.html IS the cascade** — do not reorder |
 | `js/main.js` | Frontend logic (module entry point) | State management, UI updates, API client calls. Being carved up per `docs/REFACTOR_PLAN.md` |
 | `js/api-client.js` | API wrapper | All backend API calls (auth, personas, chat, etc.) |
 | `js/config.js` | Config + defaults | `CONFIG`, `getDefaultModelConfig()` |
@@ -228,7 +228,13 @@ Frontend displays errors via: toast notifications (transient), inline chat error
 
 ### Styling Changes
 
-All styles in styles.css. CSS variables at top:
+Styles live in `styles/`, split into 9 files and linked from `index.html` in
+cascade order (S-01). **That link order is the cascade** — concatenating the
+files in it reproduces the original single stylesheet byte for byte, so
+reordering them changes which rules win. Put a new rule in the file whose
+section it belongs to rather than appending to the last one.
+
+CSS variables live in `styles/tokens.css`:
 - `--accent`: Primary purple (#6c63ff)
 - `--bg-primary/secondary/tertiary`: Background shades
 - `--avatar-small/medium/large/xlarge`: Avatar sizes
