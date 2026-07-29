@@ -16,8 +16,56 @@ import { elements } from '../dom.js';
 import { API } from '../api-client.js';
 import { ImageStore } from '../util/image-store.js';
 import { getFileIcon, getFileTypeLabel } from '../util/format.js';
-import { blobToBase64 } from '../views/personas.js';
+import { blobToBase64 } from '../util/blob.js';
 import { updateSendButtonState } from '../model-layer.js';
+
+/**
+ * Per-conversation composer drafts (F-04).
+ *
+ * The draft and the pending attachments used to live only in the DOM and in
+ * `state.pendingAttachments` — that is, they belonged to the input BOX rather
+ * than to a conversation. Switching chats carried them along, so a half-typed
+ * message could be sent to the wrong chat.
+ *
+ * Now the box is a view of the active conversation's draft: stash on the way
+ * out, restore on the way in. Drafts are session-only and deliberately not
+ * persisted; an unsent message is not something to resurrect on another device.
+ *
+ * Keyed by conversation id. The `null` key holds the draft for a chat that has
+ * not been created yet (typing before the first send).
+ */
+const drafts = new Map();
+
+/** Save the composer's current contents against a conversation id. */
+export function stashDraft(conversationId) {
+    const text = elements.messageInput ? elements.messageInput.value : '';
+    const attachments = state.pendingAttachments || [];
+    if (!text && attachments.length === 0) {
+        drafts.delete(conversationId ?? null);
+        return;
+    }
+    drafts.set(conversationId ?? null, { text, attachments });
+}
+
+/** Put a conversation's draft into the composer, or clear it if there is none. */
+export function restoreDraft(conversationId) {
+    const draft = drafts.get(conversationId ?? null) || { text: '', attachments: [] };
+    if (elements.messageInput) {
+        elements.messageInput.value = draft.text;
+        autoResizeTextarea(elements.messageInput);
+    }
+    state.pendingAttachments = draft.attachments;
+    renderAttachmentPreviews();
+    updateSendButtonState();
+}
+
+/**
+ * Drop a conversation's draft — called once its contents have been sent, so a
+ * sent message never reappears as a draft.
+ */
+export function clearDraft(conversationId) {
+    drafts.delete(conversationId ?? null);
+}
 
 /**
  * Whether a pending attachment should become a chat WORKING FILE (CF-02) rather

@@ -19,6 +19,7 @@ import {
     personaModelMode, findModelProvider, applyModelToLayer,
     } from '../model-layer.js';
 import { persistSettings } from '../settings-store.js';
+import { stashDraft, restoreDraft } from '../chat/composer.js';
 import { personaAvatarHTML, applyPersonaModelSettings } from '../persona-helpers.js';
 import { escapeHtml, formatTimeAgo } from '../util/format.js';
 import { displayError } from '../components/errors.js';
@@ -265,6 +266,18 @@ export function renderGroupedChatList(container) {
 export async function switchConversation(conversationId) {
     if (!state.conversations[conversationId]) return;
 
+    // F-04: the composer belongs to the conversation you are leaving. Stash it
+    // before the active id moves, then restore the incoming chat's draft below.
+    //
+    // Only when the conversation actually CHANGES. switchConversation is also
+    // how you return to the chat you were already on (from Workspaces, say),
+    // and activeConversationId stays set the whole time you are away — so an
+    // early return here silently stops navigating back, and stashing on a
+    // same-chat switch would round-trip the draft for nothing.
+    const leaving = state.activeConversationId;
+    const changed = leaving !== conversationId;
+    if (changed) stashDraft(leaving);
+
     state.activeConversationId = conversationId;
 
     // Track the chat's container so breadcrumb + restore have context.
@@ -289,6 +302,8 @@ export async function switchConversation(conversationId) {
     // The chat also remembers its engine: reactivate the model that wrote its
     // last reply (unless the persona above pinned one — fixed mode wins).
     restoreConversationModel(convo);
+
+    if (changed) restoreDraft(conversationId);
 
     navigate({ type: 'chat', id: conversationId });
     updateUI();

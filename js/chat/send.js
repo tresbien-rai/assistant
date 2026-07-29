@@ -42,7 +42,7 @@ import {
     stripExpressionTag, stripPrefillText, } from './expressions.js';
 import {
     buildAttachmentContentBlocks, storeAttachmentsToIndexedDB, renderAttachmentPreviews,
-    isTextWorkingFileUpload, createWorkingFilesFromUploads,
+    isTextWorkingFileUpload, createWorkingFilesFromUploads, clearDraft,
 } from './composer.js';
 import { updateStatusBar } from '../status-bar.js';
 
@@ -226,6 +226,9 @@ export async function sendMessage() {
     await FilePanel.autoSaveScratchpadOnSend();
 
     elements.messageInput.value = '';
+    // F-04: the draft has become a message — drop it so it cannot reappear when
+    // the user comes back to this chat.
+    clearDraft(state.activeConversationId);
     elements.messageInput.style.height = 'auto';
     state.isLoading = true;
     updateSendButtonState();

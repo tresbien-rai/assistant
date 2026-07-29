@@ -22,6 +22,7 @@ import { savePersonas } from '../settings-store.js';
 import { renderConversationList, renderConversation } from './chats.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { escapeHtml, formatBytes } from '../util/format.js';
+import { blobToBase64 } from '../util/blob.js';
 import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
 import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
@@ -468,15 +469,3 @@ function showPersonaCardMenu(anchorEl, personaId) {
     attachPopoverOutsideClose(menu, anchorEl);
 }
 
-export function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            // Remove data URL prefix (e.g., "data:image/png;base64,")
-            const base64 = reader.result.split(',')[1];
-            resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
-}
