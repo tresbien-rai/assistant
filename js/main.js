@@ -67,7 +67,9 @@ import {
 // R-04b moves these three into js/router.js and this call goes with them.
 // renderModelsCatalog and refreshAddModelModal are registered by
 // js/views/models.js, which owns them.
-registerShell({ renderShell, renderMainView, updateUI, updateSettingsUI });
+registerShell({
+    renderShell, renderMainView, updateUI, updateSettingsUI, renderChatThread,
+});
 
 // ===== Conversation Helpers =====
 
