@@ -62,6 +62,7 @@ Tessera - a personal, server-backed AI chat interface with Google OAuth authenti
 | `js/state.js` | The state object | `state` — imported and mutated by everything; never reassigned |
 | `js/dom.js` | Cached DOM refs | the `elements` lookup table |
 | `js/shell.js` | Navigation seam | `navigate()`, `currentSection()`, and a facade over `renderShell`/`renderMainView`/`updateUI`. Import navigation from here, never from the router |
+| `js/model-layer.js` | Model service layer | Provider catalog + param descriptors, the active model layer, profile load/mirror, param-path helpers |
 | `js/ui-prefs.js` | Device-local prefs | `UiPrefs` (localStorage), themes, OKLCH palette engine |
 | `js/sidebar.js` | Sidebar drawer | open/close/overlay/resize |
 | `js/file-panel/` | The file panel | `index.js` — viewer, editor, revision history, context toggle (~1,300 lines) |
