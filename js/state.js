@@ -32,8 +32,14 @@ export const state = {
         // Models catalog "daily drivers" filter (Models tab redesign): an array
         // of provider ids the catalog shows, or null for "All". Persisted in the
         // settings row. The provider chips (a later slice) are the only writer.
-        catalogProviders: null
+        catalogProviders: null,
+        // The account's default prompt preset id (AP-02), or null for the
+        // built-in prompt layer. The Advanced tab is the only writer.
+        defaultPresetId: null
     },
+    // Prompt presets by id (from API.presets.list). The platform prompt layer's
+    // override sets — see docs/ADVANCED_PROMPTS_PLAN.md.
+    presets: {},
     // The active model layer (WR-12): provider + model + params that every
     // chat send and the model/params UI use. User-level, persisted in
     // settings.currentModelConfig. Effectively "the loaded model profile" —

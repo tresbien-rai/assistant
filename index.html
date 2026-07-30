@@ -100,7 +100,7 @@
               <div class="modal-content modal-settings">
                 <div class="settings-modal-body">
                 <!-- Appearance (device-local) -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-tab="appearance">
                     <h3>Appearance</h3>
                     <p class="section-note">Saved on this device.</p>
 
@@ -152,7 +152,7 @@
                 </div>
 
                 <!-- Accessibility (device-local) -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-tab="appearance">
                     <h3>Accessibility</h3>
                     <p class="section-note">Saved on this device.</p>
 
@@ -165,7 +165,7 @@
                 </div>
 
                 <!-- Files in context (server-backed, synced across devices) -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-tab="files">
                     <h3>Files in Context</h3>
                     <p class="section-note">Synced to your account.</p>
 
@@ -269,7 +269,7 @@ When responding, you may optionally include an expression tag like [expression: 
                 </div>
 
                 <!-- Avatar display prefs (user-level settings; stays in Settings) -->
-                <div class="settings-section">
+                <div class="settings-section" data-settings-tab="appearance">
                     <h3>Avatar Display</h3>
 
                     <label>Avatar Size</label>
@@ -334,8 +334,21 @@ When responding, you may optionally include an expression tag like [expression: 
                     <button class="add-expression-btn" id="addExpressionBtn">+ Add Expression</button>
                 </div>
 
+                <!-- Advanced: the platform prompt layer (AP-02, docs/ADVANCED_PROMPTS_PLAN.md).
+                     A preset overrides Tessera's built-in prompt blocks; "Built-in
+                     prompt" is a real choice in the list, not the absence of one. -->
+                <div class="settings-section" data-settings-tab="advanced">
+                    <h3>Prompt presets</h3>
+                    <p class="section-note">Synced to your account.</p>
+                    <p class="section-note">A preset overrides the platform prompt Tessera wraps around your persona — the orientation preamble, the expression protocol, the scratchpad instructions — and the order they appear in. Blocks you don't edit keep following the built-in, so improvements to it still reach you.</p>
+
+                    <div class="preset-list" id="presetList"></div>
+                    <button type="button" class="add-expression-btn" id="createPresetBtn">+ New preset</button>
+                    <p class="section-note">The default applies to every chat unless a persona or an individual chat overrides it.</p>
+                </div>
+
                 <!-- Account Section -->
-                <div class="settings-section account-section">
+                <div class="settings-section account-section" data-settings-tab="account">
                     <h3>Account</h3>
                     <p class="account-info" id="accountInfo">Signed in</p>
                     <button type="button" class="logout-btn" id="logoutBtn">Sign out</button>

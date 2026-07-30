@@ -653,6 +653,35 @@ const API = (function () {
     },
 
     // -------------------------------------------------------------------------
+    // PROMPT PRESETS (AP-02) — override sets for the platform prompt layer
+    // -------------------------------------------------------------------------
+    presets: {
+      list() {
+        return request('GET', '/api/presets');
+      },
+      get(id) {
+        return request('GET', `/api/presets/${encodeURIComponent(id)}`);
+      },
+      /**
+       * The built-in block text + macro reference. Static per deployment, so
+       * the caller may cache it for the session.
+       */
+      defaults() {
+        return request('GET', '/api/presets/defaults');
+      },
+      /** `data` is { name, blocks? } or { name, cloneFrom } to duplicate. */
+      create(data) {
+        return request('POST', '/api/presets', { body: data });
+      },
+      update(id, data) {
+        return request('PUT', `/api/presets/${encodeURIComponent(id)}`, { body: data });
+      },
+      delete(id) {
+        return request('DELETE', `/api/presets/${encodeURIComponent(id)}`);
+      },
+    },
+
+    // -------------------------------------------------------------------------
     // API KEYS
     // -------------------------------------------------------------------------
     apiKeys: {

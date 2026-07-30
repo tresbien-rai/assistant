@@ -170,6 +170,10 @@ export const elements = {
     avatarImg: document.getElementById('avatarImg'),
     floatingAvatarName: document.getElementById('floatingAvatarName'),
 
+    // Prompt presets (AP-02, Settings → Advanced)
+    presetList: document.getElementById('presetList'),
+    createPresetBtn: document.getElementById('createPresetBtn'),
+
     // Error display system (P0-17)
     toastContainer: document.getElementById('toastContainer'),
     criticalBanner: document.getElementById('criticalBanner'),

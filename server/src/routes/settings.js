@@ -81,7 +81,7 @@ function isValidCatalogProviders(v) {
 }
 
 router.put('/', asyncHandler(async (req, res) => {
-  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns, catalogProviders } = req.body;
+  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns, catalogProviders, defaultPresetId } = req.body;
 
   // Validate avatarSize if provided (preset name or numeric px string)
   if (avatarSize !== undefined && !isValidAvatarSize(avatarSize)) {
@@ -129,6 +129,19 @@ router.put('/', asyncHandler(async (req, res) => {
     throw AppError.validation('catalogProviders must be null or an array of provider id strings');
   }
 
+  // Validate defaultPresetId if provided (AP-02). null clears it back to the
+  // built-in prompt layer. Existence is checked rather than trusted: a bad id
+  // would silently resolve to the built-in on every request, which looks like
+  // "my preset stopped working" rather than like an error.
+  if (defaultPresetId !== undefined && defaultPresetId !== null) {
+    if (typeof defaultPresetId !== 'string') {
+      throw AppError.validation('defaultPresetId must be a preset id or null');
+    }
+    if (!dal.getPromptPreset(defaultPresetId, req.user.userId)) {
+      throw AppError.notFound('Preset');
+    }
+  }
+
   // Build update data (only include fields that were provided)
   const updateData = {};
   if (avatarSize !== undefined) updateData.avatarSize = avatarSize;
@@ -138,6 +151,7 @@ router.put('/', asyncHandler(async (req, res) => {
   if (currentModelConfig !== undefined) updateData.currentModelConfig = currentModelConfig;
   if (activeFileTurns !== undefined) updateData.activeFileTurns = activeFileTurns;
   if (catalogProviders !== undefined) updateData.catalogProviders = catalogProviders;
+  if (defaultPresetId !== undefined) updateData.defaultPresetId = defaultPresetId;
 
   // Upsert settings
   const settings = dal.upsertSettings(req.user.userId, updateData);
