@@ -2,19 +2,68 @@
 /* Third column of .app-container, beside the chat. Desktop: a bordered side
    panel; mobile: a full-screen overlay (never auto-opened there). */
 .file-panel {
+    /* The user-draggable width (--file-panel-width) is only set once the panel
+       has actually been resized on this device; until then it keeps the
+       responsive default. Both the panel and the chat column are guaranteed a
+       floor, and the max-width is what enforces the chat's: the panel can grow
+       only into whatever is left after the sidebar and that floor. */
+    --fp-min-width: 320px;
+    --fp-chat-min-width: 420px;
     display: flex;
     flex-direction: column;
-    width: clamp(320px, 38vw, 640px);
+    position: relative; /* anchors the resize handle on the left edge */
+    width: var(--file-panel-width, clamp(320px, 38vw, 640px));
+    min-width: var(--fp-min-width);
+    max-width: max(var(--fp-min-width), calc(100vw - var(--sidebar-width) - var(--fp-chat-min-width)));
     height: 100vh; /* fallback */
     height: 100dvh;
     flex-shrink: 0;
     border-left: 1px solid var(--border-color);
     background: var(--bg-secondary);
-    min-width: 0;
 }
 
 .file-panel[hidden] {
     display: none;
+}
+
+/* Drag handle on the panel's left edge. Desktop only — on mobile the panel is
+   a full-screen overlay, so there is nothing to resize. It lives inside the
+   panel (absolutely positioned over its border) so it appears and disappears
+   with it, no separate visibility plumbing. */
+.file-panel-resize-handle {
+    display: none;
+}
+
+@media (min-width: 768px) {
+    .file-panel-resize-handle {
+        display: block;
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -4px;
+        width: 8px;
+        cursor: col-resize;
+        z-index: 50;
+        touch-action: none;
+    }
+
+    .file-panel-resize-handle::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2px;
+        background: var(--border-color);
+        transition: background 0.2s ease, width 0.2s ease;
+    }
+
+    .file-panel-resize-handle:hover::before,
+    .file-panel-resize-handle.dragging::before {
+        background: var(--accent);
+        width: 4px;
+    }
 }
 
 .file-panel-header {
@@ -121,9 +170,11 @@
     border-color: transparent;
 }
 
-.scratchpad-row-hint {
-    color: var(--text-muted);
-    font-style: italic;
+/* The row's toggle sits where a file row's size/mode controls sit — it is the
+   same pill as the pad header's, just smaller so it doesn't dominate the row. */
+.chat-file-row.scratchpad-row .scratchpad-toggle {
+    height: 24px;
+    flex-shrink: 0;
 }
 
 .fp-browser-empty {
@@ -563,6 +614,10 @@
         position: fixed;
         inset: 0;
         width: 100%;
+        /* Drop the desktop resize floors — a full-screen overlay shares the
+           width with nothing, and the max-width would cap it at 320px here. */
+        min-width: 0;
+        max-width: none;
         z-index: 110;
         border-left: none;
     }

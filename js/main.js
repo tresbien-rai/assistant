@@ -1054,6 +1054,9 @@ function setupEventListeners() {
     // Sidebar resize (desktop drag handle)
     setupSidebarResize();
 
+    // File panel resize (its own desktop drag handle, same gesture)
+    FilePanel.setupResize();
+
     // Resizable settings textboxes (themed bottom drag-bar)
     setupTextareaResizers();
 

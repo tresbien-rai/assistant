@@ -1248,7 +1248,13 @@
     right: 20px;
 }
 
+/* The frame is a one-column grid: the avatar sizes the column, the name bar
+   below stretches to it. Grid (not flex) so the name bar can be told to take
+   the avatar's width WITHOUT a long persona name widening the panel — see
+   .avatar-label. */
 .avatar-frame {
+    display: grid;
+    justify-items: stretch;
     background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
@@ -1305,20 +1311,45 @@
     font-size: 6rem;
 }
 
+/* Name bar (bottom of the frame). It used to float under the frame on the raw
+   chat background, where a persona name could land on a same-coloured message
+   and vanish; inside the frame it always has the frame's own backdrop.
+   `width: 0; min-width: 100%` is what keeps it from widening the panel: the
+   grid column is sized by the avatar alone, then the bar stretches to it and
+   ellipsises anything longer. */
 .avatar-label {
+    width: 0;
+    min-width: 100%;
     margin-top: 8px;
+    padding: 6px 6px 0;
+    border-top: 1px solid var(--border-color);
     text-align: center;
+    overflow: hidden;
+}
+
+/* Very small avatars (below ~72px) have no room for legible text — the name
+   bar would be taller than the avatar itself, so it's dropped there. */
+.floating-avatar.compact .avatar-label {
+    display: none;
 }
 
 .avatar-name {
     font-weight: 600;
     font-size: var(--text-sm);
+    line-height: 1.2;
     color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .avatar-expression {
     font-size: var(--text-xs);
+    line-height: 1.2;
     color: var(--accent);
     margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
