@@ -35,6 +35,7 @@ import {
     UiPrefs, applyTheme, withThemeTransition, applyChatWidth, syncAppearanceControls,
 } from './ui-prefs.js';
 import { createSidebarOverlay, openSidebar, closeSidebar, setupSidebarResize } from './sidebar.js';
+import { setupSettingsTabs, handlePresetListClick, createPreset } from './views/settings.js';
 import { ICON_SVG } from './util/markdown.js';
 import { ImageStore } from './util/image-store.js';
 import { positionPopover, attachPopoverOutsideClose } from './components/menus.js';
@@ -349,6 +350,8 @@ function hydrateSettings(settings) {
     state.settings.catalogProviders = Array.isArray(settings.catalogProviders)
         ? settings.catalogProviders
         : null;
+    // The account's default prompt preset (AP-02). null = the built-in layer.
+    state.settings.defaultPresetId = settings.defaultPresetId || null;
     // The active model layer (WR-12). NULL sentinel = not yet seeded (first
     // load after the de-sync upgrade) — init() seeds it from the active
     // persona once personas are hydrated.
@@ -1111,6 +1114,12 @@ function setupEventListeners() {
         document.getElementById('personaEditBack')
             .addEventListener('click', () => navigate({ type: 'personas' }));
     }
+
+    // Settings tabs (AP-02). After BOTH re-parentings above, so the strip is
+    // built over the sections that actually stayed in #settingsView.
+    setupSettingsTabs();
+    if (elements.presetList) elements.presetList.addEventListener('click', handlePresetListClick);
+    if (elements.createPresetBtn) elements.createPresetBtn.addEventListener('click', createPreset);
 
     // Models & Providers section (WR-13): a title row + the model catalog
     // (rendered per-visit by renderModelsCatalog) + the active-model/API-key
