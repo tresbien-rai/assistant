@@ -306,7 +306,7 @@ export async function updateFloatingAvatar() {
         elements.avatarMoodBadge.hidden = true;
     }
 
-    // Update name and expression label
+    // The card's only text. The expression is shown, never named — the
+    // portrait, the mood badge and the emoji fallback all carry it.
     elements.floatingAvatarName.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
-    elements.floatingAvatarExpression.textContent = state.currentExpression;
 }

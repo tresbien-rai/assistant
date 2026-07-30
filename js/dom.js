@@ -169,7 +169,6 @@ export const elements = {
     avatarEmoji: document.getElementById('avatarEmoji'),
     avatarImg: document.getElementById('avatarImg'),
     floatingAvatarName: document.getElementById('floatingAvatarName'),
-    floatingAvatarExpression: document.getElementById('floatingAvatarExpression'),
 
     // Error display system (P0-17)
     toastContainer: document.getElementById('toastContainer'),
