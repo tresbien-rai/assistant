@@ -614,6 +614,10 @@
         position: fixed;
         inset: 0;
         width: 100%;
+        /* Drop the desktop resize floors — a full-screen overlay shares the
+           width with nothing, and the max-width would cap it at 320px here. */
+        min-width: 0;
+        max-width: none;
         z-index: 110;
         border-left: none;
     }
