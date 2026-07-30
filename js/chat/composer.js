@@ -276,6 +276,12 @@ export async function buildAttachmentContentBlocks(textContent, attachments, pro
 
 // ===== Utility Functions =====
 export function autoResizeTextarea(textarea) {
+    // A textarea with no layout box (any ancestor display:none — the composer is
+    // [hidden] on every non-chat view) reports scrollHeight 0. That is a failed
+    // measurement, not a height: writing it back pinned the composer to 0px and
+    // it stayed there once shown, leaving a padding-only sliver with the top of
+    // the text clipped. Skip; syncChatChrome re-runs this when it reappears.
+    if (textarea.getClientRects().length === 0) return;
     // Grow to fit content; CSS max-height caps it (then the textarea scrolls).
     textarea.style.height = 'auto';
     textarea.style.height = textarea.scrollHeight + 'px';

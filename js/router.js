@@ -35,6 +35,9 @@ import { renderWorkspacesListMain, renderBreadcrumb, renderContainerPage } from 
 import { renderPersonasListMain } from './views/personas.js';
 import { renderModelsView } from './views/models.js';
 import { FilePanel } from './file-panel/index.js';
+// The composer is chrome this module shows and hides, so it also owns the
+// resize that only becomes measurable at the moment it is shown.
+import { autoResizeTextarea } from './chat/composer.js';
 
 /**
  * The persona's base file-tools setting (its default for new chats). Stored in
@@ -113,7 +116,16 @@ export function renderShell() {
  */
 export function syncChatChrome() {
     const inChat = (state.ui.mainView || {}).type === 'chat';
-    if (elements.inputContainer) elements.inputContainer.hidden = !inChat;
+    if (elements.inputContainer) {
+        const wasHidden = elements.inputContainer.hidden;
+        elements.inputContainer.hidden = !inChat;
+        // Showing the composer is the first moment its height can actually be
+        // measured: the draft restored on the way in (setActiveConversation)
+        // ran while it was still display:none, where every measurement is 0.
+        if (wasHidden && inChat && elements.messageInput) {
+            autoResizeTextarea(elements.messageInput);
+        }
+    }
     if (elements.floatingAvatar) {
         elements.floatingAvatar.classList.toggle('hidden', !inChat || !state.settings.showAvatar);
     }
