@@ -35,7 +35,7 @@ import {
     UiPrefs, applyTheme, withThemeTransition, applyChatWidth, syncAppearanceControls,
 } from './ui-prefs.js';
 import { createSidebarOverlay, openSidebar, closeSidebar, setupSidebarResize } from './sidebar.js';
-import { renderMarkdown, ICON_SVG } from './util/markdown.js';
+import { ICON_SVG } from './util/markdown.js';
 import { ImageStore } from './util/image-store.js';
 import { positionPopover, attachPopoverOutsideClose } from './components/menus.js';
 import { showToast, hideCriticalBanner } from './components/toast.js';
@@ -54,9 +54,9 @@ import { updateStatusBar } from './status-bar.js';
 import {
     showNotification, } from './chat/thread.js';
 import {
-    sendMessage, rerunFromMessage,
-    stopGeneration, buildChatRequest, applyDevMode,
+    sendMessage, stopGeneration, buildChatRequest, applyDevMode,
 } from './chat/send.js';
+import { setupMessageActions } from './chat/message-actions.js';
 import {
     autoResizeTextarea, renderAttachmentPreviews,
     } from './chat/composer.js';
@@ -67,7 +67,7 @@ import {
 import {
     applyPersonaModelSettings, hydratePersonas, } from './persona-helpers.js';
 import {
-    restoreConversationModel, loadConversationMessages, saveConversations,
+    restoreConversationModel, loadConversationMessages,
     switchConversation, renderConversation,
     renderConversationList, } from './views/chats.js';
 import {
@@ -1252,165 +1252,9 @@ function showModelMenu(anchorEl, { showAll = false } = {}) {
     attachPopoverOutsideClose(menu, anchorEl);
 }
 
-// ===== Message Actions =====
-function handleMessageAction(messageDiv, action, msgIndex) {
-    switch (action) {
-        case 'copy':
-            copyMessageText(msgIndex);
-            break;
-        case 'edit':
-            editMessageInPlace(messageDiv, msgIndex);
-            break;
-        case 'delete':
-            deleteMessage(msgIndex);
-            break;
-        case 'rerun':
-            rerunFromMessage(msgIndex);
-            break;
-    }
-}
-
-function copyMessageText(msgIndex) {
-    const activeConvo = getActiveConversation();
-    if (!activeConvo || !activeConvo.messages[msgIndex]) return;
-
-    const text = activeConvo.messages[msgIndex].content;
-    navigator.clipboard.writeText(text).then(() => {
-        showNotification('Copied to clipboard');
-    }).catch(err => {
-        console.error('Failed to copy:', err);
-    });
-}
-
-async function deleteMessage(msgIndex) {
-    const activeConvo = getActiveConversation();
-    if (!activeConvo || !activeConvo.messages[msgIndex]) return;
-
-    const ok = await confirmDialog({
-        title: 'Delete message?',
-        body: "This message will be removed from the conversation. This can't be undone.",
-        confirmLabel: 'Delete',
-        danger: true,
-    });
-    if (!ok) return;
-
-    // Confirming is async now — re-check that the message is still there and
-    // that we're still looking at the same conversation.
-    if (getActiveConversation() !== activeConvo || !activeConvo.messages[msgIndex]) return;
-
-    const msg = activeConvo.messages[msgIndex];
-
-    // Server-side delete first so failure can short-circuit before the local
-    // mutation. If the message has no id yet, its persistMessage POST never
-    // completed (e.g., still in flight / failed). In that case it doesn't
-    // exist server-side and a local-only delete is correct.
-    if (msg.id) {
-        try {
-            await API.messages.delete(activeConvo.id, msg.id);
-        } catch (err) {
-            console.error('Failed to delete message:', err);
-            displayError(err, { action: 'delete message' });
-            return;
-        }
-    }
-
-    // Clean up any attachments from IndexedDB
-    if (msg.attachments && msg.attachments.length > 0) {
-        msg.attachments.forEach(att => {
-            if (att.imageStoreKey) {
-                ImageStore.delete(att.imageStoreKey);
-            }
-        });
-    }
-
-    activeConvo.messages.splice(msgIndex, 1);
-    activeConvo.updatedAt = Date.now();
-    saveConversations();
-    renderConversation();
-}
-
-function editMessageInPlace(messageDiv, msgIndex) {
-    const activeConvo = getActiveConversation();
-    if (!activeConvo || !activeConvo.messages[msgIndex]) return;
-
-    const msg = activeConvo.messages[msgIndex];
-    const contentDiv = messageDiv.querySelector('.message-content');
-    const actionsDiv = messageDiv.querySelector('.message-actions');
-
-    // Hide actions while editing
-    if (actionsDiv) actionsDiv.style.display = 'none';
-
-    // Store original content for cancel
-    const originalContent = msg.content;
-    const originalHTML = contentDiv.innerHTML;
-
-    // Replace content with textarea
-    const editContainer = document.createElement('div');
-    editContainer.className = 'message-edit-container';
-
-    const textarea = document.createElement('textarea');
-    textarea.className = 'message-edit-textarea';
-    textarea.value = originalContent;
-
-    const buttonsDiv = document.createElement('div');
-    buttonsDiv.className = 'message-edit-actions';
-    buttonsDiv.innerHTML = `
-        <button class="message-edit-cancel">Cancel</button>
-        <button class="message-edit-save">Save</button>
-    `;
-
-    editContainer.appendChild(textarea);
-    editContainer.appendChild(buttonsDiv);
-
-    contentDiv.replaceWith(editContainer);
-
-    // Auto-resize textarea
-    textarea.style.height = 'auto';
-    textarea.style.height = textarea.scrollHeight + 'px';
-    textarea.focus();
-
-    // Save handler
-    buttonsDiv.querySelector('.message-edit-save').addEventListener('click', async () => {
-        const newContent = textarea.value.trim();
-        if (!newContent) return;
-
-        // Persist to server first. If the message hasn't been POSTed yet
-        // (no id), there's nothing to update — the in-memory edit is enough
-        // and the eventual persistMessage in appendMessage hasn't completed.
-        if (msg.id) {
-            try {
-                await API.messages.update(activeConvo.id, msg.id, { content: newContent });
-            } catch (err) {
-                console.error('Failed to update message:', err);
-                displayError(err, { action: 'save edit' });
-                return;
-            }
-        }
-
-        // Update conversation data
-        msg.content = newContent;
-        activeConvo.updatedAt = Date.now();
-        saveConversations();
-
-        // Restore content div with new content
-        const newContentDiv = document.createElement('div');
-        newContentDiv.className = 'message-content';
-        newContentDiv.innerHTML = renderMarkdown(newContent);
-        editContainer.replaceWith(newContentDiv);
-
-        if (actionsDiv) actionsDiv.style.display = '';
-    });
-
-    // Cancel handler
-    buttonsDiv.querySelector('.message-edit-cancel').addEventListener('click', () => {
-        const restoredDiv = document.createElement('div');
-        restoredDiv.className = 'message-content';
-        restoredDiv.innerHTML = originalHTML;
-        editContainer.replaceWith(restoredDiv);
-
-        if (actionsDiv) actionsDiv.style.display = '';
-    });
-}
+// Message actions (copy / edit / delete / re-run) moved to
+// js/chat/message-actions.js, which owns its delegated listener too. They were
+// parked here until js/chat/send.js existed; it has since R-05.
 
 // ===== Request Inspector (P2-U4, developer mode) =====
 
@@ -1915,17 +1759,8 @@ function setupEventListeners() {
         }
     });
 
-    // Message action buttons (event delegation)
-    elements.messagesContainer.addEventListener('click', (e) => {
-        const btn = e.target.closest('.message-action-btn');
-        if (!btn) return;
-        const messageDiv = btn.closest('.message');
-        if (!messageDiv) return;
-        const action = btn.dataset.action;
-        const msgIndex = parseInt(messageDiv.dataset.msgIndex, 10);
-        if (isNaN(msgIndex)) return;
-        handleMessageAction(messageDiv, action, msgIndex);
-    });
+    // Message action buttons — the module owns its own delegated listener.
+    setupMessageActions();
 
     // Message input
     elements.messageInput.addEventListener('input', () => {
