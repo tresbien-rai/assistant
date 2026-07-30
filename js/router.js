@@ -212,11 +212,11 @@ export function renderTopBar() {
     if (elements.filesExplorerBtn) elements.filesExplorerBtn.hidden = !inChat;
 }
 
-/** Update the model name shown on the top-bar button and the composer chip. */
-export function setModelIndicator(name) {
-    if (elements.modelIndicator) elements.modelIndicator.textContent = name;
-    if (elements.composerModelName) elements.composerModelName.textContent = name;
-}
+// `setModelIndicator` used to live here — another passenger like
+// getActiveConversation was, and moved for the same reason: js/views/models.js
+// needs it, and the router must not be imported by a view. It writes the model
+// name into two chips and is now in js/model-layer.js, which already holds
+// `elements` and everything else about the active model.
 
 // The shell implementations this module owns. main.js registered these while
 // they lived there; they belong with the router now.

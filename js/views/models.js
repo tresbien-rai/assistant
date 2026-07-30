@@ -17,7 +17,9 @@ import { API } from '../api-client.js';
 import {
     PROVIDERS, providerIconHtml, getActiveModelConfig, getCatalogEntry, applyModelToLayer,
     getModelParamsForEdit, getParamByPath, setParamByPath,
-    paramVisible, descByPath, fmtParamValue, } from '../model-layer.js';
+    paramVisible, descByPath, fmtParamValue,
+    getModelDisplayName, setModelIndicator, ensureActiveModelValid,
+    updateSendButtonState, } from '../model-layer.js';
 import {
     persistSettings, autoSaveSettings, saveCatalogProviders, saveProviderKey,
     clearStoredApiKey, } from '../settings-store.js';
@@ -25,6 +27,8 @@ import { navigate, updateUI, registerShell } from '../shell.js';
 import { loadModelProfileIntoLayer } from '../model-layer.js';
 import { updateFixedPersonaPin } from '../settings-store.js';
 import { escapeHtml } from '../util/format.js';
+import { showToast } from '../components/toast.js';
+import { displayError } from '../components/errors.js';
 import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
 
 /** Render one param control from its descriptor + current value. */
@@ -586,6 +590,323 @@ export function showModelCardMenu(anchorEl, modelId, provider) {
         renderModelsCatalog();
     });
     attachPopoverOutsideClose(menu, anchorEl);
+}
+
+// ===== The add-model modal's other half =====
+//
+// This modal was owned by TWO files. `openModelModal`, `renderModelModalProviders`,
+// `selectModalProvider`, `renderFetchSection` and `refreshAddModelModal` were here;
+// `fetchAvailableModels`, `renderAvailableModelsGrid`, `handleFetchModels`,
+// `handleAddModelManually`, `addCustomModel`, `closeModelModal` and
+// `refreshAfterModelChange` were in main.js, along with all of the modal's event
+// listeners. Two files, one modal, and two similarly-named refresh functions
+// (`refreshAddModelModal` here vs `refreshAfterModelChange` there) that a reader
+// had to hold apart.
+//
+// Split ownership is how halves drift: the post-refactor review found that
+// main.js's `renderAvailableModelsGrid` interpolated provider text into HTML with
+// no escaping, while its sibling renderers in this file escape consistently. The
+// bug lived exactly on the seam between the two halves.
+
+/**
+ * Fetch the available models from a provider's API. Not every provider offers a
+ * list endpoint — the server throws VALIDATION_ERROR for one whose module has no
+ * listModels(), which surfaces as a normal error toast.
+ * @param {string} provider
+ * @returns {Promise<Array>} Array of { id, display_name } objects
+ */
+export async function fetchAvailableModels(provider) {
+    if (!state.apiKeyStatus[provider]?.hasKey) {
+        throw new Error('API key required to fetch models');
+    }
+
+    // Server proxies the request using the user's stored key and returns the
+    // provider's raw model list. Different providers have slightly different
+    // shapes (Anthropic: { id, display_name }; Gemini: { id, name, ... }) —
+    // normalize for the existing renderer.
+    const list = await API.models.list(provider);
+    return list.map(m => ({
+        id: m.id,
+        display_name: m.display_name || m.displayName || m.name || m.id,
+    }));
+}
+
+/**
+ * Add a custom model to a provider's catalog.
+ * @param {string} id - The model ID
+ * @param {string} name - The display name
+ * @param {string} provider - The provider that owns the model
+ * @returns {boolean} True if added, false if already exists
+ */
+export function addCustomModel(id, name, provider) {
+    if (!id || !name || !provider) return false;
+
+    const providerModels = state.settings.customModels[provider];
+    if (!providerModels) return false;
+
+    // Check if already exists
+    const exists = providerModels.some(m => m.id === id);
+    if (exists) return false;
+
+    providerModels.push({ id, name });
+    saveCustomModels();
+    return true;
+}
+
+/**
+ * Refresh UI after the model catalog changes from the modal (add/remove): keep
+ * the active model valid, then refresh the Models catalog, the model indicator,
+ * and the send button. Replaces the old populateModelDropdown() refresh now that
+ * the dropdown is gone (Slice 4).
+ */
+export function refreshAfterModelChange() {
+    ensureActiveModelValid();
+    renderModelsCatalog();
+    setModelIndicator(getModelDisplayName(getActiveModelConfig().model));
+    updateSendButtonState();
+}
+
+/**
+ * Render available models grid after fetching from API
+ * @param {Array} models - Array of { id, display_name } from API
+ * @param {string} provider - The provider they were fetched from
+ */
+export function renderAvailableModelsGrid(models, provider) {
+    const grid = elements.availableModelsGrid;
+    const providerModels = state.settings.customModels[provider] || [];
+    grid.innerHTML = '';
+    grid.style.display = 'grid';
+
+    if (models.length === 0) {
+        grid.innerHTML = '<p class="help-text">No models available</p>';
+        return;
+    }
+
+    models.forEach(model => {
+        const alreadyAdded = providerModels.some(m => m.id === model.id);
+        const card = document.createElement('div');
+        card.className = `available-model-card ${alreadyAdded ? 'already-added' : ''}`;
+        // Escaped like every other interpolation in the app: this text comes
+        // from the provider's model list, and an unescaped quote in a display
+        // name would break out of the data-model-name attribute below.
+        card.innerHTML = `
+            <span class="available-model-name">${escapeHtml(model.display_name)}</span>
+            <span class="available-model-id">${escapeHtml(model.id)}</span>
+            <button class="add-available-model-btn" data-model-id="${escapeHtml(model.id)}" data-model-name="${escapeHtml(model.display_name)}" ${alreadyAdded ? 'disabled' : ''}>
+                ${alreadyAdded ? 'Added' : '+ Add'}
+            </button>
+        `;
+        grid.appendChild(card);
+    });
+
+    // Add click listeners for add buttons
+    grid.querySelectorAll('.add-available-model-btn:not([disabled])').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const modelId = e.target.dataset.modelId;
+            const modelName = e.target.dataset.modelName;
+            if (addCustomModel(modelId, modelName, provider)) {
+                refreshAfterModelChange();
+                // Update the button
+                e.target.textContent = 'Added';
+                e.target.disabled = true;
+                e.target.closest('.available-model-card').classList.add('already-added');
+            }
+        });
+    });
+}
+
+/**
+ * Close the model management modal
+ */
+export function closeModelModal() {
+    elements.modelModal.classList.remove('visible');
+}
+
+/**
+ * Handle fetch models button click
+ */
+export async function handleFetchModels() {
+    const btn = elements.fetchModelsBtn;
+    const originalText = btn.textContent;
+    // Capture the provider: the user can switch chips while the request is in
+    // flight, and the results belong to the provider that was asked.
+    const provider = modelModalProvider;
+
+    try {
+        btn.disabled = true;
+        btn.textContent = 'Fetching...';
+
+        const models = await fetchAvailableModels(provider);
+        if (provider !== modelModalProvider) return; // switched away mid-flight
+        renderAvailableModelsGrid(models, provider);
+    } catch (error) {
+        console.error('Failed to fetch models:', error);
+        displayError(error, { action: `fetch ${PROVIDERS[provider]?.label || provider} models` });
+    } finally {
+        btn.disabled = !state.apiKeyStatus[modelModalProvider]?.hasKey;
+        btn.textContent = originalText;
+    }
+}
+
+/**
+ * Handle manual add model button click
+ */
+export function handleAddModelManually() {
+    const id = elements.newModelId.value.trim();
+    const name = elements.newModelName.value.trim();
+
+    if (!id) {
+        showToast('Please enter a model ID', { type: 'warning' });
+        return;
+    }
+
+    if (!name) {
+        showToast('Please enter a display name', { type: 'warning' });
+        return;
+    }
+
+    const provider = modelModalProvider;
+    if (addCustomModel(id, name, provider)) {
+        refreshAfterModelChange();
+        elements.newModelId.value = '';
+        elements.newModelName.value = '';
+        // The modal no longer lists your models (the catalog does), so say so.
+        showToast(`${name} added to ${PROVIDERS[provider]?.label || provider}`);
+
+        // Update available grid if visible
+        if (elements.availableModelsGrid.style.display !== 'none') {
+            const addedCard = elements.availableModelsGrid.querySelector(`[data-model-id="${id}"]`);
+            if (addedCard) {
+                addedCard.textContent = 'Added';
+                addedCard.disabled = true;
+                addedCard.closest('.available-model-card')?.classList.add('already-added');
+            }
+        }
+    } else {
+        showToast('Model already exists', { type: 'warning' });
+    }
+}
+
+/**
+ * Top-bar model button popover (WR-11): configured models grouped by provider,
+ * with the provider's brand mark and a "no key" badge where no API key is
+ * stored (models stay pickable — sending surfaces the missing-key error).
+ * Picking a model sets provider+model together while retaining the persona.
+ *
+ * Slice 8 scopes the list by the saved "daily drivers" subset
+ * (state.settings.catalogProviders) so quick-switch offers the same short list
+ * the catalog defaults to. Two guardrails keep a *view* preference from
+ * becoming a restriction: the active model's provider is always listed even
+ * when the subset excludes it, and "Show all providers" reopens the menu
+ * unfiltered for that viewing only — it never writes catalogProviders.
+ *
+ * Moved here with the modal: its "Manage models…" item navigates to this view
+ * and picking a model calls selectModel(), which is right here.
+ *
+ * @param {HTMLElement} anchorEl
+ * @param {Object} [options]
+ * @param {boolean} [options.showAll] - Ignore the subset for this opening only.
+ */
+export function showModelMenu(anchorEl, { showAll = false } = {}) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const modelConfig = getActiveModelConfig();
+    const selected = state.settings.catalogProviders;
+    const noFilter = showAll || !Array.isArray(selected) || selected.length === 0;
+
+    // Providers worth listing at all: an empty provider has nothing to switch to.
+    const stocked = Object.keys(PROVIDERS)
+        .filter(p => (state.settings.customModels[p] || []).length > 0);
+    // Never hide the provider you're currently using.
+    const visible = stocked.filter(p =>
+        noFilter || selected.includes(p) || p === modelConfig.provider);
+    const hiddenCount = stocked.length - visible.length;
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu context-menu-wide model-menu';
+
+    let groups = '';
+    for (const provider of visible) {
+        const { label } = PROVIDERS[provider];
+        const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
+        groups += `<div class="context-menu-label">
+            ${providerIconHtml(provider)}<span class="model-menu-provider">${escapeHtml(label)}</span>
+            ${hasKey ? '' : '<span class="model-menu-nokey">no key</span>'}
+        </div>`;
+        for (const m of state.settings.customModels[provider]) {
+            const active = provider === modelConfig.provider && m.id === modelConfig.model;
+            groups += `<button class="context-menu-item${active ? ' active' : ''}" data-model-id="${escapeHtml(m.id)}" data-provider="${provider}">${escapeHtml(m.name)}</button>`;
+        }
+    }
+
+    // The groups scroll; the footer stays put. .context-menu has no max-height of
+    // its own, so without this the menu runs off-screen as providers accumulate.
+    let html = visible.length > 0
+        ? `<div class="model-menu-scroll">${groups}</div>`
+        : `<div class="context-menu-empty">No models configured</div>`;
+    html += `<div class="context-menu-separator"></div>`;
+    if (hiddenCount > 0) {
+        html += `<button class="context-menu-item model-menu-more" data-action="showall">Show all providers (${hiddenCount} more)</button>`;
+    }
+    html += `<button class="context-menu-item" data-action="manage">Manage models…</button>`;
+    menu.innerHTML = html;
+
+    positionPopover(menu, anchorEl, 'right');
+
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            menu.remove();
+            if (item.dataset.action === 'showall') {
+                showModelMenu(anchorEl, { showAll: true }); // this opening only
+                return;
+            }
+            if (item.dataset.action === 'manage') {
+                navigate({ type: 'models' }); // the Models section (WR-13) is the catalog's home
+                return;
+            }
+            if (item.dataset.modelId) {
+                selectModel(item.dataset.modelId, item.dataset.provider);
+            }
+        });
+    });
+
+    attachPopoverOutsideClose(menu, anchorEl);
+}
+
+/**
+ * Wire the add-model modal and the quick-switch model menu.
+ *
+ * The listeners live with the modal now rather than in setupEventListeners, so
+ * the feature is one unit. Called once from main.js at startup.
+ */
+export function setupModelsEvents() {
+    // Add-model modal ("+ Add model" in the Models view header, or a catalog
+    // group's "+ Add", are the entries; the provider is picked inside).
+    elements.closeModelModal.addEventListener('click', closeModelModal);
+    elements.fetchModelsBtn.addEventListener('click', handleFetchModels);
+    elements.addModelBtn.addEventListener('click', handleAddModelManually);
+    elements.modalKeyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showProviderKeyPopover(elements.modalKeyBtn, modelModalProvider);
+    });
+
+    // Close model modal on overlay click
+    elements.modelModal.addEventListener('click', (e) => {
+        if (e.target === elements.modelModal) {
+            closeModelModal();
+        }
+    });
+
+    // The model menu opens from either the top-bar button (browsing) or the
+    // composer chip (in chat) — same menu, anchored to whichever was clicked.
+    [elements.modelButton, elements.composerModelButton].forEach((btn) => {
+        if (!btn) return;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showModelMenu(btn);
+        });
+    });
 }
 
 // Register the two region repaints the settings store reaches through the seam.
