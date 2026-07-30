@@ -21,6 +21,10 @@ import { positionPopover } from '../components/menus.js';
 import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog } from '../components/dialogs.js';
+// One-way, like chat/expressions.js → avatar.js: the panel resizes the chat
+// column, so it tells the avatar to re-derive its position. The avatar knows
+// nothing about the panel.
+import { repositionFloatingAvatar } from '../avatar.js';
 
 // Chat working-file inject modes (CT-04). Order IS the cycle order, and matches
 // the server's INJECT_MODES so a round trip can't disagree with the UI.
@@ -72,6 +76,10 @@ export const FilePanel = {
     _cache: null,    // { url, text } — last fetched content, so raw/rendered
                      // toggles and card re-clicks don't re-download
     _draftBaseline: null,   // text the open draft started from (dirty check)
+    // Server-resolved scratchpad state from the last context fetch (SP-03a):
+    // the files view shows the pad's toggle without the pad being open, and
+    // only the server can see whether an untouched pad has auto-armed.
+    _scratchpadResolved: null,
     _pendingActivity: null, // { att, convoId } that arrived mid-edit; re-
                             // dispatched when the draft closes
 
@@ -182,6 +190,77 @@ export const FilePanel = {
         }
     },
 
+    /**
+     * Drag the handle on the panel's left edge to resize it (desktop only),
+     * mirroring the sidebar's handle: clamped, persisted per-device at gesture
+     * end, reset on double-click.
+     *
+     * The clamp is the contract the user asked for — the panel keeps at least
+     * MIN_W and the chat column at least CHAT_MIN, and the drag shares out
+     * whatever is left. CSS enforces the same floors independently (see
+     * .file-panel's max-width), so a window resize can't break them either.
+     */
+    setupResize() {
+        const handle = document.getElementById('filePanelResizeHandle');
+        const panel = elements.filePanel;
+        if (!handle || !panel) return;
+
+        const MIN_W = 320;
+        const CHAT_MIN = 420;
+        // Whatever is left after the sidebar column and the chat's floor.
+        const maxW = () => {
+            const sidebar = elements.sidebar;
+            // Rendered width, so a collapsed/overlay sidebar isn't charged for.
+            const sidebarW = sidebar && window.getComputedStyle(sidebar).position !== 'fixed'
+                ? sidebar.getBoundingClientRect().width
+                : 0;
+            return Math.max(MIN_W, Math.round(window.innerWidth - sidebarW - CHAT_MIN));
+        };
+        const clamp = (w) => Math.max(MIN_W, Math.min(maxW(), Math.round(w)));
+
+        let dragging = false;
+        let startX = 0;
+        let startW = 0;
+        let currentW = 0;
+
+        const applyLive = (w) => {
+            currentW = clamp(w);
+            document.documentElement.style.setProperty('--file-panel-width', `${currentW}px`);
+            repositionFloatingAvatar(); // the chat column just changed width
+        };
+
+        handle.addEventListener('pointerdown', (e) => {
+            dragging = true;
+            startX = e.clientX;
+            startW = panel.getBoundingClientRect().width;
+            handle.classList.add('dragging');
+            try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+            e.preventDefault();
+        });
+
+        handle.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            applyLive(startW - (e.clientX - startX)); // drag LEFT widens
+        });
+
+        const endDrag = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            handle.classList.remove('dragging');
+            try { handle.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+            UiPrefs.set('filePanelWidth', currentW); // persist once, at gesture end
+        };
+        handle.addEventListener('pointerup', endDrag);
+        handle.addEventListener('pointercancel', endDrag);
+
+        // Double-click clears the pinned width, handing the panel back to its
+        // responsive CSS default rather than to some other fixed number.
+        handle.addEventListener('dblclick', () => {
+            document.documentElement.style.removeProperty('--file-panel-width');
+            UiPrefs.set('filePanelWidth', null);
+        });
+    },
+
     // ---- Scratchpad (SP-03a) ----
 
     /** Whether the panel is currently showing the conversation's scratchpad. */
@@ -220,12 +299,28 @@ export const FilePanel = {
         const persona = getActivePersona();
         if (persona?.modelConfig?.scratchpadEnabled === true) return true;
         const cache = this._cache;
-        return !!(cache && this.file && cache.url === this.file.url && cache.text.trim() !== '');
+        if (cache && this.file && cache.url === this.file.url) return cache.text.trim() !== '';
+        // Auto-arm without the pad's content in hand (the files view, where the
+        // pad isn't open): fall back to the server's own resolution from the
+        // last context fetch, which reads the pad directly.
+        return this._scratchpadResolved === true;
     },
 
     /** Reflect the effective enabled state on the header toggle. */
     syncScratchpadToggle() {
-        const btn = elements.filePanelScratchpadToggle;
+        this.paintScratchpadToggle(elements.filePanelScratchpadToggle);
+    },
+
+    /**
+     * The same toggle on the files-view pad row (kept in sync separately
+     * because the two surfaces are never on screen at once).
+     */
+    syncScratchpadRowToggle() {
+        this.paintScratchpadToggle(document.getElementById('fpBrowserScratchpadToggle'));
+    },
+
+    /** Paint one scratchpad toggle button from the effective enabled state. */
+    paintScratchpadToggle(btn) {
         if (!btn) return;
         const on = this.scratchpadEffectiveEnabled();
         btn.classList.toggle('on', on);
@@ -243,7 +338,10 @@ export const FilePanel = {
         if (!convo) return;
         const next = !this.scratchpadEffectiveEnabled();
         convo.scratchpadEnabled = next;
+        // Both surfaces read the same effective state; whichever is on screen
+        // updates, the other is rebuilt from it when it next renders.
         this.syncScratchpadToggle();
+        this.syncScratchpadRowToggle();
         try {
             await API.conversations.update(convo.id, { scratchpadEnabled: next });
         } catch (err) {
@@ -387,16 +485,26 @@ export const FilePanel = {
         const list = document.createElement('div');
         list.className = 'fp-browser';
 
+        // The server's resolved pad state, so the row's toggle can show the
+        // truth (including auto-arm) without the pad being open.
+        this._scratchpadResolved = context?.scratchpadEnabled === true;
+
         // Pinned scratchpad entry — always present (the shared thinking space),
-        // above everything else.
+        // above everything else. Its on/off toggle is the same control as the
+        // one in the pad's own header: without it here, checking whether the
+        // assistant can see the pad meant opening the pad.
         const padRow = document.createElement('div');
         padRow.className = 'chat-file-row scratchpad-row';
-        padRow.title = 'The shared scratchpad for this chat';
         padRow.innerHTML =
             `<span class="project-file-badge">PAD</span>`
-            + `<button type="button" class="chat-file-name clickable">Scratchpad</button>`
-            + `<span class="project-file-size scratchpad-row-hint">shared notes</span>`;
+            + `<button type="button" class="chat-file-name clickable" title="The shared scratchpad for this chat">Scratchpad</button>`
+            + `<button type="button" class="file-panel-btn scratchpad-toggle" id="fpBrowserScratchpadToggle" aria-pressed="false">`
+            + `<span class="scratchpad-toggle-dot" aria-hidden="true"></span>`
+            + `<span class="scratchpad-toggle-label">Off</span>`
+            + `</button>`;
         padRow.querySelector('.chat-file-name').addEventListener('click', () => this.openScratchpad());
+        padRow.querySelector('#fpBrowserScratchpadToggle')
+            .addEventListener('click', () => this.toggleScratchpadEnabled());
         list.appendChild(padRow);
 
         const knowledge = [
@@ -444,6 +552,8 @@ export const FilePanel = {
 
         body.innerHTML = '';
         body.appendChild(list);
+        // In the document now, so the shared painter can find it by id.
+        this.syncScratchpadRowToggle();
 
         // The panel's own fetch is the freshest read of this chat's context, so
         // let it settle the badge too (CT-06) — and mark it current so a
@@ -845,6 +955,7 @@ export const FilePanel = {
             this.file = this.deriveConversationFile();
             this.isOpen = false;
             this.unseen = false;
+            this._scratchpadResolved = null; // belonged to the previous chat
             this.historyMode = false;
             this.browseMode = false;
         }
@@ -853,7 +964,12 @@ export const FilePanel = {
         // (needs a file). The top-bar files button (renderTopBar) is the entry
         // point; its dot signals unseen activity while the panel is closed.
         const showPanel = inChat && this.isOpen && (this.browseMode || !!this.file);
+        const wasShown = !elements.filePanel.hidden;
         elements.filePanel.hidden = !showPanel;
+        // Opening/closing the panel resizes the chat column under the floating
+        // avatar, whose free position is a % of that column — without this it
+        // keeps its old pixel offset and the panel covers it.
+        if (wasShown !== showPanel) repositionFloatingAvatar();
         if (elements.filesExplorerDot) {
             elements.filesExplorerDot.hidden = !(inChat && !showPanel && this.unseen);
         }

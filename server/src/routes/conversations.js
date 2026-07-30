@@ -48,7 +48,10 @@ const {
 // (override → persona base). Reused here so the context view's `toolsEnabled`
 // can't drift from what the chat route actually advertises. No require cycle:
 // chat.js does not require this router (only index.js mounts both).
-const { resolveToolsEnabled } = require('./chat');
+// resolveScratchpadEnabled comes along for the same reason: the files view
+// shows the pad's on/off state, and it has to be the state the chat route will
+// actually act on (override → persona base → auto-arm on a non-empty pad).
+const { resolveToolsEnabled, resolveScratchpadEnabled } = require('./chat');
 
 const router = express.Router();
 
@@ -609,6 +612,9 @@ router.get('/:id/context', asyncHandler(async (req, res) => {
 
   res.json({
     toolsEnabled: resolveToolsEnabled(userId, conversation),
+    // The RESOLVED scratchpad state (SP-03a), so the files view can show the
+    // pad's toggle without opening the pad to infer it client-side.
+    scratchpadEnabled: resolveScratchpadEnabled(userId, conversation),
     workspace: section(workspace, 'workspace', dal.listWorkspaceFiles),
     project: section(project, 'project', dal.listProjectFiles),
     chatFiles: dal.listConversationFiles(conversation.id).map((f) => ({

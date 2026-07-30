@@ -73,18 +73,21 @@ export function applyAvatarSize(image, size) {
     }
 }
 
+// Only the corner classes are this function's to own — `hidden`, `generating`,
+// `compact` and `dragging` are set elsewhere and must survive a reposition, so
+// it edits the class list rather than reassigning className.
 export function applyAvatarPosition(avatar, pos) {
     const free = isAvatarCorner(pos) ? null : parseAvatarFreePos(pos);
+    avatar.classList.remove(...AVATAR_CORNERS);
     if (!free) {
         const corner = isAvatarCorner(pos) ? pos : CONFIG.defaults.avatarPosition;
-        avatar.className = `floating-avatar ${corner}`;
+        avatar.classList.add(corner);
         avatar.style.left = '';
         avatar.style.top = '';
         avatar.style.right = '';
         avatar.style.bottom = '';
         return;
     }
-    avatar.className = 'floating-avatar';
     const chatArea = document.getElementById('chatArea');
     // Layout sizes (offset/client), NOT getBoundingClientRect(): the rect is
     // shrunk by the hidden state's scale(0.8) while the avatar is hidden or
@@ -96,6 +99,22 @@ export function applyAvatarPosition(avatar, pos) {
     avatar.style.top = `${(free.y / 100) * maxTop}px`;
     avatar.style.right = 'auto';
     avatar.style.bottom = 'auto';
+}
+
+/**
+ * Re-derive a freely-placed avatar's pixel position from the chat area's
+ * CURRENT size. A stored "x,y" is a % of the available travel, so anything that
+ * resizes the chat column has to trigger this or the avatar keeps its old pixel
+ * offset and ends up clipped (the chat area is overflow:hidden).
+ *
+ * The ResizeObserver in setupAvatarDrag covers this generally; the file panel
+ * calls it directly as well so the avatar moves in the same frame the panel
+ * appears, rather than a beat later.
+ */
+export function repositionFloatingAvatar() {
+    const avatar = elements.floatingAvatar;
+    if (!avatar || isAvatarCorner(state.settings.avatarPosition)) return;
+    applyAvatarPosition(avatar, state.settings.avatarPosition);
 }
 
 // Reflect the current avatar size into the preset buttons + the slider/value.
@@ -203,12 +222,23 @@ export function setupAvatarDrag() {
     frame.addEventListener('pointerup', endDrag);
     frame.addEventListener('pointercancel', endDrag);
 
-    // Re-clamp a freely-placed avatar when the viewport size changes.
-    window.addEventListener('resize', () => {
+    // Re-clamp a freely-placed avatar whenever its container changes size.
+    // Watching the chat area (not just window resize) is what makes the avatar
+    // step aside when the file panel opens or the sidebar is dragged: those
+    // shrink the chat column without the window changing at all, and a stored
+    // "x,y" position is a % of the AVAILABLE travel, so it has to be re-derived.
+    // A corner preset is pure CSS and follows on its own.
+    const reclamp = () => {
+        if (dragging) return; // don't fight the pointer mid-drag
         if (!isAvatarCorner(state.settings.avatarPosition)) {
             applyAvatarPosition(avatar, state.settings.avatarPosition);
         }
-    });
+    };
+    if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(reclamp).observe(chatArea);
+    } else {
+        window.addEventListener('resize', reclamp);
+    }
 }
 
 export async function updateFloatingAvatar() {
@@ -220,9 +250,11 @@ export async function updateFloatingAvatar() {
     // Size first, so the avatar has correct dimensions before we position it.
     applyAvatarSize(image, state.settings.avatarSize);
 
-    // Position (preset corner OR free "x,y"). This resets the wrapper's
-    // className, so apply the hidden state afterwards.
+    // Position (preset corner OR free "x,y").
     applyAvatarPosition(avatar, state.settings.avatarPosition);
+    // Below ~72px the name bar is taller than the avatar it labels, so it's
+    // dropped (see .floating-avatar.compact).
+    avatar.classList.toggle('compact', avatarSizeToPx(state.settings.avatarSize) < 72);
     // Floating avatar only appears in a chat view (WR-07b), and only if enabled.
     const inChat = (state.ui.mainView || {}).type === 'chat';
     avatar.classList.toggle('hidden', !state.settings.showAvatar || !inChat);

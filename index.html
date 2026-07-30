@@ -455,10 +455,13 @@ When responding, you may optionally include an expression tag like [expression: 
                                  off all expression feedback. -->
                             <span class="avatar-mood-badge" id="avatarMoodBadge" hidden aria-hidden="true"></span>
                         </div>
-                    </div>
-                    <div class="avatar-label">
-                        <div class="avatar-name" id="floatingAvatarName">Assistant</div>
-                        <div class="avatar-expression" id="floatingAvatarExpression">neutral</div>
+                        <!-- Name bar: inside the frame, so the persona name always
+                             sits on the frame's own background instead of floating
+                             over whatever the chat happens to be showing. -->
+                        <div class="avatar-label">
+                            <div class="avatar-name" id="floatingAvatarName">Assistant</div>
+                            <div class="avatar-expression" id="floatingAvatarExpression">neutral</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -514,6 +517,7 @@ When responding, you may optionally include an expression tag like [expression: 
              file beside the chat. Opens automatically or via the created-file
              card / edge tab, depending on the device-local filePanelMode. -->
         <aside class="file-panel" id="filePanel" hidden aria-label="File viewer">
+            <div class="file-panel-resize-handle" id="filePanelResizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize file panel (drag, double-click to reset)" title="Drag to resize · double-click to reset"></div>
             <div class="file-panel-header">
                 <button class="file-panel-btn" id="filePanelBrowseBtn" type="button" title="Files in this chat" aria-label="Show the chat's files">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>

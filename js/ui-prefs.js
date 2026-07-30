@@ -26,6 +26,9 @@ export const UiPrefs = {
         devMode: false,           // show developer tools (e.g. request inspector)
         textareaHeights: {},      // dragged heights by textarea id, px
         filePanelMode: 'auto',    // auto (open on file creation) | click (edge-tab alert only)
+        // px; desktop file-panel width, or null for the responsive CSS default
+        // (the panel is only pinned to a number once the user has dragged it).
+        filePanelWidth: null,
         // F-05. false = Shift+Enter sends, plain Enter inserts a newline (the
         // long-standing default, deliberately kept). true = Enter sends.
         // Device-local on purpose: a phone keyboard and a desktop keyboard want
@@ -64,6 +67,11 @@ export const UiPrefs = {
     apply() {
         const d = this.load();
         document.documentElement.style.setProperty('--sidebar-width', `${d.sidebarWidth}px`);
+        // Only set once dragged — unset leaves the file panel on its responsive
+        // clamp() default rather than freezing it at a number we invented.
+        if (d.filePanelWidth) {
+            document.documentElement.style.setProperty('--file-panel-width', `${d.filePanelWidth}px`);
+        }
         applyTheme(d.theme);
         applyChatWidth(d.chatWidth);
     },
