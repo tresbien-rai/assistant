@@ -28,6 +28,10 @@
  */
 const RESERVED_EXPRESSIONS = new Set(['generating']);
 
+// The preset layer (AP-01) supplies the override/normalisation rules and the
+// macro expander. This module owns the TEXT; presets.js owns the SHAPE.
+const { normalizeBlocks, expandMacros, buildMacroValues } = require('./presets');
+
 /**
  * Expression names are interpolated into the system prompt, so they're
  * constrained. Deliberately matches `validateExpressionName` in
@@ -95,21 +99,20 @@ function sanitizeExpressionNames(names) {
 
 /**
  * The expression protocol, naming this persona's real expressions.
- * @param {string[]} names - Already-sanitized expression names
- * @returns {string} The protocol section, or '' when there's nothing to declare
+ *
+ * `{{expressions}}` is a macro rather than an interpolation so a user-authored
+ * override can place the list wherever they want it (AP-01). The names still
+ * come from the persona's ACTUAL expression set on every request — that is the
+ * whole reason this layer exists, and no preset can change it.
  */
-function buildExpressionSection(names) {
-  if (names.length === 0) return '';
-  return `
-
-## Expression
+const EXPRESSION_SECTION = `## Expression
 
 The user sees you as an avatar whose face changes with your mood. Start every
 reply with an expression tag, before any other text:
 
 [expression: name]
 
-Available expressions: ${names.join(', ')}
+Available expressions: {{expressions}}
 
 Pick the one that best fits how you feel as you begin writing, and let it carry
 into the reply's tone. Use exactly one tag, always as the very first thing in
@@ -118,7 +121,6 @@ the message. If nothing fits, use the closest match.
 The tag is removed before the message is displayed, so the user never sees it —
 never mention it, explain it, or apologize for it. If you omit it, your avatar
 simply keeps its previous expression.`;
-}
 
 /**
  * The scratchpad collaboration nudge (SP-05). Included only when the scratchpad
@@ -128,9 +130,7 @@ simply keeps its previous expression.`;
  * it grow. Lives here (the base-prompt layer) so the wording is iterated in one
  * place; the per-turn `<scratchpad>` block reinforces it with the live content.
  */
-const SCRATCHPAD_SECTION = `
-
-## Scratchpad
+const SCRATCHPAD_SECTION = `## Scratchpad
 
 This conversation has a shared scratchpad — a document beside the chat that both
 you and the user edit directly (write_scratchpad replaces the whole thing;
@@ -147,23 +147,94 @@ than restating its contents. The user edits it too, so treat their changes as
 part of your shared thinking.`;
 
 /**
+ * The synthetic assistant turn that acknowledges injected workspace/project
+ * context (FC-03a). A block like any other, so it is editable — it sits in the
+ * MESSAGE layer rather than the system layer, which is why the assembly
+ * positions it instead of the preset's `order`.
+ */
+const CONTEXT_ACK = "Understood — I'll use the reference material above as background for our conversation.";
+
+/** Built-in text for every block, by id. `persona` has none — see below. */
+const BUILTIN_BLOCK_TEXT = {
+  orientation: ORIENTATION,
+  expressions: EXPRESSION_SECTION,
+  scratchpad: SCRATCHPAD_SECTION,
+  context_ack: CONTEXT_ACK,
+};
+
+/** The text a block renders with: the preset's override, or the built-in. */
+function blockText(preset, id) {
+  const override = preset.blocks[id] && preset.blocks[id].text;
+  return typeof override === 'string' ? override : (BUILTIN_BLOCK_TEXT[id] || '');
+}
+
+/**
  * Compose the full system prompt for a provider call.
+ *
+ * Blocks render in the preset's order, joined by a blank line. Three of them are
+ * CONDITIONAL on things the preset does not control (D3): the expression section
+ * needs the persona to actually have expressions, the scratchpad section needs
+ * the pad to be active for this request, and the persona block needs the persona
+ * to have a prompt. A preset can reword or reorder them; it cannot make one
+ * appear when its condition is false.
+ *
+ * With no preset this is byte-identical to the pre-AP-01 output — see
+ * prompts/test-presets.js, which pins that against a golden string.
+ *
  * @param {string} [personaPrompt] - The persona's own system prompt
  * @param {unknown} [expressionNames] - The persona's expression names, unsanitized
  * @param {Object} [options]
- * @param {boolean} [options.scratchpad] - include the scratchpad nudge (SP-05)
+ * @param {boolean} [options.scratchpad] - the scratchpad is active for this request (SP-05)
+ * @param {Object} [options.preset] - resolved preset blocks; omit for the built-in layer
+ * @param {Object} [options.macros] - buildMacroValues() input (persona name, model, …)
  * @returns {string} The assembled system prompt
  */
 function buildSystemPrompt(personaPrompt, expressionNames, options = {}) {
-  let base = ORIENTATION + buildExpressionSection(sanitizeExpressionNames(expressionNames));
-  if (options.scratchpad) base += SCRATCHPAD_SECTION;
+  const preset = normalizeBlocks(options.preset);
+  const names = sanitizeExpressionNames(expressionNames);
+  // expressionNames is forced from the sanitized list: the macro must describe
+  // the persona's real expression set, never whatever a caller passed in.
+  const macros = buildMacroValues({ ...(options.macros || {}), expressionNames: names });
   const persona = typeof personaPrompt === 'string' ? personaPrompt.trim() : '';
-  return persona ? `${base}\n\n---\n\n${persona}` : base;
+
+  const parts = [];
+  for (const id of preset.order) {
+    const block = preset.blocks[id];
+    if (!block || !block.enabled) continue;
+
+    if (id === 'persona') {
+      if (!persona) continue;
+      // The `---` rule separates the platform layer from the persona's own
+      // words. Nothing to separate when the persona leads, so it is dropped.
+      parts.push(parts.length === 0 ? persona : `---\n\n${persona}`);
+      continue;
+    }
+    if (id === 'expressions' && names.length === 0) continue;
+    if (id === 'scratchpad' && !options.scratchpad) continue;
+
+    const text = expandMacros(blockText(preset, id), macros).trim();
+    if (text) parts.push(text);
+  }
+  return parts.join('\n\n');
+}
+
+/**
+ * The context acknowledgement text for this request (see CONTEXT_ACK).
+ * @param {Object} [options] - { preset, macros }, as buildSystemPrompt takes
+ * @returns {string} the ack, or '' when the block is disabled
+ */
+function buildContextAck(options = {}) {
+  const preset = normalizeBlocks(options.preset);
+  if (!preset.blocks.context_ack.enabled) return '';
+  return expandMacros(blockText(preset, 'context_ack'), buildMacroValues(options.macros || {})).trim();
 }
 
 module.exports = {
   buildSystemPrompt,
+  buildContextAck,
   sanitizeExpressionNames,
   ORIENTATION,
+  CONTEXT_ACK,
+  BUILTIN_BLOCK_TEXT,
   RESERVED_EXPRESSIONS,
 };

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     title           TEXT DEFAULT 'New Chat',
     tools_enabled   INTEGER,        -- Track A composer override: NULL = inherit persona, 1 = on, 0 = off (migration 004 backfills old DBs)
     scratchpad_enabled INTEGER,     -- Scratchpad override (SP-02): NULL = inherit persona base, then auto-arm on non-empty content; 1 = on, 0 = off (migration 009)
+    preset_id       TEXT,           -- Prompt preset override (AP-01): NULL = inherit persona default, then the user default, then built-in (migration 011)
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
 );
@@ -271,6 +272,26 @@ CREATE TABLE IF NOT EXISTS scratchpad_revisions (
 CREATE INDEX IF NOT EXISTS idx_scratchpad_revisions_pad ON scratchpad_revisions(scratchpad_id);
 CREATE INDEX IF NOT EXISTS idx_scratchpad_revisions_conversation_id ON scratchpad_revisions(conversation_id);
 
+-- Prompt presets (AP-01, docs/ADVANCED_PROMPTS_PLAN.md)
+-- A named override set for the PLATFORM prompt layer: block text, block order,
+-- and which blocks are on. Presets store OVERRIDES, never copies — a block with
+-- text NULL renders from the built-in in prompts/tessera.js, so improvements to
+-- the built-in wording still reach every block a user never edited (Decision
+-- D2). A preset cannot enable a capability, only reword one (D3). New table =>
+-- created on boot; no migration needed. The two POINTERS at it
+-- (settings.default_preset_id, conversations.preset_id) do need one — see
+-- migration 011.
+CREATE TABLE IF NOT EXISTS prompt_presets (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    blocks      TEXT NOT NULL DEFAULT '{}',  -- JSON: { version, order, blocks } (prompts/presets.js)
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_presets_user_id ON prompt_presets(user_id);
+
 -- Settings table
 -- Per-user application settings
 CREATE TABLE IF NOT EXISTS settings (
@@ -283,6 +304,7 @@ CREATE TABLE IF NOT EXISTS settings (
     current_model_config TEXT,          -- JSON: the active model layer (WR-12); NULL until the client seeds it
     active_file_turns INTEGER DEFAULT 1, -- turns a file stays live in context after a change (FC-03b)
     catalog_providers TEXT DEFAULT NULL, -- JSON array of provider ids for the Models catalog "daily drivers" filter; NULL = All
+    default_preset_id TEXT DEFAULT NULL, -- the user's default prompt preset (AP-01); NULL = the built-in prompt layer (migration 011)
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
 );

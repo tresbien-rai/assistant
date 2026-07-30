@@ -464,6 +464,12 @@ function updateConversation(conversationId, userId, data) {
     updates.push('scratchpad_enabled = ?');
     values.push(data.scratchpadEnabled === null ? null : (data.scratchpadEnabled ? 1 : 0));
   }
+  if (data.presetId !== undefined) {
+    // Prompt preset override (AP-01): an id, or null to clear back to inheriting
+    // the persona default and then the user default.
+    updates.push('preset_id = ?');
+    values.push(data.presetId || null);
+  }
 
   if (updates.length === 0) {
     return getConversationById(conversationId, userId);
@@ -635,6 +641,7 @@ function getSettingsByUser(userId) {
     currentModelConfig: null,
     activeFileTurns: 1,
     catalogProviders: null,
+    defaultPresetId: null,
   };
 }
 
@@ -682,6 +689,10 @@ function upsertSettings(userId, data) {
       updates.push('catalog_providers = ?');
       values.push(data.catalogProviders == null ? null : JSON.stringify(data.catalogProviders));
     }
+    if (data.defaultPresetId !== undefined) {
+      updates.push('default_preset_id = ?');
+      values.push(data.defaultPresetId || null);
+    }
 
     if (updates.length > 0) {
       updates.push('updated_at = ?');
@@ -693,8 +704,8 @@ function upsertSettings(userId, data) {
   } else {
     const id = generateId();
     db.prepare(`
-      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, catalog_providers, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, catalog_providers, default_preset_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       userId,
@@ -705,6 +716,7 @@ function upsertSettings(userId, data) {
       data.currentModelConfig ? JSON.stringify(data.currentModelConfig) : null,
       data.activeFileTurns !== undefined ? data.activeFileTurns : 1,
       data.catalogProviders == null ? null : JSON.stringify(data.catalogProviders),
+      data.defaultPresetId || null,
       timestamp,
       timestamp
     );
@@ -731,9 +743,134 @@ function parseSettingsJson(settings) {
     // Models catalog "daily drivers" filter: a JSON array of provider ids, or
     // NULL (pre-migration rows and un-curated users) which reads as "All".
     catalogProviders: settings.catalog_providers == null ? null : JSON.parse(settings.catalog_providers),
+    // AP-01: the user's default prompt preset. NULL (pre-migration rows and
+    // anyone who never made one) reads as the built-in prompt layer.
+    defaultPresetId: settings.default_preset_id == null ? null : settings.default_preset_id,
     createdAt: settings.created_at,
     updatedAt: settings.updated_at,
   };
+}
+
+// =============================================================================
+// PROMPT PRESETS (AP-01 — docs/ADVANCED_PROMPTS_PLAN.md)
+// =============================================================================
+
+/** Shape a prompt_presets row for the API / the composer. */
+function formatPreset(row) {
+  if (!row) return undefined;
+  let blocks = {};
+  try {
+    blocks = JSON.parse(row.blocks || '{}');
+  } catch {
+    // A preset whose JSON is unreadable degrades to the built-in layer rather
+    // than breaking every chat that points at it (normalizeBlocks fills it in).
+    blocks = {};
+  }
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    blocks,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * A user's prompt presets, newest first.
+ * @param {string} userId
+ * @returns {Object[]}
+ */
+function listPromptPresets(userId) {
+  const db = getDb();
+  return db
+    .prepare('SELECT * FROM prompt_presets WHERE user_id = ? ORDER BY updated_at DESC')
+    .all(userId)
+    .map(formatPreset);
+}
+
+/**
+ * One preset, scoped to its owner.
+ * @param {string} presetId
+ * @param {string} userId
+ * @returns {Object|undefined}
+ */
+function getPromptPreset(presetId, userId) {
+  if (!presetId) return undefined;
+  const db = getDb();
+  return formatPreset(
+    db.prepare('SELECT * FROM prompt_presets WHERE id = ? AND user_id = ?').get(presetId, userId)
+  );
+}
+
+/**
+ * Create a preset.
+ * @param {string} userId
+ * @param {{name: string, blocks?: Object}} data
+ * @returns {Object} the created preset
+ */
+function createPromptPreset(userId, { name, blocks }) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+  db.prepare(`
+    INSERT INTO prompt_presets (id, user_id, name, blocks, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, userId, name, JSON.stringify(blocks || {}), timestamp, timestamp);
+  return getPromptPreset(id, userId);
+}
+
+/**
+ * Update a preset's name and/or blocks.
+ * @param {string} presetId
+ * @param {string} userId
+ * @param {{name?: string, blocks?: Object}} data
+ * @returns {Object|undefined} the updated preset, or undefined if not found
+ */
+function updatePromptPreset(presetId, userId, data) {
+  const db = getDb();
+  const existing = getPromptPreset(presetId, userId);
+  if (!existing) return undefined;
+
+  const updates = [];
+  const values = [];
+  if (data.name !== undefined) {
+    updates.push('name = ?');
+    values.push(data.name);
+  }
+  if (data.blocks !== undefined) {
+    updates.push('blocks = ?');
+    values.push(JSON.stringify(data.blocks || {}));
+  }
+  if (updates.length === 0) return existing;
+
+  updates.push('updated_at = ?');
+  values.push(now(), presetId, userId);
+  db.prepare(`UPDATE prompt_presets SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`).run(...values);
+  return getPromptPreset(presetId, userId);
+}
+
+/**
+ * Delete a preset and drop every pointer at it, so nothing is left aiming at an
+ * id that no longer resolves — the conversations and the user default fall back
+ * to the next level down (ultimately the built-in layer).
+ *
+ * @param {string} presetId
+ * @param {string} userId
+ * @returns {boolean} whether a preset was deleted
+ */
+function deletePromptPreset(presetId, userId) {
+  const db = getDb();
+  const result = db
+    .prepare('DELETE FROM prompt_presets WHERE id = ? AND user_id = ?')
+    .run(presetId, userId);
+  if (result.changes === 0) return false;
+
+  db.prepare('UPDATE conversations SET preset_id = NULL WHERE preset_id = ? AND user_id = ?')
+    .run(presetId, userId);
+  db.prepare('UPDATE settings SET default_preset_id = NULL WHERE default_preset_id = ? AND user_id = ?')
+    .run(presetId, userId);
+  return true;
 }
 
 // =============================================================================
@@ -2070,6 +2207,13 @@ module.exports = {
   deleteRevisionsFromTurn,
   // Version restore (FC-06b)
   getFileRevisionById,
+
+  // Prompt presets (AP-01, docs/ADVANCED_PROMPTS_PLAN.md)
+  listPromptPresets,
+  getPromptPreset,
+  createPromptPreset,
+  updatePromptPreset,
+  deletePromptPreset,
 
   // Scratchpad (SCRATCHPAD_DESIGN.md)
   getScratchpad,
