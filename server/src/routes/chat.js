@@ -20,7 +20,7 @@ const { resolveActiveFileBlock, appendToLastUserMessage } = require('../utils/ac
 const { resolveScratchpadBlock } = require('../utils/scratchpadContext');
 const { TOOL_DEFINITIONS, SCRATCHPAD_TOOL_DEFINITIONS } = require('../tools/definitions');
 const config = require('../config');
-const { buildSystemPrompt } = require('../prompts/tessera');
+const { buildSystemPrompt, buildContextAck } = require('../prompts/tessera');
 const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
@@ -209,10 +209,10 @@ async function resolveRequestContext(req, containers = null, toolsEnabled = fals
   return { text: blocks.join('\n\n'), warning: warnings.length > 0 ? warnings.join(' ') : null };
 }
 
-// The synthetic assistant turn that follows the injected knowledge base, so the
+// The synthetic assistant turn that follows the injected knowledge base (so the
 // model treats the reference material as already-received context and replies to
-// the real latest user message instead of to the KB block.
-const CONTEXT_ACK = "Understood — I'll use the reference material above as background for our conversation.";
+// the real latest user message instead of to the KB block) now lives with the
+// other prompt text in prompts/tessera.js, as the editable `context_ack` block.
 
 /**
  * Assemble the final (system, messages) for a provider call (File Collaboration,
@@ -232,15 +232,20 @@ const CONTEXT_ACK = "Understood — I'll use the reference material above as bac
  *   base layer can name the ones that actually exist
  * @returns {{ system: string|undefined, messages: Array }}
  */
-function assembleProviderInput(requestContext, systemPrompt, messages = [], expressionNames = [], scratchpadEnabled = false) {
+function assembleProviderInput(requestContext, systemPrompt, messages = [], expressionNames = [], scratchpadEnabled = false, promptOptions = {}) {
+  const ack = buildContextAck(promptOptions);
   const contextMessages = requestContext?.text
     ? [
         { role: 'user', content: requestContext.text },
-        { role: 'assistant', content: CONTEXT_ACK },
+        // A preset can disable the ack block; then the KB turn stands alone.
+        ...(ack ? [{ role: 'assistant', content: ack }] : []),
       ]
     : [];
   return {
-    system: buildSystemPrompt(systemPrompt, expressionNames, { scratchpad: scratchpadEnabled }),
+    system: buildSystemPrompt(systemPrompt, expressionNames, {
+      scratchpad: scratchpadEnabled,
+      ...promptOptions,
+    }),
     messages: [...contextMessages, ...messages],
   };
 }
@@ -265,9 +270,10 @@ function countUserTurns(messages) {
  *
  * @returns {Promise<{ system: string|undefined, messages: Array, requestContext: object|null, currentTurn: number, toolsEnabled: boolean, scratchpadEnabled: boolean }>}
  */
-async function assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames }) {
+async function assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames, model }) {
   const userId = req.user.userId;
   const toolsEnabled = resolveToolsEnabled(userId, containers.conversation);
+  const promptOptions = resolvePromptOptions(req, containers, model);
   const requestContext = await resolveRequestContext(req, containers, toolsEnabled);
 
   const currentTurn = countUserTurns(messages);
@@ -292,7 +298,7 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages, ex
   }
 
   const { system, messages: assembled } =
-    assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames, scratchpadEnabled);
+    assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames, scratchpadEnabled, promptOptions);
   return { system, messages: assembled, requestContext, currentTurn, toolsEnabled, scratchpadEnabled };
 }
 
@@ -341,6 +347,67 @@ function resolveToolsEnabled(userId, conversation) {
   if (!conversation.persona_id) return false;
   const persona = dal.getPersonaById(conversation.persona_id, userId);
   return persona?.modelConfig?.toolsEnabled === true;
+}
+
+/**
+ * Resolve the prompt preset for this request (AP-01). Precedence, mirroring the
+ * other two resolvers:
+ *   conversation.preset_id → persona.modelConfig.presetId → settings.default_preset_id
+ *   → none (the built-in prompt layer)
+ *
+ * Server-side only, and every lookup is scoped to the requesting user, so a
+ * preset id the client made up resolves to nothing rather than to someone else's
+ * prompt. A dangling id (preset deleted underneath a chat) resolves to the
+ * built-in layer for the same reason — `getPromptPreset` simply returns nothing.
+ *
+ * @param {string} userId
+ * @param {Object|null} conversation - conversations row (snake_case)
+ * @returns {Object|null} the preset's `blocks` JSON, or null for the built-in
+ */
+function resolvePromptPreset(userId, conversation) {
+  const tryPreset = (id) => (id ? dal.getPromptPreset(id, userId) : undefined);
+
+  let preset = tryPreset(conversation?.preset_id);
+  if (!preset && conversation?.persona_id) {
+    const persona = dal.getPersonaById(conversation.persona_id, userId);
+    preset = tryPreset(persona?.modelConfig?.presetId);
+  }
+  if (!preset) {
+    try {
+      preset = tryPreset(dal.getSettingsByUser(userId).defaultPresetId);
+    } catch (err) {
+      logger.warn({ userId, msg: err.message }, 'Could not load the default prompt preset');
+    }
+  }
+  return preset ? preset.blocks : null;
+}
+
+/**
+ * Everything the prompt layer needs for one request: the resolved preset plus
+ * the macro values. Kept together so a caller can't pass one without the other
+ * and end up expanding `{{char}}` to an empty string by accident.
+ *
+ * @param {Object} req - Express request (req.user)
+ * @param {Object} containers - resolveRequestContainers(req) result
+ * @param {string} [model] - the model id for this request ({{model}})
+ * @returns {{preset: Object|null, macros: Object}}
+ */
+function resolvePromptOptions(req, containers, model) {
+  const userId = req.user.userId;
+  const conversation = containers.conversation || null;
+  const persona = conversation?.persona_id
+    ? dal.getPersonaById(conversation.persona_id, userId)
+    : null;
+  return {
+    preset: resolvePromptPreset(userId, conversation),
+    macros: {
+      personaName: persona?.name || '',
+      userName: dal.findUserById(userId)?.display_name || '',
+      workspaceName: containers.workspace?.name || '',
+      projectName: containers.project?.name || '',
+      model: model || '',
+    },
+  };
 }
 
 /**
@@ -520,7 +587,7 @@ router.post('/', asyncHandler(async (req, res) => {
   // Assemble the request (FC-03a KB relocation + FC-03b active-file injection).
   const containers = resolveRequestContainers(req);
   const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn, toolsEnabled, scratchpadEnabled } =
-    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
+    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames, model });
   const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
 
   logger.info({
@@ -603,7 +670,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
   // Resolved before any SSE headers are sent so the warning header is valid.
   const containers = resolveRequestContainers(req);
   const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, currentTurn, toolsEnabled, scratchpadEnabled } =
-    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
+    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames, model });
   const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
 
   if (requestContext?.warning) {
@@ -729,7 +796,7 @@ router.post('/preview', asyncHandler(async (req, res) => {
   // relocation and active-file injection.
   const containers = resolveRequestContainers(req);
   const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, toolsEnabled, scratchpadEnabled } =
-    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames });
+    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames, model });
   const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
   const anyTools = advertisedTools.length > 0;
 
@@ -805,6 +872,8 @@ module.exports = {
   resolveRequestContainers,
   resolveToolsEnabled,
   resolveScratchpadEnabled,
+  // AP-01: also used by the presets API (AP-02) to preview a resolution.
+  resolvePromptPreset,
   resolveAdvertisedTools,
   runToolLoop,
 };
