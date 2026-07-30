@@ -205,6 +205,38 @@ export function getModelDisplayName(modelId) {
     return modelId;
 }
 
+/**
+ * Update the model name shown on the top-bar button and the composer chip.
+ *
+ * Moved out of js/router.js: it is a two-line write about the ACTIVE MODEL, not
+ * about routing, and it had to move before js/views/models.js could own the
+ * add-model modal — a view importing the router is the arrow the refactor
+ * forbids. Same accident, same fix, as getActiveConversation.
+ */
+export function setModelIndicator(name) {
+    if (elements.modelIndicator) elements.modelIndicator.textContent = name;
+    if (elements.composerModelName) elements.composerModelName.textContent = name;
+}
+
+/**
+ * Safety net: if the active layer points at a model no longer in its provider's
+ * catalog — e.g. it was removed while active — fall back to the provider's first
+ * model and load that model's profile so its params come along. No-op when the
+ * active model is valid or the provider has no models.
+ *
+ * Moved here from main.js with the add-model modal: it touches only the layer and
+ * the catalog, never the DOM, and `loadModelProfileIntoLayer` is right here.
+ */
+export function ensureActiveModelValid() {
+    const modelConfig = getActiveModelConfig();
+    const providerModels = state.settings.customModels[modelConfig.provider] || [];
+    if (providerModels.length === 0) return;
+    if (!providerModels.some(m => m.id === modelConfig.model)) {
+        modelConfig.model = providerModels[0].id;
+        loadModelProfileIntoLayer();
+    }
+}
+
 export function updateSendButtonState() {
     const modelConfig = getActiveModelConfig();
     const provider = modelConfig.provider;
