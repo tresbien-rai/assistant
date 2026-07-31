@@ -152,6 +152,11 @@ function restoreDrive() {
       assert.strictEqual(res.display.replacements, 3);
       const row = dal.getConversationFileByName(convProject.id, 'dup.txt');
       assert.strictEqual(contents.get(row.drive_file_id), 'X bbb X bbb X');
+      // SS-01: the result states the change, in the same shape edit_scratchpad
+      // uses, so the model can confirm the edit without re-reading the file.
+      assert.match(res.content, /3 replacements/, 'states how many sites changed');
+      assert.match(res.content, /→/, 'states before → after size');
+      assert.match(res.content, /\(−\d|\(\+\d|no size change/, 'states a signed delta');
     });
 
     await check('overlapping occurrences are counted for the uniqueness guard', async () => {

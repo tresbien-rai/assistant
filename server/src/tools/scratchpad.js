@@ -24,6 +24,7 @@
 const config = require('../config');
 const dal = require('../db/dal');
 const { unifiedDiff } = require('../utils/diff');
+const { describeEdit } = require('../utils/format');
 const { logger } = require('../utils/logger');
 
 /**
@@ -194,9 +195,13 @@ async function executeEditScratchpad(input, ctx) {
 
   logger.info({ userId: ctx.userId, conversationId: ctx.conversationId, sizeBytes: bytes, replacements, replaceAll }, 'edit_scratchpad executed');
 
-  const replacedNote = replaceAll && replacements > 1 ? ` (${replacements} occurrences)` : '';
+  // Report the CHANGE, not just the total (docs/SESSION_STATE_DESIGN.md D1). A
+  // total alone cannot confirm an edit landed — 3,860 before and 3,860 after
+  // read identically — so the model had to re-read the pad to be sure. The
+  // before → after pair plus the replacement count is that confirmation.
   return {
-    content: `Edited the scratchpad${replacedNote} — now ${updated.length} characters.` + sizeWarning(bytes),
+    content: `Edited the scratchpad — ${describeEdit(replacements, current.length, updated.length, 'characters')}`
+      + sizeWarning(bytes),
     display: { scratchpad: true, op: 'edit', sizeBytes: bytes },
   };
 }

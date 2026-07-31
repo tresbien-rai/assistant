@@ -29,7 +29,7 @@ const path = require('node:path');
 const config = require('../config');
 const { isTextAuthorableExtension } = require('../utils/fileUploads');
 const { extractFileText } = require('../utils/projectContext');
-const { formatFileSize } = require('../utils/format');
+const { formatFileSize, describeEdit } = require('../utils/format');
 const { resolveReadStores, findAcrossStores, resolveToolDriveAuth } = require('./fileStore');
 const { writeContentToStore } = require('./storeWriter');
 const { logger } = require('../utils/logger');
@@ -156,7 +156,6 @@ async function executeEditFile(input, ctx) {
   });
 
   const url = hit.store.urlFor(record.id);
-  const replacedNote = replaceAll && replacements > 1 ? ` (${replacements} occurrences replaced)` : '';
   const shadowNote = hit.shadowedKinds.length > 0
     ? ` Note: this edited the ${hit.store.kind} copy; a different file with this name also exists in the ${hit.shadowedKinds.join(' and ')}.`
     : '';
@@ -167,7 +166,13 @@ async function executeEditFile(input, ctx) {
   );
 
   return {
-    content: `Edited "${filename}"${replacedNote} — now ${formatFileSize(bytes.length)}.${shadowNote} The user can download it at ${url} — you can reference this link in your reply as a markdown link.`,
+    // Reports the CHANGE, not just the new total (docs/SESSION_STATE_DESIGN.md
+    // D1) — and in the same shape edit_scratchpad uses, so the two editing
+    // tools confirm success identically.
+    // `content.length` is CHARACTERS while `bytes.length` is BYTES; comparing
+    // them directly would misreport the delta for any non-ASCII file.
+    content: `Edited "${filename}" — ${describeEdit(replacements, Buffer.byteLength(content, 'utf8'), bytes.length, 'bytes')}`
+      + `${shadowNote} The user can download it at ${url} — you can reference this link in your reply as a markdown link.`,
     display: {
       fileId: record.id,
       url,

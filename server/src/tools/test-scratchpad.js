@@ -85,6 +85,20 @@ async function check(label, fn) {
       assert.strictEqual(revs[revs.length - 1].op, 'edit');
     });
 
+    await check('result reports the DELTA, not just the new total (SS-01)', async () => {
+      // A same-length replacement is exactly the case a total-only result could
+      // not confirm: the number is identical before and after.
+      await executeWriteScratchpad({ content: 'The cat sat on the mat.' }, ctx);
+      const res = await executeEditScratchpad({ old_text: 'cat', new_text: 'dog' }, ctx);
+      assert.ok(!res.isError, res.content);
+      assert.match(res.content, /1 replacement/, 'states how many sites changed');
+      assert.match(res.content, /23 → 23 characters/, 'states before → after');
+      assert.match(res.content, /same length/, 'names the no-change case rather than implying failure');
+
+      const grew = await executeEditScratchpad({ old_text: 'dog', new_text: 'elephant' }, ctx);
+      assert.match(grew.content, /23 → 28 characters \(\+5\)/, 'signed delta for a growing edit');
+    });
+
     await check('ambiguous old_text (multiple matches, no replace_all) → isError', async () => {
       await executeWriteScratchpad({ content: 'x\nx\nx' }, ctx);
       const res = await executeEditScratchpad({ old_text: 'x', new_text: 'y' }, ctx);
