@@ -493,30 +493,60 @@ function resolveAdvertisedTools(toolsEnabled, scratchpadEnabled) {
  * @param {AbortSignal} [opts.signal]
  * @param {(event: Object) => void} [opts.onEvent] - Called after each tool
  *   executes, with { tool, filename?, ok } (compact — no file contents)
- * @returns {Promise<{ result?: Object, toolEvents: Array, aborted?: boolean }>}
+ * @param {(payload: Object) => void} [opts.onDelta] - When given AND the
+ *   provider implements `streamRaw`, every round streams: text deltas are
+ *   forwarded in the provider's own SSE shape as the model produces them,
+ *   including the narration it writes BEFORE calling a tool (which the
+ *   non-streaming loop discarded — only the last round's text ever surfaced).
+ * @returns {Promise<{ result?: Object, toolEvents: Array, aborted?: boolean,
+ *   streamed?: boolean }>} `streamed` tells the caller the text has already
+ *   gone to the client, so it must not be sent again as a final chunk.
  */
-async function runToolLoop({ providerModule, apiKey, params, toolContext, signal, onEvent = () => {} }) {
+async function runToolLoop({ providerModule, apiKey, params, toolContext, signal, onEvent = () => {}, onDelta = null }) {
   const messages = [...params.messages];
   const toolEvents = [];
+  const streaming = Boolean(onDelta && typeof providerModule.streamRaw === 'function');
+
+  // Rounds are separate provider calls, so their text arrives as separate runs
+  // with no whitespace between them. Insert a blank line before a later round's
+  // first delta — lazily, so a round that produces no text adds no gap.
+  let streamedAnyText = false;
+  let roundHasText = false;
+  const emitDelta = (payload) => {
+    if (!roundHasText && streamedAnyText) {
+      onDelta({
+        type: 'content_block_delta',
+        delta: { type: 'text_delta', text: '\n\n' },
+      });
+    }
+    roundHasText = true;
+    streamedAnyText = true;
+    onDelta(payload);
+  };
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
     let data;
+    roundHasText = false;
     try {
-      data = await providerModule.chatRaw(
-        apiKey,
-        // `params.tools` is the resolved set (file tools and/or scratchpad tools,
-        // gated independently by the caller). Prefill is always dropped in the loop.
-        { ...params, messages, prefill: undefined, tools: params.tools || TOOL_DEFINITIONS },
-        signal
-      );
+      // `params.tools` is the resolved set (file tools and/or scratchpad tools,
+      // gated independently by the caller). Prefill is always dropped in the loop.
+      const callParams = { ...params, messages, prefill: undefined, tools: params.tools || TOOL_DEFINITIONS };
+      data = streaming
+        ? await providerModule.streamRaw(apiKey, callParams, { onDelta: emitDelta }, signal)
+        : await providerModule.chatRaw(apiKey, callParams, signal);
     } catch (err) {
-      if (err.name === 'AbortError') return { aborted: true, toolEvents };
+      if (err.name === 'AbortError') return { aborted: true, toolEvents, streamed: streaming };
       throw err;
     }
 
     const extraction = providerModule.extractToolCalls(data);
     if (!extraction) {
-      return { result: providerModule.formatChatResult(data, params.model), toolEvents };
+      // Streamed rounds have already delivered their text to the client, so
+      // there is no result to format — and formatChatResult would throw on a
+      // final round that legitimately produced none.
+      return streaming
+        ? { toolEvents, streamed: true }
+        : { result: providerModule.formatChatResult(data, params.model), toolEvents };
     }
 
     if (signal?.aborted) return { aborted: true, toolEvents };
@@ -546,7 +576,7 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
       toolEvents.push(event);
       onEvent(event);
 
-      if (signal?.aborted) return { aborted: true, toolEvents };
+      if (signal?.aborted) return { aborted: true, toolEvents, streamed: streaming };
     }
 
     messages.push(providerModule.buildToolResultMessage(extraction.calls, results));
@@ -711,11 +741,16 @@ router.post('/stream', asyncHandler(async (req, res) => {
   });
 
   if (advertisedTools.length > 0) {
-    // Tools-on turns (file tools and/or scratchpad) run the NON-streaming loop
-    // and deliver everything as synthetic SSE over this same channel (decision
-    // 3): tool-activity events while tools run, then the final answer as ONE
-    // provider-native-shaped chunk so the existing client accumulator renders it
-    // unchanged, then a done event carrying the full tool-event list (P2-05b).
+    // Tools-on turns (file tools and/or scratchpad) run the tool loop and
+    // deliver everything over this same channel: tool-activity events as tools
+    // run, and the model's text as it is produced.
+    //
+    // Providers implementing `streamRaw` (Anthropic) stream EVERY round, so the
+    // narration before a tool call is visible too. Providers that don't fall
+    // back to the original behaviour — the loop runs non-streaming and the
+    // final answer is emitted as ONE provider-native-shaped chunk (decision 3),
+    // which the same client accumulator renders. Either way a done event
+    // carries the full tool-event list (P2-05b).
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -732,21 +767,26 @@ router.post('/stream', asyncHandler(async (req, res) => {
         model, messages: effectiveMessages, systemPrompt: effectiveSystemPrompt, modelParams, attachments,
         tools: advertisedTools,
       }, currentTurn);
-      const { result, toolEvents, aborted } = await runToolLoop({
+      const { result, toolEvents, aborted, streamed } = await runToolLoop({
         providerModule,
         apiKey,
         params: loopParams,
         toolContext,
         signal: abortController.signal,
         onEvent: (ev) => writeEvent('tool-activity', { type: 'tool_activity', ...ev }),
+        // Text deltas ride the same channel in the provider's own SSE shape,
+        // so the client parses them exactly as it does a plain streamed turn.
+        onDelta: (payload) => writeEvent(payload.type, payload),
       });
 
       if (!aborted) {
-        // Final answer as one provider-native-shaped chunk. The shape lives
-        // in the provider module (tool contract) so chat.js stays
+        // Only the non-streaming fallback still owes the client its text. The
+        // shape lives in the provider module (tool contract) so chat.js stays
         // provider-agnostic — Phase 3's OpenAI just implements the same fn.
-        const finalEvent = providerModule.formatFinalSseEvent(result);
-        writeEvent(finalEvent.event, finalEvent.data);
+        if (!streamed) {
+          const finalEvent = providerModule.formatFinalSseEvent(result);
+          writeEvent(finalEvent.event, finalEvent.data);
+        }
         writeEvent('done', { type: 'tool_loop_done', toolEvents });
       }
     } catch (err) {
