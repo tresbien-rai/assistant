@@ -444,8 +444,21 @@ function resolvePromptOptions(req, containers, model, presetOverride) {
  * Resolve whether the scratchpad is active for this request (SP-02). Gated
  * independently of file tools (Decision 3). Precedence:
  *   conversation override (scratchpad_enabled 1/0)
- *   → persona base (model_config.scratchpadEnabled)
- *   → AUTO-ARM: a non-empty pad means the user is already using it (Decision 2).
+ *   → persona base (model_config.scratchpadEnabled, either way)
+ *   → ON, for any saved conversation.
+ *
+ * ON BY DEFAULT (SS-03). This used to AUTO-ARM instead: the pad counted as
+ * active only once it already had content. That was written before the
+ * scratchpad's role was settled, and it contradicts it — the pad is meant to be
+ * the default place ideas get developed
+ * (docs/SESSION_STATE_DESIGN.md §3), but auto-arm meant the tools were not
+ * advertised at all until the USER seeded the pad first. The model could never
+ * open the door itself: a fresh chat reported `tools: []`, so it could not
+ * offer to put anything there, only wait to be invited.
+ *
+ * The cost of defaulting on is two extra tool definitions per request; the cost
+ * of defaulting off was a headline feature the model could not reach.
+ *
  * Server-side only, like resolveToolsEnabled. "Active" means the scratchpad
  * tools are advertised and the pad is injected when non-empty.
  * @param {string} userId
@@ -453,18 +466,20 @@ function resolvePromptOptions(req, containers, model, presetOverride) {
  * @returns {boolean}
  */
 function resolveScratchpadEnabled(userId, conversation) {
+  // No pad without a saved conversation to hang it on.
   if (!conversation) return false;
+  // Explicit per-chat opt-out / opt-in always wins.
   if (conversation.scratchpad_enabled === 0) return false;
   if (conversation.scratchpad_enabled === 1) return true;
+  // Persona base, now meaningful in BOTH directions: a persona that has no use
+  // for a scratchpad can turn it off for its chats, where before it could only
+  // turn it on (which the default now does anyway).
   if (conversation.persona_id) {
     const persona = dal.getPersonaById(conversation.persona_id, userId);
-    if (persona?.modelConfig?.scratchpadEnabled === true) return true;
+    const base = persona?.modelConfig?.scratchpadEnabled;
+    if (base === true || base === false) return base;
   }
-  // Auto-arm: using the feature (a non-empty pad) enables it, without needing
-  // an explicit toggle. The explicit toggle (above) covers the cold-start case
-  // of drafting into an empty pad, and staying armed after a clear.
-  const pad = dal.getScratchpad(conversation.id);
-  return !!(pad && pad.content && pad.content.trim() !== '');
+  return true;
 }
 
 /**
