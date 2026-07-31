@@ -111,26 +111,70 @@ export function streamingBubble() {
 export function renderStreamingContent() {
     const bubble = streamingBubble();
     if (!bubble) return;
-    const contentDiv = bubble.querySelector('.message-content');
+    // The LAST segment is the live one: renderLiveToolActivity closes the
+    // current segment and opens a fresh one each time a tool fires, so text
+    // arriving after a tool card lands below it rather than rewriting the
+    // whole reply above it.
+    const segments = bubble.querySelectorAll('.message-content');
+    const contentDiv = segments[segments.length - 1];
     if (!contentDiv) return;
 
-    let displayText = state.streamingAccumulator || '';
-    if (state.currentPrefill) displayText = stripPrefillText(displayText, state.currentPrefill);
-    // `expression` is parsed here only so the tag can be kept OUT of `display`.
-    // It is deliberately not applied: the avatar holds `generating` for the whole
-    // response, and finalizeStreamingMessage re-detects the expression from the
-    // completed text via detectExpression().
-    const { display, pending } = splitLeadingExpressionTag(displayText);
+    const { display, pending } = streamingDisplayText();
 
     // Nothing yet, or still deciding whether the opening text is a tag: show the
-    // typing dots rather than flashing a partial "[expre" on screen.
-    if (!display || pending) {
+    // typing dots rather than flashing a partial "[expre" on screen. Once a tool
+    // card is on screen the turn has visibly started, so no dots after that.
+    const started = (state.streamingToolEvents || []).length > 0;
+    if ((!display || pending) && !started) {
         bubble.classList.add('awaiting-first-token');
         contentDiv.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
         return;
     }
     bubble.classList.remove('awaiting-first-token');
-    contentDiv.innerHTML = renderMarkdown(display);
+    contentDiv.innerHTML = renderMarkdown(display.slice(streamingCutOffset(display)));
+}
+
+/**
+ * The in-progress reply as it should be DISPLAYED: prefill removed, expression
+ * tag held back. `pending` means the opening text might still turn out to be a
+ * tag, so nothing should be painted yet.
+ *
+ * The expression is deliberately not applied here: the avatar holds `generating`
+ * for the whole response, and finalizeStreamingMessage re-detects it from the
+ * completed text.
+ */
+export function streamingDisplayText() {
+    let raw = state.streamingAccumulator || '';
+    if (state.currentPrefill) raw = stripPrefillText(raw, state.currentPrefill);
+    return splitLeadingExpressionTag(raw);
+}
+
+/**
+ * Convert a raw-accumulator offset into DISPLAY coordinates, by cleaning the
+ * prefix exactly as the live view cleans the whole text and measuring it. Safe
+ * because both cleanings only remove a leading run (the prefill, then a leading
+ * expression tag), so cleaning a prefix yields a prefix of the cleaned text.
+ */
+export function displayOffsetFor(rawOffset) {
+    let prefix = (state.streamingAccumulator || '').slice(0, rawOffset);
+    if (state.currentPrefill) prefix = stripPrefillText(prefix, state.currentPrefill);
+    return splitLeadingExpressionTag(prefix).display.length;
+}
+
+/**
+ * Where the live segment starts — the most recent tool event's position, or 0
+ * before any tool has run. Clamped, since the accumulator can be shorter than a
+ * recorded offset after a reset.
+ */
+export function streamingCutOffset(display) {
+    const events = state.streamingToolEvents || [];
+    let cut = 0;
+    for (const ev of events) {
+        if (!Number.isInteger(ev.rawOffset)) continue;
+        const at = displayOffsetFor(ev.rawOffset);
+        if (at > cut) cut = at;
+    }
+    return Math.max(0, Math.min(display.length, cut));
 }
 
 /**
@@ -158,9 +202,14 @@ export function paintStreamingBubble() {
     labelDiv.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
     messageDiv.appendChild(labelDiv);
 
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-content';
-    messageDiv.appendChild(contentDiv);
+    // Rebuild the whole interleaved body from state, not just an empty shell:
+    // a reply the user left and came back to may already have tool cards in it,
+    // and they have to land back at their point in the text.
+    const { display } = streamingDisplayText();
+    renderMessageBody(messageDiv, display, (state.streamingToolEvents || []).map(ev => toolEventToAttachment({
+        ...ev,
+        textOffset: Number.isInteger(ev.rawOffset) ? displayOffsetFor(ev.rawOffset) : undefined,
+    })));
     elements.messagesContainer.appendChild(messageDiv);
 
     renderStreamingContent();
@@ -200,6 +249,78 @@ export function renderChatThread() {
     paintStreamingBubble();
 
     scrollToBottom();
+}
+
+/**
+ * Build a message's body: attachments + text, interleaved.
+ *
+ * A tool attachment carries `textOffset` — the index into the DISPLAY text at
+ * which that tool ran, captured live as the reply streamed. Those render inline
+ * at their point in the text, so a turn reads the way it happened: narration,
+ * the tool card, then the rest of the answer. Everything without an offset
+ * (uploads, generated images, and tool events from the non-streaming path,
+ * which has no positional information) keeps the original behaviour and renders
+ * as one block above the text.
+ *
+ * Offsets are clamped and sorted here rather than trusted, so a stale or
+ * out-of-range value from an older stored message degrades to a sensible
+ * position instead of throwing.
+ *
+ * @param {HTMLElement} messageDiv - the bubble to append into
+ * @param {string} displayText - already stripped of prefill/expression tag
+ * @param {Array} attachments
+ * @returns {HTMLElement} the LAST `.message-content` — what a live stream writes into
+ */
+export function renderMessageBody(messageDiv, displayText, attachments) {
+    const list = Array.isArray(attachments) ? attachments : [];
+    const text = displayText || '';
+    const at = (a) => Math.max(0, Math.min(text.length, a.textOffset));
+
+    const inline = list
+        .filter(a => Number.isInteger(a.textOffset))
+        .sort((a, b) => at(a) - at(b));
+    const above = list.filter(a => !Number.isInteger(a.textOffset));
+
+    if (above.length > 0) {
+        const attachDiv = document.createElement('div');
+        attachDiv.className = 'message-attachments';
+        renderMessageAttachments(above, attachDiv);
+        messageDiv.appendChild(attachDiv);
+    }
+
+    const addSegment = (segment) => {
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.innerHTML = renderMarkdown(segment);
+        messageDiv.appendChild(contentDiv);
+        return contentDiv;
+    };
+
+    if (inline.length === 0) return addSegment(text);
+
+    let cursor = 0;
+    let i = 0;
+    while (i < inline.length) {
+        const offset = at(inline[i]);
+        const segment = text.slice(cursor, offset);
+        // An empty segment means two tools ran back to back with no text
+        // between them — emit no empty paragraph, just let the cards stack.
+        if (segment.trim()) addSegment(segment);
+        cursor = offset;
+
+        // Everything that fired at this same point renders as one group.
+        const group = [];
+        while (i < inline.length && at(inline[i]) === offset) group.push(inline[i++]);
+
+        const attachDiv = document.createElement('div');
+        attachDiv.className = 'message-attachments inline';
+        renderMessageAttachments(group, attachDiv);
+        messageDiv.appendChild(attachDiv);
+    }
+
+    // Always append the tail segment, even when empty: it is the element a live
+    // stream keeps writing into after the last tool card.
+    return addSegment(text.slice(cursor));
 }
 
 export async function appendMessage(role, content, save = true, explicitIndex = null, attachments = null, model = null) {
@@ -242,23 +363,9 @@ export async function appendMessage(role, content, save = true, explicitIndex = 
     }
     messageDiv.appendChild(labelDiv);
 
-    // Render attachments above text content if present
-    if (attachments && attachments.length > 0) {
-        const attachDiv = document.createElement('div');
-        attachDiv.className = 'message-attachments';
-        renderMessageAttachments(attachments, attachDiv);
-        messageDiv.appendChild(attachDiv);
-    }
-
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-content';
-
     // For assistant messages, strip expression tags before display
     const displayContent = role === 'assistant' ? stripExpressionTag(content) : content;
-    // Render Markdown to HTML
-    contentDiv.innerHTML = renderMarkdown(displayContent);
-
-    messageDiv.appendChild(contentDiv);
+    renderMessageBody(messageDiv, displayContent, attachments);
 
     // Add message action buttons (not on error messages)
     if (role === 'user' || role === 'assistant') {
@@ -395,6 +502,11 @@ export async function truncateMessagesFrom(convo, fromIndex) {
  * @returns {Object} attachment entry (type 'created_file' or 'tool_event')
  */
 export function toolEventToAttachment(ev) {
+    // Where in the reply this tool ran, when the streaming path recorded it.
+    // Absent on the non-streaming path (all tools finish before any text
+    // exists), which renderMessageBody reads as "render above the text".
+    const pos = Number.isInteger(ev.textOffset) ? { textOffset: ev.textOffset } : {};
+
     // A download url on a successful event IS the "produced a file" signal —
     // read/list tools never carry one, and any future file-producing tool
     // gets a card without touching this list. The tool name is only a label.
@@ -407,9 +519,10 @@ export function toolEventToAttachment(ev) {
             mimeType: ev.mimeType || '',
             sizeBytes: ev.sizeBytes || 0,
             overwritten: !!ev.overwritten,
+            ...pos,
         };
     }
-    return { type: 'tool_event', tool: ev.tool, filename: ev.filename || null, ok: ev.ok !== false };
+    return { type: 'tool_event', tool: ev.tool, filename: ev.filename || null, ok: ev.ok !== false, ...pos };
 }
 
 /**
