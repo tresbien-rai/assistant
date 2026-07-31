@@ -175,6 +175,8 @@ export const elements = {
     createPresetBtn: document.getElementById('createPresetBtn'),
     presetListPanel: document.getElementById('presetListPanel'),
     presetEditor: document.getElementById('presetEditor'),
+    composerPresetButton: document.getElementById('composerPresetButton'),
+    personaPresetSelect: document.getElementById('personaPresetSelect'),
 
     // Error display system (P0-17)
     toastContainer: document.getElementById('toastContainer'),

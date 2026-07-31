@@ -110,7 +110,10 @@ export const state = {
     // The per-chat file-tools choice made on a chat that does not exist yet
     // (the composer toggle flipped before the first send). createConversation
     // applies and clears it. undefined = no pending choice; true/false = forced.
-    pendingToolsOverride: undefined
+    pendingToolsOverride: undefined,
+    // Same idea for the prompt preset (AP-04): a preset id, the 'none'
+    // sentinel, or null chosen before the chat existed. undefined = no choice.
+    pendingPresetId: undefined
 };
 
 /**

@@ -22,6 +22,7 @@
 const assert = require('node:assert');
 const { buildSystemPrompt, buildContextAck, ORIENTATION, CONTEXT_ACK } = require('./tessera');
 const {
+  PRESET_NONE,
   defaultBlocks,
   normalizeBlocks,
   validateBlocks,
@@ -368,6 +369,24 @@ try {
     // Falls through the whole chain rather than leaking the other user's blocks.
     assert.strictEqual(orientationOf(resolvePromptPreset(userId, row())), 'PERSONA');
     dal.updateConversation(conv.id, userId, { presetId: null });
+  });
+
+  check('PRESET_NONE on the chat forces the built-in over a persona preset', () => {
+    // The persona still points at PERSONA here (set two checks above).
+    dal.updateConversation(conv.id, userId, { presetId: PRESET_NONE });
+    assert.strictEqual(resolvePromptPreset(userId, row()), null, 'built-in, not the persona preset');
+    dal.updateConversation(conv.id, userId, { presetId: null });
+    assert.strictEqual(orientationOf(resolvePromptPreset(userId, row())), 'PERSONA', 'and it is reversible');
+  });
+
+  check('PRESET_NONE on the persona forces the built-in over the account default', () => {
+    dal.updatePersona(persona.id, userId, { modelConfig: { presetId: PRESET_NONE } });
+    assert.strictEqual(resolvePromptPreset(userId, row()), null);
+    // A chat can still override upward — "none" only stops the walk BELOW it.
+    dal.updateConversation(conv.id, userId, { presetId: chatPreset.id });
+    assert.strictEqual(orientationOf(resolvePromptPreset(userId, row())), 'CHAT');
+    dal.updateConversation(conv.id, userId, { presetId: null });
+    dal.updatePersona(persona.id, userId, { modelConfig: { presetId: personaPreset.id } });
   });
 
   check('deleting a preset clears every pointer at it', () => {

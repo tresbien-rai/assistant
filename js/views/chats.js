@@ -52,6 +52,7 @@ export async function createConversation(title = 'New Chat', container = null) {
         workspaceId: created.workspaceId,
         toolsEnabled: created.toolsEnabled ?? null,
         scratchpadEnabled: created.scratchpadEnabled ?? null,
+        presetId: created.presetId ?? null,
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
         messageCount: 0,
@@ -73,6 +74,18 @@ export async function createConversation(title = 'New Chat', container = null) {
             await API.conversations.update(created.id, { toolsEnabled: override });
         } catch (err) {
             console.error('Failed to persist pending tools override:', err);
+        }
+    }
+
+    // Same for a prompt preset chosen before the chat existed (AP-04).
+    if (state.pendingPresetId != null) {
+        const presetId = state.pendingPresetId;
+        state.pendingPresetId = undefined;
+        state.conversations[created.id].presetId = presetId;
+        try {
+            await API.conversations.update(created.id, { presetId });
+        } catch (err) {
+            console.error('Failed to persist pending preset override:', err);
         }
     }
 

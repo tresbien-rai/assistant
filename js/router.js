@@ -38,6 +38,7 @@ import { FilePanel } from './file-panel/index.js';
 // The composer is chrome this module shows and hides, so it also owns the
 // resize that only becomes measurable at the moment it is shown.
 import { autoResizeTextarea } from './chat/composer.js';
+import { syncPresetPill } from './views/settings.js';
 
 /**
  * The persona's base file-tools setting (its default for new chats). Stored in
@@ -131,6 +132,8 @@ export function syncChatChrome() {
     }
     // Reflect this chat's effective file-tools state on the composer toggle.
     if (inChat) syncToolsToggle();
+    // Same for the prompt preset pill (AP-04) — its label is per-chat.
+    if (inChat) syncPresetPill();
     // The files explorer needs a saved conversation to list files for; a fresh
     // unsaved chat has no id yet (CF-01b).
     if (elements.filesExplorerBtn) {

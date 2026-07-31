@@ -52,6 +52,7 @@ const {
 // shows the pad's on/off state, and it has to be the state the chat route will
 // actually act on (override → persona base → auto-arm on a non-empty pad).
 const { resolveToolsEnabled, resolveScratchpadEnabled } = require('./chat');
+const { PRESET_NONE } = require('../prompts/presets');
 
 const router = express.Router();
 
@@ -83,6 +84,9 @@ function formatConversation(conversation) {
     scratchpadEnabled: conversation.scratchpad_enabled === null || conversation.scratchpad_enabled === undefined
       ? null
       : conversation.scratchpad_enabled === 1,
+    // Prompt preset override (AP-04): null = inherit persona → account default,
+    // an id = that preset, PRESET_NONE = the built-in layer, explicitly.
+    presetId: conversation.preset_id || null,
     createdAt: conversation.created_at,
     updatedAt: conversation.updated_at,
   };
@@ -248,13 +252,27 @@ router.post('/', asyncHandler(async (req, res) => {
 /**
  * PUT /api/conversations/:id
  * Updates conversation metadata (only if owned by user)
- * Body: { title?, personaId?, projectId?, workspaceId?, toolsEnabled?, scratchpadEnabled? }
+ * Body: { title?, personaId?, projectId?, workspaceId?, toolsEnabled?, scratchpadEnabled?, presetId? }
  * Moving a chat's container re-applies the hierarchy invariant (workspace_id is
  * derived from the project; clearing both unfiles the chat).
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { title, personaId, projectId, workspaceId, toolsEnabled, scratchpadEnabled } = req.body;
+  const { title, personaId, projectId, workspaceId, toolsEnabled, scratchpadEnabled, presetId } = req.body;
   const updateData = {};
+
+  // Prompt preset override (AP-04): an owned preset id, PRESET_NONE for the
+  // built-in layer, or null to inherit. Ownership is checked here rather than
+  // left to the resolver: an id that silently resolves to nothing looks like the
+  // preset stopped working, not like a rejected request.
+  if (presetId !== undefined) {
+    if (presetId !== null && typeof presetId !== 'string') {
+      throw AppError.validation('presetId must be a preset id, "none", or null');
+    }
+    if (presetId && presetId !== PRESET_NONE && !dal.getPromptPreset(presetId, req.user.userId)) {
+      throw AppError.notFound('Preset');
+    }
+    updateData.presetId = presetId;
+  }
 
   // Track A composer override: boolean forces on/off, null clears back to
   // inheriting the persona base.
