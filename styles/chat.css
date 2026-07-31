@@ -805,8 +805,11 @@
 }
 
 /* Streaming cursor. Suppressed before the first token arrives (the typing
-   dots stand in for that phase \u2014 see startStreamingMessage). */
-.message.assistant.streaming:not(.awaiting-first-token) .message-content::after {
+   dots stand in for that phase \u2014 see startStreamingMessage). Only the LAST
+   segment gets it: a reply with tool cards is split into several
+   .message-content blocks, and every one of them would otherwise sprout a
+   caret. The live segment is always the last child while streaming. */
+.message.assistant.streaming:not(.awaiting-first-token) .message-content:last-child::after {
     content: '\u258C';
     animation: blink 1s step-end infinite;
     color: var(--accent);
@@ -885,6 +888,20 @@
     margin-bottom: 8px;
     overflow-x: auto;
     padding-bottom: 4px;        /* room for the scrollbar */
+}
+
+/* A tool card sitting BETWEEN two text segments, at the point in the reply
+   where that tool actually ran. Needs breathing room above as well as below,
+   since text now continues underneath it. */
+.message-attachments.inline {
+    margin-top: 10px;
+}
+
+/* Segments are one continuous reply, not separate messages: only the last one
+   keeps the trailing gap, so the text reads as a single block interrupted by
+   cards rather than as a stack of paragraphs. */
+.message-content:not(:last-child) {
+    margin-bottom: 0;
 }
 
 /* Image cards: fixed-width framed preview + filename caption. Fixed width so a

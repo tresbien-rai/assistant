@@ -24,7 +24,6 @@ import { elements } from '../dom.js';
 import { API } from '../api-client.js';
 import { getActiveConversation } from '../state.js';
 import { ImageStore } from '../util/image-store.js';
-import { renderMarkdown } from '../util/markdown.js';
 import { confirmDialog } from '../components/dialogs.js';
 import { displayError } from '../components/errors.js';
 import { saveConversations, renderConversation } from '../views/chats.js';
@@ -126,15 +125,24 @@ export function editMessageInPlace(messageDiv, msgIndex) {
     if (!activeConvo || !activeConvo.messages[msgIndex]) return;
 
     const msg = activeConvo.messages[msgIndex];
-    const contentDiv = messageDiv.querySelector('.message-content');
+    // A reply that ran tools is split into several .message-content segments
+    // with tool cards between them, so the body is every segment AND every
+    // card — not just the first content div. Editing has to take over the whole
+    // body, or the textarea (which holds the FULL text) would sit above the
+    // leftover trailing segments and duplicate them on save.
+    const bodyNodes = Array.from(messageDiv.querySelectorAll('.message-content, .message-attachments'));
+    const contentDiv = bodyNodes[0] || messageDiv.querySelector('.message-content');
     const actionsDiv = messageDiv.querySelector('.message-actions');
+    if (!contentDiv) return;
 
     // Hide actions while editing
     if (actionsDiv) actionsDiv.style.display = 'none';
 
     // Store original content for cancel
     const originalContent = msg.content;
-    const originalHTML = contentDiv.innerHTML;
+    // Everything after the first node is hidden for the duration; save and
+    // cancel both repaint from state, which restores the real structure.
+    bodyNodes.slice(1).forEach(n => { n.style.display = 'none'; });
 
     // Replace content with textarea
     const editContainer = document.createElement('div');
@@ -184,22 +192,15 @@ export function editMessageInPlace(messageDiv, msgIndex) {
         activeConvo.updatedAt = Date.now();
         saveConversations();
 
-        // Restore content div with new content
-        const newContentDiv = document.createElement('div');
-        newContentDiv.className = 'message-content';
-        newContentDiv.innerHTML = renderMarkdown(newContent);
-        editContainer.replaceWith(newContentDiv);
-
-        if (actionsDiv) actionsDiv.style.display = '';
+        // Repaint from state rather than patching this one node back: the
+        // message may be several segments with tool cards between them, and
+        // only a full render reproduces that structure at the right offsets.
+        renderConversation();
     });
 
-    // Cancel handler
+    // Cancel handler — state was never touched, so the same repaint restores
+    // exactly what was on screen before the edit began.
     buttonsDiv.querySelector('.message-edit-cancel').addEventListener('click', () => {
-        const restoredDiv = document.createElement('div');
-        restoredDiv.className = 'message-content';
-        restoredDiv.innerHTML = originalHTML;
-        editContainer.replaceWith(restoredDiv);
-
-        if (actionsDiv) actionsDiv.style.display = '';
+        renderConversation();
     });
 }

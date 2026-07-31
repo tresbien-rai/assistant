@@ -34,7 +34,8 @@ import {
     appendMessage, persistMessage, showTypingIndicator, hideTypingIndicator,
     generateConversationTitle, toolEventToAttachment, truncateMessagesFrom,
     renderMessageAttachments, streamingBubble, paintStreamingBubble,
-    renderStreamingContent, threadIsVisible, renderChatThread,
+    renderStreamingContent, threadIsVisible, renderChatThread, streamingDisplayText,
+    renderMessageBody,
 } from './thread.js';
 import {
     detectExpression, setExpression, settleGeneratingExpression,
@@ -191,16 +192,22 @@ export async function sendMessageFromText(text, attachments = []) {
  */
 export function renderLiveToolActivity(payload, convoId) {
     const bubble = streamingBubble();
-    if (!bubble) return; // off screen: finalize re-renders attachments from state
-    let area = bubble.querySelector('.message-attachments');
-    if (!area) {
-        area = document.createElement('div');
-        area.className = 'message-attachments';
-        const contentDiv = bubble.querySelector('.message-content');
-        bubble.insertBefore(area, contentDiv);
-    }
     const att = toolEventToAttachment(payload);
-    renderMessageAttachments([att], area);
+    if (bubble) {
+        // Close the current text segment and open a fresh one below the card, so
+        // the reply keeps growing UNDER the tool it just ran rather than the card
+        // sitting above everything. `payload.textOffset` was recorded when the
+        // event arrived, so a reload renders the same order (renderMessageBody).
+        const area = document.createElement('div');
+        area.className = 'message-attachments inline';
+        renderMessageAttachments([att], area);
+        bubble.appendChild(area);
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        bubble.appendChild(contentDiv);
+        bubble.classList.remove('awaiting-first-token');
+    }
     FilePanel.notifyActivity(att, convoId);
     // Scratchpad writes carry a `scratchpad` marker (no url → a plain chip):
     // refresh the pad if it's open so the user sees the model's edit live.
@@ -505,6 +512,13 @@ export async function callAPIStreaming(userMessage, attachments = []) {
         // runs; the done event's list is authoritative but matches what we
         // already collected, so finalize persists state.streamingToolEvents.
         if (payload.type === 'tool_activity') {
+            // Stamp WHERE in the reply this tool ran. Capturing it live is the
+            // only chance — nothing about the finished text says when a tool
+            // fired. Recorded against the RAW accumulator, which is unambiguous;
+            // the live view and the stored message clean that text differently
+            // (a leading tag vs all tags plus a trim), so each converts this one
+            // offset into its own coordinates rather than sharing a guess.
+            payload.rawOffset = (state.streamingAccumulator || '').length;
             state.streamingToolEvents.push(payload);
             renderLiveToolActivity(payload, convoId);
             return;
@@ -648,17 +662,32 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
     setExpression(detectedExpr);
 
     // Strip prefill + expression tag from the persisted/displayed text.
+    const prefill = state.currentPrefill;
     let cleanText = fullText;
-    if (state.currentPrefill) {
-        cleanText = stripPrefillText(cleanText, state.currentPrefill);
+    if (prefill) {
+        cleanText = stripPrefillText(cleanText, prefill);
         state.currentPrefill = '';
     }
     cleanText = stripExpressionTag(cleanText);
 
+    // Each tool event's raw offset becomes an offset into the STORED text, by
+    // cleaning the prefix the same way the whole text was cleaned and measuring
+    // it. `stripExpressionTag` trims, so a boundary lands just past the last
+    // non-space character — which is where a card wants to sit anyway.
+    const storedOffsetFor = (rawOffset) => {
+        let prefix = (fullText || '').slice(0, rawOffset);
+        if (prefill) prefix = stripPrefillText(prefix, prefill);
+        return Math.min(stripExpressionTag(prefix).length, cleanText.length);
+    };
+
     // Assemble this turn's attachments: Track A tool artifacts (chips +
     // created-file cards) first, then any Gemini-generated images. Tool events
-    // become persistable entries so they survive a reload.
-    const toolAttachments = (state.streamingToolEvents || []).map(toolEventToAttachment);
+    // become persistable entries so they survive a reload — carrying their
+    // position, which is what makes a reload reproduce the live order.
+    const toolAttachments = (state.streamingToolEvents || []).map(ev => toolEventToAttachment({
+        ...ev,
+        textOffset: Number.isInteger(ev.rawOffset) ? storedOffsetFor(ev.rawOffset) : undefined,
+    }));
     const imageAttachments = await storeGeneratedImages(generatedImages);
     const attachments = [...toolAttachments, ...imageAttachments];
 
@@ -674,29 +703,21 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
         return;
     }
 
-    // Reconcile the attachments row to the authoritative set: drop any live
-    // tool chips rendered mid-stream and re-render everything once, so the DOM
-    // matches exactly what a reload will produce from the persisted data.
-    const liveArea = bubble && bubble.querySelector('.message-attachments');
-    if (liveArea) liveArea.remove();
-    if (bubble && attachments.length > 0) {
-        const attachDiv = document.createElement('div');
-        attachDiv.className = 'message-attachments';
-        renderMessageAttachments(attachments, attachDiv);
-        const contentDiv = bubble.querySelector('.message-content');
-        if (contentDiv) bubble.insertBefore(attachDiv, contentDiv);
-    }
-
-    const contentDiv = bubble && bubble.querySelector('.message-content');
-    if (contentDiv) {
-        if (!cleanText && imageAttachments.length > 0) {
-            contentDiv.innerHTML = '<em>Generated image(s)</em>';
-        } else {
-            contentDiv.innerHTML = renderMarkdown(cleanText);
-        }
-    }
-
+    // The live bubble was built segment by segment as the reply arrived. Rather
+    // than patch it into shape, rebuild it from the authoritative attachment
+    // set — the same call renderChatThread makes — so the finished turn is
+    // byte-for-byte what a reload produces. (The repaint at the end of this
+    // function covers the visible case; this keeps the bubble correct for the
+    // moment in between, and when the thread is not on screen there is simply
+    // no bubble to touch.)
     if (bubble) {
+        bubble.querySelectorAll('.message-attachments, .message-content').forEach(el => el.remove());
+        if (!cleanText && imageAttachments.length > 0) {
+            renderMessageBody(bubble, '', attachments).innerHTML = '<em>Generated image(s)</em>';
+        } else {
+            renderMessageBody(bubble, cleanText, attachments);
+        }
+
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'message-actions';
         actionsDiv.innerHTML = messageActionsHTML('Regenerate');
