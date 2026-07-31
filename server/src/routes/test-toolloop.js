@@ -176,8 +176,158 @@ const toolContext = { userId: 'u1', workspace: null, project: null, conversation
     check('exactly 5 round trips made', provider.requests.length === 5);
   }
 
-  // --- 6. Toggle resolution: override → persona base → off (DB) ------------
-  console.log('\n6. resolveToolsEnabled precedence (DB)...');
+  // --- 6. streamRaw reassembles the native message from the SSE stream -----
+  console.log('\n6. streamRaw: SSE reassembly (text / tool_use / thinking)...');
+  {
+    // A realistic Anthropic stream: a thinking block with a signature, some
+    // narration, then a tool call whose input arrives as JSON fragments.
+    const events = [
+      { type: 'message_start', message: { model: 'claude-test', usage: { input_tokens: 11 } } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'pondering' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'sig123' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Let me ' } },
+      { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'create that.' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'content_block_start', index: 2, content_block: { type: 'tool_use', id: 'toolu_1', name: 'create_file' } },
+      { type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: '{"filename":"no' } },
+      { type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: 'tes.md","content":"hi"}' } },
+      { type: 'content_block_stop', index: 2 },
+      { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 22 } },
+      { type: 'message_stop' },
+    ];
+    const wire = events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+
+    // Split the wire bytes at deliberately awkward points — mid-frame and
+    // mid-JSON — so the frame buffering is actually exercised.
+    const bytes = Buffer.from(wire, 'utf8');
+    const cuts = [17, 140, 400, 620, 900, bytes.length];
+    let pos = 0;
+    const chunks = cuts.map(c => { const slice = bytes.subarray(pos, c); pos = c; return slice; }).filter(b => b.length);
+
+    const realFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      body: {
+        getReader() {
+          let i = 0;
+          return { read: async () => (i < chunks.length ? { done: false, value: chunks[i++] } : { done: true }) };
+        },
+      },
+    });
+
+    try {
+      const forwarded = [];
+      const msg = await anthropic.streamRaw(
+        'k',
+        { model: 'claude-test', messages: [{ role: 'user', content: 'go' }], tools: [] },
+        { onDelta: (p) => forwarded.push(p) }
+      );
+
+      check('only text deltas are forwarded to the client', forwarded.length === 2);
+      check('forwarded verbatim in provider SSE shape',
+        forwarded[0].type === 'content_block_delta' && forwarded[0].delta.type === 'text_delta');
+      check('forwarded text is in order',
+        forwarded.map(p => p.delta.text).join('') === 'Let me create that.');
+
+      const thinking = msg.content.find(b => b.type === 'thinking');
+      check('thinking block reassembled', thinking?.thinking === 'pondering');
+      check('thinking signature preserved (replay would fail without it)', thinking?.signature === 'sig123');
+
+      const text = msg.content.find(b => b.type === 'text');
+      check('text block reassembled', text?.text === 'Let me create that.');
+
+      const toolUse = msg.content.find(b => b.type === 'tool_use');
+      check('tool_use input reassembled across JSON fragments',
+        toolUse?.input?.filename === 'notes.md' && toolUse?.input?.content === 'hi');
+      check('stop_reason captured', msg.stop_reason === 'tool_use');
+      check('usage merged from message_start + message_delta',
+        msg.usage?.input_tokens === 11 && msg.usage?.output_tokens === 22);
+
+      // The whole point: the reassembled message feeds the REAL extractor.
+      const extraction = anthropic.extractToolCalls(msg);
+      check('real extractToolCalls finds the streamed call',
+        extraction?.calls.length === 1 && extraction.calls[0].name === 'create_file');
+    } finally {
+      global.fetch = realFetch;
+    }
+  }
+
+  // --- 7. The loop streams EVERY round, not just the last ------------------
+  console.log('\n7. Streaming loop: interstitial text reaches the client...');
+  {
+    // Two rounds: narration + a tool call, then the final answer. Each round's
+    // text is pushed through onDelta the way streamRaw would.
+    const rounds = [
+      { text: 'Let me create that file.', data: structuredClone(toolCallResponse) },
+      { text: 'All done!', data: structuredClone(finalResponse) },
+    ];
+    const provider = {
+      requests: [],
+      streamRaw: async (apiKey, params, { onDelta }) => {
+        provider.requests.push(params);
+        const round = rounds.shift();
+        onDelta({ type: 'content_block_delta', delta: { type: 'text_delta', text: round.text } });
+        return round.data;
+      },
+      chatRaw: async () => { throw new Error('chatRaw must not be used when streaming'); },
+      extractToolCalls: anthropic.extractToolCalls,
+      buildToolResultMessage: anthropic.buildToolResultMessage,
+      formatChatResult: anthropic.formatChatResult,
+    };
+
+    const deltas = [];
+    const out = await runToolLoop({
+      providerModule: provider, apiKey: 'k', params: { ...baseParams }, toolContext,
+      onDelta: (p) => deltas.push(p),
+    });
+
+    check('loop reports it already streamed', out.streamed === true);
+    check('no final result to re-send', out.result === undefined);
+    check('two rounds streamed', provider.requests.length === 2);
+
+    const streamedText = deltas.map(d => d.delta.text).join('');
+    check('pre-tool narration reaches the client (was discarded before)',
+      streamedText.includes('Let me create that file.'));
+    check('final answer reaches the client', streamedText.includes('All done!'));
+    check('rounds separated by a blank line',
+      streamedText === 'Let me create that file.\n\nAll done!');
+  }
+
+  // --- 8. A provider without streamRaw keeps the one-chunk fallback --------
+  console.log('\n8. Fallback: provider without streamRaw still works...');
+  {
+    const provider = makeFakeProvider([structuredClone(toolCallResponse), structuredClone(finalResponse)]);
+    const deltas = [];
+    const out = await runToolLoop({
+      providerModule: provider, apiKey: 'k', params: { ...baseParams }, toolContext,
+      onDelta: (p) => deltas.push(p),
+    });
+    check('falls back to non-streaming', !out.streamed);
+    check('nothing streamed mid-loop', deltas.length === 0);
+    check('final result still returned for the one-chunk path', out.result?.text === 'All done!');
+  }
+
+  // --- 9. formatChatResult joins every text block --------------------------
+  console.log('\n9. formatChatResult keeps text after the first block...');
+  {
+    const withThinking = {
+      content: [
+        { type: 'text', text: 'First. ' },
+        { type: 'thinking', thinking: 'hmm', signature: 's' },
+        { type: 'text', text: 'Second.' },
+      ],
+      model: 'claude-test',
+      stop_reason: 'end_turn',
+    };
+    check('all text blocks joined (find() dropped the tail)',
+      anthropic.formatChatResult(withThinking).text === 'First. Second.');
+  }
+
+  // --- 10. Toggle resolution: override → persona base → off (DB) -----------
+  console.log('\n10. resolveToolsEnabled precedence (DB)...');
   const db = getDb();
   let userId;
   try {

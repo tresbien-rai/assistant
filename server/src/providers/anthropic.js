@@ -251,18 +251,164 @@ async function chatRaw(apiKey, params, signal) {
 }
 
 /**
+ * Streaming request that returns the SAME raw Messages API shape as chatRaw,
+ * while forwarding text deltas to `onDelta` as they arrive.
+ *
+ * This is what lets the tool loop stream. The loop needs the assembled native
+ * message (to extract tool calls and replay it verbatim), and the client needs
+ * the text as it is produced — so we reassemble the message from the event
+ * stream rather than choosing one or the other.
+ *
+ * `onDelta` receives the provider's OWN `content_block_delta` payload
+ * unchanged, so the client's existing Anthropic parser handles it with no
+ * knowledge that a tool loop is involved.
+ *
+ * Reassembly notes: `tool_use` input arrives as `input_json_delta` fragments
+ * that are only valid JSON once concatenated, and `thinking` blocks carry a
+ * signature that MUST survive into the replayed message or the continuation
+ * request is rejected.
+ *
+ * @param {string} apiKey
+ * @param {Object} params - Chat parameters (may include tools + raw messages)
+ * @param {{onDelta?: (payload: Object) => void}} [handlers]
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<Object>} Messages API response shape (content/model/usage/stop_reason)
+ */
+async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
+  const headers = buildHeaders(apiKey);
+  const body = buildRequestBody({ ...params, stream: true });
+
+  logger.debug({ model: body.model, messageCount: body.messages.length }, 'Anthropic streaming tool-loop request');
+
+  const response = await fetch(ANTHROPIC_API_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw mapApiError(response, errorData);
+  }
+
+  const blocks = [];        // reassembled content blocks, by stream index
+  const jsonParts = [];     // tool_use input fragments, by stream index
+  const message = { content: blocks, model: body.model, usage: undefined, stop_reason: undefined };
+
+  const handleEvent = (payload) => {
+    switch (payload.type) {
+      case 'message_start':
+        if (payload.message) {
+          message.model = payload.message.model || message.model;
+          message.usage = payload.message.usage;
+        }
+        break;
+      case 'content_block_start': {
+        const block = { ...(payload.content_block || {}) };
+        if (block.type === 'text' && block.text === undefined) block.text = '';
+        if (block.type === 'thinking' && block.thinking === undefined) block.thinking = '';
+        if (block.type === 'tool_use') jsonParts[payload.index] = '';
+        blocks[payload.index] = block;
+        break;
+      }
+      case 'content_block_delta': {
+        const block = blocks[payload.index];
+        const delta = payload.delta || {};
+        if (!block) break;
+        if (delta.type === 'text_delta') {
+          block.text = (block.text || '') + delta.text;
+          if (onDelta) onDelta(payload); // forwarded verbatim to the client
+        } else if (delta.type === 'thinking_delta') {
+          block.thinking = (block.thinking || '') + delta.thinking;
+        } else if (delta.type === 'signature_delta') {
+          block.signature = (block.signature || '') + delta.signature;
+        } else if (delta.type === 'input_json_delta') {
+          jsonParts[payload.index] = (jsonParts[payload.index] || '') + delta.partial_json;
+        }
+        break;
+      }
+      case 'content_block_stop': {
+        const block = blocks[payload.index];
+        if (block && block.type === 'tool_use') {
+          const raw = jsonParts[payload.index] || '';
+          try {
+            block.input = raw.trim() === '' ? {} : JSON.parse(raw);
+          } catch {
+            // A tool call we cannot parse is worse than none: fail loudly here
+            // rather than dispatch the executor with a half-built input.
+            throw AppError.provider(
+              `Anthropic sent an unparsable tool input for ${block.name}`,
+              { provider: 'anthropic' }
+            );
+          }
+        }
+        break;
+      }
+      case 'message_delta':
+        if (payload.delta) message.stop_reason = payload.delta.stop_reason ?? message.stop_reason;
+        if (payload.usage) message.usage = { ...(message.usage || {}), ...payload.usage };
+        break;
+      case 'error':
+        throw AppError.provider(
+          payload.error?.message || 'Anthropic reported an error mid-stream',
+          { provider: 'anthropic', type: payload.error?.type }
+        );
+      default:
+        break; // ping, message_stop
+    }
+  };
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE frames are separated by a blank line; a frame may span chunks.
+    let sep;
+    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      for (const line of frame.split('\n')) {
+        if (!line.startsWith('data:')) continue; // the `event:` line is redundant with payload.type
+        const data = line.slice(5).trim();
+        if (!data) continue;
+        let payload;
+        try { payload = JSON.parse(data); } catch { continue; }
+        handleEvent(payload);
+      }
+    }
+  }
+
+  // Dropping holes keeps the array dense for extractToolCalls / replay.
+  message.content = blocks.filter(Boolean);
+  return message;
+}
+
+/**
  * Reduce a raw Messages API response to the app's chat-result shape.
+ *
+ * ALL text blocks are joined, not just the first. A response can legitimately
+ * carry several (most obviously with extended thinking, where a thinking block
+ * sits between them), and taking only `find()`'s first match silently dropped
+ * everything after it. Gemini's equivalent already joined its parts, so this
+ * also stops the two providers disagreeing.
+ *
  * @param {Object} data - Parsed Messages API response JSON
  * @returns {{text: string, model: string, usage?: Object, stopReason?: string}}
  */
 function formatChatResult(data) {
-  const textContent = data.content?.find(block => block.type === 'text');
-  if (!textContent) {
+  const textBlocks = (data.content || []).filter(block => block.type === 'text');
+  if (textBlocks.length === 0) {
     throw AppError.provider('No text response received from Anthropic', { provider: 'anthropic' });
   }
 
   return {
-    text: textContent.text,
+    text: textBlocks.map(block => block.text).join(''),
     model: data.model,
     usage: data.usage,
     stopReason: data.stop_reason,
@@ -374,6 +520,7 @@ async function listModels(apiKey) {
 module.exports = {
   chat,
   chatRaw,
+  streamRaw,
   formatChatResult,
   stream,
   listModels,
