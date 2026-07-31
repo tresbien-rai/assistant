@@ -1,6 +1,6 @@
 # Session State & Tool Feedback — Design
 
-Status: **decisions locked, implementation pending**
+Status: **SS-01…SS-03 shipped; SS-04 pending**
 Arising from: live testing of the streaming tool loop (TS-01…TS-03)
 
 ---
@@ -49,7 +49,7 @@ Both `edit_scratchpad` and `edit_file` adopt one shape:
 Concretely:
 
 | tool | before | after |
-|---|---|---|
+|---|---|---|---|
 | `edit_scratchpad` | `Edited the scratchpad — now 3700 characters.` | `Edited the scratchpad — 1 replacement, 3,860 → 3,700 characters (−160).` |
 | `edit_file` | `Edited "notes.md" — now 12.4 KB.` | `Edited "notes.md" — 1 replacement, 12.6 KB → 12.4 KB (−200 bytes).` |
 
@@ -137,54 +137,64 @@ Two consequences:
 The SP-05 nudge wording was always "a starting point to tune live". This section
 is the target it should be tuned toward.
 
+### D6 — The scratchpad is ON by default (SS-03)
+
+Found while verifying SS-02: a fresh chat reported `tools: []`. The pad was
+gated by **auto-arm** — active only once it already had content — so the
+scratchpad tools were not advertised at all until the *user* seeded it. The
+model could never open the door itself; it could only wait to be invited.
+
+That directly contradicts the role above. Precedence is now:
+
+```
+conversation override (1/0)  →  persona base (true/false)  →  ON
+```
+
+Two consequences worth noting. The persona base is now meaningful in **both**
+directions — a persona with no use for a pad can opt its chats out, where before
+it could only opt in (which the default now does anyway). And the cost of
+defaulting on is two extra tool definitions per request, against the cost of
+defaulting off, which was a headline feature the model could not reach.
+
 ---
 
-## 4. Shape of the state block — options
+## 4. Shape of the state block — settled
 
-The one genuinely open question. Sketches, populated and empty.
-
-### Option A — XML-ish, matching `<scratchpad>` and the KB containers
-
-```
-<session_state>
-Workspace: none. This chat is not in a workspace or project.
-Scratchpad: empty.
-Files: none.
-</session_state>
-```
+XML-ish, matching the idiom `<scratchpad>` and the KB containers already use.
+Ordered outermost-first, mirroring how the app nests them.
 
 ```
 <session_state>
-Project: "Novel draft" (workspace "Writing"). No project instructions set.
-Scratchpad: 1,240 characters — current content below.
-Files: 3 in this conversation, 2 in the project knowledge base.
+Workspace: "Writing" (no instructions set)
+Project: "Fantasy Novel Draft"
+Scratchpad: 1,240 characters (current content below)
+Files: 2 in this conversation, 5 in the project
 </session_state>
 ```
 
-Consistent with the prompt's existing idiom. **Recommended.**
+and the case that motivated the whole design:
 
-### Option B — bare labelled lines, no wrapper
+```
+<session_state>
+Workspace: none
+Project: none
+Scratchpad: empty
+Files: none
+</session_state>
+```
 
-Cheaper by a few tokens, but floats without an obvious owner among the other
-blocks, and is easier for the model to mistake for user content.
+Resolved sub-questions:
 
-### Option C — a compact single line
+1. **Element name** — `<session_state>`. "Workspace" was too narrow; the block
+   covers the pad and files too.
+2. **A container with no instructions** — say so explicitly. Silence would let
+   the model infer that instructions exist but were withheld from it.
+3. **Counts, not names** — `<available_files>` already lists names, and loaded
+   files have their content injected outright. Repeating names here would
+   duplicate one and contradict the other the moment they disagree. This block
+   answers *"is there anything, and where"*; the manifest answers *"what"*.
 
-`State: no workspace · scratchpad empty · no files`
-
-Tightest, but degrades badly once a container has a name and files have counts.
-
-**Open sub-questions**
-
-1. **Element name.** `<session_state>` vs `<workspace_state>` vs `<current_state>`.
-   "Workspace" is too narrow — the block covers the pad and files too.
-2. **A workspace with no instructions.** Say so explicitly ("No project
-   instructions set") or stay silent? Explicit costs a few tokens and prevents
-   the model inferring that instructions exist but were withheld. Leaning
-   explicit, consistent with the rest of this design.
-3. **File counts vs names.** Counts only, or the names too? Names duplicate the
-   KB manifest when one is injected. Leaning counts, with the manifest remaining
-   the source for names.
+Implemented in `server/src/prompts/sessionState.js`.
 
 ---
 
@@ -218,19 +228,85 @@ and when caching lands — at which point splitting the block into a static part
 
 ## 6. Implementation slices
 
-| id | slice | depends on |
-|---|---|---|
-| SS-01 | Delta reporting in `edit_scratchpad` + `edit_file` (D1) | — |
-| SS-02 | State resolver: container / scratchpad / files → the block text (D2) | shape agreed |
-| SS-03 | Wire it as a position-only preset block (D3), inspector + settings UI | SS-02 |
-| SS-04 | Tool description pass, scope-neutral (D4) | SS-02 |
+| id | slice | depends on | done |
+|---|---|---|---|
+| SS-01 | Delta reporting in `edit_scratchpad` + `edit_file` (D1) | — | ✅ |
+| SS-02 | State resolver + position-only preset block (D2/D3) | shape agreed | ✅ |
+| SS-03 | Scratchpad ON by default (D6) | — | ✅ |
+| SS-04 | Tool description pass, scope-neutral (D4) | SS-02 | |
 
-SS-01 is independent and self-contained, so it goes first. SS-04 lands after
-SS-02 so the descriptions can defer to a block that already exists.
+SS-04 lands after SS-02 so the descriptions can defer to a block that already
+exists.
 
 ---
 
-## 7. Deferred
+## 7. File digests — analysis, not yet decided
+
+The manifest lists names only, and names are frequently uninformative
+(`notes.md`, `draft2.md`, `chapter3-final-v2.md`). A one-line digest per file
+would let the model choose WHICH file to open instead of guessing or reading
+several. Three ways to produce one, and they compose rather than compete.
+
+### Tier 1 — deterministic, from the content
+
+First markdown heading, first non-empty line, a leading docblock, a CSV header
+row, the top-level keys of a JSON object.
+
+Free, instant, and impossible to make stale. For a project of markdown drafts
+the first heading usually IS the summary. This is the floor: it covers every
+file including ones nobody has looked at, and it needs no model, no key, and no
+new request.
+
+### Tier 2 — the model writes it as it works (preferred upgrade)
+
+An optional `summary` parameter on `create_file` and `edit_file`. The model
+passes a one-line description alongside the content it is already sending.
+
+This is much cheaper than it first appears, because there is no separate
+request: the model has just authored the content, so the summary costs roughly
+15-30 OUTPUT tokens and nothing else. An aux-model pass over the same file would
+cost a whole request — the file as input, plus a summary out, plus latency —
+which is an order of magnitude more for the same sentence.
+
+Known gaps, which is why it is not the whole answer:
+
+- **Coverage.** Only files the model writes get one. User uploads — often the
+  most important files, and the ones the model has NOT seen — get nothing.
+- **Reliability.** Optional parameters get skipped, especially deep in a tool
+  loop. Plausible to require on `create_file`; heavy-handed on `edit_file`,
+  where a two-word typo fix should not demand a re-summary.
+- **Staleness after a user edit.** Covered by keying the digest to
+  `drive_file_id`, which is already immutable per write (`editFile.js`: "every
+  write mints a new id"). A digest whose key no longer matches is treated as
+  MISSING, never shown as current. Missing degrades to tier 1; wrong would be
+  worse than nothing.
+
+`read_file` is deliberately not a capture point: it is a read, so producing a
+summary there needs either a follow-up turn or a separate tool call the model
+will not reliably make.
+
+### Tier 3 — an aux model
+
+A fast, cheap model summarising files the first two tiers cover badly (data
+files, code without docblocks, and above all user uploads).
+
+Deferred, and possibly never needed. Beyond cost and latency it raises a
+question the other tiers do not: an aux call spends the USER's stored API key on
+work they did not ask for. That needs to be opt-in or at least visible —
+spending someone's key silently is not acceptable. Running tiers 1-2 first also
+produces the baseline that would show whether a model summary actually beats
+"first heading", which is not obvious.
+
+### Recommendation
+
+Tier 1 as the floor, tier 2 layered over it for files the model touches, tier 3
+only if a measured gap remains. Digests belong on the MANIFEST, not in
+`<session_state>` — that keeps §4's counts/names split intact, and `list_files`
+gets the same benefit for free.
+
+---
+
+## 8. Deferred
 
 - Prompt caching, and the block split it would justify (§5)
 - Any change to how the pad's *content* is injected — this design only adds

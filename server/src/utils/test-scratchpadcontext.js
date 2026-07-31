@@ -120,11 +120,25 @@ function row(conversationId, userId) {
       assert.strictEqual(resolveScratchpadEnabled(userId, row(conv.id, userId)), true);
     });
 
-    await check('auto-arm: a non-empty pad enables it with no toggle or persona base', async () => {
-      const conv = dal.createConversation(userId, { title: 'autoarm' });
-      assert.strictEqual(resolveScratchpadEnabled(userId, row(conv.id, userId)), false, 'empty → off');
-      await executeWriteScratchpad({ content: 'the user started jotting' }, { userId, conversationId: conv.id, turnOrdinal: 1 });
-      assert.strictEqual(resolveScratchpadEnabled(userId, row(conv.id, userId)), true, 'content → auto-armed');
+    await check('persona base can also DISABLE it, now that the default is on', async () => {
+      const persona = dal.createPersona(userId, { name: 'No pad', modelConfig: { scratchpadEnabled: false } });
+      const conv = dal.createConversation(userId, { title: 'persona off', personaId: persona.id });
+      assert.strictEqual(resolveScratchpadEnabled(userId, row(conv.id, userId)), false, 'persona opts its chats out');
+      dal.updateConversation(conv.id, userId, { scratchpadEnabled: true });
+      assert.strictEqual(resolveScratchpadEnabled(userId, row(conv.id, userId)), true, 'the chat can still force it back on');
+    });
+
+    await check('ON by default: a fresh chat with an empty pad is active (SS-03)', async () => {
+      // This replaces the old AUTO-ARM behaviour, where an empty pad meant the
+      // scratchpad tools were not advertised at all — so the model could never
+      // be the one to start using the pad, only wait to be invited.
+      const conv = dal.createConversation(userId, { title: 'fresh' });
+      assert.strictEqual(
+        resolveScratchpadEnabled(userId, row(conv.id, userId)), true,
+        'empty pad, no toggle, no persona base → still active'
+      );
+      await executeWriteScratchpad({ content: 'and stays on with content' }, { userId, conversationId: conv.id, turnOrdinal: 1 });
+      assert.strictEqual(resolveScratchpadEnabled(userId, row(conv.id, userId)), true);
     });
 
     console.log('\n3. System-prompt nudge (SP-05)...');
