@@ -29,6 +29,7 @@ import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
 import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
+import { setupTextareaResizers } from '../components/textarea-resize.js';
 // AP-04 only: the composer pill's menu can jump to this view, and the persona
 // editor's picker writes through the persona save path like every other field.
 import { navigate } from '../shell.js';
@@ -505,6 +506,7 @@ export function renderPresetEditor() {
         renderPromptInspector(document.getElementById('presetInspector'), { presetId: editingPresetId });
     });
     wireEditorEvents();
+    setupTextareaResizers(); // each block card renders a fresh handle
     syncExpressionWarning();
 }
 
@@ -535,9 +537,12 @@ function blockCardHTML(id, block, { index = 0, count = 1, draggable }) {
             ${info.conditional ? `<em class="preset-block-cond">${escapeHtml(info.conditional)}</em>` : ''}
         </p>
         ${info.positionOnly ? '' : `
-            <textarea class="preset-block-text" data-block-text rows="6"
-                      maxlength="${presetDefaults.limits.blockChars}"
-                      placeholder="${escapeHtml(builtIn)}">${escapeHtml(block.text || '')}</textarea>
+            <div class="textarea-resizable">
+                <textarea id="presetText_${escapeHtml(id)}" class="preset-block-text" data-block-text rows="6"
+                          maxlength="${presetDefaults.limits.blockChars}"
+                          placeholder="${escapeHtml(builtIn)}">${escapeHtml(block.text || '')}</textarea>
+                <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+            </div>
             <p class="preset-block-warn" data-warn hidden></p>`}
     </div>`;
 }

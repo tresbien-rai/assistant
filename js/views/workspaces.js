@@ -4,9 +4,6 @@
  * The workspaces/projects lists, their row menus and create/edit/delete flows,
  * the breadcrumb, and the inline container pages — including each container's
  * file list with uploads, deletes and the per-file context toggle.
- *
- * `setupTextareaResizers` rides along because the container edit form is what
- * calls it; it is a generic DOM helper and belongs in dom.js eventually.
  */
 
 import { state } from '../state.js';
@@ -20,6 +17,7 @@ import { positionPopover, attachPopoverOutsideClose } from '../components/menus.
 import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
+import { setupTextareaResizers } from '../components/textarea-resize.js';
 import {
     switchConversation, createConversation,
 } from './chats.js';
@@ -834,58 +832,3 @@ async function deleteContainerFilePrompt(kind, id, fileId, filename) {
     await loadContainerFiles(kind, id);
 }
 
-// Wire the themed bottom drag-bars that replace the native textarea grip.
-// Each `.textarea-resize-handle` resizes the textarea immediately before it.
-// Idempotent (skips already-wired handles): called once at init for the static
-// forms, and again whenever a view renders a fresh handle (container pages).
-// Dragged heights persist in UiPrefs (keyed by textarea id) so re-rendered
-// textareas — e.g. container-page Instructions — keep their size, matching the
-// static settings-modal ones.
-export function setupTextareaResizers() {
-    const MIN_H = 80;
-    const MAX_H = 600;
-    const savedHeights = UiPrefs.get('textareaHeights') || {};
-    document.querySelectorAll('.textarea-resize-handle').forEach(handle => {
-        const ta = handle.previousElementSibling;
-        if (!ta || ta.tagName !== 'TEXTAREA') return;
-        if (handle.dataset.resizerWired) return;
-        handle.dataset.resizerWired = 'true';
-
-        if (ta.id && savedHeights[ta.id]) {
-            ta.style.height = `${Math.max(MIN_H, Math.min(MAX_H, savedHeights[ta.id]))}px`;
-        }
-
-        let dragging = false;
-        let startY = 0;
-        let startH = 0;
-
-        handle.addEventListener('pointerdown', (e) => {
-            dragging = true;
-            startY = e.clientY;
-            startH = ta.getBoundingClientRect().height;
-            handle.classList.add('dragging');
-            try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-            e.preventDefault();
-        });
-
-        handle.addEventListener('pointermove', (e) => {
-            if (!dragging) return;
-            const h = Math.max(MIN_H, Math.min(MAX_H, startH + (e.clientY - startY)));
-            ta.style.height = `${h}px`;
-        });
-
-        const end = (e) => {
-            if (!dragging) return;
-            dragging = false;
-            handle.classList.remove('dragging');
-            try { handle.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-            if (ta.id) {
-                const heights = { ...(UiPrefs.get('textareaHeights') || {}) };
-                heights[ta.id] = Math.round(ta.getBoundingClientRect().height);
-                UiPrefs.set('textareaHeights', heights);
-            }
-        };
-        handle.addEventListener('pointerup', end);
-        handle.addEventListener('pointercancel', end);
-    });
-}

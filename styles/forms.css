@@ -742,18 +742,23 @@
     color: var(--text-muted);
 }
 
-/* Overrides `.settings-section textarea`, which is sized for short fields. */
+/* Overrides `.settings-section textarea`, which is sized for short fields.
+   The box, border and sizing come from the shared `.textarea-resizable`
+   wrapper — no `resize` here, or the native grip would return alongside the
+   drag-bar. Only the monospaced prompt typography is specific to this field. */
 .settings-section .preset-block-text {
-    width: 100%;
     min-height: 120px;
-    margin-bottom: 0;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     line-height: 1.5;
-    resize: vertical;
     /* Long prompt lines wrap rather than scrolling sideways (UI principle). */
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+/* The warning line beneath owns the gap, so the wrapper adds none. */
+.preset-block .textarea-resizable {
+    margin-bottom: 0;
 }
 
 .preset-block-text::placeholder {

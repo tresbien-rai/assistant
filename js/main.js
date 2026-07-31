@@ -78,8 +78,9 @@ import {
 import {
     showPersonaPopover, } from './views/personas.js';
 import {
-    updateWorkspaceUI, setupTextareaResizers,
+    updateWorkspaceUI,
 } from './views/workspaces.js';
+import { setupTextareaResizers } from './components/textarea-resize.js';
 import {
     autoSaveSettings, savePersonas, hydrateApiKeyStatus,
 } from './settings-store.js';

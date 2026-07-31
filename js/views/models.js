@@ -30,6 +30,7 @@ import { escapeHtml } from '../util/format.js';
 import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
 import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
+import { setupTextareaResizers } from '../components/textarea-resize.js';
 
 /** Render one param control from its descriptor + current value. */
 export function renderParamControl(d, params) {
@@ -75,9 +76,15 @@ export function renderParamControl(d, params) {
             break;
         }
         case 'textarea':
+            // Same resizable wrapper as the persona prompt and container
+            // instructions, so every multi-line field in the app is one box
+            // with one drag-bar. The id is what lets the dragged height persist.
             control = `<div class="param-row">
                 <div class="param-label">${label}</div>
-                <textarea data-path="${p}" rows="3" placeholder="Text to start the reply with…">${escapeHtml(v || '')}</textarea>
+                <div class="textarea-resizable">
+                    <textarea id="paramText_${p}" data-path="${p}" rows="3" placeholder="Text to start the reply with…">${escapeHtml(v || '')}</textarea>
+                    <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+                </div>
             </div>`;
             break;
         case 'tags': {
@@ -140,6 +147,7 @@ export function renderModelDetail(provider, modelId) {
     const useBtn = document.getElementById('modelDetailUse');
     if (useBtn) useBtn.addEventListener('click', () => { selectModel(modelId, provider); renderModelsView(); });
     wireParamControls(panel, provider, modelId, params, isActive);
+    setupTextareaResizers(); // the prefill field's handle is freshly rendered
 }
 
 /**

@@ -344,14 +344,15 @@
    one thing the base rule leaves to context. A stacked row's control spans the
    card; an inline row's sits at a fixed width beside its label. */
 .param-row input[type="range"],
-.param-row textarea,
 .param-row .param-tag-input {
     width: 100%;
 }
 
-.param-row textarea {
-    resize: vertical;
-    min-height: 64px;
+/* The prefill field uses the shared resizable wrapper, so it gets the same box
+   and drag-bar as the persona prompt and container instructions. The row's flex
+   gap already spaces it — the wrapper's own bottom margin would double up. */
+.param-row .textarea-resizable {
+    margin-bottom: 0;
 }
 
 .param-row-inline input[type="number"],
@@ -645,10 +646,11 @@
     padding: 10px 12px;
 }
 
+/* No top border: the handle shares the wrapper's background, so a rule here
+   only cut the box in two. The grip pill alone is enough affordance. */
 .textarea-resize-handle {
     height: 14px;
     flex-shrink: 0;
-    border-top: 1px solid var(--border-color);
     background: var(--bg-tertiary);
     cursor: ns-resize;
     display: flex;
