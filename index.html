@@ -357,7 +357,10 @@ When responding, you may optionally include an expression tag like [expression: 
                          row: the block textareas need the full column width. -->
                     <div id="presetListPanel">
                         <div class="preset-list" id="presetList"></div>
-                        <button type="button" class="add-expression-btn" id="createPresetBtn">+ New preset</button>
+                        <div class="preset-list-actions">
+                            <button type="button" class="add-expression-btn" id="createPresetBtn">+ New preset</button>
+                            <button type="button" class="preset-action" id="importPresetBtn">Import…</button>
+                        </div>
                         <p class="section-note">The default applies to every chat unless a persona or an individual chat overrides it.</p>
                     </div>
                     <div class="preset-editor" id="presetEditor" hidden></div>
