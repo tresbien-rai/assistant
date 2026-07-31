@@ -20,7 +20,10 @@
  */
 
 const assert = require('node:assert');
-const { buildSystemPrompt, buildContextAck, ORIENTATION, CONTEXT_ACK } = require('./tessera');
+const {
+  buildSystemPrompt, buildContextAck, composeSystemPrompt, describeContextAck,
+  ORIENTATION, CONTEXT_ACK,
+} = require('./tessera');
 const {
   PRESET_NONE,
   defaultBlocks,
@@ -304,7 +307,68 @@ check('names are required and bounded', () => {
   assert.strictEqual(validateName('Roleplay v2').ok, true);
 });
 
-console.log('\n7. Resolution precedence (DB-backed)...');
+console.log('\n7. Provenance (AP-05)...');
+
+check('the reported spans reconstruct the prompt exactly', () => {
+  const preset = defaultBlocks();
+  preset.blocks.orientation.text = 'CUSTOM';
+  const { text, blocks } = composeSystemPrompt(PERSONA, EXPRESSIONS, { preset, scratchpad: true });
+  const included = blocks.filter(b => b.included);
+  // Joining the reported spans must give back the real prompt, character for
+  // character. This is the property the inspector's char counts rest on.
+  assert.strictEqual(included.map(b => b.text).join('\n\n'), text);
+  assert.strictEqual(
+    included.reduce((n, b) => n + b.chars, 0) + (included.length - 1) * 2,
+    text.length
+  );
+});
+
+check('sources name where each block\'s text came from', () => {
+  const preset = defaultBlocks();
+  preset.blocks.orientation.text = 'CUSTOM';
+  const { blocks } = composeSystemPrompt(PERSONA, EXPRESSIONS, { preset });
+  const by = Object.fromEntries(blocks.map(b => [b.id, b]));
+  assert.strictEqual(by.orientation.source, 'preset', 'overridden');
+  assert.strictEqual(by.expressions.source, 'built-in', 'untouched');
+  assert.strictEqual(by.persona.source, 'persona', 'the persona’s own prompt');
+});
+
+check('every exclusion carries a reason', () => {
+  const preset = defaultBlocks();
+  preset.blocks.orientation.enabled = false;
+  // No expressions, no scratchpad, no persona prompt → three different reasons.
+  const { blocks } = composeSystemPrompt('', [], { preset, scratchpad: false });
+  const by = Object.fromEntries(blocks.map(b => [b.id, b]));
+  assert.strictEqual(by.orientation.reason, 'disabled');
+  assert.strictEqual(by.expressions.reason, 'no-expressions');
+  assert.strictEqual(by.scratchpad.reason, 'scratchpad-inactive');
+  assert.strictEqual(by.persona.reason, 'no-persona-prompt');
+  assert.ok(blocks.every(b => b.included || b.reason), 'no unexplained exclusion');
+});
+
+check('the context ack is described separately from the system layer', () => {
+  assert.strictEqual(describeContextAck({}, false).reason, 'no-context');
+  assert.strictEqual(describeContextAck({}, true).included, true);
+  const off = defaultBlocks();
+  off.blocks.context_ack.enabled = false;
+  assert.strictEqual(describeContextAck({ preset: off }, true).reason, 'disabled');
+});
+
+check('buildSystemPrompt and composeSystemPrompt cannot drift', () => {
+  // buildSystemPrompt is a wrapper, not a parallel implementation — this is
+  // what lets the inspector claim to show the real assembly.
+  for (const scratchpad of [false, true]) {
+    for (const persona of ['', PERSONA]) {
+      const opts = { scratchpad };
+      assert.strictEqual(
+        buildSystemPrompt(persona, EXPRESSIONS, opts),
+        composeSystemPrompt(persona, EXPRESSIONS, opts).text
+      );
+    }
+  }
+});
+
+console.log('\n8. Resolution precedence (DB-backed)...');
 
 // Everything above is pure; this section is the one place AP-01 touches the
 // database, and it is the part that decides WHOSE prompt a request gets.

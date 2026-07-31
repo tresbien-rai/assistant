@@ -363,6 +363,16 @@ When responding, you may optionally include an expression tag like [expression: 
                     <div class="preset-editor" id="presetEditor" hidden></div>
                 </div>
 
+                <!-- Prompt inspector (AP-05): the assembled prompt for the open
+                     chat, block by block, with provenance. Runs the real
+                     /api/chat/preview assembly rather than re-deriving it. -->
+                <div class="settings-section" data-settings-tab="advanced">
+                    <h3>Prompt preview</h3>
+                    <p class="section-note">Exactly what the platform prompt assembles to right now, and why each block is or isn't in it.</p>
+                    <button type="button" class="preset-action" id="refreshInspectorBtn">Assemble now</button>
+                    <div class="prompt-inspector" id="promptInspector"></div>
+                </div>
+
                 <!-- Account Section -->
                 <div class="settings-section account-section" data-settings-tab="account">
                     <h3>Account</h3>

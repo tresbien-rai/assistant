@@ -176,6 +176,8 @@ export const elements = {
     presetListPanel: document.getElementById('presetListPanel'),
     presetEditor: document.getElementById('presetEditor'),
     composerPresetButton: document.getElementById('composerPresetButton'),
+    promptInspector: document.getElementById('promptInspector'),
+    refreshInspectorBtn: document.getElementById('refreshInspectorBtn'),
     personaPresetSelect: document.getElementById('personaPresetSelect'),
 
     // Error display system (P0-17)

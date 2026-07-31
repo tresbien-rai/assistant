@@ -190,6 +190,25 @@ function blockText(preset, id) {
  * @returns {string} The assembled system prompt
  */
 function buildSystemPrompt(personaPrompt, expressionNames, options = {}) {
+  return composeSystemPrompt(personaPrompt, expressionNames, options).text;
+}
+
+/**
+ * The composer behind buildSystemPrompt, with provenance (AP-05).
+ *
+ * Returns the same text plus a record of every block: whether it was included,
+ * where its text came from, how big it was, and — the useful part when a prompt
+ * isn't doing what you expect — WHY a block was left out. buildSystemPrompt is
+ * a thin wrapper over this rather than a parallel implementation, so the
+ * inspector can never describe an assembly that differs from the real one.
+ *
+ * `source`: 'preset' (an override), 'built-in', or 'persona' (the persona's own
+ * prompt). `reason` on an excluded block is a stable code the client turns into
+ * a sentence: disabled | no-expressions | scratchpad-inactive | no-persona-prompt | empty.
+ *
+ * @returns {{text: string, blocks: Array<Object>}}
+ */
+function composeSystemPrompt(personaPrompt, expressionNames, options = {}) {
   const preset = normalizeBlocks(options.preset);
   const names = sanitizeExpressionNames(expressionNames);
   // expressionNames is forced from the sanitized list: the macro must describe
@@ -198,24 +217,55 @@ function buildSystemPrompt(personaPrompt, expressionNames, options = {}) {
   const persona = typeof personaPrompt === 'string' ? personaPrompt.trim() : '';
 
   const parts = [];
+  const blocks = [];
+  const skip = (id, reason) => blocks.push({ id, included: false, reason, chars: 0 });
+
   for (const id of preset.order) {
     const block = preset.blocks[id];
-    if (!block || !block.enabled) continue;
-
-    if (id === 'persona') {
-      if (!persona) continue;
-      // The `---` rule separates the platform layer from the persona's own
-      // words. Nothing to separate when the persona leads, so it is dropped.
-      parts.push(parts.length === 0 ? persona : `---\n\n${persona}`);
+    if (!block || !block.enabled) {
+      skip(id, 'disabled');
       continue;
     }
-    if (id === 'expressions' && names.length === 0) continue;
-    if (id === 'scratchpad' && !options.scratchpad) continue;
 
+    if (id === 'persona') {
+      if (!persona) {
+        skip(id, 'no-persona-prompt');
+        continue;
+      }
+      // The `---` rule separates the platform layer from the persona's own
+      // words. Nothing to separate when the persona leads, so it is dropped.
+      const span = parts.length === 0 ? persona : `---\n\n${persona}`;
+      parts.push(span);
+      // Reports the span actually emitted, separator included, so the char
+      // counts add up to the prompt the model receives.
+      blocks.push({ id, included: true, source: 'persona', chars: span.length, text: span });
+      continue;
+    }
+    if (id === 'expressions' && names.length === 0) {
+      skip(id, 'no-expressions');
+      continue;
+    }
+    if (id === 'scratchpad' && !options.scratchpad) {
+      skip(id, 'scratchpad-inactive');
+      continue;
+    }
+
+    const overridden = typeof preset.blocks[id].text === 'string';
     const text = expandMacros(blockText(preset, id), macros).trim();
-    if (text) parts.push(text);
+    if (!text) {
+      skip(id, 'empty');
+      continue;
+    }
+    parts.push(text);
+    blocks.push({
+      id,
+      included: true,
+      source: overridden ? 'preset' : 'built-in',
+      chars: text.length,
+      text,
+    });
   }
-  return parts.join('\n\n');
+  return { text: parts.join('\n\n'), blocks };
 }
 
 /**
@@ -229,9 +279,35 @@ function buildContextAck(options = {}) {
   return expandMacros(blockText(preset, 'context_ack'), buildMacroValues(options.macros || {})).trim();
 }
 
+/**
+ * The context-ack block's provenance entry (AP-05), in the same shape
+ * composeSystemPrompt produces. It lives in the MESSAGE layer, so it is
+ * described separately rather than appearing in the system-prompt list.
+ *
+ * @param {Object} [options] - { preset, macros }, as buildContextAck takes
+ * @param {boolean} [hasContext] - whether this request injects KB context at all
+ */
+function describeContextAck(options = {}, hasContext = false) {
+  const preset = normalizeBlocks(options.preset);
+  const id = 'context_ack';
+  if (!preset.blocks[id].enabled) return { id, included: false, reason: 'disabled', chars: 0 };
+  if (!hasContext) return { id, included: false, reason: 'no-context', chars: 0 };
+  const text = buildContextAck(options);
+  if (!text) return { id, included: false, reason: 'empty', chars: 0 };
+  return {
+    id,
+    included: true,
+    source: typeof preset.blocks[id].text === 'string' ? 'preset' : 'built-in',
+    chars: text.length,
+    text,
+  };
+}
+
 module.exports = {
   buildSystemPrompt,
+  composeSystemPrompt,
   buildContextAck,
+  describeContextAck,
   sanitizeExpressionNames,
   ORIENTATION,
   CONTEXT_ACK,

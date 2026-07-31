@@ -804,6 +804,107 @@
     color: var(--accent);
 }
 
+/* ===== Prompt inspector (AP-05) ===== */
+.prompt-inspector {
+    margin-top: 12px;
+}
+
+.prompt-inspector:empty {
+    display: none;
+}
+
+.inspector-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 8px 0 12px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.inspector-block {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    margin-bottom: 6px;
+}
+
+.inspector-block summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: var(--text-sm);
+}
+
+.inspector-block-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Where the text came from. Only an override is accented — the whole point is
+   to make "this is yours" separable from "this is Tessera's" at a glance. */
+.inspector-source {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    padding: 1px 8px;
+}
+
+.inspector-source.source-preset {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.inspector-chars {
+    flex-shrink: 0;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.inspector-text {
+    margin: 0;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border-color);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--text-secondary);
+    /* Prompt lines are long; wrap them rather than scrolling the panel sideways. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.inspector-excluded {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    color: var(--text-secondary);
+}
+
+.inspector-excluded strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.preset-editor-preview {
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
 .manage-models-btn {
     width: 100%;
     padding: 8px 12px;
