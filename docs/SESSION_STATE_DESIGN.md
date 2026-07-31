@@ -257,52 +257,82 @@ the first heading usually IS the summary. This is the floor: it covers every
 file including ones nobody has looked at, and it needs no model, no key, and no
 new request.
 
-### Tier 2 — the model writes it as it works (preferred upgrade)
+### Tier 2 — the model writes it while it already has the content
 
-An optional `summary` parameter on `create_file` and `edit_file`. The model
-passes a one-line description alongside the content it is already sending.
+Two capture points, because there are two populations of file and they cost
+different things.
 
-This is much cheaper than it first appears, because there is no separate
-request: the model has just authored the content, so the summary costs roughly
-15-30 OUTPUT tokens and nothing else. An aux-model pass over the same file would
-cost a whole request — the file as input, plus a summary out, plus latency —
-which is an order of magnitude more for the same sentence.
+**A. Files the model writes.** An optional `summary` parameter on `create_file`
+and `edit_file`. No separate request: the model has just authored the content,
+so the summary costs roughly 15-30 OUTPUT tokens and nothing else. An aux-model
+pass over the same file costs a whole request — file in, summary out, plus
+latency — an order of magnitude more for the same sentence.
 
-Known gaps, which is why it is not the whole answer:
+**B. Files the model already HAS but is not writing.** Active-file injection
+(FC-03b) puts recently-touched and pinned conversation files in the request in
+full, and loaded KB files ride in the knowledge block. For those the model can
+write a summary with no read at all — the content is already in front of it.
+This is the larger win, because it covers files the user is actively working
+with, which are exactly the ones worth describing.
 
-- **Coverage.** Only files the model writes get one. User uploads — often the
-  most important files, and the ones the model has NOT seen — get nothing.
-- **Reliability.** Optional parameters get skipped, especially deep in a tool
-  loop. Plausible to require on `create_file`; heavy-handed on `edit_file`,
-  where a two-word typo fix should not demand a re-summary.
-- **Staleness after a user edit.** Covered by keying the digest to
-  `drive_file_id`, which is already immutable per write (`editFile.js`: "every
-  write mints a new id"). A digest whose key no longer matches is treated as
-  MISSING, never shown as current. Missing degrades to tier 1; wrong would be
-  worse than nothing.
+Case B needs a way to attach one, and that means a call. Per-file would be a
+round trip each, which eats the 5-iteration budget fast; a BATCHED
+`describe_files({ "a.md": "...", "b.md": "..." })` is one round trip for all of
+them and is the right shape.
 
-`read_file` is deliberately not a capture point: it is a read, so producing a
-summary there needs either a follow-up turn or a separate tool call the model
-will not reliably make.
+**Provenance is the load-bearing piece.** A digest must say where it came from:
+
+```
+<available_files>
+notes.md      (summary: authored) Cast list and the three-act outline.
+draft2.md     (summary: auto) # Chapter 2
+data.csv      (summary: none)
+</available_files>
+```
+
+Without that tag the model cannot tell a real description from a mechanical
+first line, so it can neither judge how much to trust one nor see which are
+worth upgrading. This is the same absence-vs-silence principle the whole
+document turns on: a placeholder that looks like a description is worse than an
+obvious gap.
+
+**The honest risk: will the model bother?** Housekeeping tools get ignored, and
+prompting hard enough to guarantee otherwise makes the model chatty about
+bookkeeping instead of doing the user's work. Mitigation is to keep it cheap and
+optional, tag the gaps so they are visible, and accept partial coverage — files
+the user actually works with accumulate real summaries, everything else keeps
+the free tier-1 line. That is the right cost distribution anyway.
 
 ### Tier 3 — an aux model
 
-A fast, cheap model summarising files the first two tiers cover badly (data
-files, code without docblocks, and above all user uploads).
+A fast, cheap model summarising what the first two tiers cover badly: data
+files, code without docblocks, and above all USER UPLOADS — the files the model
+has never seen, and often the source material that matters most.
 
-Deferred, and possibly never needed. Beyond cost and latency it raises a
-question the other tiers do not: an aux call spends the USER's stored API key on
-work they did not ask for. That needs to be opt-in or at least visible —
-spending someone's key silently is not acceptable. Running tiers 1-2 first also
-produces the baseline that would show whether a model summary actually beats
-"first heading", which is not obvious.
+Deferred. Beyond cost and latency it raises a question the other tiers do not:
+an aux call spends the USER's stored API key on work they did not ask for. That
+needs to be opt-in or at least visible; spending someone's key silently is not
+acceptable.
+
+It also wants a home. A per-file authored summary IS a small durable memory, so
+this tier belongs with the eventual global memory system and its maintenance
+cycle rather than bolted onto the file tools — a periodic pass that fills gaps
+and refreshes stale entries is the same shape as memory upkeep. That argues for
+storing digests with author/provenance/timestamp from the start, not as a bare
+text column, so the later system inherits something it can reason about.
 
 ### Recommendation
 
-Tier 1 as the floor, tier 2 layered over it for files the model touches, tier 3
-only if a measured gap remains. Digests belong on the MANIFEST, not in
-`<session_state>` — that keeps §4's counts/names split intact, and `list_files`
-gets the same benefit for free.
+Tier 1 as the floor, tier 2 over it — both capture points, with provenance
+tagged from day one — and tier 3 only if a measured gap remains, at which point
+it belongs with the memory system rather than the file tools.
+
+Running 1 and 2 first also produces the baseline that would show whether a model
+summary actually beats "first heading". That is not obvious, and without the
+baseline tier 3 would be paid for with no way to tell if it earned its cost.
+
+Digests belong on the MANIFEST, not in `<session_state>` — that keeps §4's
+counts/names split intact, and `list_files` gets the same benefit for free.
 
 ---
 
