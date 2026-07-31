@@ -222,6 +222,27 @@ function composeSystemPrompt(personaPrompt, expressionNames, options = {}) {
 
   for (const id of preset.order) {
     const block = preset.blocks[id];
+
+    // Generated per request from live state, never stored (SS-02). Like the
+    // persona block this is a POSITION marker: the preset decides where it
+    // goes, not what it says.
+    //
+    // Deliberately ABOVE the enabled check — `state` is plumbing and cannot be
+    // switched off (docs/SESSION_STATE_DESIGN.md, D3). A prompt that lies about
+    // what exists is worse than one that stays quiet, and a disabled state
+    // block would put the model back to guessing. The write path refuses to
+    // disable it; this makes an already-stored `enabled: false` harmless too.
+    if (id === 'state') {
+      const text = typeof options.sessionState === 'string' ? options.sessionState.trim() : '';
+      if (!text) {
+        skip(id, 'no-session-state');
+        continue;
+      }
+      parts.push(text);
+      blocks.push({ id, included: true, source: 'generated', chars: text.length, text });
+      continue;
+    }
+
     if (!block || !block.enabled) {
       skip(id, 'disabled');
       continue;

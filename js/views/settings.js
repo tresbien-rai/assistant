@@ -378,6 +378,12 @@ const BLOCK_INFO = {
         label: 'Orientation',
         description: 'What Tessera is, and that the text after it is a persona to embody.',
     },
+    state: {
+        label: 'Session state',
+        description: 'What exists right now — workspace, project, scratchpad, files — including when there is nothing. Position only; always sent, and its text is generated per message.',
+        positionOnly: true,
+        locked: true,
+    },
     expressions: {
         label: 'Expression protocol',
         description: 'How to emit [expression: name] tags.',
@@ -526,11 +532,13 @@ function blockCardHTML(id, block, { index = 0, count = 1, draggable }) {
             ${draggable ? `
                 <button type="button" class="preset-action" data-action="move-up" aria-label="Move up"${index === 0 ? ' disabled' : ''}>↑</button>
                 <button type="button" class="preset-action" data-action="move-down" aria-label="Move down"${index === count - 1 ? ' disabled' : ''}>↓</button>` : ''}
+            ${info.locked ? '' : `
             <button type="button" class="preset-action" data-action="reset"${overridden ? '' : ' disabled'}>Reset</button>
             <label class="preset-block-toggle">
                 <input type="checkbox" data-action="toggle"${block.enabled === false ? '' : ' checked'}>
                 <span>On</span>
-            </label>
+            </label>`}
+            ${info.locked ? '<span class="preset-block-locked" title="Always sent — move it, but it cannot be edited or turned off">Always on</span>' : ''}
         </div>
         <p class="preset-block-desc">
             ${escapeHtml(info.description)}
@@ -940,6 +948,7 @@ const EXCLUSION_REASONS = {
     'no-expressions': 'the persona has no expressions',
     'scratchpad-inactive': 'the scratchpad is off for this chat',
     'no-persona-prompt': 'the persona has no prompt text',
+    'no-session-state': 'no session state was resolved for this request',
     'no-context': 'this chat has no workspace or project files',
     empty: 'the text is empty',
 };

@@ -710,6 +710,20 @@
     color: var(--text-muted);
 }
 
+/* Stands in for the toggle on a locked block (the session-state block): it can
+   be moved but not edited or switched off, so there is nothing to toggle. */
+.preset-block-locked {
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    background: var(--accent-subtle);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+}
+
 .preset-block-toggle {
     display: inline-flex;
     align-items: center;
