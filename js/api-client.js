@@ -715,8 +715,13 @@ const API = (function () {
       /**
        * Request inspector (P2-U4): returns the exact provider request body that
        * WOULD be sent (incl. assembled workspace context), without calling the
-       * provider. Returns { provider, model, body, apiKeyLocation, contextWarning? }.
-       * @param {Object} params - Same shape as send()
+       * provider. Returns { provider, model, body, apiKeyLocation, contextWarning?,
+       * promptBlocks, presetApplied } — promptBlocks is the AP-05 provenance:
+       * one entry per prompt block with its source, size, and (when excluded)
+       * the reason it was left out.
+       * @param {Object} params - Same shape as send(), plus an optional
+       *   `presetId` that previews THAT preset instead of the one this chat
+       *   resolves to ('none' for the built-in layer).
        */
       preview(params) {
         return request('POST', '/api/chat/preview', { body: params });

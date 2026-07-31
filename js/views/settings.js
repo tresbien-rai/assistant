@@ -33,6 +33,8 @@ import { positionPopover, attachPopoverOutsideClose } from '../components/menus.
 // editor's picker writes through the persona save path like every other field.
 import { navigate } from '../shell.js';
 import { savePersonas } from '../settings-store.js';
+// AP-05: the inspector runs the real assembly, which needs the active model.
+import { getActiveModelConfig } from '../model-layer.js';
 
 /**
  * Sentinel meaning "the built-in layer, explicitly" — mirrors PRESET_NONE in
@@ -471,6 +473,11 @@ export function renderPresetEditor() {
         <p class="preset-group-label">Not part of the system prompt</p>
         ${messageIds.map(id => blockCardHTML(id, blocks.blocks[id], { draggable: false })).join('')}
 
+        <div class="preset-editor-preview">
+            <button type="button" class="preset-action" id="presetPreviewBtn">Preview this preset</button>
+            <div class="prompt-inspector" id="presetInspector"></div>
+        </div>
+
         <details class="preset-macros">
             <summary>Macros you can use</summary>
             <ul>
@@ -482,6 +489,12 @@ export function renderPresetEditor() {
 
     elements.presetEditor.querySelector('#presetEditorBack')
         .addEventListener('click', closePresetEditor);
+    elements.presetEditor.querySelector('#presetPreviewBtn').addEventListener('click', () => {
+        // Flush first: previewing text still sitting in the debounce window
+        // would show the PREVIOUS save and quietly mislead.
+        flushPresetSave();
+        renderPromptInspector(document.getElementById('presetInspector'), { presetId: editingPresetId });
+    });
     wireEditorEvents();
     syncExpressionWarning();
 }
@@ -894,4 +907,117 @@ export function setPersonaPresetBase(value) {
     persona.updatedAt = Date.now();
     savePersonas();
     syncPresetPill();
+}
+
+// =============================================================================
+// Prompt inspector (AP-05)
+// =============================================================================
+
+/**
+ * Why a block was left out, in the user's terms. The server sends stable codes;
+ * the sentences live here with the rest of the UI copy.
+ *
+ * This is the half of the inspector that earns its keep: "my scratchpad wording
+ * isn't showing up" is answered by a line that says the pad is off for this
+ * chat, not by staring at the assembled prompt looking for something absent.
+ */
+const EXCLUSION_REASONS = {
+    disabled: 'turned off in this preset',
+    'no-expressions': 'the persona has no expressions',
+    'scratchpad-inactive': 'the scratchpad is off for this chat',
+    'no-persona-prompt': 'the persona has no prompt text',
+    'no-context': 'this chat has no workspace or project files',
+    empty: 'the text is empty',
+};
+
+const SOURCE_LABELS = {
+    'built-in': 'Built-in',
+    preset: 'Preset',
+    persona: 'Persona',
+};
+
+/**
+ * Render the assembled-prompt inspector into `host`.
+ *
+ * Runs the REAL assembly through /api/chat/preview — the same endpoint and the
+ * same code path a send uses — rather than composing anything client-side. The
+ * point of the inspector is to show what will actually happen, so re-deriving
+ * it here would defeat it.
+ *
+ * @param {HTMLElement} host
+ * @param {Object} [options]
+ * @param {string} [options.presetId] - preview THIS preset (the editor's
+ *   "Preview" button) instead of whatever the active chat resolves to
+ */
+export async function renderPromptInspector(host, { presetId } = {}) {
+    if (!host) return;
+    host.innerHTML = '<p class="section-note">Assembling…</p>';
+
+    const cfg = getActiveModelConfig();
+    let result;
+    try {
+        result = await API.chat.preview({
+            provider: cfg.provider,
+            model: cfg.model,
+            // One representative user turn: the assembly appends per-turn blocks
+            // to the LAST user message, so an empty thread would under-report.
+            messages: [{ role: 'user', content: '…' }],
+            systemPrompt: getActivePersona()?.systemPrompt || '',
+            expressionNames: Object.keys(getActivePersona()?.expressions || {}),
+            conversationId: state.activeConversationId || undefined,
+            ...(presetId ? { presetId } : {}),
+        });
+    } catch (err) {
+        host.innerHTML = '<p class="section-note">Could not assemble the prompt.</p>';
+        displayError(err, { action: 'preview the prompt' });
+        return;
+    }
+
+    const blocks = Array.isArray(result.promptBlocks) ? result.promptBlocks : [];
+    const included = blocks.filter(b => b.included);
+    const excluded = blocks.filter(b => !b.included);
+    const total = included.reduce((n, b) => n + b.chars, 0);
+
+    host.innerHTML = `
+        <p class="section-note">${describeInspectorContext(presetId)}</p>
+        <div class="inspector-summary">
+            <span><strong>${included.length}</strong> block${included.length === 1 ? '' : 's'}</span>
+            <span><strong>${total.toLocaleString()}</strong> characters</span>
+            <span>${result.presetApplied ? 'Preset applied' : 'Built-in prompt'}</span>
+        </div>
+        ${included.map(b => `
+            <details class="inspector-block">
+                <summary>
+                    <span class="inspector-block-name">${escapeHtml(blockLabel(b.id))}</span>
+                    <span class="inspector-source source-${escapeHtml(b.source)}">${escapeHtml(SOURCE_LABELS[b.source] || b.source)}</span>
+                    <span class="inspector-chars">${b.chars.toLocaleString()}</span>
+                </summary>
+                <pre class="inspector-text">${escapeHtml(b.text || '')}</pre>
+            </details>`).join('')}
+        ${excluded.length === 0 ? '' : `
+            <p class="preset-group-label">Not sent this time</p>
+            <ul class="inspector-excluded">
+                ${excluded.map(b => `
+                    <li><strong>${escapeHtml(blockLabel(b.id))}</strong> — ${escapeHtml(EXCLUSION_REASONS[b.reason] || b.reason)}</li>`).join('')}
+            </ul>`}`;
+}
+
+/** Human label for a block id, reusing the editor's copy. */
+function blockLabel(id) {
+    return (BLOCK_INFO[id] || {}).label || id;
+}
+
+/** One line naming what this preview was assembled against. */
+function describeInspectorContext(presetId) {
+    const convo = getActiveConversation();
+    const persona = getActivePersona();
+    const where = convo
+        ? `the open chat “${convo.title || 'Untitled'}”`
+        : 'no open chat (so no persona or per-chat override applies)';
+    const preset = presetId
+        ? `Previewing “${presetLabel(presetId)}”`
+        : `Previewing the prompt for ${where}`;
+    return convo && persona
+        ? `${preset}, persona “${persona.name}”. This is the real assembly, not an approximation.`
+        : `${preset}. This is the real assembly, not an approximation.`;
 }

@@ -20,7 +20,7 @@ const { resolveActiveFileBlock, appendToLastUserMessage } = require('../utils/ac
 const { resolveScratchpadBlock } = require('../utils/scratchpadContext');
 const { TOOL_DEFINITIONS, SCRATCHPAD_TOOL_DEFINITIONS } = require('../tools/definitions');
 const config = require('../config');
-const { buildSystemPrompt, buildContextAck } = require('../prompts/tessera');
+const { buildSystemPrompt, buildContextAck, composeSystemPrompt, describeContextAck } = require('../prompts/tessera');
 const { PRESET_NONE } = require('../prompts/presets');
 const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
@@ -271,10 +271,10 @@ function countUserTurns(messages) {
  *
  * @returns {Promise<{ system: string|undefined, messages: Array, requestContext: object|null, currentTurn: number, toolsEnabled: boolean, scratchpadEnabled: boolean }>}
  */
-async function assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames, model }) {
+async function assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames, model, presetOverride }) {
   const userId = req.user.userId;
   const toolsEnabled = resolveToolsEnabled(userId, containers.conversation);
-  const promptOptions = resolvePromptOptions(req, containers, model);
+  const promptOptions = resolvePromptOptions(req, containers, model, presetOverride);
   const requestContext = await resolveRequestContext(req, containers, toolsEnabled);
 
   const currentTurn = countUserTurns(messages);
@@ -300,7 +300,11 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages, ex
 
   const { system, messages: assembled } =
     assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames, scratchpadEnabled, promptOptions);
-  return { system, messages: assembled, requestContext, currentTurn, toolsEnabled, scratchpadEnabled };
+  return {
+    system, messages: assembled, requestContext, currentTurn, toolsEnabled, scratchpadEnabled,
+    // AP-05: the inspector re-describes the SAME inputs rather than guessing.
+    promptOptions,
+  };
 }
 
 /**
@@ -400,14 +404,17 @@ function resolvePromptPreset(userId, conversation) {
  * @param {string} [model] - the model id for this request ({{model}})
  * @returns {{preset: Object|null, macros: Object}}
  */
-function resolvePromptOptions(req, containers, model) {
+function resolvePromptOptions(req, containers, model, presetOverride) {
   const userId = req.user.userId;
   const conversation = containers.conversation || null;
   const persona = conversation?.persona_id
     ? dal.getPersonaById(conversation.persona_id, userId)
     : null;
   return {
-    preset: resolvePromptPreset(userId, conversation),
+    // `presetOverride` is the inspector previewing a specific preset (AP-05);
+    // it is resolved user-scoped by the caller, and only the preview route
+    // passes it. The real send paths always resolve from the conversation.
+    preset: presetOverride !== undefined ? presetOverride : resolvePromptPreset(userId, conversation),
     macros: {
       personaName: persona?.name || '',
       userName: dal.findUserById(userId)?.display_name || '',
@@ -803,8 +810,31 @@ router.post('/preview', asyncHandler(async (req, res) => {
   // prefill) exactly as a real tools-on send would build them, plus the KB
   // relocation and active-file injection.
   const containers = resolveRequestContainers(req);
-  const { system: effectiveSystemPrompt, messages: effectiveMessages, requestContext, toolsEnabled, scratchpadEnabled } =
-    await assembleChatRequest(req, containers, { systemPrompt, messages, expressionNames, model });
+
+  // AP-05: the inspector may ask for a SPECIFIC preset ("preview the one I'm
+  // editing") instead of whatever this chat resolves to. Ownership is checked
+  // here, so a made-up id is a 404 rather than a silent fallback that would
+  // read as "my preset did nothing".
+  let presetOverride;
+  if (req.body.presetId !== undefined && req.body.presetId !== null) {
+    if (typeof req.body.presetId !== 'string') {
+      throw AppError.validation('presetId must be a preset id, "none", or null');
+    }
+    if (req.body.presetId === PRESET_NONE) {
+      presetOverride = null; // preview the built-in layer explicitly
+    } else {
+      const preset = dal.getPromptPreset(req.body.presetId, req.user.userId);
+      if (!preset) throw AppError.notFound('Preset');
+      presetOverride = preset.blocks;
+    }
+  }
+
+  const {
+    system: effectiveSystemPrompt, messages: effectiveMessages, requestContext,
+    toolsEnabled, scratchpadEnabled, promptOptions,
+  } = await assembleChatRequest(req, containers, {
+    systemPrompt, messages, expressionNames, model, presetOverride,
+  });
   const advertisedTools = resolveAdvertisedTools(toolsEnabled, scratchpadEnabled);
   const anyTools = advertisedTools.length > 0;
 
@@ -821,6 +851,16 @@ router.post('/preview', asyncHandler(async (req, res) => {
 
   logger.info({ userId: req.user.userId, provider, model }, 'Chat request preview');
 
+  // Provenance for the prompt inspector (AP-05). Re-describes the assembly that
+  // just happened from the SAME inputs — composeSystemPrompt is what
+  // buildSystemPrompt is built on, so the description cannot drift from the
+  // prompt above it.
+  const promptBlocks = composeSystemPrompt(systemPrompt, expressionNames, {
+    ...promptOptions,
+    scratchpad: scratchpadEnabled,
+  }).blocks;
+  promptBlocks.push(describeContextAck(promptOptions, !!requestContext?.text));
+
   res.json({
     provider,
     model,
@@ -831,6 +871,10 @@ router.post('/preview', asyncHandler(async (req, res) => {
     apiKeyLocation: 'sent as a request header (never in the body)',
     toolsEnabled,
     scratchpadEnabled,
+    promptBlocks,
+    // What the preset layer actually resolved to, so the inspector can say
+    // whether a preset applied at all without re-deriving the precedence.
+    presetApplied: !!promptOptions.preset,
     ...(requestContext?.warning ? { contextWarning: requestContext.warning } : {}),
   });
 }));
