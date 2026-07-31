@@ -35,6 +35,8 @@ import { navigate } from '../shell.js';
 import { savePersonas } from '../settings-store.js';
 // AP-05: the inspector runs the real assembly, which needs the active model.
 import { getActiveModelConfig } from '../model-layer.js';
+// AP-06: the .tesserapreset exporter's second call site for the shared helper.
+import { downloadBlob } from '../util/blob.js';
 
 /**
  * Sentinel meaning "the built-in layer, explicitly" — mirrors PRESET_NONE in
@@ -461,7 +463,10 @@ export function renderPresetEditor() {
     elements.presetEditor.innerHTML = `
         <div class="preset-editor-head">
             <span class="cp-crumb" id="presetEditorBack">‹ Prompt presets</span>
-            <span class="preset-save-status" id="presetSaveStatus"></span>
+            <span class="preset-editor-head-actions">
+                <span class="preset-save-status" id="presetSaveStatus"></span>
+                <button type="button" class="preset-action" id="presetExportBtn">Export</button>
+            </span>
         </div>
         <h4 class="preset-editor-title">${escapeHtml(preset.name)}</h4>
         <p class="section-note">Leave a block empty to keep following the built-in text (shown greyed in the box). Drag a block, or use ↑ ↓, to change the order it is sent in.</p>
@@ -489,6 +494,10 @@ export function renderPresetEditor() {
 
     elements.presetEditor.querySelector('#presetEditorBack')
         .addEventListener('click', closePresetEditor);
+    elements.presetEditor.querySelector('#presetExportBtn').addEventListener('click', () => {
+        flushPresetSave(); // export what is on screen, not the last autosave
+        exportPreset(editingPresetId);
+    });
     elements.presetEditor.querySelector('#presetPreviewBtn').addEventListener('click', () => {
         // Flush first: previewing text still sitting in the debounce window
         // would show the PREVIOUS save and quietly mislead.
@@ -1020,4 +1029,113 @@ function describeInspectorContext(presetId) {
     return convo && persona
         ? `${preset}, persona “${persona.name}”. This is the real assembly, not an approximation.`
         : `${preset}. This is the real assembly, not an approximation.`;
+}
+
+// =============================================================================
+// Export / import (AP-06)
+// =============================================================================
+
+// Mirrors the persona bundle's envelope (js/views/personas.js) so the two files
+// are recognisably the same family. `kind` is what tells them apart — importing
+// a persona bundle here should fail with a sentence, not a stack trace.
+const PRESET_FORMAT = 'tessera.bundle';
+const PRESET_VERSION = 1;
+
+/**
+ * Download a preset as a `.tesserapreset` file.
+ *
+ * Only the name and blocks travel. Not the id (the importer mints its own), not
+ * whether it was your default (that is the importer's choice, not the
+ * exporter's), and no user content beyond the prompt text you wrote.
+ * @param {string} presetId
+ */
+export function exportPreset(presetId) {
+    const preset = state.presets[presetId];
+    if (!preset) return;
+
+    const bundle = {
+        format: PRESET_FORMAT,
+        version: PRESET_VERSION,
+        kind: 'preset',
+        exportedAt: Date.now(),
+        preset: {
+            name: preset.name || 'Untitled',
+            blocks: preset.blocks,
+        },
+    };
+
+    const json = JSON.stringify(bundle, null, 2);
+    const filename = `${(preset.name || 'preset').replace(/[^\w-]+/g, '_')}.tesserapreset`;
+    downloadBlob(new Blob([json], { type: 'application/json' }), filename);
+    showToast(`Exported ${filename}`, { type: 'success' });
+}
+
+/** Open a file picker and import the chosen `.tesserapreset`. */
+export function promptPresetImport() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.tesserapreset,.json,application/json';
+    input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (file) importPresetFromFile(file);
+    });
+    input.click();
+}
+
+/**
+ * Read a `.tesserapreset` and create a preset from it.
+ *
+ * Parsed here only to fail fast with a readable message — the file is untrusted,
+ * so the SERVER does the real validation (same validateBlocks the editor writes
+ * through). Anything malformed inside `blocks` is either rejected there or
+ * normalised away, so a hand-edited file can't smuggle in a block that the
+ * composer would then have to cope with.
+ * @param {File} file
+ */
+export async function importPresetFromFile(file) {
+    let bundle;
+    try {
+        bundle = JSON.parse(await file.text());
+    } catch {
+        showToast("That file isn't a readable Tessera preset.", { type: 'warning' });
+        return;
+    }
+    if (!bundle || bundle.kind !== 'preset' || !bundle.preset) {
+        showToast(
+            bundle && bundle.kind === 'persona'
+                ? 'That is a persona bundle — import it from the Personas section.'
+                : "That file isn't a Tessera preset.",
+            { type: 'warning' }
+        );
+        return;
+    }
+
+    try {
+        const preset = await API.presets.create({
+            name: uniquePresetName(bundle.preset.name || 'Imported preset'),
+            blocks: bundle.preset.blocks,
+        });
+        state.presets[preset.id] = preset;
+        renderPresetList();
+        refreshPresetDependentUi();
+        showToast(`Imported “${preset.name}”.`, { type: 'success' });
+    } catch (err) {
+        console.error('Failed to import preset:', err);
+        displayError(err, { action: 'import this preset' });
+    }
+}
+
+/**
+ * A name that doesn't collide with an existing preset. Importing the same file
+ * twice is a normal thing to do (a tweak, a shared file re-downloaded), and two
+ * rows with identical names would be indistinguishable in every picker.
+ */
+function uniquePresetName(name) {
+    const taken = new Set(Object.values(state.presets).map(p => p.name));
+    if (!taken.has(name)) return name;
+    for (let n = 2; n < 100; n++) {
+        const candidate = `${name} (${n})`;
+        if (!taken.has(candidate)) return candidate;
+    }
+    return `${name} (${Date.now()})`;
 }

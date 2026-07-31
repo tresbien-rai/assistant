@@ -173,6 +173,7 @@ export const elements = {
     // Prompt presets (AP-02, Settings → Advanced)
     presetList: document.getElementById('presetList'),
     createPresetBtn: document.getElementById('createPresetBtn'),
+    importPresetBtn: document.getElementById('importPresetBtn'),
     presetListPanel: document.getElementById('presetListPanel'),
     presetEditor: document.getElementById('presetEditor'),
     composerPresetButton: document.getElementById('composerPresetButton'),

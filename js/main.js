@@ -38,7 +38,7 @@ import { createSidebarOverlay, openSidebar, closeSidebar, setupSidebarResize } f
 import {
     setupSettingsTabs, handlePresetListClick, createPreset,
     syncPresetPill, showPresetMenu, syncPersonaPresetControl, setPersonaPresetBase,
-    renderPromptInspector,
+    renderPromptInspector, promptPresetImport,
 } from './views/settings.js';
 import { ICON_SVG } from './util/markdown.js';
 import { ImageStore } from './util/image-store.js';
@@ -1141,6 +1141,7 @@ function setupEventListeners() {
     if (elements.composerPresetButton) {
         elements.composerPresetButton.addEventListener('click', () => showPresetMenu(elements.composerPresetButton));
     }
+    if (elements.importPresetBtn) elements.importPresetBtn.addEventListener('click', promptPresetImport);
     if (elements.refreshInspectorBtn) {
         elements.refreshInspectorBtn.addEventListener('click', () => {
             renderPromptInspector(elements.promptInspector);

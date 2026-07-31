@@ -631,6 +631,25 @@
     margin-bottom: 4px;
 }
 
+.preset-editor-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* "+ New preset" is full-width by inheritance from .add-expression-btn; Import
+   is the quieter sibling beside it. */
+.preset-list-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.preset-list-actions .add-expression-btn {
+    flex: 1;
+    margin-bottom: 0;
+}
+
 .preset-editor-title {
     font-size: var(--text-base);
     font-weight: 600;

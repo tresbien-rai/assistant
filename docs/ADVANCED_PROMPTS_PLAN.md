@@ -4,10 +4,20 @@ Design + task plan for the Advanced settings surface: making Tessera's
 platform-level prompt layer visible, editable, and switchable, for users coming
 from SillyTavern / RisuAI who expect to own their prompt stack.
 
-> **Status (2026-07-30):** Design drafted, decisions below settled with the
-> human. Scope for this plan: **AP-01 … AP-06**. Depth-positioned injections
-> (Author's Note / post-history) and output regex rules are explicitly *future
-> work* — the schema leaves room for both, but neither is built here.
+> **Status (2026-07-30):** **COMPLETE — AP-01 … AP-06 all built and merged**
+> (#151, #152, #153, #154, #155, #156). Depth-positioned injections (Author's
+> Note / post-history) and output regex rules remain *future work* — the block
+> schema leaves room for both, but neither is built.
+>
+> Two things the build added beyond this plan, both noted in place below:
+> **`PRESET_NONE`** (AP-04), because NULL-means-inherit left no way for a chat to
+> opt out of a persona's preset; and **`composeSystemPrompt`** (AP-05), which
+> `buildSystemPrompt` now wraps, so the inspector describes the assembly by
+> running it rather than re-deriving it.
+>
+> Owed: a live pass with real keys. Everything was verified through the DOM and
+> `/api/chat/preview`, but the browser pane never composited during the build,
+> so **none of the UI has been seen**.
 
 ## Why
 
@@ -143,6 +153,11 @@ fits comfortably.
 | **AP-04** | **Per-chat + per-persona selection** | Preset picker on the chat (mirrors the tools/scratchpad override pattern) and a persona default in the persona editor. | S |
 | **AP-05** | **Assembled-prompt inspector** | Extend `POST /api/chat/preview` (already runs the real assembly) with a `blocks` array giving each span's provenance — block id, source (built-in / preset / persona / generated), char count. Render it as a labelled, collapsible view in Advanced; the raw JSON stays for dev mode. | M |
 | **AP-06** | **Preset export / import** | `.tesserapreset` JSON bundle mirroring the persona `.tessera` bundle (`views/personas.js:283`). No images, so no normalisation step — small. | S |
+
+All six shipped as merged slices; the table above is the record of what each
+covered, not a to-do list. `downloadBlob` moved to `util/blob.js` in AP-06 once
+the preset exporter became its second caller, the same journey `blobToBase64`
+made in F-04.
 
 Build order is strict for AP-01 → AP-02 → AP-03; AP-04/05/06 are independent
 after that and can be reordered freely.

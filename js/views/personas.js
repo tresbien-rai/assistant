@@ -5,8 +5,8 @@
  * and the `.tessera` bundle export/import — including the image normalisation
  * that shrinks avatars and expressions before they go into a bundle.
  *
- * `blobToBase64` and `downloadBlob` live here because the bundle exporter is
- * their only consumer.
+ * The bundle exporter's blob helpers (`blobToBase64`, `downloadBlob`) moved to
+ * util/blob.js once they had a second caller.
  */
 
 import { state } from '../state.js';
@@ -23,7 +23,7 @@ import { renderConversationList, renderConversation } from './chats.js';
 import { setActiveConversation, forgetConversationDraft } from '../active-conversation.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { escapeHtml, formatFileSize } from '../util/format.js';
-import { blobToBase64 } from '../util/blob.js';
+import { blobToBase64, downloadBlob } from '../util/blob.js';
 import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
 import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
@@ -392,22 +392,6 @@ async function exportPersona(personaId, opts = {}) {
         console.error('Failed to export persona:', err);
         displayError(err, { action: 'export this persona' });
     }
-}
-
-/**
- * Trigger a browser download for a blob.
- * @param {Blob} blob
- * @param {string} filename
- */
-function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /**
