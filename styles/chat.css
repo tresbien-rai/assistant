@@ -804,13 +804,19 @@
     background: var(--bg-secondary);
 }
 
-/* Streaming cursor. Suppressed before the first token arrives (the typing
-   dots stand in for that phase \u2014 see startStreamingMessage). Only the LAST
-   segment gets it: a reply with tool cards is split into several
+/* Streaming cursor. Suppressed whenever the live segment is still empty - the
+   typing dots stand in for that phase (see renderStreamingContent). Only the
+   LAST segment gets it: a reply with tool cards is split into several
    .message-content blocks, and every one of them would otherwise sprout a
-   caret. The live segment is always the last child while streaming. */
+   caret. The live segment is always the last child while streaming.
+
+   The glyph is the CSS escape \258C (U+258C LEFT HALF BLOCK). It used to read
+   '\u258C', which is the JS form - CSS has no \u, so that was parsed as an
+   escaped letter u followed by the text "258C" and rendered as exactly that.
+   Present since the S-01 stylesheet split but invisible in practice, because
+   until tools-on turns began streaming the caret only existed for one frame. */
 .message.assistant.streaming:not(.awaiting-first-token) .message-content:last-child::after {
-    content: '\u258C';
+    content: '\258C';
     animation: blink 1s step-end infinite;
     color: var(--accent);
 }
@@ -1362,4 +1368,4 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-
+

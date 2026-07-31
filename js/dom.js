@@ -197,3 +197,32 @@ export const elements = {
 export function scrollToBottom() {
     elements.messagesContainer.scrollTop = elements.messagesContainer.scrollHeight;
 }
+
+/**
+ * How close to the bottom still counts as "following along". Generous enough to
+ * survive a partially-rendered last line, small enough that a deliberate scroll
+ * up of even one message reads as "leave me here".
+ */
+const STICK_THRESHOLD_PX = 120;
+
+/**
+ * Is the thread scrolled to (or near) the bottom? An empty/short thread that
+ * cannot scroll counts as pinned, so the first messages behave normally.
+ */
+export function isPinnedToBottom() {
+    const el = elements.messagesContainer;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD_PX;
+}
+
+/**
+ * Follow the bottom ONLY if the user is already there.
+ *
+ * Used by everything the model drives — stream chunks, tool cards — so reading
+ * back through the log while a reply is still arriving is not interrupted by
+ * being yanked down on every token. Scrolls the user initiates (sending,
+ * opening a chat) still go to the bottom unconditionally.
+ */
+export function scrollToBottomIfPinned() {
+    if (isPinnedToBottom()) scrollToBottom();
+}

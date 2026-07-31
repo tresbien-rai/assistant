@@ -120,18 +120,20 @@ export function renderStreamingContent() {
     if (!contentDiv) return;
 
     const { display, pending } = streamingDisplayText();
+    const tail = pending ? '' : display.slice(streamingCutOffset(display));
 
-    // Nothing yet, or still deciding whether the opening text is a tag: show the
-    // typing dots rather than flashing a partial "[expre" on screen. Once a tool
-    // card is on screen the turn has visibly started, so no dots after that.
-    const started = (state.streamingToolEvents || []).length > 0;
-    if ((!display || pending) && !started) {
+    // Dots whenever the LIVE segment is still empty — which is the start of the
+    // turn, and equally the wait after each tool card while the model resumes
+    // writing. `pending` means the opening text might still turn out to be an
+    // expression tag, so hold rather than flash a partial "[expre" on screen.
+    // The caret is suppressed by the same class, so the two never both show.
+    if (!tail) {
         bubble.classList.add('awaiting-first-token');
         contentDiv.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
         return;
     }
     bubble.classList.remove('awaiting-first-token');
-    contentDiv.innerHTML = renderMarkdown(display.slice(streamingCutOffset(display)));
+    contentDiv.innerHTML = renderMarkdown(tail);
 }
 
 /**

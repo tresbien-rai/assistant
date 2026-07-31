@@ -18,7 +18,7 @@
  */
 
 import { state } from '../state.js';
-import { elements, scrollToBottom } from '../dom.js';
+import { elements, scrollToBottom, scrollToBottomIfPinned, isPinnedToBottom } from '../dom.js';
 import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
 import { getActivePersona, getActiveConversation } from '../state.js';
@@ -206,13 +206,15 @@ export function renderLiveToolActivity(payload, convoId) {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         bubble.appendChild(contentDiv);
-        bubble.classList.remove('awaiting-first-token');
+        // The fresh segment is empty, so the turn is "waiting" again: let
+        // renderStreamingContent put the dots back until the model resumes.
+        renderStreamingContent();
     }
     FilePanel.notifyActivity(att, convoId);
     // Scratchpad writes carry a `scratchpad` marker (no url → a plain chip):
     // refresh the pad if it's open so the user sees the model's edit live.
     if (payload && payload.scratchpad) FilePanel.refreshScratchpadFromActivity(convoId);
-    scrollToBottom();
+    scrollToBottomIfPinned();
 }
 
 // ===== API Communication =====
@@ -635,7 +637,9 @@ export function appendStreamChunk(text) {
     // bubble each time, so a chat left mid-stream simply has nothing to paint
     // into, instead of writing into a detached node.
     renderStreamingContent();
-    if (streamingBubble()) scrollToBottom();
+    // Only follow if the user is still at the bottom - reading back through
+    // the log mid-reply must not be interrupted on every token.
+    if (streamingBubble()) scrollToBottomIfPinned();
 }
 
 /**
@@ -758,7 +762,20 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
     // finished message is rendered exactly as a reload would render it. This is
     // also what makes a reply that completed while the user was elsewhere
     // appear the moment they return.
-    if (threadIsVisible(finishedIn)) renderChatThread();
+    //
+    // renderChatThread ends at the bottom, which is right when the user is
+    // following along and wrong when they have scrolled up to re-read
+    // something: the turn ending would snap them away. Capture where they were
+    // and put them back. The finished bubble is near-identical in height to the
+    // live one it replaces, so restoring the offset is visually stable.
+    if (threadIsVisible(finishedIn)) {
+        const pinned = isPinnedToBottom();
+        const prevScroll = elements.messagesContainer ? elements.messagesContainer.scrollTop : 0;
+        renderChatThread();
+        if (!pinned && elements.messagesContainer) {
+            elements.messagesContainer.scrollTop = prevScroll;
+        }
+    }
 }
 
 /**
