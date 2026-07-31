@@ -342,9 +342,15 @@ When responding, you may optionally include an expression tag like [expression: 
                     <p class="section-note">Synced to your account.</p>
                     <p class="section-note">A preset overrides the platform prompt Tessera wraps around your persona — the orientation preamble, the expression protocol, the scratchpad instructions — and the order they appear in. Blocks you don't edit keep following the built-in, so improvements to it still reach you.</p>
 
-                    <div class="preset-list" id="presetList"></div>
-                    <button type="button" class="add-expression-btn" id="createPresetBtn">+ New preset</button>
-                    <p class="section-note">The default applies to every chat unless a persona or an individual chat overrides it.</p>
+                    <!-- Two panels, list ⇄ editor (AP-03), mirroring the Models
+                         catalog/detail split rather than nesting an editor in a
+                         row: the block textareas need the full column width. -->
+                    <div id="presetListPanel">
+                        <div class="preset-list" id="presetList"></div>
+                        <button type="button" class="add-expression-btn" id="createPresetBtn">+ New preset</button>
+                        <p class="section-note">The default applies to every chat unless a persona or an individual chat overrides it.</p>
+                    </div>
+                    <div class="preset-editor" id="presetEditor" hidden></div>
                 </div>
 
                 <!-- Account Section -->

@@ -590,6 +590,192 @@
     }
 }
 
+/* ===== Prompt preset block editor (AP-03) ===== */
+.preset-editor[hidden] {
+    display: none;
+}
+
+.preset-editor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.preset-editor-title {
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+/* Reads as ambient status, not as a control — it changes on its own. */
+.preset-save-status {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.preset-blocks {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.preset-block {
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+}
+
+/* A disabled block stays legible — you are still editing it — but shouldn't
+   read as part of the prompt at a glance. */
+.preset-block.is-off {
+    opacity: 0.6;
+}
+
+.preset-block.dragging {
+    opacity: 0.4;
+    border-color: var(--accent);
+}
+
+.preset-block-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.preset-block-grip {
+    cursor: grab;
+    color: var(--text-muted);
+    letter-spacing: -2px;
+    user-select: none;
+}
+
+.preset-block[draggable="true"] {
+    /* The whole card is the drag handle; the grip is the affordance for it. */
+    cursor: grab;
+}
+
+.preset-block-title {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.preset-block-state {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.preset-block-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-bottom: 0;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+/* .settings-section label sets display:block + a bottom margin; the inline
+   toggle inside a card wants neither. */
+.settings-section .preset-block-toggle {
+    display: inline-flex;
+    margin-bottom: 0;
+}
+
+.preset-block-toggle input {
+    margin: 0;
+}
+
+.preset-block-desc {
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+/* The "only sent when…" clause: a preset controls wording, never whether a
+   block applies, and this is where that shows up in the UI. */
+.preset-block-cond {
+    display: block;
+    color: var(--text-muted);
+}
+
+/* Overrides `.settings-section textarea`, which is sized for short fields. */
+.settings-section .preset-block-text {
+    width: 100%;
+    min-height: 120px;
+    margin-bottom: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    resize: vertical;
+    /* Long prompt lines wrap rather than scrolling sideways (UI principle). */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.preset-block-text::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.preset-block-warn {
+    margin-top: 6px;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--warning);
+}
+
+.preset-block-warn[hidden] {
+    display: none;
+}
+
+.preset-group-label {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin: 4px 0 8px;
+}
+
+.preset-macros {
+    margin-top: 16px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.preset-macros summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 6px 0;
+}
+
+.preset-macros ul {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 4px 16px;
+}
+
+.preset-macros code {
+    font-family: var(--font-mono);
+    color: var(--accent);
+}
+
 .manage-models-btn {
     width: 100%;
     padding: 8px 12px;

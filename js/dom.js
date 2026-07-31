@@ -173,6 +173,8 @@ export const elements = {
     // Prompt presets (AP-02, Settings → Advanced)
     presetList: document.getElementById('presetList'),
     createPresetBtn: document.getElementById('createPresetBtn'),
+    presetListPanel: document.getElementById('presetListPanel'),
+    presetEditor: document.getElementById('presetEditor'),
 
     // Error display system (P0-17)
     toastContainer: document.getElementById('toastContainer'),
