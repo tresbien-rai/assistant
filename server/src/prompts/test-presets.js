@@ -481,6 +481,63 @@ try {
   closeDb();
 }
 
+// --- SS-02: the session-state block is plumbing -----------------------------
+console.log('\nSession-state block (SS-02)...');
+
+check('state is a system block, present in a preset that predates it', () => {
+  const n = normalizeBlocks({ order: ['orientation', 'expressions', 'scratchpad', 'persona'] });
+  assert.ok(n.order.includes('state'), 'an older preset still gets the block');
+  assert.ok(SYSTEM_BLOCK_IDS.includes('state'));
+});
+
+check('it cannot be turned off', () => {
+  const res = validateBlocks({ blocks: { state: { enabled: false } } });
+  assert.strictEqual(res.ok, false, 'the write path refuses it');
+  assert.match(res.error, /cannot be turned off/);
+});
+
+check('it cannot be given text', () => {
+  const res = validateBlocks({ blocks: { state: { text: 'my own state line' } } });
+  assert.strictEqual(res.ok, false);
+  assert.match(res.error, /cannot be edited/);
+});
+
+check('it may be moved', () => {
+  const res = validateBlocks({ order: ['state', 'orientation', 'expressions', 'scratchpad', 'persona'] });
+  assert.strictEqual(res.ok, true, 'reordering is the one thing allowed');
+});
+
+check('an already-stored enabled:false is ignored rather than obeyed', () => {
+  // Defence in depth: validateBlocks guards the write path, but a preset
+  // written before that guard (or hand-edited) must not silently blind the
+  // model. The composer emits the block regardless.
+  const text = buildSystemPrompt(PERSONA, [], {
+    preset: { blocks: { state: { enabled: false } } },
+    sessionState: '<session_state>\nWorkspace: none\n</session_state>',
+  });
+  assert.ok(text.includes('<session_state>'), 'still composed into the prompt');
+});
+
+check('absent session state skips the block instead of emitting an empty one', () => {
+  const text = buildSystemPrompt(PERSONA, [], { preset: {} });
+  assert.ok(!text.includes('<session_state>'), 'nothing to report, nothing emitted');
+});
+
+check('the preset controls WHERE it lands', () => {
+  const state = '<session_state>\nWorkspace: none\n</session_state>';
+  const first = buildSystemPrompt(PERSONA, [], {
+    preset: { order: ['state', 'orientation', 'expressions', 'scratchpad', 'persona'] },
+    sessionState: state,
+  });
+  assert.ok(first.startsWith('<session_state>'), 'moved to the front');
+
+  const later = buildSystemPrompt(PERSONA, [], {
+    preset: { order: ['orientation', 'state', 'expressions', 'scratchpad', 'persona'] },
+    sessionState: state,
+  });
+  assert.ok(!later.startsWith('<session_state>') && later.includes(state), 'and back after orientation');
+});
+
 console.log('\n' + '='.repeat(60));
 if (failures > 0) {
   console.log(`${failures} check(s) FAILED`);

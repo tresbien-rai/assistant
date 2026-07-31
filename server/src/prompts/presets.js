@@ -39,8 +39,14 @@ const PRESET_NONE = 'none';
  *   'text'    a section whose content comes from the built-in or an override
  *   'persona' the position marker for the persona's own prompt (its text comes
  *             from the persona record, never from the preset)
+ *   'state'   the position marker for the `<session_state>` block (SS-02). Like
+ *             'persona' its text is generated, not stored — the server resolves
+ *             it per request from the live workspace/project/scratchpad/file
+ *             state. Users may MOVE it; they may not edit or disable it,
+ *             because a prompt that lies about state is worse than one that
+ *             omits it (docs/SESSION_STATE_DESIGN.md, D3).
  */
-const SYSTEM_BLOCK_IDS = ['orientation', 'expressions', 'scratchpad', 'persona'];
+const SYSTEM_BLOCK_IDS = ['orientation', 'state', 'expressions', 'scratchpad', 'persona'];
 
 /**
  * `context_ack` is a block but NOT part of the system layer: it is the synthetic
@@ -95,6 +101,13 @@ function normalizeBlocks(raw) {
       out.order.push(id);
     }
   }
+  // Appended, NOT slotted in at their built-in position. Tried that so a newly
+  // added block (SS-02's `state`) would land mid-prompt for existing presets;
+  // it breaks the stronger guarantee that the user's explicit order wins. A
+  // preset storing just ['persona'] means "persona first", and slotting the
+  // missing blocks by built-in index silently moves it last. A new block
+  // arriving at the end is cosmetic and draggable; losing the user's ordering
+  // is not.
   for (const id of SYSTEM_BLOCK_IDS) {
     if (!seen.has(id)) out.order.push(id);
   }
@@ -145,6 +158,18 @@ function validateBlocks(raw) {
       }
       if (b.enabled !== undefined && typeof b.enabled !== 'boolean') {
         return { ok: false, error: `Block "${id}": "enabled" must be true or false.` };
+      }
+      // `state` is plumbing (docs/SESSION_STATE_DESIGN.md, D3): its position is
+      // the user's to choose, its content and presence are not. Rejected on the
+      // write path so an edit that would take effect is refused loudly, rather
+      // than silently ignored later by the composer.
+      if (id === 'state') {
+        if (b.enabled === false) {
+          return { ok: false, error: 'The session-state block cannot be turned off — it can only be moved.' };
+        }
+        if (typeof b.text === 'string') {
+          return { ok: false, error: 'The session-state block cannot be edited — its text is generated from the live workspace state.' };
+        }
       }
       if (b.text !== undefined && b.text !== null) {
         if (typeof b.text !== 'string') {

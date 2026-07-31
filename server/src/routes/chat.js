@@ -21,6 +21,7 @@ const { resolveScratchpadBlock } = require('../utils/scratchpadContext');
 const { TOOL_DEFINITIONS, SCRATCHPAD_TOOL_DEFINITIONS } = require('../tools/definitions');
 const config = require('../config');
 const { buildSystemPrompt, buildContextAck, composeSystemPrompt, describeContextAck } = require('../prompts/tessera');
+const { buildSessionState } = require('../prompts/sessionState');
 const { PRESET_NONE } = require('../prompts/presets');
 const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
@@ -298,12 +299,26 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages, ex
     if (scratchpadBlock) trailingMessages = appendToLastUserMessage(trailingMessages, scratchpadBlock);
   }
 
+  // SS-02: what exists right now — including what does NOT. Resolved after the
+  // scratchpad gate so the pad line reports the state the model is actually
+  // given, and folded into promptOptions so the inspector describes the same
+  // block the send path built rather than rebuilding it.
+  const withState = {
+    ...promptOptions,
+    sessionState: buildSessionState({
+      workspace: containers.workspace || null,
+      project: containers.project || null,
+      conversationId,
+      scratchpadEnabled,
+    }),
+  };
+
   const { system, messages: assembled } =
-    assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames, scratchpadEnabled, promptOptions);
+    assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames, scratchpadEnabled, withState);
   return {
     system, messages: assembled, requestContext, currentTurn, toolsEnabled, scratchpadEnabled,
     // AP-05: the inspector re-describes the SAME inputs rather than guessing.
-    promptOptions,
+    promptOptions: withState,
   };
 }
 
