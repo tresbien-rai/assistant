@@ -689,18 +689,10 @@
 
 /* Context toggle (CT-03): whether this file is loaded into chats. Sits at the
    row's left edge, before the type badge. */
-.project-file-toggle {
-    flex-shrink: 0;
-    width: 15px;
-    height: 15px;
-    margin: 0;
-    accent-color: var(--accent);
-    cursor: pointer;
-}
-
+/* Size, color and cursor come from the base checkbox rule (one 16px box app
+   wide); only the in-flight state is specific to these rows. */
 .project-file-toggle:disabled {
     cursor: progress;
-    opacity: 0.5;
 }
 
 /* An unloaded file stays fully legible (it is still a real file you may want to

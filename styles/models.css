@@ -167,26 +167,14 @@
     gap: 6px;
 }
 
-/* The popover renders at body level (so it can escape a modal's stacking
-   context), which puts it outside `.modal-body input` and `.settings-section
-   input` — the only input styling in the app. Without these it falls back to
-   the browser default: white, square, Arial. Mirror the modal input tokens. */
+/* Renders at body level (so it can escape a modal's stacking context), which
+   once put it outside every input rule in the app and left it looking native.
+   It now inherits the base field appearance like everything else and only
+   states its own layout plus a slightly tighter pad for the popover. */
 .key-popover-input {
     flex: 1;
     min-width: 0;
     padding: 8px 10px;
-    background-color: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-family: var(--font-main);
-    font-size: var(--text-sm);
-    transition: border-color 0.2s;
-}
-
-.key-popover-input:focus {
-    outline: none;
-    border-color: var(--accent);
 }
 
 .key-popover-eye {
@@ -350,6 +338,20 @@
     color: var(--text-muted);
     margin: 0;
     line-height: 1.4;
+}
+
+/* Appearance comes from the base field rules — these only set the widths, the
+   one thing the base rule leaves to context. A stacked row's control spans the
+   card; an inline row's sits at a fixed width beside its label. */
+.param-row input[type="range"],
+.param-row textarea,
+.param-row .param-tag-input {
+    width: 100%;
+}
+
+.param-row textarea {
+    resize: vertical;
+    min-height: 64px;
 }
 
 .param-row-inline input[type="number"],
@@ -585,27 +587,14 @@
     color: var(--text-primary);
 }
 
+/* Appearance and focus come from the base field rule; a settings section only
+   states its own layout. */
 .settings-section input[type="text"],
 .settings-section input[type="password"],
 .settings-section select,
 .settings-section textarea {
     width: 100%;
-    padding: 10px 12px;
-    background-color: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-family: var(--font-main);
-    font-size: var(--text-sm);
     margin-bottom: 12px;
-    transition: border-color 0.2s;
-}
-
-.settings-section input:focus,
-.settings-section select:focus,
-.settings-section textarea:focus {
-    outline: none;
-    border-color: var(--accent);
 }
 
 .settings-section textarea {
@@ -949,12 +938,6 @@
     align-items: center;
     gap: 8px;
     margin-top: 8px;
-}
-
-.checkbox-wrapper input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--accent);
 }
 
 .checkbox-wrapper label {

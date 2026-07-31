@@ -200,6 +200,139 @@ body {
     outline-offset: 2px;
 }
 
+/* ===== Form controls =====
+   ONE field appearance for the whole app. Before this, the same look was
+   written out three times — `.modal-body input`, `.settings-section
+   input/select/textarea`, `.key-popover-input` — each scoped to a container,
+   so a field rendered anywhere else (the per-model param cards, a popover at
+   body level) fell back to the browser default: white, square, Arial.
+
+   `:where()` pins the specificity at (0,0,1), the lowest possible. Every
+   context rule in the later files therefore wins by ordinary document order
+   and only has to state what it actually changes — which in practice is
+   spacing and width, not appearance. Add a field anywhere and it is already
+   right; override only when that context genuinely differs.
+
+   Note the file order IS the cascade (see CLAUDE.md): base.css loads second,
+   so these are the defaults everything else refines. Width is deliberately
+   absent — `.param-row-inline` wants 150px and `.key-popover-input` wants
+   `flex: 1`, so full-width stays a context decision. */
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])),
+select,
+textarea {
+    padding: 10px 12px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+    transition: border-color 0.2s;
+}
+
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])):focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+input:where(:disabled),
+select:where(:disabled),
+textarea:where(:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Checkboxes are DRAWN, not tinted. `accent-color` only recolors the OS
+   widget: it keeps its native shape and border, which never matched our cards
+   and fields. This replaces five near-duplicate rules that had drifted to
+   three different sizes (15/16/18px) plus three sites with no styling at all.
+   One 16px box everywhere, built from the same tokens as the fields above. */
+input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    margin: 0;
+    display: inline-grid;
+    place-content: center;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+/* Guarded rather than set on the rule above: a bare `cursor: pointer` there
+   would outrank the generic :where(:disabled) rule and show a pointer on
+   disabled boxes. Leaving disabled cursors to the low-specificity default also
+   lets a context override it (the file rows use `progress` while saving). */
+input[type="checkbox"]:not(:disabled) {
+    cursor: pointer;
+}
+
+/* The tick is a clip-pathed box filled via inset box-shadow, so it inherits a
+   single color and needs no SVG asset or extra element. */
+input[type="checkbox"]::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    transform: scale(0);
+    transition: transform 0.12s ease-out;
+    box-shadow: inset 1em 1em var(--on-accent);
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+
+input[type="checkbox"]:checked {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+input[type="checkbox"]:checked::before {
+    transform: scale(1);
+}
+
+input[type="checkbox"]:not(:disabled):hover {
+    border-color: var(--accent);
+}
+
+/* Sliders, same treatment: the appearance lived in `.palette-row` and
+   `.param-group` only, so the per-model param cards got a native track. */
+input:where([type="range"]) {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+/* Vendor thumb pseudo-elements must each get their OWN rule — a browser drops
+   the whole rule when any selector in a comma-joined list is unrecognized. */
+input:where([type="range"])::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+input:where([type="range"])::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+input:where([type="range"])::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+}
+
 /* Respect users who prefer reduced motion: near-instant transitions/animations. */
 @media (prefers-reduced-motion: reduce) {
     *,
