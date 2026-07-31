@@ -17,13 +17,25 @@
  * - Only text-based content is supported in v1 (content is a JSON string).
  * - Destination (project / workspace / Downloads) is implicit from the
  *   conversation — the model never chooses a path.
+ *
+ * SCOPE-NEUTRAL WORDING (SS-04, docs/SESSION_STATE_DESIGN.md D4). These
+ * descriptions used to assert a container — "the current project or workspace"
+ * — on every read and write. The tool list is deliberately STABLE (advertised
+ * whether or not the chat has a container, so it cannot churn mid-conversation
+ * or between turns), which meant a bare chat was told about project files that
+ * could not exist, and invited to talk about them.
+ *
+ * A description now says what the tool DOES and leaves what EXISTS to the
+ * `<session_state>` block, which reports the real containers, counts and
+ * absences every turn. One consequence worth keeping: nothing here should
+ * describe the state of the world, only the operation.
  */
 
 const TOOL_DEFINITIONS = [
   {
     name: 'create_file',
     description:
-      "Create a text file for the user, saved to their Google Drive in the current project or workspace folder (or their Downloads folder when the chat is not in a project). If a file with the same name already exists there, it is overwritten — but for changing part of an existing file, prefer edit_file, which does not require resending the whole content. Only text-based files are supported (code, markdown, csv, json, and similar; no binary formats). Returns the saved file's name and a download link you can reference in your reply.",
+      "Create a text file for the user. It is saved automatically in the scope this chat belongs to — you never choose a location. An existing file of the same name in that scope is overwritten; to change part of a file, prefer edit_file, which does not resend the whole content. Text formats only (markdown, code, csv, json and similar). Returns the saved name and a download link you can use in your reply.",
     input_schema: {
       type: 'object',
       properties: {
@@ -48,7 +60,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'edit_file',
     description:
-      "Edit an existing text file by replacing an exact snippet of its current content, without resending the whole file. old_text must match the file's current content exactly (including whitespace and line breaks) and, unless replace_all is true, must appear exactly once — include enough surrounding context to make it unique. Use read_file first if you are unsure of the exact current content. Returns the updated file's name and download link.",
+      "Change part of an existing text file without resending it. old_text must match the current content exactly, including whitespace and line breaks, and must appear exactly once unless replace_all is true — include enough surrounding context to make it unique. Read the file first if you are unsure of its exact current content. Reports how many places changed and the size before and after, so you can confirm the edit landed without reading it back.",
     input_schema: {
       type: 'object',
       properties: {
@@ -75,7 +87,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'read_file',
     description:
-      "Read the text content of a file from the current project or workspace (or the user's Downloads folder when the chat is not in a project). Works for text files and PDFs. Use list_files first if you are unsure of the exact name.",
+      "Read a file's text content. Searches the scopes this chat can reach, so you only need the name. Works for text files and PDFs. A file whose content is already shown to you does not need reading again; use list_files if you are unsure of the exact name.",
     input_schema: {
       type: 'object',
       properties: {
@@ -90,7 +102,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'list_files',
     description:
-      'List the files available in the current project or workspace (or the Downloads folder when the chat is not in a project), with each file\'s name, type, and size.',
+      "List the files this chat can reach, with each one's name, type and size. The session state already tells you how many there are and where they live, so call this when you need the actual names.",
     input_schema: {
       type: 'object',
       properties: {},
@@ -99,7 +111,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'move_file',
     description:
-      "Move a file into a different scope — mainly to PROMOTE a file created in this chat into the shared knowledge base so it persists beyond the conversation. Use \"project\" or \"workspace\" to add a chat file to the shared files, or \"downloads\" to save it to the user's Downloads folder. The file keeps its content; it just changes where it lives (and its download link). A same-name file already in the destination is overwritten. Only destinations the chat can reach are valid (e.g. \"project\" only from a project chat).",
+      "Move a file to a different scope — mainly to PROMOTE a file made in this chat into the shared knowledge base, so it outlives the conversation. The content is unchanged; only where it lives (and its download link) changes, and a same-name file in the destination is overwritten. The session state lists the containers this chat actually has; a destination it does not have is rejected.",
     input_schema: {
       type: 'object',
       properties: {
@@ -131,7 +143,7 @@ const SCRATCHPAD_TOOL_DEFINITIONS = [
   {
     name: 'write_scratchpad',
     description:
-      "Replace the ENTIRE contents of the shared scratchpad — a space you and the user think in together, alongside the chat. Use it to develop ideas in place: rewrite, reorganize, trim, and REPLACE what is there. The scratchpad holds the current state of your shared thinking, NOT a growing log — delete superseded ideas rather than piling new ones on top of old ones, so it stays focused and small. This overwrites everything currently in the scratchpad; pass the complete new contents (or an empty string to clear it). The user sees your change as a diff. Prefer discussing your reasoning in your chat reply while keeping the scratchpad as the clean, current artifact.",
+      "Replace the ENTIRE contents of the shared scratchpad — the space you and the user develop ideas in, alongside the chat. This is where the work itself belongs: premises, cast, outlines, structure. Rewrite, reorganize and trim it in place. The pad holds the CURRENT STATE of your shared thinking, not a growing log — delete what has been superseded rather than piling new on top of old. Pass the complete new contents (an empty string clears it); the user sees the change as a diff. An empty pad is a normal starting point, not a reason to wait. Keep the pad as the clean artifact and use your reply to say what you changed and why. If it grows past working size, save it as a file instead.",
     input_schema: {
       type: 'object',
       properties: {
@@ -146,7 +158,7 @@ const SCRATCHPAD_TOOL_DEFINITIONS = [
   {
     name: 'edit_scratchpad',
     description:
-      "Make a targeted change to PART of the scratchpad without rewriting the whole thing. Replaces an exact snippet (old_text — must match the current scratchpad content exactly, including whitespace and line breaks, and appear exactly once unless replace_all is true) with new_text. Prefer write_scratchpad when reworking most of the content; use this for a small, surgical change to a larger scratchpad. new_text may be empty to delete the snippet.",
+      "Change PART of the scratchpad without rewriting all of it. old_text must match the current pad content exactly, including whitespace and line breaks, and appear exactly once unless replace_all is true; new_text may be empty to delete the snippet. Use this for a surgical change to a larger pad, and write_scratchpad when reworking most of it. Reports how many places changed and the length before and after, so you can confirm the edit without re-reading the pad.",
     input_schema: {
       type: 'object',
       properties: {
