@@ -236,22 +236,14 @@
     color: var(--text-primary);
 }
 
-.modal-body input {
+/* Appearance comes from the base field rule; a modal only sets its own layout.
+   Checkboxes and the other non-text types are excluded so they keep their
+   intrinsic size instead of stretching to the modal's full width. */
+.modal-body input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])),
+.modal-body select,
+.modal-body textarea {
     width: 100%;
-    padding: 10px 12px;
-    background-color: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-family: var(--font-main);
-    font-size: var(--text-sm);
     margin-bottom: 16px;
-    transition: border-color 0.2s;
-}
-
-.modal-body input:focus {
-    outline: none;
-    border-color: var(--accent);
 }
 
 /* Right-aligned by default: a footer's choices read as a group. Use .split for
@@ -353,11 +345,6 @@
     gap: 8px;
     cursor: pointer;
     margin-top: 12px;
-}
-
-.checkbox-row input {
-    width: auto;
-    margin: 0;
 }
 
 /* Request inspector: scrollable, monospaced JSON dump */
@@ -739,10 +726,6 @@
 .settings-section .preset-block-toggle {
     display: inline-flex;
     margin-bottom: 0;
-}
-
-.preset-block-toggle input {
-    margin: 0;
 }
 
 .preset-block-desc {
@@ -1271,54 +1254,15 @@
     font-size: var(--text-sm);
 }
 
-/* Sliders */
+/* Sliders and number inputs draw from the base field rules; only the layout
+   these rows need is stated here. */
 .param-group input[type="range"] {
     width: 100%;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--bg-tertiary);
-    outline: none;
     margin-top: 0.5rem;
-    -webkit-appearance: none;
 }
 
-.param-group input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--accent);
-    cursor: pointer;
-    transition: transform 0.1s ease;
-}
-
-.param-group input[type="range"]::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
-}
-
-.param-group input[type="range"]::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--accent);
-    cursor: pointer;
-    border: none;
-}
-
-/* Number inputs */
 .param-group input[type="number"] {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    font-size: var(--text-sm);
-}
-
-.param-group input[type="number"]:focus {
-    border-color: var(--accent);
-    outline: none;
 }
 
 /* Toggle labels */
@@ -1327,12 +1271,6 @@
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
-}
-
-.toggle-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--accent);
 }
 
 /* Tag input for stop sequences */
@@ -1453,12 +1391,9 @@
     opacity: 0.4;
 }
 
-/* Enable checkbox in param labels */
+/* Enable checkbox in param labels — size and color come from the base rule. */
 .param-group label input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
     margin-right: 6px;
-    accent-color: var(--accent);
     vertical-align: middle;
 }
 
