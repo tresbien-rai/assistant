@@ -8,18 +8,38 @@
  * (each declares `data-settings-tab`), so adding a section to a tab is an
  * attribute, not a change here.
  *
- * The preset list is the whole Advanced tab for now. Editing a preset's blocks
- * is AP-03; this slice is the lifecycle around them — create, duplicate, rename,
- * delete, and choose the account default. See docs/ADVANCED_PROMPTS_PLAN.md.
+ * Three layers live here, in order down the file (see docs/ADVANCED_PROMPTS_PLAN.md):
+ *   AP-02  the preset lifecycle — create, duplicate, rename, delete, account default
+ *   AP-03  the block editor behind a preset's Edit
+ *   AP-04  selection — the composer pill + menu, and the persona editor's picker
+ *
+ * The AP-04 helpers mirror the server's resolvePromptPreset precedence. That
+ * duplication is deliberate and load-bearing: the pill has to say what a send
+ * will actually do. The server stays the authority — nothing here is trusted by
+ * it — so the two are kept in step by the precedence test in
+ * server/src/prompts/test-presets.js plus the end-to-end check in the PR.
  */
 
 import { state } from '../state.js';
 import { elements } from '../dom.js';
 import { API } from '../api-client.js';
+import { getActivePersona, getActiveConversation } from '../state.js';
 import { escapeHtml } from '../util/format.js';
 import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
+import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
+// AP-04 only: the composer pill's menu can jump to this view, and the persona
+// editor's picker writes through the persona save path like every other field.
+import { navigate } from '../shell.js';
+import { savePersonas } from '../settings-store.js';
+
+/**
+ * Sentinel meaning "the built-in layer, explicitly" — mirrors PRESET_NONE in
+ * server/src/prompts/presets.js. null means "inherit the next level down", so
+ * without this a chat could never opt OUT of a preset its persona supplies.
+ */
+export const PRESET_NONE = 'none';
 
 // Tab id → label, in strip order. A section opts in with data-settings-tab.
 const SETTINGS_TABS = [
@@ -115,12 +135,24 @@ export async function loadPresets({ force = false } = {}) {
     } finally {
         presetsLoading = false;
         renderPresetList();
+        refreshPresetDependentUi();
     }
 }
 
 /** Presets newest-updated first — the order the server returns them in. */
 function presetList() {
     return Object.values(state.presets).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+/**
+ * Repaint everything OUTSIDE the list that reads the preset set: the composer
+ * pill and the persona editor's picker. Creating, deleting, or changing the
+ * account default changes what those two say — the persona picker names the
+ * account default in its "Inherit" row, so it goes stale otherwise.
+ */
+function refreshPresetDependentUi() {
+    syncPresetPill();
+    syncPersonaPresetControl();
 }
 
 /**
@@ -218,6 +250,7 @@ export async function setDefaultPreset(presetId) {
         displayError(err, { action: 'change your default preset' });
         return;
     }
+    refreshPresetDependentUi();
     showToast(presetId
         ? `“${state.presets[presetId].name}” is now your default prompt.`
         : 'Back to the built-in prompt.');
@@ -237,7 +270,8 @@ export async function createPreset() {
         const preset = await API.presets.create({ name });
         state.presets[preset.id] = preset;
         renderPresetList();
-        showToast(`Created “${preset.name}”. Editing its blocks comes next.`);
+        refreshPresetDependentUi(); // the first preset is what reveals the pill
+        showToast(`Created “${preset.name}”. Open Edit to change its blocks.`);
     } catch (err) {
         displayError(err, { action: 'create the preset' });
     }
@@ -259,6 +293,7 @@ export async function duplicatePreset(presetId) {
         const preset = await API.presets.create({ name, cloneFrom: presetId });
         state.presets[preset.id] = preset;
         renderPresetList();
+        refreshPresetDependentUi();
         showToast(`Duplicated as “${preset.name}”.`);
     } catch (err) {
         displayError(err, { action: 'duplicate the preset' });
@@ -280,6 +315,7 @@ export async function renamePreset(presetId) {
         const updated = await API.presets.update(presetId, { name });
         state.presets[presetId] = updated;
         renderPresetList();
+        refreshPresetDependentUi(); // the name shows on the pill and the picker
     } catch (err) {
         displayError(err, { action: 'rename the preset' });
     }
@@ -316,6 +352,7 @@ export async function deletePreset(presetId) {
     if (wasDefault) state.settings.defaultPresetId = null;
     if (editingPresetId === presetId) closePresetEditor();
     renderPresetList();
+    refreshPresetDependentUi();
     showToast(`Deleted “${preset.name}”.`);
 }
 
@@ -663,4 +700,198 @@ async function savePreset() {
         if (editingPresetId === id) setSaveStatus('Not saved');
         displayError(err, { action: 'save the preset' });
     }
+}
+
+// =============================================================================
+// Per-chat + per-persona selection (AP-04)
+// =============================================================================
+
+/**
+ * These mirror the server's resolvePromptPreset precedence exactly:
+ *
+ *   chat override → persona base → account default → built-in
+ *
+ * with PRESET_NONE stopping the walk at any level. The UI has to agree with what
+ * a send will actually do — a picker that says "Roleplay" while the server
+ * resolves something else is worse than no picker at all. The server stays the
+ * authority; this is a read-only mirror of the same rule.
+ */
+
+/** The persona's base preset choice: an id, PRESET_NONE, or null to inherit. */
+export function personaPresetBase(persona) {
+    const id = persona?.modelConfig?.presetId;
+    return typeof id === 'string' && id ? id : null;
+}
+
+/** The active chat's override, including one chosen before the chat existed. */
+export function getChatPresetOverride() {
+    const convo = getActiveConversation();
+    const value = convo ? convo.presetId : state.pendingPresetId;
+    return typeof value === 'string' && value ? value : null;
+}
+
+/**
+ * The preset that WILL be used for the active chat.
+ * @returns {{id: string|null, source: 'chat'|'persona'|'account'|'builtin'}}
+ *   `id` null means the built-in layer; `source` is which level decided.
+ */
+export function effectivePreset() {
+    const chat = getChatPresetOverride();
+    if (chat === PRESET_NONE) return { id: null, source: 'chat' };
+    if (chat) return { id: chat, source: 'chat' };
+
+    const base = personaPresetBase(getActivePersona());
+    if (base === PRESET_NONE) return { id: null, source: 'persona' };
+    if (base) return { id: base, source: 'persona' };
+
+    const account = state.settings.defaultPresetId || null;
+    if (account) return { id: account, source: 'account' };
+    return { id: null, source: 'builtin' };
+}
+
+/** Display name for a preset id (or the built-in layer). */
+export function presetLabel(id) {
+    if (!id || id === PRESET_NONE) return 'Built-in prompt';
+    const preset = state.presets[id];
+    // A preset deleted elsewhere leaves a dangling id; the server falls back to
+    // the built-in, so say that rather than showing a raw uuid.
+    return preset ? preset.name : 'Built-in prompt';
+}
+
+/**
+ * Reflect the effective preset on the composer pill.
+ *
+ * Hidden entirely when the user has no presets: until you make one there is
+ * nothing to switch between, and an extra control in the composer would be pure
+ * noise for the majority who never open Advanced.
+ */
+export function syncPresetPill() {
+    const btn = elements.composerPresetButton;
+    if (!btn) return;
+    const any = Object.keys(state.presets).length > 0;
+    btn.hidden = !any;
+    if (!any) return;
+
+    const { id, source } = effectivePreset();
+    const label = presetLabel(id);
+    const nameEl = btn.querySelector('.preset-pill-name');
+    if (nameEl) nameEl.textContent = label;
+    // The pill is filled only when THIS chat pins a preset — inherited state is
+    // shown but not emphasised, the same distinction the tools toggle draws.
+    btn.classList.toggle('pinned', source === 'chat');
+    const from = {
+        chat: 'this chat',
+        persona: 'the persona',
+        account: 'your account default',
+        builtin: 'the default',
+    };
+    btn.title = `Prompt: ${label} (from ${from[source]}) — click to change for this chat`;
+}
+
+/** The quick-switch menu behind the composer pill. */
+export function showPresetMenu(anchorEl) {
+    const existing = document.querySelector('.context-menu, .key-popover');
+    if (existing) existing.remove();
+
+    const chat = getChatPresetOverride();
+    const inherited = inheritedPreset();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu context-menu-wide';
+
+    const item = (value, label, note, active) => `
+        <button class="context-menu-item${active ? ' active' : ''}" data-value="${escapeHtml(value)}">
+            ${escapeHtml(label)}${note ? `<span class="preset-menu-note">${escapeHtml(note)}</span>` : ''}
+        </button>`;
+
+    let html = '<div class="context-menu-label">Prompt for this chat</div>';
+    html += item('', `Inherit — ${presetLabel(inherited.id)}`,
+        `from ${inherited.source === 'persona' ? 'the persona' : 'your account default'}`,
+        chat === null);
+    html += '<div class="context-menu-separator"></div>';
+    html += item(PRESET_NONE, 'Built-in prompt', '', chat === PRESET_NONE);
+    for (const p of presetList()) {
+        html += item(p.id, p.name, '', chat === p.id);
+    }
+    html += '<div class="context-menu-separator"></div>';
+    html += '<button class="context-menu-item" data-action="manage">Manage presets…</button>';
+    menu.innerHTML = html;
+
+    positionPopover(menu, anchorEl, 'right');
+    menu.querySelectorAll('.context-menu-item').forEach(el => {
+        el.addEventListener('click', () => {
+            menu.remove();
+            if (el.dataset.action === 'manage') {
+                navigate({ type: 'settings' });
+                showSettingsTab('advanced');
+                return;
+            }
+            setChatPreset(el.dataset.value || null);
+        });
+    });
+    attachPopoverOutsideClose(menu, anchorEl);
+}
+
+/** What this chat would fall back to with no override of its own. */
+function inheritedPreset() {
+    const base = personaPresetBase(getActivePersona());
+    if (base === PRESET_NONE) return { id: null, source: 'persona' };
+    if (base) return { id: base, source: 'persona' };
+    return { id: state.settings.defaultPresetId || null, source: 'account' };
+}
+
+/**
+ * Pin (or clear) the active chat's preset. Stashed as pending for a chat that
+ * doesn't exist yet — createConversation applies it, exactly as the file-tools
+ * override works.
+ * @param {string|null} value - a preset id, PRESET_NONE, or null to inherit
+ */
+export async function setChatPreset(value) {
+    const convo = getActiveConversation();
+    if (!convo) {
+        state.pendingPresetId = value;
+        syncPresetPill();
+        return;
+    }
+    const previous = convo.presetId ?? null;
+    convo.presetId = value;
+    syncPresetPill();
+    try {
+        await API.conversations.update(convo.id, { presetId: value });
+    } catch (err) {
+        convo.presetId = previous;
+        syncPresetPill();
+        displayError(err, { action: 'change this chat’s prompt preset' });
+    }
+}
+
+// ===== Persona default =====
+
+/** Fill the persona editor's preset select and reflect the persona's choice. */
+export function syncPersonaPresetControl() {
+    const select = elements.personaPresetSelect;
+    if (!select) return;
+    const current = personaPresetBase(getActivePersona());
+    const accountLabel = presetLabel(state.settings.defaultPresetId || null);
+
+    select.innerHTML = [
+        `<option value="">Inherit — ${escapeHtml(accountLabel)} (account default)</option>`,
+        `<option value="${PRESET_NONE}">Built-in prompt</option>`,
+        ...presetList().map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`),
+    ].join('');
+    select.value = current || '';
+    // A preset deleted elsewhere leaves an id with no <option>; the select would
+    // show blank, so fall back to the inherit row it now behaves as.
+    if (select.value !== (current || '')) select.value = '';
+}
+
+/** Persona editor: set this persona's base preset (absent = inherit). */
+export function setPersonaPresetBase(value) {
+    const persona = getActivePersona();
+    if (!persona) return;
+    persona.modelConfig = { ...persona.modelConfig };
+    if (value) persona.modelConfig.presetId = value;
+    else delete persona.modelConfig.presetId;
+    persona.updatedAt = Date.now();
+    savePersonas();
+    syncPresetPill();
 }

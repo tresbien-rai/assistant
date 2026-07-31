@@ -590,6 +590,34 @@
     }
 }
 
+/* ===== Composer prompt-preset pill (AP-04) ===== */
+/* Borrows .tools-toggle's shape. Muted while the preset is inherited, accent
+   once THIS chat pins one — the same "is this mine or inherited" distinction
+   the file-tools toggle draws. */
+.preset-pill[hidden] {
+    display: none;
+}
+
+.preset-pill .preset-pill-name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.preset-pill.pinned {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-color: transparent;
+}
+
+/* The inherit row's "from the persona" hint, under its label. */
+.preset-menu-note {
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
 /* ===== Prompt preset block editor (AP-03) ===== */
 .preset-editor[hidden] {
     display: none;

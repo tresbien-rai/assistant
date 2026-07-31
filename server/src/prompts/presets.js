@@ -22,6 +22,16 @@
 const BLOCKS_VERSION = 1;
 
 /**
+ * Sentinel preset id meaning "the built-in layer, explicitly" (AP-04).
+ *
+ * NULL already means "inherit the next level down", so without this there is no
+ * way for a chat to opt OUT of a preset its persona (or the account default)
+ * supplies — the same reason `tools_enabled` is a tri-state rather than a
+ * boolean. Real ids are UUIDs, so this can never collide with one.
+ */
+const PRESET_NONE = 'none';
+
+/**
  * The system-layer blocks, in their default order. Order here IS the built-in
  * order, so a preset that only edits text renders in the familiar sequence.
  *
@@ -234,6 +244,7 @@ const MACRO_REFERENCE = [
 
 module.exports = {
   BLOCKS_VERSION,
+  PRESET_NONE,
   SYSTEM_BLOCK_IDS,
   MESSAGE_BLOCK_IDS,
   ALL_BLOCK_IDS,

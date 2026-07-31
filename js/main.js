@@ -35,7 +35,10 @@ import {
     UiPrefs, applyTheme, withThemeTransition, applyChatWidth, syncAppearanceControls,
 } from './ui-prefs.js';
 import { createSidebarOverlay, openSidebar, closeSidebar, setupSidebarResize } from './sidebar.js';
-import { setupSettingsTabs, handlePresetListClick, createPreset } from './views/settings.js';
+import {
+    setupSettingsTabs, handlePresetListClick, createPreset,
+    syncPresetPill, showPresetMenu, syncPersonaPresetControl, setPersonaPresetBase,
+} from './views/settings.js';
 import { ICON_SVG } from './util/markdown.js';
 import { ImageStore } from './util/image-store.js';
 import { positionPopover, attachPopoverOutsideClose } from './components/menus.js';
@@ -214,7 +217,7 @@ function setPersonaModelMode(mode) {
 // hydrates the in-memory `state` object, then wires the UI.
 async function init() {
     // Parallel fetch — these are independent endpoints.
-    const [settings, personas, conversations, apiKeyStatus, workspaces, projects] = await Promise.all([
+    const [settings, personas, conversations, apiKeyStatus, workspaces, projects, presets] = await Promise.all([
         API.settings.get(),
         API.personas.list(),
         API.conversations.list(),
@@ -230,6 +233,13 @@ async function init() {
             console.warn('Failed to load projects; continuing without them:', err);
             return [];
         }),
+        // Prompt presets (AP-04). Loaded at boot rather than lazily like the
+        // Advanced tab does, because the composer pill has to know whether the
+        // user has any presets at all before the first chat renders.
+        API.presets.list().catch(err => {
+            console.warn('Failed to load prompt presets; continuing without them:', err);
+            return [];
+        }),
     ]);
 
     hydrateSettings(settings);
@@ -238,6 +248,8 @@ async function init() {
     hydrateApiKeyStatus(apiKeyStatus);
     hydrateWorkspaces(workspaces);
     hydrateProjects(projects);
+    state.presets = {};
+    presets.forEach(p => { state.presets[p.id] = p; });
 
     // Pick the most recently updated persona/conversation as active.
     pickActivePersona();
@@ -375,6 +387,7 @@ function hydrateConversations(conversations) {
             // Track A per-chat file-tools override: null = inherit persona base,
             // true/false = forced. Preserved so the composer toggle reflects it.
             toolsEnabled: c.toolsEnabled ?? null,
+            presetId: c.presetId ?? null,
             // Scratchpad per-chat override (SP-03a): null = inherit persona base
             // + auto-arm, true/false = forced. Drives the panel's Active toggle.
             scratchpadEnabled: c.scratchpadEnabled ?? null,
@@ -556,6 +569,10 @@ async function updateUI() {
     // (effective state depends on both persona base and per-chat override).
     syncPersonaToolsBaseControl();
     syncToolsToggle();
+    // Same pair for the prompt preset (AP-04): the persona's default and the
+    // composer pill, whose label depends on persona + chat + account default.
+    syncPersonaPresetControl();
+    syncPresetPill();
 
     // Keep the Models catalog current (Active badge, key badges) while open.
     if ((state.ui.mainView || {}).type === 'models') renderModelsCatalog();
@@ -1106,7 +1123,7 @@ function setupEventListeners() {
             <h1 class="settings-view-title" id="personaEditTitle">Persona</h1>`;
         const editorBody = document.createElement('div');
         editorBody.className = 'settings-modal-body';
-        ['personaProfileSection', 'personaAvatarSection', 'personaExpressionsSection'].forEach(id => {
+        ['personaProfileSection', 'personaPresetSection', 'personaAvatarSection', 'personaExpressionsSection'].forEach(id => {
             const section = document.getElementById(id);
             if (section) editorBody.appendChild(section);
         });
@@ -1120,6 +1137,14 @@ function setupEventListeners() {
     setupSettingsTabs();
     if (elements.presetList) elements.presetList.addEventListener('click', handlePresetListClick);
     if (elements.createPresetBtn) elements.createPresetBtn.addEventListener('click', createPreset);
+    if (elements.composerPresetButton) {
+        elements.composerPresetButton.addEventListener('click', () => showPresetMenu(elements.composerPresetButton));
+    }
+    if (elements.personaPresetSelect) {
+        elements.personaPresetSelect.addEventListener('change', () => {
+            setPersonaPresetBase(elements.personaPresetSelect.value || null);
+        });
+    }
 
     // Models & Providers section (WR-13): a title row + the model catalog
     // (rendered per-visit by renderModelsCatalog) + the active-model/API-key

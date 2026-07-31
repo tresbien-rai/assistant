@@ -21,6 +21,7 @@ const { resolveScratchpadBlock } = require('../utils/scratchpadContext');
 const { TOOL_DEFINITIONS, SCRATCHPAD_TOOL_DEFINITIONS } = require('../tools/definitions');
 const config = require('../config');
 const { buildSystemPrompt, buildContextAck } = require('../prompts/tessera');
+const { PRESET_NONE } = require('../prompts/presets');
 const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
@@ -367,9 +368,16 @@ function resolveToolsEnabled(userId, conversation) {
 function resolvePromptPreset(userId, conversation) {
   const tryPreset = (id) => (id ? dal.getPromptPreset(id, userId) : undefined);
 
+  // PRESET_NONE stops the walk with the built-in layer (AP-04): it is how a
+  // chat opts out of a preset its persona or the account default supplies. It
+  // is checked at each level, not once, so the level that says "none" wins over
+  // everything BELOW it while still being overridable from above.
+  if (conversation?.preset_id === PRESET_NONE) return null;
   let preset = tryPreset(conversation?.preset_id);
+
   if (!preset && conversation?.persona_id) {
     const persona = dal.getPersonaById(conversation.persona_id, userId);
+    if (persona?.modelConfig?.presetId === PRESET_NONE) return null;
     preset = tryPreset(persona?.modelConfig?.presetId);
   }
   if (!preset) {

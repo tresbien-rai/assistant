@@ -238,6 +238,16 @@ When responding, you may optionally include an expression tag like [expression: 
                 </div>
 
                 <!-- Persona avatar image (re-parented into #personaEditView on load — WR-08) -->
+                <!-- Persona's default prompt preset (AP-04). Lives with the
+                     persona's other model-side defaults; a chat can still
+                     override it from the composer. -->
+                <div class="settings-section" id="personaPresetSection">
+                    <h3>Prompt preset</h3>
+                    <label for="personaPresetSelect">Default for this persona's chats</label>
+                    <select id="personaPresetSelect"></select>
+                    <p class="section-note">Which platform prompt this persona's chats start from. "Inherit" follows your account default; an individual chat can still override it from the composer.</p>
+                </div>
+
                 <div class="settings-section" id="personaAvatarSection">
                     <h3>Avatar</h3>
 
@@ -511,6 +521,12 @@ When responding, you may optionally include an expression tag like [expression: 
                                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
                             </svg>
                             <span>File tools</span>
+                        </button>
+                        <!-- Prompt preset pill (AP-04). Hidden until the user has
+                             a preset — nothing to switch between before that. -->
+                        <button class="tools-toggle preset-pill" id="composerPresetButton" type="button" hidden aria-haspopup="true" aria-label="Prompt preset for this chat">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                            <span class="preset-pill-name">Built-in prompt</span>
                         </button>
                         <button class="model-button composer-model-button" id="composerModelButton" aria-haspopup="true" title="Switch model" aria-label="Switch model">
                             <span class="model-badge" id="composerModelName">Model</span>
