@@ -11,7 +11,7 @@
 
 const assert = require('node:assert');
 
-const { TOOL_DEFINITIONS } = require('../tools/definitions');
+const { TOOL_DEFINITIONS, SCRATCHPAD_TOOL_DEFINITIONS } = require('../tools/definitions');
 const anthropic = require('./anthropic');
 const gemini = require('./gemini');
 
@@ -53,6 +53,38 @@ check('every tool has description + object input_schema', () => {
     assert.ok(t.description.length > 20, `${t.name} description too short`);
     assert.strictEqual(t.input_schema.type, 'object');
   }
+});
+
+check('SS-04: no description asserts a container the chat may not have', () => {
+  // The tool list is advertised whether or not the chat is in a workspace or
+  // project (deliberately stable — see docs/SESSION_STATE_DESIGN.md D4), so a
+  // description claiming "the current project or workspace" describes something
+  // that cannot exist in a bare chat. What EXISTS is <session_state>'s job.
+  // This guards the wording from drifting back.
+  const asserts = [
+    /the current project or workspace/i,
+    /Downloads folder when the chat is not in a project/i,
+    /in the current project/i,
+  ];
+  for (const t of [...TOOL_DEFINITIONS, ...SCRATCHPAD_TOOL_DEFINITIONS]) {
+    for (const re of asserts) {
+      assert.ok(!re.test(t.description), `${t.name} asserts a container: ${re}`);
+    }
+  }
+});
+
+check('SS-04: the scratchpad tools still carry the churn principle', () => {
+  // The pass shortened these; the behavioural rules they exist to teach must
+  // survive it. Replace-don't-append is the defining principle of the pad
+  // (docs/SCRATCHPAD_DESIGN.md), and an empty pad being a normal starting
+  // point is what SS-03 made true.
+  const write = SCRATCHPAD_TOOL_DEFINITIONS.find((t) => t.name === 'write_scratchpad');
+  assert.match(write.description, /current state/i, 'says the pad holds current state');
+  assert.match(write.description, /superseded/i, 'says to delete what is superseded');
+  assert.match(write.description, /empty pad is a normal starting point/i, 'does not wait to be invited');
+
+  const edit = SCRATCHPAD_TOOL_DEFINITIONS.find((t) => t.name === 'edit_scratchpad');
+  assert.match(edit.description, /exactly once unless replace_all/i, 'keeps the uniqueness rule');
 });
 
 check('create_file requires filename + content', () => {

@@ -1,6 +1,6 @@
 # Session State & Tool Feedback — Design
 
-Status: **SS-01…SS-03 shipped; SS-04 pending**
+Status: **SS-01…SS-04 shipped**; §7 (file digests) analysed, not yet built
 Arising from: live testing of the streaming tool loop (TS-01…TS-03)
 
 ---
@@ -233,10 +233,15 @@ and when caching lands — at which point splitting the block into a static part
 | SS-01 | Delta reporting in `edit_scratchpad` + `edit_file` (D1) | — | ✅ |
 | SS-02 | State resolver + position-only preset block (D2/D3) | shape agreed | ✅ |
 | SS-03 | Scratchpad ON by default (D6) | — | ✅ |
-| SS-04 | Tool description pass, scope-neutral (D4) | SS-02 | |
+| SS-04 | Tool description pass, scope-neutral (D4) | SS-02 | ✅ |
 
-SS-04 lands after SS-02 so the descriptions can defer to a block that already
-exists.
+SS-04 landed after SS-02 so the descriptions could defer to a block that
+already existed. Net effect on prompt size was small (-150 characters, ~38
+tokens): removing the container assertions from `create_file` and `move_file`
+paid for genuinely new content elsewhere — `read_file` noting that an
+already-shown file needs no read, `list_files` deferring counts to the state
+block, and `write_scratchpad` saying an empty pad is a normal starting point.
+Scope-neutrality was the goal; brevity was a bonus, not the point.
 
 ---
 
