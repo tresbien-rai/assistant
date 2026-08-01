@@ -85,6 +85,19 @@ async function check(label, fn) {
       assert.strictEqual(revs[revs.length - 1].op, 'edit');
     });
 
+    await check('write_scratchpad reports the delta too, not just the new total', async () => {
+      // Matters MORE here than for a targeted edit: this replaces the WHOLE
+      // pad, so before -> after is the difference between a rewrite and having
+      // silently thrown the user's notes away. A bare "now N characters"
+      // cannot tell those apart.
+      await executeWriteScratchpad({ content: 'x'.repeat(400) }, ctx);
+      const shrunk = await executeWriteScratchpad({ content: 'tiny' }, ctx);
+      assert.match(shrunk.content, /400 → 4 characters \(−396\)/, 'states before → after with a signed delta');
+
+      const cleared = await executeWriteScratchpad({ content: '' }, ctx);
+      assert.match(cleared.content, /Cleared the scratchpad \(was 4 characters\)/, 'clearing says what was lost');
+    });
+
     await check('result reports the DELTA, not just the new total (SS-01)', async () => {
       // A same-length replacement is exactly the case a total-only result could
       // not confirm: the number is identical before and after.

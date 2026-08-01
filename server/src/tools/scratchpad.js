@@ -24,7 +24,7 @@
 const config = require('../config');
 const dal = require('../db/dal');
 const { unifiedDiff } = require('../utils/diff');
-const { describeEdit } = require('../utils/format');
+const { describeEdit, describeSizeChange, groupDigits } = require('../utils/format');
 const { logger } = require('../utils/logger');
 
 /**
@@ -119,9 +119,15 @@ async function executeWriteScratchpad(input, ctx) {
 
   logger.info({ userId: ctx.userId, conversationId: ctx.conversationId, sizeBytes: bytes }, 'write_scratchpad executed');
 
+  // Reports the CHANGE, like the two edit tools (SESSION_STATE_DESIGN D1).
+  // It matters MORE here than for a targeted edit: this replaces the entire
+  // pad, so "3,860 → 190" is the difference between a rewrite and having just
+  // thrown the user's notes away, and a bare "now 190 characters" cannot tell
+  // those apart. Clearing is called out by name for the same reason.
   const desc = input.content.length === 0
-    ? 'Cleared the scratchpad.'
-    : `Updated the scratchpad (now ${input.content.length} characters). The user can see your change as a diff.`;
+    ? `Cleared the scratchpad (was ${groupDigits(oldContent.length)} characters).`
+    : `Replaced the scratchpad — ${describeSizeChange(oldContent.length, input.content.length, 'characters')}.`
+      + ' The user can see your change as a diff.';
   return {
     content: desc + sizeWarning(bytes),
     display: { scratchpad: true, op: 'write', sizeBytes: bytes },

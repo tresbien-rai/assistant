@@ -899,8 +899,74 @@
 /* A tool card sitting BETWEEN two text segments, at the point in the reply
    where that tool actually ran. Needs breathing room above as well as below,
    since text now continues underneath it. */
+/* Stacked, not a row. `.message-attachments` is a horizontally scrolling strip
+   because it was built for a row of upload thumbnails at the TOP of a message.
+   Inline — sitting between two paragraphs of the reply — that reads wrong:
+   several tools in one round line up sideways instead of reading as a sequence
+   of steps, a tall created-file tile next to a small chip looks ragged, and a
+   horizontal scrollbar has no business appearing mid-sentence.
+
+   align-items: flex-start so each card is as wide as it needs to be rather
+   than stretching to the message width. */
 .message-attachments.inline {
+    flex-direction: column;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
     margin-top: 10px;
+    overflow-x: visible;
+    padding-bottom: 0;
+}
+
+/* A created file inline is a ROW, not a tile. The 200px card with a 72px icon
+   block is right at the top of a message, where it is one of several previews;
+   dropped into the middle of a paragraph it dominates the text it interrupts.
+   Same information, laid out along the line instead of down it. */
+.message-attachments.inline .message-attachment--file {
+    width: auto;
+    max-width: 100%;
+}
+
+.message-attachments.inline .tool-file-view {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 6px 10px;
+}
+
+.message-attachments.inline .message-attachment--file .att-icon {
+    height: auto;
+    font-size: 1.1rem;
+}
+
+/* The badge is absolutely positioned over the tile's preview area; in a row
+   there is nothing to overlay, so it becomes an inline label. */
+.message-attachments.inline .att-badge {
+    position: static;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.message-attachments.inline .att-name {
+    padding: 0;
+    background: none;
+    text-align: left;
+    min-width: 0;
+}
+
+/* The download affordance sits at the row's end rather than floating in a
+   corner that no longer exists. */
+.message-attachments.inline .tool-file-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 10px;
+}
+
+.message-attachments.inline .tool-file-card .tool-file-dl {
+    position: static;
+    margin-left: 4px;
 }
 
 /* Segments are one continuous reply, not separate messages: only the last one
