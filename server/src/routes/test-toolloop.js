@@ -13,6 +13,7 @@
 const { getDb, closeDb } = require('../db/connection');
 const dal = require('../db/dal');
 const anthropic = require('../providers/anthropic');
+const gemini = require('../providers/gemini');
 const { runToolLoop, resolveToolsEnabled, resolveRequestContainers } = require('./chat');
 
 let failures = 0;
@@ -68,6 +69,10 @@ function makeFakeProvider(script) {
     extractToolCalls: anthropic.extractToolCalls,
     buildToolResultMessage: anthropic.buildToolResultMessage,
     formatChatResult: anthropic.formatChatResult,
+    // The REAL one, like the rest of the contract above: the loop builds its
+    // round separator through this, so a fake would let a wrong-shaped
+    // separator pass unnoticed.
+    formatFinalSseEvent: anthropic.formatFinalSseEvent,
   };
 }
 
@@ -276,6 +281,7 @@ const toolContext = { userId: 'u1', workspace: null, project: null, conversation
       extractToolCalls: anthropic.extractToolCalls,
       buildToolResultMessage: anthropic.buildToolResultMessage,
       formatChatResult: anthropic.formatChatResult,
+      formatFinalSseEvent: anthropic.formatFinalSseEvent,
     };
 
     const deltas = [];
@@ -288,6 +294,10 @@ const toolContext = { userId: 'u1', workspace: null, project: null, conversation
     check('no final result to re-send', out.result === undefined);
     check('two rounds streamed', provider.requests.length === 2);
 
+    // Read only through Anthropic's shape, for the same reason the Gemini case
+    // below does: a separator in the wrong provider's shape must fail here.
+    check('every payload is in ANTHROPIC shape, separator included',
+      deltas.every(d => d.type === 'content_block_delta' && d.delta?.type === 'text_delta'));
     const streamedText = deltas.map(d => d.delta.text).join('');
     check('pre-tool narration reaches the client (was discarded before)',
       streamedText.includes('Let me create that file.'));
@@ -326,8 +336,113 @@ const toolContext = { userId: 'u1', workspace: null, project: null, conversation
       anthropic.formatChatResult(withThinking).text === 'First. Second.');
   }
 
-  // --- 10. Toggle resolution: override → persona base → off (DB) -----------
-  console.log('\n10. resolveToolsEnabled precedence (DB)...');
+  // --- 10. Gemini streamRaw reassembles its own native shape --------------
+  console.log('\n10. Gemini streamRaw: SSE reassembly (text / functionCall)...');
+  {
+    // Gemini differs from Anthropic in shape: every payload is a COMPLETE
+    // GenerateContentResponse whose parts are the increment, and a functionCall
+    // arrives whole (no input_json_delta equivalent).
+    const frames = [
+      { candidates: [{ content: { role: 'model', parts: [{ text: 'Let me ' }] } }] },
+      { candidates: [{ content: { role: 'model', parts: [{ text: 'create that.' }] } }] },
+      // A thought signature must NOT be merged away — it has to replay verbatim.
+      { candidates: [{ content: { role: 'model', parts: [{ text: 'hmm', thoughtSignature: 'sig-abc' }] } }] },
+      { candidates: [{ content: { role: 'model', parts: [
+        { functionCall: { name: 'create_file', args: { filename: 'notes.md', content: 'hi' } } },
+      ] } }] },
+      { candidates: [{ content: { role: 'model', parts: [] }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 11, candidatesTokenCount: 22, totalTokenCount: 33 } },
+    ];
+    const wire = frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join('');
+    const bytes = Buffer.from(wire, 'utf8');
+    const cuts = [23, 150, 380, 600, bytes.length];
+    let pos = 0;
+    const chunks = cuts.map((c) => { const s = bytes.subarray(pos, c); pos = c; return s; }).filter((b) => b.length);
+
+    const realFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      body: { getReader() { let i = 0; return { read: async () => (i < chunks.length ? { done: false, value: chunks[i++] } : { done: true }) }; } },
+    });
+
+    try {
+      const forwarded = [];
+      const msg = await gemini.streamRaw(
+        'k',
+        { model: 'gemini-test', messages: [{ role: 'user', content: 'go' }], tools: [] },
+        { onDelta: (p) => forwarded.push(p) }
+      );
+      const parts = msg.candidates[0].content.parts;
+
+      check('renderable chunks forwarded, bare functionCall/usage frames are not', forwarded.length === 3);
+      check('adjacent plain-text parts merged into one',
+        parts[0].text === 'Let me create that.');
+      check('a part carrying a thoughtSignature is NOT merged away',
+        parts.some((p) => p.thoughtSignature === 'sig-abc'));
+      check('functionCall part preserved whole',
+        parts.some((p) => p.functionCall?.args?.filename === 'notes.md'));
+      check('finishReason latched from a later frame', msg.candidates[0].finishReason === 'STOP');
+      check('usageMetadata latched', msg.usageMetadata?.totalTokenCount === 33);
+
+      // Same proof as the Anthropic case: the REAL extractor consumes it.
+      const extraction = gemini.extractToolCalls(msg);
+      check('real extractToolCalls finds the streamed call',
+        extraction?.calls.length === 1 && extraction.calls[0].name === 'create_file');
+      check('formatChatResult reads the reassembled text',
+        gemini.formatChatResult(msg, 'gemini-test').text === 'Let me create that.hmm');
+    } finally {
+      global.fetch = realFetch;
+    }
+  }
+
+  // --- 11. Both providers now stream every round --------------------------
+  console.log('\n11. The loop streams for Gemini too...');
+  {
+    const rounds = [
+      { text: 'Reading it now.', data: { candidates: [{ content: { role: 'model', parts: [
+        { functionCall: { name: 'create_file', args: { filename: 'a.md', content: 'A' } } },
+      ] } }] } },
+      { text: 'All done!', data: { candidates: [{ content: { role: 'model', parts: [{ text: 'All done!' }] } }] } },
+    ];
+    const provider = {
+      requests: [],
+      streamRaw: async (apiKey, params, { onDelta }) => {
+        provider.requests.push(params);
+        const round = rounds.shift();
+        onDelta({ candidates: [{ content: { role: 'model', parts: [{ text: round.text }] } }] });
+        return round.data;
+      },
+      chatRaw: async () => { throw new Error('chatRaw must not be used when streaming'); },
+      extractToolCalls: gemini.extractToolCalls,
+      buildToolResultMessage: gemini.buildToolResultMessage,
+      formatChatResult: gemini.formatChatResult,
+      formatFinalSseEvent: gemini.formatFinalSseEvent,
+    };
+
+    const deltas = [];
+    const out = await runToolLoop({
+      providerModule: provider, apiKey: 'k', params: { ...baseParams }, toolContext,
+      onDelta: (p) => deltas.push(p),
+    });
+
+    check('loop reports it streamed', out.streamed === true);
+    check('two rounds streamed', provider.requests.length === 2);
+
+    // Read ONLY through Gemini's own shape. Reading either shape is what let a
+    // real bug through: the round separator used to be hardcoded as Anthropic's
+    // content_block_delta, which the Gemini client silently ignores, so the two
+    // rounds ran together with no blank line and the test still passed.
+    const geminiText = (d) => (d.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+    const text = deltas.map(geminiText).join('');
+    check('every payload is in GEMINI shape, separator included',
+      deltas.every((d) => Array.isArray(d.candidates)));
+    check('pre-tool narration reaches the client', text.includes('Reading it now.'));
+    check('final answer reaches the client', text.includes('All done!'));
+    check('rounds separated by a blank line', text === 'Reading it now.\n\nAll done!');
+  }
+
+  // --- 12. Toggle resolution: override → persona base → off (DB) -----------
+  console.log('\n12. resolveToolsEnabled precedence (DB)...');
   const db = getDb();
   let userId;
   try {
