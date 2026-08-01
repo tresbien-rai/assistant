@@ -75,8 +75,19 @@ function buildRequestBody(params) {
 
   // Add optional parameters if enabled
   if (modelParams) {
+    // Extended thinking constrains sampling: `top_k` and `top_p` must be UNSET
+    // and `temperature` must be 1. The stock profile enables all three, and
+    // ships topK: 40 — so before this guard, ticking "extended thinking" on any
+    // model made every send fail with a hard 400 ("`top_k` must be unset when
+    // thinking is enabled"). Thinking is the stronger, explicit intent, so it
+    // wins over sampling knobs the user probably never touched.
+    const thinkingOn = Boolean(modelParams.anthropic?.thinkingEnabled);
+
     if (modelParams.temperatureEnabled !== false && modelParams.temperature !== undefined) {
       body.temperature = modelParams.temperature;
+    }
+    if (thinkingOn && body.temperature !== undefined && body.temperature !== 1) {
+      delete body.temperature; // the API's own default is 1
     }
     // `temperature` and `top_p` are MUTUALLY EXCLUSIVE for Anthropic — Claude
     // 4.5+ rejects a body carrying both with a 400. The stock profile enables
@@ -85,11 +96,11 @@ function buildRequestBody(params) {
     // per-parameter toggles in the model detail view are how you opt into top_p
     // instead (turn temperature off). Gemini has no such restriction and still
     // sends both.
-    if (body.temperature === undefined
+    if (!thinkingOn && body.temperature === undefined
       && modelParams.topPEnabled !== false && modelParams.topP !== undefined) {
       body.top_p = modelParams.topP;
     }
-    if (modelParams.topKEnabled !== false && modelParams.topK !== undefined) {
+    if (!thinkingOn && modelParams.topKEnabled !== false && modelParams.topK !== undefined) {
       body.top_k = modelParams.topK;
     }
     if (modelParams.stopSequences && modelParams.stopSequences.length > 0) {

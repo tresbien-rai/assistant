@@ -124,7 +124,47 @@ check('streaming body is guarded identically', () => {
 });
 
 // ---------------------------------------------------------------------------
-console.log('\n3. Gemini: no such restriction — both still sent...');
+console.log('\n3. Anthropic: extended thinking constrains sampling...');
+
+// Live-confirmed 2026-07-31: the stock profile plus thinkingEnabled returned a
+// hard 400, "`top_k` must be unset when thinking is enabled". Since every model
+// ships topK: 40 enabled, ticking extended thinking broke EVERY send.
+const THINKING = { ...STOCK, anthropic: { thinkingEnabled: true, thinkingBudget: 4000 } };
+
+check('thinking on → top_k is dropped (this was the 400)', () => {
+  const body = anthropic.buildRequestBody(base(THINKING));
+  assert.deepStrictEqual(body.thinking, { type: 'enabled', budget_tokens: 4000 });
+  assert.ok(!('top_k' in body), 'top_k must be unset when thinking is enabled');
+});
+
+check('thinking on → top_p is dropped even when temperature is off', () => {
+  const body = anthropic.buildRequestBody(base({ ...THINKING, temperatureEnabled: false }));
+  assert.ok(!('top_p' in body), 'top_p must be unset when thinking is enabled');
+});
+
+check('thinking on → a non-1 temperature is dropped, not sent', () => {
+  const body = anthropic.buildRequestBody(base({ ...THINKING, temperature: 0.3 }));
+  assert.ok(!('temperature' in body), 'thinking requires temperature 1; drop rather than 400');
+});
+
+check('thinking on → temperature 1 is still allowed through', () => {
+  const body = anthropic.buildRequestBody(base(THINKING));
+  assert.strictEqual(body.temperature, 1);
+});
+
+check('thinking OFF → sampling params are untouched', () => {
+  const body = anthropic.buildRequestBody(base(STOCK));
+  assert.strictEqual(body.top_k, 40);
+  assert.ok(!('thinking' in body));
+});
+
+check('thinking guard applies on the streaming path too', () => {
+  const body = anthropic.buildRequestBody({ ...base(THINKING), stream: true });
+  assert.ok(!('top_k' in body), 'the stream path must get the same guard');
+});
+
+// ---------------------------------------------------------------------------
+console.log('\n4. Gemini: no such restriction — both still sent...');
 
 check('gemini sends temperature AND topP together', () => {
   const body = gemini.buildRequestBody({
