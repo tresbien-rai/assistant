@@ -540,14 +540,18 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
   // Rounds are separate provider calls, so their text arrives as separate runs
   // with no whitespace between them. Insert a blank line before a later round's
   // first delta — lazily, so a round that produces no text adds no gap.
+  //
+  // Built through formatFinalSseEvent, which is already part of the tool
+  // contract and already emits the PROVIDER's own payload shape. Hardcoding
+  // Anthropic's `content_block_delta` here worked for Anthropic and was
+  // silently dropped by the Gemini client, which walks
+  // candidates[0].content.parts and has no idea what a delta is — the rounds
+  // just ran together. chat.js stays provider-agnostic by construction.
   let streamedAnyText = false;
   let roundHasText = false;
   const emitDelta = (payload) => {
     if (!roundHasText && streamedAnyText) {
-      onDelta({
-        type: 'content_block_delta',
-        delta: { type: 'text_delta', text: '\n\n' },
-      });
+      onDelta(providerModule.formatFinalSseEvent({ text: '\n\n' }).data);
     }
     roundHasText = true;
     streamedAnyText = true;

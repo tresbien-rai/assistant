@@ -465,6 +465,121 @@ async function chat(apiKey, params) {
 }
 
 /**
+ * Streaming request that returns the SAME raw generateContent shape as chatRaw,
+ * while forwarding renderable chunks to `onDelta` as they arrive.
+ *
+ * The counterpart to anthropic.streamRaw, and what lets the tool loop stream
+ * every round for Gemini too. The loop needs the assembled native message (to
+ * extract function calls and replay it verbatim); the client needs the text as
+ * it is produced.
+ *
+ * Gemini is EASIER than Anthropic here, in one specific way: each SSE payload is
+ * a complete GenerateContentResponse whose `parts` are the increment, and a
+ * `functionCall` part arrives WHOLE. There is no equivalent of Anthropic's
+ * input_json_delta, so no JSON fragment reassembly — the hard part of the
+ * Anthropic implementation simply does not exist.
+ *
+ * What does need care:
+ *  - Adjacent plain-text parts are merged, so the reassembled message has one
+ *    text part rather than hundreds of one-token ones. ONLY parts that are
+ *    nothing but `{text}` merge — anything carrying `thoughtSignature` (or any
+ *    other key) is kept intact, because that signature must survive into the
+ *    continuation request exactly as sent.
+ *  - `finishReason` and `usageMetadata` arrive on later chunks and are latched.
+ *
+ * @param {string} apiKey
+ * @param {Object} params - Chat parameters (may include tools + raw parts messages)
+ * @param {{onDelta?: (payload: Object) => void}} [handlers]
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<Object>} generateContent response shape
+ */
+async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
+  const headers = buildHeaders(apiKey);
+  const body = buildRequestBody(params);
+  const { model } = params;
+  const endpoint = `${GEMINI_API_BASE}/${model}:streamGenerateContent?alt=sse`;
+
+  logger.debug({ model, messageCount: body.contents.length }, 'Gemini streaming tool-loop request');
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw mapApiError(response, errorData);
+  }
+
+  const parts = [];
+  let finishReason;
+  let usageMetadata;
+
+  /** A part that is ONLY text can be merged with the previous one; anything else cannot. */
+  const isPlainText = (p) => p && typeof p.text === 'string' && Object.keys(p).length === 1;
+
+  const handleEvent = (payload) => {
+    if (payload.error) {
+      throw AppError.provider(
+        payload.error.message || 'Gemini reported an error mid-stream',
+        { provider: 'google', status: payload.error.code }
+      );
+    }
+    const candidate = payload.candidates?.[0];
+    if (payload.usageMetadata) usageMetadata = payload.usageMetadata;
+    if (!candidate) return;
+    if (candidate.finishReason) finishReason = candidate.finishReason;
+
+    const incoming = candidate.content?.parts || [];
+    let renderable = false;
+    for (const part of incoming) {
+      const last = parts[parts.length - 1];
+      if (isPlainText(part) && isPlainText(last)) last.text += part.text;
+      else parts.push({ ...part });
+      if (part.text || part.inlineData || part.inline_data) renderable = true;
+    }
+
+    // Forwarded verbatim: the client's Gemini branch already walks
+    // candidates[0].content.parts for text and inline image data. Chunks with
+    // nothing renderable (a bare functionCall, a trailing usage-only frame) are
+    // not forwarded — they would be ignored anyway, and this keeps the wire
+    // free of writes that paint nothing.
+    if (renderable && onDelta) onDelta(payload);
+  };
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let sep;
+    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      for (const line of frame.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (!data) continue;
+        let payload;
+        try { payload = JSON.parse(data); } catch { continue; }
+        handleEvent(payload);
+      }
+    }
+  }
+
+  return {
+    candidates: [{ content: { parts, role: 'model' }, ...(finishReason ? { finishReason } : {}) }],
+    ...(usageMetadata ? { usageMetadata } : {}),
+  };
+}
+
+/**
  * Streaming chat completion
  * Pipes SSE events to the Express response
  * @param {string} apiKey - User's Google API key
@@ -575,6 +690,7 @@ async function listModels(apiKey) {
 module.exports = {
   chat,
   chatRaw,
+  streamRaw,
   formatChatResult,
   stream,
   listModels,
