@@ -353,7 +353,13 @@ const toolContext = { userId: 'u1', workspace: null, project: null, conversation
       { candidates: [{ content: { role: 'model', parts: [] }, finishReason: 'STOP' }],
         usageMetadata: { promptTokenCount: 11, candidatesTokenCount: 22, totalTokenCount: 33 } },
     ];
-    const wire = frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join('');
+    // CRLF, because that is what Google actually sends. This fixture used to
+    // join with a bare `\n\n`; it therefore built a wire the real API never
+    // produces, and could not catch that streamRaw's frame separator missed
+    // `\r\n\r\n` entirely — the turn returned 200 with an empty parts array
+    // and the client rendered nothing. Assertions were never the weak link
+    // here; the fixture was. Keep this in the provider's real shape.
+    const wire = frames.map((f) => `data: ${JSON.stringify(f)}\r\n\r\n`).join('');
     const bytes = Buffer.from(wire, 'utf8');
     const cuts = [23, 150, 380, 600, bytes.length];
     let pos = 0;
