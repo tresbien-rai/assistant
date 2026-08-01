@@ -556,7 +556,14 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    // Google terminates SSE lines with CRLF, so frames arrive separated by
+    // `\r\n\r\n` — which contains no `\n\n` substring. Without this strip the
+    // separator below never matches, no frame is ever parsed, and streamRaw
+    // returns an EMPTY parts array: HTTP 200, no error, nothing rendered.
+    // Stripping CR outright (rather than folding CRLF) is safe because a raw
+    // CR cannot appear inside a JSON data line, and it cannot be defeated by a
+    // chunk boundary landing between the CR and the LF.
+    buffer += decoder.decode(value, { stream: true }).replace(/\r/g, '');
 
     let sep;
     while ((sep = buffer.indexOf('\n\n')) !== -1) {

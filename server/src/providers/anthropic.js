@@ -366,7 +366,11 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    // Anthropic terminates lines with a bare LF today, so this strip is a
+    // no-op for it — kept so both providers parse frames the same way and
+    // neither depends on a line-ending choice the provider can change under
+    // us. Gemini genuinely needs it (see the matching note in gemini.js).
+    buffer += decoder.decode(value, { stream: true }).replace(/\r/g, '');
 
     // SSE frames are separated by a blank line; a frame may span chunks.
     let sep;
