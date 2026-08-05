@@ -18,6 +18,7 @@ const config = require('../config');
 const dal = require('../db/dal');
 const { extractFileText } = require('../utils/projectContext');
 const { formatFileSize } = require('../utils/format');
+const { describeProvenance } = require('../utils/provenance');
 const { resolveKnowledgeFiles, resolveInjectMode, isKnowledgeScope } = require('../utils/contextState');
 const { resolveReadStores, findAcrossStores, resolveToolDriveAuth } = require('./fileStore');
 const { logger } = require('../utils/logger');
@@ -132,13 +133,25 @@ async function executeListFiles(_input, ctx) {
 
   const rows = [];
   for (const store of stores) {
-    for (const { file, note } of annotateStoreFiles(store, store.list(), ctx.conversationId || null)) {
+    const files = store.list();
+
+    // Provenance is per-scope, so it is looked up per store (P-02). Best-effort:
+    // a failure here must cost the caller a word, never the file list.
+    let provenance = new Map();
+    try {
+      provenance = dal.getFileProvenanceBatch(store.kind, files.map((f) => f.id));
+    } catch (err) {
+      logger.warn({ userId: ctx.userId, scope: store.kind, msg: err.message }, 'file provenance lookup failed');
+    }
+
+    for (const { file, note } of annotateStoreFiles(store, files, ctx.conversationId || null)) {
       rows.push({
         filename: file.filename,
         sizeBytes: file.size_bytes,
         mimeType: file.mime_type,
         source: store.kind,
         note,
+        origin: describeProvenance(provenance.get(file.id)),
       });
     }
   }
@@ -157,6 +170,10 @@ async function executeListFiles(_input, ctx) {
     const meta = [formatFileSize(r.sizeBytes)];
     if (r.mimeType) meta.push(r.mimeType);
     if (showSource) meta.push(`in ${r.source}`);
+    // Same phrase as the manifest and the loaded-file header (one source, in
+    // utils/provenance.js) — folded into the existing meta list rather than
+    // added as a second parenthetical, which would read as clutter here.
+    if (r.origin) meta.push(r.origin);
     return `- ${r.filename} (${meta.join(', ')})${r.note ? ` — ${r.note}` : ''}`;
   });
 

@@ -1883,6 +1883,61 @@ function listFileRevisions(scope, fileId) {
 }
 
 /**
+ * Where a file came from (P-02, docs/FILE_PROVENANCE_DESIGN.md).
+ *
+ * Read from the EARLIEST revision, not the latest: a user's file that the model
+ * later edited is still the user's file. `'unknown'` is a first-class answer,
+ * never folded into `'user'` — collapsing them would recreate exactly the
+ * ambiguity this exists to remove (a file with no recoverable origin would be
+ * confidently attributed to someone).
+ *
+ * @param {string} scope - FileStore kind
+ * @param {string} fileId - row id in the matching *_files table
+ * @returns {'model'|'user'|'unknown'}
+ */
+function getFileProvenance(scope, fileId) {
+  return getFileProvenanceBatch(scope, [fileId]).get(fileId) || 'unknown';
+}
+
+/**
+ * Provenance for many files in one query — the manifest can name up to
+ * MANIFEST_MAX_NAMES files, and N round trips to answer one word each would be
+ * an absurd trade.
+ *
+ * Ordering is resolved in JS rather than with SQLite's bare-column MIN() trick,
+ * which PostgreSQL rejects; this DAL is written to survive that migration. The
+ * row count is bounded by the caller's file list, so the cost is trivial.
+ *
+ * @param {string} scope - FileStore kind
+ * @param {Array<string>} fileIds
+ * @returns {Map<string, 'model'|'user'>} only files WITH a revision log; a
+ *   missing key means unknown, which callers must handle rather than default.
+ */
+function getFileProvenanceBatch(scope, fileIds) {
+  const out = new Map();
+  const ids = (fileIds || []).filter(Boolean);
+  if (ids.length === 0) return out;
+
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(', ');
+  // created_at is a millisecond stamp, so writes inside one tick can tie; id
+  // breaks it deterministically rather than leaving the winner to row order.
+  const rows = db.prepare(`
+    SELECT file_id, author, created_at FROM file_revisions
+    WHERE scope = ? AND file_id IN (${placeholders})
+    ORDER BY created_at ASC, id ASC
+  `).all(scope, ...ids);
+
+  for (const row of rows) {
+    // First row per file wins: the list is already oldest-first.
+    if (!out.has(row.file_id) && (row.author === 'model' || row.author === 'user')) {
+      out.set(row.file_id, row.author);
+    }
+  }
+  return out;
+}
+
+/**
  * Get a single revision by id (File Collaboration, FC-06b) — used by restore,
  * which then verifies the revision belongs to the file being restored.
  * @param {string} id
@@ -2197,6 +2252,8 @@ module.exports = {
   // File Revisions (File Collaboration, FC-02 — change log)
   addFileRevision,
   listFileRevisions,
+  getFileProvenance,
+  getFileProvenanceBatch,
   listConversationFileRevisions,
   countUserMessages,
   deleteFileRevisions,

@@ -111,9 +111,33 @@ async function executeMoveFile(input, ctx) {
     driveFileId: hit.file.drive_file_id,
   });
 
+  // Read who ORIGINATED the file before the source log goes away (P-01).
+  // Clearing it outright erased authorship exactly when a model-written file
+  // was promoted to a container — the FC-05 flow — so the destination looked
+  // like it came from nowhere.
+  const origin = dal.getFileProvenance(hit.store.kind, hit.file.id);
+
   // Drop the source row + its now-orphaned revision log (a move isn't an edit).
   hit.store.remove(hit.file.id);
   dal.deleteFileRevisions(hit.store.kind, hit.file.id);
+
+  // Re-seed origin on the destination as a single create row. Deliberately not
+  // a re-point of the whole log: the old rows carry conversation_id, turn and
+  // content snapshots that belong to the chat the file used to live in, and
+  // dragging them into a container scope would put a moved file back into the
+  // re-roll queries it just left. One row, no conversationId, no turn — enough
+  // to answer "whose file is this", nothing more. An unknown origin re-seeds
+  // nothing, so it stays honestly unknown.
+  if (origin !== 'unknown') {
+    dal.addFileRevision({
+      scope: destStore.kind,
+      fileId: record.id,
+      author: origin,
+      op: 'create',
+      sizeBytes: hit.file.size_bytes || 0,
+      driveFileId: hit.file.drive_file_id,
+    });
+  }
 
   const url = destStore.urlFor(record.id);
   logger.info(
