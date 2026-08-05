@@ -1,6 +1,6 @@
 # File Provenance — design
 
-**Status:** specified, not built.
+**Status:** BUILT and live-verified (P-01…P-04).
 **Relates to:** `docs/SESSION_STATE_DESIGN.md` §7 (file digests), `docs/FILE_COLLAB_DESIGN.md`.
 
 One word per file, telling the model where that file came from: *it wrote it*,
@@ -188,9 +188,32 @@ Roughly six tokens per named file, only for files whose origin is known. The
 manifest is already capped. No schema change, no migration, no new capture
 beyond the two gap fixes — which are themselves bug fixes.
 
-## 7. Open question
+## 7. Open question — answered by P-04
 
 Whether `unknown` should be *stated* rather than silent for a file the model is
-about to overwrite — "origin unrecorded" is a genuinely useful warning at the
-moment of a destructive write, even though it is noise in a list. Deferred to
-P-04, when there is behaviour to observe rather than guess at.
+about to overwrite. **It should not.** Asked which files it would rewrite
+without checking first, the model volunteered the distinction unprompted:
+
+> `legacy_spec.md` — Unknown creator (the system doesn't attribute it) […] I'd
+> ask before touching it. It could belong to someone else, be referenced
+> elsewhere, or have stability requirements I don't know about.
+
+Silence already reads as "no claim of ownership", and the model defaults to
+caution on it without being told to. An explicit warning would buy nothing and
+cost tokens on every listing.
+
+## 8. Live results (P-04)
+
+Three seeded files — one `model`, one `user`, one with no revision log — read
+back through `list_files` on both providers.
+
+**Both read all three states correctly**, including the unattributed one, which
+neither provider defaulted to the user. Anthropic split its behaviour exactly as
+the spec predicted: rewrite its own draft freely, ask about the user's brief,
+ask about the unknown file. Gemini reported origins identically ("The origin of
+this file is **not recorded**").
+
+That the model spontaneously treats `unknown` as a third, caution-worthy state
+is the strongest evidence for the three-state design over the two-state
+simplification — a two-state model would have labelled that file the user's and
+been quietly wrong.

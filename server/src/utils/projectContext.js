@@ -27,6 +27,7 @@ const config = require('../config');
 const dal = require('../db/dal');
 const drive = require('./drive');
 const { partitionKnowledgeFiles } = require('./contextState');
+const { suffixFor } = require('./provenance');
 const { logger } = require('./logger');
 
 // How many disabled filenames the <available_files> manifest names before it
@@ -116,7 +117,7 @@ async function extractFileText(auth, file) {
  * @param {number} budgetRemaining - chars still available
  * @returns {Promise<{ sections: string[], usedChars: number, skipped: string[], driveFailed: boolean }>}
  */
-async function gatherFileTexts(userId, container, files, budgetRemaining) {
+async function gatherFileTexts(userId, container, files, budgetRemaining, provenance = new Map()) {
   const sections = [];
   const skipped = [];
   let used = 0;
@@ -151,7 +152,10 @@ async function gatherFileTexts(userId, container, files, budgetRemaining) {
       continue;
     }
 
-    const header = `### File: ${file.filename}\n`;
+    // Provenance rides on the header, where it is adjacent to the content it
+    // describes. Included BEFORE the truncation maths below so a long suffix
+    // can never push the body past the budget.
+    const header = `### File: ${file.filename}${suffixFor(provenance, file.id)}\n`;
     let body = fileText;
     if (header.length + body.length > remaining) {
       body = body.slice(0, Math.max(0, remaining - header.length));
@@ -207,18 +211,28 @@ function wrapWorkspaceBlock(workspace, sections) {
  * @param {string} nounLower - 'project' | 'workspace', for the sentence
  * @returns {string|null}
  */
-function buildAvailableFilesSection(container, notLoaded, nounLower) {
+function buildAvailableFilesSection(container, notLoaded, nounLower, provenance = new Map()) {
   if (notLoaded.length === 0) return null;
 
-  const names = notLoaded.slice(0, MANIFEST_MAX_NAMES).map((f) => f.filename);
+  const shown = notLoaded.slice(0, MANIFEST_MAX_NAMES);
+  const names = shown.map((f) => `${f.filename}${suffixFor(provenance, f.id)}`);
   const overflow = notLoaded.length - names.length;
   const tail = overflow > 0 ? `, and ${overflow} more` : '';
+
+  // The sentence tells the model to pass the EXACT name, and provenance appends
+  // a parenthetical to that name — so without this the model would reasonably
+  // call read_file("alpha.txt (you created this)"). Only stated when a suffix
+  // is actually present, so a container with no provenance pays nothing.
+  const anySuffix = shown.some((f) => suffixFor(provenance, f.id) !== '');
+  const note = anySuffix
+    ? ' Text in parentheses is a note about where the file came from, not part of its name.'
+    : '';
 
   return [
     '<available_files>',
     `These files exist in the ${nounLower} "${container.name}" but are NOT loaded ` +
       `into this conversation. Their content is not shown above. If you need one, ` +
-      `call read_file with its exact name: ${names.join(', ')}${tail}.`,
+      `call read_file with its exact name: ${names.join(', ')}${tail}.${note}`,
     '</available_files>',
   ].join('\n');
 }
@@ -255,8 +269,20 @@ async function assembleContextBlock(
   // Context toggles (CT-02): disabled files are never downloaded, so they cost
   // neither budget nor a Drive round trip.
   const { loaded, notLoaded } = partitionKnowledgeFiles(dal, conversationId, scope, allFiles);
+
+  // One batched lookup for every file in this container, loaded or not (P-02) —
+  // both surfaces below read from it, and N queries to answer one word each
+  // would be an absurd trade. Best-effort: provenance is a nicety, and a DB
+  // hiccup must degrade it to "unknown" rather than fail the whole request.
+  let provenance = new Map();
+  try {
+    provenance = dal.getFileProvenanceBatch(scope, allFiles.map((f) => f.id));
+  } catch (err) {
+    logger.warn({ containerId: container.id, scope, msg: err.message }, 'file provenance lookup failed');
+  }
+
   const manifest = toolsEnabled
-    ? buildAvailableFilesSection(container, notLoaded, noun.toLowerCase())
+    ? buildAvailableFilesSection(container, notLoaded, noun.toLowerCase(), provenance)
     : null;
 
   if (!instructions && loaded.length === 0 && !manifest) {
@@ -277,7 +303,7 @@ async function assembleContextBlock(
   let driveFailed = false;
 
   if (loaded.length > 0) {
-    const result = await gatherFileTexts(userId, container, loaded, budget - used);
+    const result = await gatherFileTexts(userId, container, loaded, budget - used, provenance);
     sections.push(...result.sections);
     used += result.usedChars;
     skipped = result.skipped;
@@ -353,5 +379,6 @@ module.exports = {
   _isPdf: isPdf,
   _textCache: textCache,
   _buildAvailableFilesSection: buildAvailableFilesSection,
+  _gatherFileTexts: gatherFileTexts,
   _MANIFEST_MAX_NAMES: MANIFEST_MAX_NAMES,
 };

@@ -428,6 +428,20 @@ router.post('/:id/files', upload.single('file'), fixUploadedFilename, handleUplo
     driveFileId: uploaded.id,
   });
 
+  // This path bypasses writeContentToStore (it uploads to Drive directly), so
+  // it has to log its own revision — without it a project file has an EMPTY
+  // revision log and no recoverable origin (P-01). conversationId stays null:
+  // the upload belongs to the project, not to any chat, and a null keeps it out
+  // of the re-roll queries that scope by conversation.
+  dal.addFileRevision({
+    scope: 'project',
+    fileId: fileRecord.id,
+    author: 'user',
+    op: 'create',
+    sizeBytes: req.file.size,
+    driveFileId: uploaded.id,
+  });
+
   logger.info(
     { userId: req.user.userId, projectId: project.id, fileId: fileRecord.id },
     'Project file uploaded'

@@ -389,6 +389,18 @@ router.post('/:id/files', upload.single('file'), fixUploadedFilename, handleUplo
     driveFileId: uploaded.id,
   });
 
+  // See the matching note in routes/projects.js: this path bypasses
+  // writeContentToStore, so it logs its own revision or the file has no
+  // recoverable origin (P-01).
+  dal.addFileRevision({
+    scope: 'workspace',
+    fileId: fileRecord.id,
+    author: 'user',
+    op: 'create',
+    sizeBytes: req.file.size,
+    driveFileId: uploaded.id,
+  });
+
   logger.info(
     { userId: req.user.userId, workspaceId: workspace.id, fileId: fileRecord.id },
     'Workspace file uploaded'
