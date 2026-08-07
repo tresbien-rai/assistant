@@ -325,3 +325,35 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_provider ON api_keys(user_id, provider);
+
+-- Usage events (U-01, docs/USAGE_MEASUREMENT_DESIGN.md)
+-- ONE ROW PER PROVIDER CALL, not per turn: with tools on, a single user message
+-- becomes up to MAX_TOOL_ITERATIONS provider calls, each re-sending the whole
+-- history plus the tool block. Per-turn totals could not show that, and cache
+-- hit rate is a per-call property that cannot be derived from a turn total.
+--
+-- Tessera reports TOKENS, NEVER MONEY (design doc S6) — every provider prices
+-- per million tokens, so identifiable usage is enough for the user to price it
+-- themselves. That is why the four token classes stay separate rather than
+-- being summed: they are priced differently, and collapsing them would destroy
+-- the arithmetic this table exists to enable.
+CREATE TABLE IF NOT EXISTS usage_events (
+    id               TEXT PRIMARY KEY,
+    conversation_id  TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id       TEXT,               -- assistant message this turn produced (nullable)
+    turn             INTEGER,            -- conversation turn ordinal (as file_revisions)
+    round            INTEGER NOT NULL,   -- 0-based within the turn; >0 is a tool round
+    provider         TEXT NOT NULL,
+    model            TEXT NOT NULL,
+    input_tokens     INTEGER DEFAULT 0,
+    output_tokens    INTEGER DEFAULT 0,  -- BILLED output; Gemini sums candidates+thoughts
+    cache_read       INTEGER DEFAULT 0,
+    cache_write      INTEGER DEFAULT 0,
+    thinking_tokens  INTEGER,            -- NULL when the provider does not report it apart
+    aborted          INTEGER DEFAULT 0,  -- the turn this round belongs to was stopped
+    output_partial   INTEGER DEFAULT 0,  -- output_tokens is a floor, not a total
+    raw              TEXT,               -- the provider's own usage object, verbatim
+    created_at       INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_events_conversation ON usage_events(conversation_id);

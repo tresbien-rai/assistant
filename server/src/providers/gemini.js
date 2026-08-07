@@ -394,6 +394,37 @@ function parseMultimodalResponse(candidate) {
 }
 
 /**
+ * Normalise Gemini's usageMetadata into the shape usage_events stores (U-01,
+ * docs/USAGE_MEASUREMENT_DESIGN.md).
+ *
+ * THE TRAP, and the reason this function exists rather than a shared mapper:
+ * Anthropic's `output_tokens` already INCLUDES thinking, while Gemini's
+ * `candidatesTokenCount` EXCLUDES it and reports `thoughtsTokenCount` apart.
+ * Summing the two is what makes `outputTokens` mean the same thing on both
+ * sides. Without the sum, every Gemini turn with thinking on under-reports —
+ * and the error grows with thinking level, so it would look like a rounding
+ * discrepancy right up until someone ran level=high.
+ *
+ * `thinkingTokens` keeps the split visible, since Gemini does report it.
+ *
+ * @param {Object} data - a generateContent response (or anything with usageMetadata)
+ * @returns {Object|null} normalised usage, or null when the response carries none
+ */
+function extractUsage(data) {
+  const u = data?.usageMetadata;
+  if (!u) return null;
+  const thoughts = u.thoughtsTokenCount || 0;
+  return {
+    inputTokens: u.promptTokenCount || 0,
+    outputTokens: (u.candidatesTokenCount || 0) + thoughts,
+    cacheRead: u.cachedContentTokenCount || 0,
+    cacheWrite: 0,                       // Gemini has no cache-write equivalent
+    thinkingTokens: thoughts,
+    raw: u,
+  };
+}
+
+/**
  * Non-streaming request returning the RAW parsed generateContent response.
  * The tool loop (P2-02) needs the native shape for extractToolCalls; chat()
  * wraps this for the plain no-tools path.
@@ -698,6 +729,7 @@ module.exports = {
   chat,
   chatRaw,
   streamRaw,
+  extractUsage,
   formatChatResult,
   stream,
   listModels,

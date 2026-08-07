@@ -532,7 +532,7 @@ function resolveAdvertisedTools(toolsEnabled, scratchpadEnabled) {
  *   streamed?: boolean }>} `streamed` tells the caller the text has already
  *   gone to the client, so it must not be sent again as a final chunk.
  */
-async function runToolLoop({ providerModule, apiKey, params, toolContext, signal, onEvent = () => {}, onDelta = null }) {
+async function runToolLoop({ providerModule, provider, apiKey, params, toolContext, signal, onEvent = () => {}, onDelta = null }) {
   const messages = [...params.messages];
   const toolEvents = [];
   const streaming = Boolean(onDelta && typeof providerModule.streamRaw === 'function');
@@ -547,6 +547,33 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
   // silently dropped by the Gemini client, which walks
   // candidates[0].content.parts and has no idea what a delta is — the rounds
   // just ran together. chat.js stays provider-agnostic by construction.
+  // Usage capture (U-01, docs/USAGE_MEASUREMENT_DESIGN.md). ONE ROW PER CALL:
+  // this loop is the choke point every round already passes through, which is
+  // why the row count matches the provider-call count rather than the turn
+  // count. Best-effort throughout — a usage write must never cost the user
+  // their turn, so every failure here is logged and swallowed.
+  const recordUsage = (data, round, { aborted = false } = {}) => {
+    try {
+      if (aborted) {
+        dal.markTurnAborted(toolContext.conversationId, toolContext.turnOrdinal);
+        return;
+      }
+      if (typeof providerModule.extractUsage !== 'function') return;
+      const usage = providerModule.extractUsage(data);
+      if (!usage) return;
+      dal.addUsageEvent({
+        conversationId: toolContext.conversationId,
+        turn: toolContext.turnOrdinal,
+        round,
+        provider,
+        model: params.model,
+        ...usage,
+      });
+    } catch (err) {
+      logger.warn({ msg: err.message, round }, 'usage capture failed');
+    }
+  };
+
   let streamedAnyText = false;
   let roundHasText = false;
   const emitDelta = (payload) => {
@@ -569,9 +596,18 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
         ? await providerModule.streamRaw(apiKey, callParams, { onDelta: emitDelta }, signal)
         : await providerModule.chatRaw(apiKey, callParams, signal);
     } catch (err) {
-      if (err.name === 'AbortError') return { aborted: true, toolEvents, streamed: streaming };
+      if (err.name === 'AbortError') {
+        // Rounds that COMPLETED before the stop are already recorded with exact
+        // usage; flag them so a rollup can label the turn (U-01). The
+        // interrupted round itself has no usage object to record — the call
+        // threw — so its partial output is not recoverable here.
+        recordUsage(null, iteration, { aborted: true });
+        return { aborted: true, toolEvents, streamed: streaming };
+      }
       throw err;
     }
+
+    recordUsage(data, iteration);
 
     const extraction = providerModule.extractToolCalls(data);
     if (!extraction) {
@@ -693,6 +729,7 @@ router.post('/', asyncHandler(async (req, res) => {
     }, currentTurn);
     const { result: loopResult, toolEvents, aborted } = await runToolLoop({
       providerModule,
+      provider,
       apiKey,
       params: loopParams,
       toolContext,
@@ -803,6 +840,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
       }, currentTurn);
       const { result, toolEvents, aborted, streamed } = await runToolLoop({
         providerModule,
+        provider,
         apiKey,
         params: loopParams,
         toolContext,
@@ -997,6 +1035,10 @@ module.exports = {
   // Exported for headless tool-loop tests (P2-02).
   resolveRequestContainers,
   resolveToolsEnabled,
+  // Exported for the usage-capture test (U-01): the capture path lives inside
+  // the loop, so proving a write failure can't break a turn means driving the
+  // real loop, not a reimplementation of it.
+  _runToolLoop: runToolLoop,
   resolveScratchpadEnabled,
   // AP-01: also used by the presets API (AP-02) to preview a resolution.
   resolvePromptPreset,

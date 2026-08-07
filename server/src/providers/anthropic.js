@@ -232,6 +232,31 @@ function mapApiError(response, errorData) {
 }
 
 /**
+ * Normalise Anthropic's usage into the shape usage_events stores (U-01,
+ * docs/USAGE_MEASUREMENT_DESIGN.md).
+ *
+ * `thinkingTokens` is deliberately NULL, not 0: Anthropic bills thinking inside
+ * `output_tokens` and never reports it apart, so 0 would be a claim we cannot
+ * make ("there was no thinking") rather than the truth ("we were not told").
+ * Gemini's normaliser is where that field carries a number.
+ *
+ * @param {Object} data - a Messages API response (or anything carrying `usage`)
+ * @returns {Object|null} normalised usage, or null when the response carries none
+ */
+function extractUsage(data) {
+  const u = data?.usage;
+  if (!u) return null;
+  return {
+    inputTokens: u.input_tokens || 0,
+    outputTokens: u.output_tokens || 0,   // already includes thinking
+    cacheRead: u.cache_read_input_tokens || 0,
+    cacheWrite: u.cache_creation_input_tokens || 0,
+    thinkingTokens: null,
+    raw: u,
+  };
+}
+
+/**
  * Non-streaming request returning the RAW parsed Messages API response. The
  * tool loop (P2-02) needs the native shape for extractToolCalls; chat() wraps
  * this for the plain no-tools path.
@@ -536,6 +561,7 @@ module.exports = {
   chat,
   chatRaw,
   streamRaw,
+  extractUsage,
   formatChatResult,
   stream,
   listModels,
