@@ -3,8 +3,11 @@
 **Status:** specified, not built.
 **Relates to:** prompt caching (this unblocks measuring it), `docs/SESSION_STATE_DESIGN.md`.
 
-Record what every provider call actually cost, so the user can see their spend and
-see *where* it goes.
+Tessera reports **tokens, never money** (§6) — every provider prices per million
+tokens, so identifiable usage is enough for the user to price it themselves.
+
+Record what every provider call actually consumed, so the user can see their
+usage and see *where* it goes.
 
 ---
 
@@ -73,9 +76,13 @@ CREATE TABLE usage_events (
     cache_read       INTEGER DEFAULT 0,
     cache_write      INTEGER DEFAULT 0,
     thinking_tokens  INTEGER,       -- nullable: only when the provider reports it separately
+    aborted          INTEGER DEFAULT 0,  -- the turn was stopped by the user (§8)
+    output_partial   INTEGER DEFAULT 0,  -- output_tokens is a floor, not a total (§8)
     raw              TEXT,          -- the provider's own usage object, verbatim
     created_at       INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_usage_events_conversation ON usage_events(conversation_id);
 ```
 
 **`raw` is load-bearing.** Providers add usage fields faster than we will
@@ -153,15 +160,36 @@ today's behaviour, clearly marked as an estimate.
 
 ---
 
-## 6. Cost in money
+## 6. Tokens only — Tessera is not a billing dashboard
 
-**Tokens are stored; money is a display layer.** Prices drift, and a bundled
-price table would silently show wrong numbers the moment it goes stale — worse
-than showing none, because the user would trust it.
+**We report tokens and never convert to money.** Every provider prices per
+million tokens, so a user who can see their token counts can do the arithmetic
+against whatever rate they actually pay. Tessera's job is to make the usage
+*identifiable*; the rate is the user's to know.
 
-Per-model rates are **user-editable**, defaulting to unset. With no rate, the UI
-shows tokens only. This also handles the cases a bundled table cannot: negotiated
-pricing, a provider's free tier, credits.
+This is a deliberate scope cut, and it gets better as providers are added: a
+price table would need maintaining per provider, per model, per tier, and would
+show confidently wrong numbers the moment any of them moved. It also cannot
+represent negotiated pricing, free tiers, credits, or promotional rates — all of
+which are the user's reality and none of which we can see.
+
+### The consequence: segment by model, never just sum
+
+Without a money column, **a total is only useful if the user can apply a rate to
+it** — and that means a number that mixes models is worthless. A conversation can
+switch models mid-way (the composer's quick-switch makes that a one-click
+action), so a turn's rounds are not guaranteed to share a model.
+
+Every rollup is therefore **grouped by `(provider, model)`**, and a
+cross-model total is only ever shown alongside that breakdown, never instead of
+it. This is the load-bearing consequence of dropping cost display: get it wrong
+and the feature produces numbers that look authoritative and cannot be priced.
+
+For the same reason the four token classes stay separate rather than being summed
+into one "input" figure — they are priced differently (a cache read is a fraction
+of a fresh input token; a cache write is a premium on one), so collapsing them
+would destroy the user's ability to compute cost. What began as diagnostics are
+now the cost-math inputs.
 
 ---
 
@@ -174,17 +202,24 @@ null vs 0, a round index that increments, and a failed write not breaking a turn
 **U-02 — the passthrough tee.** Toolless turns land in the same table. Tests
 prove both paths produce equivalent rows for an equivalent turn.
 
-**U-03 — read API.** `GET /api/conversations/:id/usage` → per-turn rollup
-(rounds collapsed, with a round count) plus conversation totals.
+**U-03 — read API.** `GET /api/conversations/:id/usage` returns **both levels,
+not a choice between them**:
+
+- **per round** — the raw rows, so a user can see that round 3 re-sent 2,000
+  tokens of tool definitions;
+- **per turn** — rounds rolled up, with a round count, grouped by
+  `(provider, model)`;
+- **per conversation** — the same grouping, totalled.
+
+Every level carries the model breakdown (§6) and propagates `output_partial`
+(§8), so no total is ever shown as exact when it contains a partial round.
 
 **U-04 — surface.** Status bar shows real tokens; a per-turn breakdown showing
 where the tokens went and how many rounds it took. The dev-mode "view request"
-(`⟨⟩`) button is the natural neighbour for the detailed view.
+(`⟨⟩`) button is the natural neighbour for the detailed view. Aborted turns are
+labelled, not hidden.
 
-**U-05 — rates and cost.** User-editable per-model rates; cost shown only where
-a rate exists.
-
-**U-06 — later, once caching ships.** `cache_read` / `cache_write` are captured
+**U-05 — later, once caching ships.** `cache_read` / `cache_write` are captured
 from U-01 but read ~0 until then. When caching lands, hit rate is already
 measurable with no new capture — which is the point.
 
@@ -192,11 +227,39 @@ U-01 through U-03 need no keys beyond a single live turn to verify.
 
 ---
 
-## 8. Open question
+## 8. Aborted turns are recorded
 
-Whether to record usage for turns the user **aborts**. The tokens were spent —
-the provider billed for the rounds that completed — so omitting them
-under-reports real cost. But attributing spend to a turn with no visible
-assistant message may read as a bug rather than a cost. Leaning toward recording
-them and marking them aborted, so the totals stay honest; deferred to U-03,
-where the rollup shape makes the display consequence concrete.
+**Decided: record them, with whatever the provider gave us before the stop.**
+Those tokens were billed whether or not the user saw a reply, so omitting them
+under-reports real spend — and under-reporting is the one failure this feature
+cannot afford, since the whole point is letting the user trust the number.
+
+What is recoverable differs by where the abort lands, and the schema has to be
+honest about it:
+
+- **Rounds that completed before the abort** carry full, exact usage. Nothing
+  special is needed.
+- **The round that was interrupted** is partial. Anthropic reports
+  `input_tokens` up front on `message_start`, so the input side is exact and
+  known early; `output_tokens` only settles on `message_delta` at the end, so an
+  abort mid-stream leaves the output side partial or absent. Gemini latches
+  `usageMetadata` from whichever chunks arrived.
+
+So the interrupted round records the exact input it has and whatever output
+accrued, flagged rather than silently rounded. Two columns carry this:
+
+```sql
+    aborted          INTEGER DEFAULT 0,   -- the turn was stopped by the user
+    output_partial   INTEGER DEFAULT 0,   -- output_tokens is a floor, not a total
+```
+
+`output_partial` is separate from `aborted` on purpose: it is the narrower claim
+("this number is a lower bound") and is the one a rollup must propagate, so a
+total containing a partial round is never presented as exact. A turn can be
+aborted with every round complete — stopping between rounds — in which case
+nothing is partial and the totals stand.
+
+Displaying an aborted turn's cost against a turn with no visible assistant
+message could read as a bug, so the surface labels it rather than hiding it: the
+tokens were spent, and a user tuning their workflow wants to know that stopping
+a runaway tool loop on round four still cost four rounds.
