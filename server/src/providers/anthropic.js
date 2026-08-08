@@ -7,6 +7,7 @@
 
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
+const { anthropicUsageWatcher } = require('./usageWatcher');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models';
@@ -525,6 +526,9 @@ async function stream(apiKey, params, res, signal) {
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  // U-02: watch the bytes going past without touching them. An abort still
+  // returns what was latched — the turn was billed for it either way.
+  const watcher = anthropicUsageWatcher();
 
   try {
     while (true) {
@@ -533,6 +537,7 @@ async function stream(apiKey, params, res, signal) {
 
       // Forward raw SSE chunks to client
       const chunk = decoder.decode(value, { stream: true });
+      watcher.push(chunk);
       res.write(chunk);
     }
   } catch (err) {
@@ -541,11 +546,19 @@ async function stream(apiKey, params, res, signal) {
       logger.debug('Anthropic stream aborted by client');
     } else {
       logger.error({ err }, 'Error reading Anthropic stream');
+      // Those tokens were billed even though the stream died. Attach what was
+      // latched so the caller can record the round instead of dropping it —
+      // same contract as streamRaw's abort path.
+      const partial = watcher.usage();
+      if (partial) { try { err.partialUsage = extractUsage({ usage: partial }); } catch { /* never mask */ } }
       throw err;
     }
   } finally {
     res.end();
   }
+
+  const usage = watcher.usage();
+  return usage ? extractUsage({ usage }) : null;
 }
 
 /**
