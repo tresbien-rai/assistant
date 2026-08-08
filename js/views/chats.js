@@ -25,6 +25,7 @@ import { escapeHtml, formatTimeAgo } from '../util/format.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
 import { updateStatusBar } from '../status-bar.js';
+import { loadUsage } from './usage-panel.js';
 
 /**
  * Create a new conversation server-side and set it as active.
@@ -289,6 +290,12 @@ export async function switchConversation(conversationId) {
     // were already on (from Workspaces, say), so it must not early-return — there
     // is simply no draft to move when the conversation has not changed.
     setActiveConversation(conversationId);
+
+    // Real usage travels with the chat (U-04). setActiveConversation above has
+    // already cleared the outgoing chat's figure, so this only fetches; the
+    // staleness guard lives inside loadUsage.
+    updateStatusBar();
+    loadUsage(conversationId).then((current) => { if (current) updateStatusBar(); });
 
     // Track the chat's container so breadcrumb + restore have context.
     const convo = state.conversations[conversationId];

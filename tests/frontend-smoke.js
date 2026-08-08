@@ -221,6 +221,107 @@ async function typeAndSend(text) {
 
 const CHECKS = [
     {
+        id: 'usage-does-not-leak-between-chats',
+        what: 'switching chats never shows one conversation’s billed tokens as another’s',
+        // U-04. The status bar is repainted by several callers (every appended
+        // message, every expression tag mid-stream), so guarding only the
+        // repaint is not enough — a stale response must never reach
+        // state.usage at all. This drives the real switch path.
+        async run(ctx) {
+            const { state, switchConversation, API } = app();
+
+            // The race does NOT happen on its own against localhost — A's read
+            // finishes before the switch, so a test that just switches proves
+            // only that the clear works. Chat A's read is delayed on purpose so
+            // it lands AFTER the user is already looking at B, which is the
+            // shape that occurs against a real network.
+            const realUsage = API.conversations.usage;
+            const marker = (id) => ({
+                total: { turns: 1, rounds: 1, aborted: false, outputPartial: false,
+                    byModel: [{ provider: 'anthropic', model: id, rounds: 1,
+                        inputTokens: id === ctx.chatA ? 9999 : 11, outputTokens: 1,
+                        cacheRead: 0, cacheWrite: 0, thinkingTokens: null,
+                        aborted: false, outputPartial: false }] },
+                turns: [], rounds: [{}],
+            });
+            API.conversations.usage = async (id) => {
+                await sleep(id === ctx.chatA ? 500 : 10);
+                return marker(id);
+            };
+
+            try {
+                switchConversation(ctx.chatA);      // not awaited: leave A's read in flight
+                await sleep(60);
+                await switchConversation(ctx.chatB);
+                await sleep(700);                   // long enough for A's slow read to land
+
+                const leaked = state.usage?.total?.byModel?.[0]?.inputTokens === 9999;
+                if (leaked) {
+                    throw new Error('chat A usage landed in state while chat B was active');
+                }
+            } finally {
+                API.conversations.usage = realUsage;
+                state.usage = null;
+            }
+        },
+    },
+    {
+        id: 'usage-empty-is-not-zero',
+        what: 'a chat with no recorded calls shows an estimate, not a hard 0',
+        // The server always returns a `total` object, so `!usage.total` is
+        // false for an empty chat and a naive reduce yields 0 — which reads as
+        // "this chat cost nothing" and suppresses the estimate entirely.
+        async run(ctx) {
+            const { state, switchConversation } = app();
+            const { totalRecordedTokens } = await import('/js/status-bar.js');
+
+            await switchConversation(ctx.chatA);
+            await sleep(120);
+
+            const empty = { total: { turns: 0, rounds: 0, byModel: [] }, turns: [], rounds: [] };
+            if (totalRecordedTokens(empty) !== null) {
+                throw new Error('an empty usage payload must read as null (unknown), not 0 (free)');
+            }
+            if (totalRecordedTokens(null) !== null) throw new Error('null usage must read as null');
+        },
+    },
+    {
+        id: 'usage-panel-closes-cleanly',
+        what: 'the usage panel does not stack, and unbinds on every close path',
+        async run() {
+            const { state } = app();
+            const { showUsagePanel } = await import('/js/views/usage-panel.js');
+
+            state.usage = {
+                total: { turns: 1, rounds: 1, aborted: false, outputPartial: false,
+                    byModel: [{ provider: 'anthropic', model: 'm', rounds: 1,
+                        inputTokens: 10, outputTokens: 2, cacheRead: 0, cacheWrite: 0,
+                        thinkingTokens: null, aborted: false, outputPartial: false }] },
+                turns: [{ turn: 1, rounds: 1, aborted: false, outputPartial: false,
+                    byModel: [{ provider: 'anthropic', model: 'm', rounds: 1,
+                        inputTokens: 10, outputTokens: 2, cacheRead: 0, cacheWrite: 0,
+                        thinkingTokens: null, aborted: false, outputPartial: false }] }],
+                rounds: [{}],
+            };
+
+            showUsagePanel();
+            showUsagePanel();   // a second click must not stack a second overlay
+            await sleep(50);
+            const open = document.querySelectorAll('.usage-overlay').length;
+            if (open !== 1) throw new Error(`expected 1 overlay, found ${open}`);
+
+            // Close via the × — the path that used to leave the Escape
+            // listener bound to document forever.
+            document.querySelector('.usage-overlay .modal-close').click();
+            await sleep(50);
+            if (document.querySelector('.usage-overlay')) throw new Error('overlay survived close');
+            if (document.body.style.overflow === 'hidden') {
+                throw new Error('body scroll left locked after close');
+            }
+            state.usage = null;
+        },
+    },
+    {
         id: 'rail-round-trip',
         what: 'compose → leave via each rail section → return → composer is usable',
         // This one passes today. It is here so the refactor cannot break it

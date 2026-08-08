@@ -29,6 +29,7 @@
 
 import { state } from './state.js';
 import { stashDraft, restoreDraft, clearDraft } from './chat/composer.js';
+import { clearUsage } from './views/usage-panel.js';
 
 /**
  * Point the app at a different conversation, moving the composer with it.
@@ -53,6 +54,15 @@ export function setActiveConversation(nextId, { outgoing = 'stash' } = {}) {
     if (changed) {
         if (outgoing === 'stash') stashDraft(leaving);
         else if (outgoing === 'discard') clearDraft(leaving);
+
+        // Usage belongs to the conversation, exactly like the draft, so it is
+        // dropped here for exactly the reason this module exists (U-04).
+        // Clearing it in switchConversation alone left "+ New chat" — which
+        // reaches this through createConversation, not switchConversation —
+        // showing the previous chat's billed total as the new chat's own, and
+        // nothing would ever have replaced it.
+        clearUsage();
+        state.estimatedTokens = 0;
     }
 
     state.activeConversationId = nextId;

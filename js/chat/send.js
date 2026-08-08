@@ -45,6 +45,7 @@ import {
     isTextWorkingFileUpload, createWorkingFilesFromUploads, clearDraft,
 } from './composer.js';
 import { updateStatusBar } from '../status-bar.js';
+import { loadUsage } from '../views/usage-panel.js';
 
 export async function rerunFromMessage(msgIndex) {
     const activeConvo = getActiveConversation();
@@ -751,6 +752,19 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
 
     state.estimatedTokens += Math.ceil(fullText.length / 4);
     updateStatusBar();
+
+    // Replace the estimate with what the provider actually billed (U-04). The
+    // rows are written server-side during the turn, so this reads them back
+    // rather than guessing. Deliberately not awaited: the reply is already on
+    // screen and a slow or failed usage read must not hold up the UI.
+    const usageConvId = state.streamingConversationId;
+    loadUsage(usageConvId).then((current) => {
+        // `current` is false when the user has moved on — loadUsage discards
+        // the response rather than stamping this chat's totals onto another's.
+        if (!current) return;
+        state.estimatedTokens = 0;   // superseded by the real figure
+        updateStatusBar();
+    });
 
     const finishedIn = state.streamingConversationId;
     state.streamingConversationId = null;
