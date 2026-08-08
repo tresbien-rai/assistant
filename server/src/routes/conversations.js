@@ -953,4 +953,38 @@ router.post('/:id/scratchpad/revisions/:revId/restore', asyncHandler(async (req,
   res.json({ sizeBytes: Buffer.byteLength(rev.content, 'utf8'), updatedAt: dal.getScratchpad(req.params.id).updated_at });
 }));
 
+/**
+ * GET /api/conversations/:id/usage
+ *
+ * What this conversation consumed (U-03, docs/USAGE_MEASUREMENT_DESIGN.md).
+ *
+ * Returns all three levels rather than making the caller pick: `rounds` (why a
+ * turn was expensive — the per-call breakdown), `turns` (what a user reads day
+ * to day), and `total`. Every level is grouped by (provider, model), because
+ * Tessera reports tokens and never money: a figure is only useful if a rate
+ * can be applied to it, and a sum across models cannot be priced.
+ *
+ * `outputPartial` propagates up from any interrupted round, so a caller can
+ * tell a floor from a total.
+ */
+router.get('/:id/usage', asyncHandler(async (req, res) => {
+  // User-scoped, like every other read here: usage is spend, and one user must
+  // never see another's.
+  const conversation = dal.getConversationMeta(req.params.id, req.user.userId);
+  if (!conversation) throw AppError.notFound('Conversation');
+
+  const summary = dal.summariseUsage(req.params.id);
+
+  res.json({
+    conversationId: req.params.id,
+    ...summary,
+    // Stated rather than implied: without it a client showing "0 tokens" for a
+    // conversation that predates capture looks like a bug, and one showing a
+    // total that predates U-02 would be quietly missing its toolless turns.
+    note: summary.rounds.length === 0
+      ? 'No usage recorded for this conversation. Turns taken before usage capture shipped are not counted.'
+      : undefined,
+  });
+}));
+
 module.exports = router;

@@ -1970,6 +1970,81 @@ function listUsageEvents(conversationId) {
 }
 
 /**
+ * Roll a conversation's usage up for the read API (U-03).
+ *
+ * Returns BOTH levels rather than a choice between them: the rounds (why a
+ * turn was expensive), the turns (what a user reads day to day), and the
+ * conversation total.
+ *
+ * EVERY level is grouped by (provider, model). Tessera reports tokens and
+ * never money, so a total is only useful if the user can apply a rate to it —
+ * and the composer's quick-switch makes changing model mid-conversation one
+ * click, so a turn's rounds are not guaranteed to share one. A cross-model sum
+ * is a number nobody can price.
+ *
+ * `outputPartial` propagates upward: any level containing an interrupted round
+ * is a floor, and must never be presented as exact.
+ *
+ * @param {string} conversationId
+ * @returns {{rounds: Array, turns: Array, total: Object}}
+ */
+function summariseUsage(conversationId) {
+  const rows = listUsageEvents(conversationId);
+
+  const blank = () => ({ inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, thinkingTokens: null });
+  const add = (acc, r) => {
+    acc.inputTokens += r.input_tokens || 0;
+    acc.outputTokens += r.output_tokens || 0;
+    acc.cacheRead += r.cache_read || 0;
+    acc.cacheWrite += r.cache_write || 0;
+    // null + number must not become the number's own value: a provider that
+    // never reports thinking apart should not read as "0 thinking tokens"
+    // just because another one in the same conversation does.
+    if (r.thinking_tokens != null) acc.thinkingTokens = (acc.thinkingTokens || 0) + r.thinking_tokens;
+    return acc;
+  };
+
+  // byModel: keyed "provider/model", each an accumulator + its own flags.
+  const fold = (subset) => {
+    const byModel = new Map();
+    for (const r of subset) {
+      const key = `${r.provider}/${r.model}`;
+      if (!byModel.has(key)) {
+        byModel.set(key, { provider: r.provider, model: r.model, rounds: 0, ...blank(), outputPartial: false });
+      }
+      const m = byModel.get(key);
+      add(m, r);
+      m.rounds += 1;
+      if (r.output_partial) m.outputPartial = true;
+    }
+    return [...byModel.values()];
+  };
+
+  const turnIds = [...new Set(rows.map((r) => r.turn))];
+  const turns = turnIds.map((turn) => {
+    const subset = rows.filter((r) => r.turn === turn);
+    return {
+      turn,
+      rounds: subset.length,
+      aborted: subset.some((r) => r.aborted === 1),
+      outputPartial: subset.some((r) => r.output_partial === 1),
+      byModel: fold(subset),
+    };
+  });
+
+  return {
+    rounds: rows,
+    turns,
+    total: {
+      turns: turns.length,
+      rounds: rows.length,
+      outputPartial: rows.some((r) => r.output_partial === 1),
+      byModel: fold(rows),
+    },
+  };
+}
+
+/**
  * Where a file came from (P-02, docs/FILE_PROVENANCE_DESIGN.md).
  *
  * Read from the EARLIEST revision, not the latest: a user's file that the model
@@ -2344,6 +2419,7 @@ module.exports = {
   addUsageEvent,
   markTurnAborted,
   listUsageEvents,
+  summariseUsage,
   listConversationFileRevisions,
   countUserMessages,
   deleteFileRevisions,

@@ -343,6 +343,15 @@ const API = (function () {
         return request('DELETE', `/api/conversations/${encodeURIComponent(id)}`);
       },
       /**
+       * What this conversation consumed (U-03). Returns all three levels —
+       * `rounds`, `turns`, `total` — each grouped by (provider, model), since
+       * a token figure is only actionable if a rate can be applied to it.
+       * @returns {Promise<{rounds: Array, turns: Array, total: Object}>}
+       */
+      usage(id) {
+        return request('GET', `/api/conversations/${encodeURIComponent(id)}/usage`);
+      },
+      /**
        * Roll back model-authored file changes at/after a turn (FC-06a), before
        * re-rolling that turn. Returns { reverted, deleted, warnings }.
        */
