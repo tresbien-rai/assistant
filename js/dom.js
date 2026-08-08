@@ -159,6 +159,7 @@ export const elements = {
     personaButton: document.getElementById('personaButton'),
     modelButton: document.getElementById('modelButton'),
     statusTokens: document.getElementById('statusTokens'),
+    statusTokensBtn: document.getElementById('statusTokensBtn'),
     avatarToggleBtn: document.getElementById('avatarToggleBtn'),
     
     // Floating avatar

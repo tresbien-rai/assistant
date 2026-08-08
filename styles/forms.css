@@ -1415,4 +1415,94 @@
     margin-right: 6px;
     vertical-align: middle;
 }
-
+
+/* ── Usage breakdown (U-04) ────────────────────────────────────────────────
+   Shows WHERE a chat's tokens went. Rows are per (provider, model) and are
+   never summed across models: Tessera reports tokens and never money, so a
+   figure is only useful if the user can apply their own per-MTok rate, and a
+   mixed total is a number nobody can price. */
+.usage-modal { max-width: 640px; }
+
+/* The panel is a list that can run long; keep it scrolling inside itself so
+   the page never scrolls horizontally or grows past the viewport. */
+.usage-modal .modal-body {
+    max-height: 65vh;
+    overflow-y: auto;
+}
+
+.usage-note {
+    margin: 0 0 1rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.usage-total,
+.usage-turns { margin-bottom: 1.25rem; }
+
+.usage-total h3,
+.usage-turns h3 {
+    margin: 0 0 0.6rem;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.usage-model {
+    padding: 0.5rem 0.7rem;
+    margin-bottom: 0.4rem;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+.usage-model-name {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+    /* Model ids are long and must wrap rather than scroll the panel sideways. */
+    overflow-wrap: anywhere;
+}
+
+.usage-model-figures {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.usage-cache,
+.usage-thinking { color: var(--text-secondary); }
+
+.usage-turn-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.usage-turn {
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--border-color);
+}
+
+.usage-turn-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.82rem;
+}
+
+.usage-turn-n { color: var(--text-primary); font-weight: 500; }
+.usage-turn-meta { color: var(--text-secondary); }
+
+.usage-flag {
+    color: var(--warning, #d98032);
+    font-weight: 500;
+}
+
+.usage-floor {
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}

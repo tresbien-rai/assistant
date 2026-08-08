@@ -56,6 +56,7 @@ import {
     setupAvatarDrag, syncAvatarSizeControls, syncAvatarPositionControls,
 } from './avatar.js';
 import { updateStatusBar } from './status-bar.js';
+import { loadUsage, showUsagePanel } from './views/usage-panel.js';
 import {
     showNotification, } from './chat/thread.js';
 import {
@@ -1072,6 +1073,16 @@ function setupEventListeners() {
     // Sidebar toggle
     elements.openSidebar.addEventListener('click', openSidebar);
     elements.closeSidebar.addEventListener('click', closeSidebar);
+
+    // Token count opens the usage breakdown (U-04). Refreshed on open so a
+    // panel left closed through several turns is never stale.
+    if (elements.statusTokensBtn) {
+        elements.statusTokensBtn.addEventListener('click', async () => {
+            if (state.activeConversationId) await loadUsage(state.activeConversationId);
+            updateStatusBar();
+            showUsagePanel();
+        });
+    }
 
     // Sidebar resize (desktop drag handle)
     setupSidebarResize();

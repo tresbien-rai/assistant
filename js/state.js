@@ -89,6 +89,11 @@ export const state = {
     currentPrefill: '',  // Tracks active prefill for response stripping
     lastRequestModel: null, // Model id of the in-flight/last request, for the per-message tag (WR-14)
     estimatedTokens: 0,
+    // Real usage for the active conversation (U-04), as returned by
+    // /api/conversations/:id/usage. null until loaded, and null for a chat that
+    // has never been sent — which is NOT the same as zero, and the status bar
+    // renders the two differently.
+    usage: null,
     tempExpressionBlob: null, // Blob waiting to be saved when expression is saved
     tempExpressionPreviewUrl: '', // Object URL for preview in modal
     tempExpressionCleared: false, // Flag indicating user explicitly cleared the image

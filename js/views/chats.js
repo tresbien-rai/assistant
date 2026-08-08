@@ -25,6 +25,7 @@ import { escapeHtml, formatTimeAgo } from '../util/format.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
 import { updateStatusBar } from '../status-bar.js';
+import { loadUsage } from './usage-panel.js';
 
 /**
  * Create a new conversation server-side and set it as active.
@@ -289,6 +290,15 @@ export async function switchConversation(conversationId) {
     // were already on (from Workspaces, say), so it must not early-return — there
     // is simply no draft to move when the conversation has not changed.
     setActiveConversation(conversationId);
+
+    // Real usage travels with the chat (U-04). Cleared first so the status bar
+    // never shows the previous conversation's totals while this one loads.
+    state.usage = null;
+    state.estimatedTokens = 0;
+    updateStatusBar();
+    loadUsage(conversationId).then(() => {
+        if (state.activeConversationId === conversationId) updateStatusBar();
+    });
 
     // Track the chat's container so breadcrumb + restore have context.
     const convo = state.conversations[conversationId];
