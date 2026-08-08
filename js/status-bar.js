@@ -18,9 +18,19 @@ import { state } from './state.js';
 import { elements } from './dom.js';
 import { formatNumber } from './model-layer.js';
 
-/** Total tokens actually billed across every recorded call, both directions. */
+/**
+ * Total tokens actually billed across every recorded call, both directions,
+ * or null when nothing has been recorded.
+ *
+ * The emptiness test is `byModel.length`, NOT `!usage.total`: summariseUsage
+ * always returns a `total` object, so a chat with no rows has a truthy `total`
+ * whose byModel is `[]` and whose reduce is 0. Treating that as a real zero
+ * showed a hard "0 tokens billed" for every brand-new chat and every chat
+ * predating capture — asserted as exact, and suppressing the estimate that
+ * used to render there.
+ */
 export function totalRecordedTokens(usage) {
-    if (!usage || !usage.total) return null;
+    if (!usage || !usage.total || !usage.total.byModel || usage.total.byModel.length === 0) return null;
     return usage.total.byModel.reduce(
         (n, m) => n + (m.inputTokens || 0) + (m.outputTokens || 0) + (m.cacheRead || 0) + (m.cacheWrite || 0),
         0
@@ -28,9 +38,15 @@ export function totalRecordedTokens(usage) {
 }
 
 /**
- * The tokens this conversation has spent since its last recorded call — the
- * part no provider has counted yet. Kept as `chars/4` because it is genuinely
- * an estimate; the large, stable part of the prompt comes from real usage.
+ * The old `chars/4` figure, used only while no provider call has been
+ * recorded for this chat.
+ *
+ * Note this is NOT the hybrid the design doc §5 describes (measured prefix +
+ * estimated tail). Once any usage exists the recorded total replaces this
+ * outright, so during a live turn the counter sits at the pre-turn total and
+ * steps up when the read returns. Stated plainly rather than implied: the
+ * hybrid is a later refinement, and a docstring claiming one thing while the
+ * code does another is worse than the simpler behaviour.
  */
 function unrecordedEstimate() {
     return state.estimatedTokens || 0;
@@ -55,8 +71,17 @@ export function updateStatusBar() {
     // A recorded total containing an interrupted round is a FLOOR, not a
     // total: the output count never settled. Marked so it is never read as
     // exact — under-reporting silently is the one thing this must not do.
+    // The tooltip names what the figure combines. A bare "tokens billed" hides
+    // that this one number folds input, output and cache across every model
+    // used — and rates differ per model and per class, so it cannot be priced
+    // as it stands. The breakdown is where a priceable figure lives.
+    const models = state.usage.total.byModel.length;
     elements.statusTokens.textContent = `${partial ? '≥' : ''}${formatNumber(recorded)}`;
-    elements.statusTokens.title = partial
-        ? 'At least this many tokens — a stopped turn left one count unsettled. Click for the breakdown.'
-        : 'Tokens billed for this chat. Click for the breakdown.';
+    elements.statusTokens.title = [
+        partial
+            ? 'At least this many tokens — a stopped turn left one count unsettled.'
+            : 'All tokens billed for this chat: input, output and cache combined',
+        models > 1 ? `, across ${models} models` : '',
+        '. Click for the per-model breakdown.',
+    ].join('');
 }

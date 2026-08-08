@@ -758,13 +758,12 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
     // rather than guessing. Deliberately not awaited: the reply is already on
     // screen and a slow or failed usage read must not hold up the UI.
     const usageConvId = state.streamingConversationId;
-    loadUsage(usageConvId).then(() => {
-        // Only repaint if the user is still looking at that chat — otherwise
-        // we would stamp one conversation's totals onto another's status bar.
-        if (state.activeConversationId === usageConvId) {
-            state.estimatedTokens = 0;   // superseded by the real figure
-            updateStatusBar();
-        }
+    loadUsage(usageConvId).then((current) => {
+        // `current` is false when the user has moved on — loadUsage discards
+        // the response rather than stamping this chat's totals onto another's.
+        if (!current) return;
+        state.estimatedTokens = 0;   // superseded by the real figure
+        updateStatusBar();
     });
 
     const finishedIn = state.streamingConversationId;

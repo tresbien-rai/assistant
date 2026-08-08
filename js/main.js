@@ -506,6 +506,11 @@ function pickActiveConversation() {
         (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
     );
     setActiveConversation(mostRecent.id, { outgoing: 'none' });
+
+    // Boot is the commonest way into the app, and without this the resumed
+    // chat reads "~0 — estimated" however much it has actually spent, until
+    // the user switches away and back (U-04).
+    loadUsage(mostRecent.id).then((current) => { if (current) updateStatusBar(); });
 }
 
 // ===== Settings Management =====

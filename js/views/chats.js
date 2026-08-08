@@ -291,14 +291,11 @@ export async function switchConversation(conversationId) {
     // is simply no draft to move when the conversation has not changed.
     setActiveConversation(conversationId);
 
-    // Real usage travels with the chat (U-04). Cleared first so the status bar
-    // never shows the previous conversation's totals while this one loads.
-    state.usage = null;
-    state.estimatedTokens = 0;
+    // Real usage travels with the chat (U-04). setActiveConversation above has
+    // already cleared the outgoing chat's figure, so this only fetches; the
+    // staleness guard lives inside loadUsage.
     updateStatusBar();
-    loadUsage(conversationId).then(() => {
-        if (state.activeConversationId === conversationId) updateStatusBar();
-    });
+    loadUsage(conversationId).then((current) => { if (current) updateStatusBar(); });
 
     // Track the chat's container so breadcrumb + restore have context.
     const convo = state.conversations[conversationId];

@@ -1415,9 +1415,9 @@
     margin-right: 6px;
     vertical-align: middle;
 }
-
-/* ── Usage breakdown (U-04) ────────────────────────────────────────────────
-   Shows WHERE a chat's tokens went. Rows are per (provider, model) and are
+
+/*    Usage breakdown (U-04)                                                 
+   Shows WHERE a chat tokens went. Rows are per (provider, model) and are
    never summed across models: Tessera reports tokens and never money, so a
    figure is only useful if the user can apply their own per-MTok rate, and a
    mixed total is a number nobody can price. */
