@@ -1961,8 +1961,11 @@ function markTurnAborted(conversationId, turn) {
  */
 function listUsageEvents(conversationId) {
   const db = getDb();
+  // Ordered by (turn, round) rather than created_at: that pair IS the position
+  // in the conversation, and two turns sharing a millisecond would otherwise
+  // interleave. created_at breaks any remaining tie.
   return db.prepare(
-    'SELECT * FROM usage_events WHERE conversation_id = ? ORDER BY created_at ASC, round ASC'
+    'SELECT * FROM usage_events WHERE conversation_id = ? ORDER BY turn ASC, round ASC, created_at ASC'
   ).all(conversationId);
 }
 

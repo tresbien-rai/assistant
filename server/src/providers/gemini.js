@@ -414,10 +414,23 @@ function extractUsage(data) {
   const u = data?.usageMetadata;
   if (!u) return null;
   const thoughts = u.thoughtsTokenCount || 0;
+  const cached = u.cachedContentTokenCount || 0;
   return {
-    inputTokens: u.promptTokenCount || 0,
+    // THE SAME TRAP ON THE INPUT SIDE. Anthropic's `input_tokens` is the
+    // UNCACHED remainder — the full prompt is input + cache_read + cache_write
+    // — while Gemini's `promptTokenCount` is the whole prompt, cached part
+    // included. Storing both unadjusted would make `inputTokens + cacheRead`
+    // double-count on Gemini and not on Anthropic: a 2,005-token prompt with
+    // 2,000 cached reads as 2,005 one side and 4,005 the other, for the
+    // identical request. Subtracting keeps the column meaning "uncached input"
+    // on both, so the classes stay addable — which is the whole point of
+    // storing them separately (design doc §6).
+    //
+    // Inert until prompt caching ships, since `cachedContentTokenCount` is
+    // absent today; `raw` keeps the provider's own figure either way.
+    inputTokens: Math.max(0, (u.promptTokenCount || 0) - cached),
     outputTokens: (u.candidatesTokenCount || 0) + thoughts,
-    cacheRead: u.cachedContentTokenCount || 0,
+    cacheRead: cached,
     cacheWrite: 0,                       // Gemini has no cache-write equivalent
     thinkingTokens: thoughts,
     raw: u,
@@ -584,6 +597,7 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
   const decoder = new TextDecoder();
   let buffer = '';
 
+  try {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -615,6 +629,15 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
     candidates: [{ content: { parts, role: 'model' }, ...(finishReason ? { finishReason } : {}) }],
     ...(usageMetadata ? { usageMetadata } : {}),
   };
+  } catch (err) {
+    // See the matching note in anthropic.js: a stopped turn still spent tokens,
+    // so hand the caller whatever had been latched rather than dropping the
+    // interrupted round entirely.
+    if (err && err.name === 'AbortError') {
+      try { err.partialUsage = extractUsage({ usageMetadata }); } catch { /* never mask the abort */ }
+    }
+    throw err;
+  }
 }
 
 /**

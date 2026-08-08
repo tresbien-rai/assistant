@@ -247,6 +247,8 @@ function extractUsage(data) {
   const u = data?.usage;
   if (!u) return null;
   return {
+    // Already the UNCACHED remainder: the full prompt is input + cache_read +
+    // cache_write. Gemini's normaliser subtracts to match this meaning.
     inputTokens: u.input_tokens || 0,
     outputTokens: u.output_tokens || 0,   // already includes thinking
     cacheRead: u.cache_read_input_tokens || 0,
@@ -399,6 +401,7 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
   const decoder = new TextDecoder();
   let buffer = '';
 
+  try {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -427,6 +430,16 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
   // Dropping holes keeps the array dense for extractToolCalls / replay.
   message.content = blocks.filter(Boolean);
   return message;
+  } catch (err) {
+    // A stopped turn still spent tokens. `input_tokens` arrived up front on
+    // message_start and is EXACT even here; output is whatever had settled.
+    // Attaching it lets the caller record the interrupted round instead of
+    // dropping it, which would under-report every abort (U-01 / design §8).
+    if (err && err.name === 'AbortError') {
+      try { err.partialUsage = extractUsage(message); } catch { /* never mask the abort */ }
+    }
+    throw err;
+  }
 }
 
 /**

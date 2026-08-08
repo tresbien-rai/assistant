@@ -198,6 +198,124 @@ async function check(label, fn) {
       }
     });
 
+    // -----------------------------------------------------------------------
+    console.log('\n6. Review findings (D1–D3)...');
+
+    await check('D2: inputTokens means UNCACHED input on BOTH providers', () => {
+      // Anthropic's input_tokens excludes cached tokens; Gemini's
+      // promptTokenCount includes them. Unadjusted, `input + cacheRead` would
+      // double-count on one side only — the identical request reading 2005 vs
+      // 4005. Both must describe the same 2,005-token prompt.
+      const a = anthropic.extractUsage({ usage: {
+        input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 2000,
+      } });
+      const g = gemini.extractUsage({ usageMetadata: {
+        promptTokenCount: 2005, candidatesTokenCount: 1, cachedContentTokenCount: 2000,
+      } });
+      assert.strictEqual(a.inputTokens, 5);
+      assert.strictEqual(g.inputTokens, 5, 'promptTokenCount must have cached subtracted');
+      assert.strictEqual(a.inputTokens + a.cacheRead, g.inputTokens + g.cacheRead,
+        'the classes must be addable to the same prompt size on both providers');
+    });
+
+    await check('D2: the subtraction is inert while nothing is cached', () => {
+      const g = gemini.extractUsage({ usageMetadata: {
+        promptTokenCount: 311, candidatesTokenCount: 1,
+      } });
+      assert.strictEqual(g.inputTokens, 311, 'no cache field → unchanged');
+    });
+
+    await check('D2: a provider reporting cached > prompt cannot go negative', () => {
+      const g = gemini.extractUsage({ usageMetadata: {
+        promptTokenCount: 10, candidatesTokenCount: 1, cachedContentTokenCount: 99,
+      } });
+      assert.strictEqual(g.inputTokens, 0);
+    });
+
+    await check('D1: an abort noticed between rounds still flags the turn', async () => {
+      const { _runToolLoop } = require('../routes/chat');
+      const conv2 = dal.createConversation(userId, { title: 'abort between rounds' });
+      const ac = new AbortController();
+      let call = 0;
+      const stub = {
+        // Round 0 returns a tool call; the executor "runs" and the user stops
+        // mid-tool — no in-flight fetch to reject, so the AbortError catch
+        // never fires and only the between-rounds guard can flag this.
+        chatRaw: async () => {
+          call++;
+          return { usage: { input_tokens: 100, output_tokens: 5 }, content: [] };
+        },
+        extractUsage: anthropic.extractUsage,
+        extractToolCalls: () => (call === 1
+          ? { calls: [{ id: 't1', name: 'noop', input: {} }], rawAssistantMessage: { role: 'assistant', content: [] } }
+          : null),
+        buildToolResultMessage: () => ({ role: 'user', content: [] }),
+        formatChatResult: () => ({ text: 'done', model: 'm' }),
+      };
+      const out = await _runToolLoop({
+        providerModule: stub, provider: 'anthropic', apiKey: 'k',
+        params: { model: 'm', messages: [{ role: 'user', content: 'hi' }], tools: [] },
+        toolContext: { conversationId: conv2.id, turnOrdinal: 1, userId },
+        signal: ac.signal,
+        onEvent: () => { ac.abort(); },   // stop while the tool is running
+      });
+      assert.strictEqual(out.aborted, true);
+      const rows = dal.listUsageEvents(conv2.id);
+      assert.ok(rows.length > 0, 'round 0 completed and must be recorded');
+      assert.ok(rows.every((r) => r.aborted === 1),
+        'a stopped turn must not be presented as a completed one');
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(conv2.id);
+    });
+
+    await check('D3: the interrupted round is recorded from partialUsage, flagged partial', async () => {
+      const { _runToolLoop } = require('../routes/chat');
+      const conv3 = dal.createConversation(userId, { title: 'partial round' });
+      const stub = {
+        chatRaw: async () => {
+          // What a provider does now: attach what it latched, then propagate.
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          err.partialUsage = anthropic.extractUsage({ usage: { input_tokens: 2466, output_tokens: 12 } });
+          throw err;
+        },
+        extractUsage: anthropic.extractUsage,
+        extractToolCalls: () => null,
+        formatChatResult: () => ({ text: '', model: 'm' }),
+      };
+      const out = await _runToolLoop({
+        providerModule: stub, provider: 'anthropic', apiKey: 'k',
+        params: { model: 'm', messages: [{ role: 'user', content: 'hi' }], tools: [] },
+        toolContext: { conversationId: conv3.id, turnOrdinal: 1, userId },
+      });
+      assert.strictEqual(out.aborted, true);
+      const rows = dal.listUsageEvents(conv3.id);
+      assert.strictEqual(rows.length, 1, 'the interrupted round must not be dropped');
+      assert.strictEqual(rows[0].input_tokens, 2466, 'input is exact even on an abort');
+      assert.strictEqual(rows[0].output_partial, 1, 'output is a floor, not a total');
+      assert.strictEqual(rows[0].aborted, 1);
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(conv3.id);
+    });
+
+    await check('D3: an abort with nothing latched records no row, and still flags', async () => {
+      const { _runToolLoop } = require('../routes/chat');
+      const conv4 = dal.createConversation(userId, { title: 'no partial' });
+      const stub = {
+        chatRaw: async () => { const e = new Error('x'); e.name = 'AbortError'; throw e; },
+        extractUsage: anthropic.extractUsage,
+        extractToolCalls: () => null,
+        formatChatResult: () => ({ text: '', model: 'm' }),
+      };
+      const out = await _runToolLoop({
+        providerModule: stub, provider: 'anthropic', apiKey: 'k',
+        params: { model: 'm', messages: [{ role: 'user', content: 'hi' }], tools: [] },
+        toolContext: { conversationId: conv4.id, turnOrdinal: 1, userId },
+      });
+      assert.strictEqual(out.aborted, true);
+      // No usage means no row — a row of zeroes would be a claim we can't make.
+      assert.strictEqual(dal.listUsageEvents(conv4.id).length, 0);
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(conv4.id);
+    });
+
     console.log('');
     if (failures > 0) {
       console.error(`${failures} usage test(s) FAILED`);
