@@ -232,6 +232,33 @@ function mapApiError(response, errorData) {
 }
 
 /**
+ * Normalise Anthropic's usage into the shape usage_events stores (U-01,
+ * docs/USAGE_MEASUREMENT_DESIGN.md).
+ *
+ * `thinkingTokens` is deliberately NULL, not 0: Anthropic bills thinking inside
+ * `output_tokens` and never reports it apart, so 0 would be a claim we cannot
+ * make ("there was no thinking") rather than the truth ("we were not told").
+ * Gemini's normaliser is where that field carries a number.
+ *
+ * @param {Object} data - a Messages API response (or anything carrying `usage`)
+ * @returns {Object|null} normalised usage, or null when the response carries none
+ */
+function extractUsage(data) {
+  const u = data?.usage;
+  if (!u) return null;
+  return {
+    // Already the UNCACHED remainder: the full prompt is input + cache_read +
+    // cache_write. Gemini's normaliser subtracts to match this meaning.
+    inputTokens: u.input_tokens || 0,
+    outputTokens: u.output_tokens || 0,   // already includes thinking
+    cacheRead: u.cache_read_input_tokens || 0,
+    cacheWrite: u.cache_creation_input_tokens || 0,
+    thinkingTokens: null,
+    raw: u,
+  };
+}
+
+/**
  * Non-streaming request returning the RAW parsed Messages API response. The
  * tool loop (P2-02) needs the native shape for extractToolCalls; chat() wraps
  * this for the plain no-tools path.
@@ -374,6 +401,7 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
   const decoder = new TextDecoder();
   let buffer = '';
 
+  try {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -402,6 +430,16 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
   // Dropping holes keeps the array dense for extractToolCalls / replay.
   message.content = blocks.filter(Boolean);
   return message;
+  } catch (err) {
+    // A stopped turn still spent tokens. `input_tokens` arrived up front on
+    // message_start and is EXACT even here; output is whatever had settled.
+    // Attaching it lets the caller record the interrupted round instead of
+    // dropping it, which would under-report every abort (U-01 / design §8).
+    if (err && err.name === 'AbortError') {
+      try { err.partialUsage = extractUsage(message); } catch { /* never mask the abort */ }
+    }
+    throw err;
+  }
 }
 
 /**
@@ -536,6 +574,7 @@ module.exports = {
   chat,
   chatRaw,
   streamRaw,
+  extractUsage,
   formatChatResult,
   stream,
   listModels,

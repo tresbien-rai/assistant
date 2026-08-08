@@ -1883,6 +1883,93 @@ function listFileRevisions(scope, fileId) {
 }
 
 /**
+ * Record one provider call's usage (U-01, docs/USAGE_MEASUREMENT_DESIGN.md).
+ *
+ * One row per CALL, not per turn — a tools-on turn is up to
+ * MAX_TOOL_ITERATIONS calls, and the per-round breakdown is the whole point.
+ *
+ * @param {Object} data
+ * @param {string} [data.conversationId]
+ * @param {string} [data.messageId]
+ * @param {number} [data.turn] - conversation turn ordinal
+ * @param {number} data.round - 0-based index within the turn
+ * @param {string} data.provider
+ * @param {string} data.model
+ * @param {number} [data.inputTokens]
+ * @param {number} [data.outputTokens] - BILLED output (Gemini sums candidates+thoughts)
+ * @param {number} [data.cacheRead]
+ * @param {number} [data.cacheWrite]
+ * @param {number|null} [data.thinkingTokens] - null when not separately reported
+ * @param {boolean} [data.outputPartial] - output is a floor, not a total
+ * @param {Object} [data.raw] - the provider's own usage object, stored verbatim
+ * @returns {Object} the created row
+ */
+function addUsageEvent({
+  conversationId, messageId, turn, round, provider, model,
+  inputTokens, outputTokens, cacheRead, cacheWrite, thinkingTokens,
+  outputPartial, raw,
+}) {
+  const db = getDb();
+  const id = generateId();
+  const timestamp = now();
+
+  db.prepare(`
+    INSERT INTO usage_events
+      (id, conversation_id, message_id, turn, round, provider, model,
+       input_tokens, output_tokens, cache_read, cache_write, thinking_tokens,
+       aborted, output_partial, raw, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+  `).run(
+    id, conversationId || null, messageId || null,
+    turn == null ? null : turn, round, provider, model,
+    inputTokens || 0, outputTokens || 0, cacheRead || 0, cacheWrite || 0,
+    // null and 0 are DIFFERENT claims: null is "the provider does not report
+    // thinking separately", 0 is "it does, and there was none".
+    thinkingTokens == null ? null : thinkingTokens,
+    outputPartial ? 1 : 0,
+    raw === undefined ? null : JSON.stringify(raw),
+    timestamp
+  );
+
+  return db.prepare('SELECT * FROM usage_events WHERE id = ?').get(id);
+}
+
+/**
+ * Flag every round already recorded for a turn as belonging to an aborted turn.
+ *
+ * The rounds that COMPLETED before the user hit stop carry exact usage and are
+ * already written; this marks them so a rollup can label the turn rather than
+ * presenting it as a normal one. The interrupted round itself is a separate
+ * problem — the provider call threw, so there is no usage object to record.
+ *
+ * @param {string} conversationId
+ * @param {number} turn
+ * @returns {number} rows updated
+ */
+function markTurnAborted(conversationId, turn) {
+  const db = getDb();
+  if (!conversationId || turn == null) return 0;
+  return db.prepare(
+    'UPDATE usage_events SET aborted = 1 WHERE conversation_id = ? AND turn = ?'
+  ).run(conversationId, turn).changes;
+}
+
+/**
+ * A conversation's usage rows, oldest first (U-01; the rollups land in U-03).
+ * @param {string} conversationId
+ * @returns {Array}
+ */
+function listUsageEvents(conversationId) {
+  const db = getDb();
+  // Ordered by (turn, round) rather than created_at: that pair IS the position
+  // in the conversation, and two turns sharing a millisecond would otherwise
+  // interleave. created_at breaks any remaining tie.
+  return db.prepare(
+    'SELECT * FROM usage_events WHERE conversation_id = ? ORDER BY turn ASC, round ASC, created_at ASC'
+  ).all(conversationId);
+}
+
+/**
  * Where a file came from (P-02, docs/FILE_PROVENANCE_DESIGN.md).
  *
  * Read from the EARLIEST revision, not the latest: a user's file that the model
@@ -2254,6 +2341,9 @@ module.exports = {
   listFileRevisions,
   getFileProvenance,
   getFileProvenanceBatch,
+  addUsageEvent,
+  markTurnAborted,
+  listUsageEvents,
   listConversationFileRevisions,
   countUserMessages,
   deleteFileRevisions,

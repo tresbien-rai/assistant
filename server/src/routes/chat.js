@@ -532,7 +532,7 @@ function resolveAdvertisedTools(toolsEnabled, scratchpadEnabled) {
  *   streamed?: boolean }>} `streamed` tells the caller the text has already
  *   gone to the client, so it must not be sent again as a final chunk.
  */
-async function runToolLoop({ providerModule, apiKey, params, toolContext, signal, onEvent = () => {}, onDelta = null }) {
+async function runToolLoop({ providerModule, provider, apiKey, params, toolContext, signal, onEvent = () => {}, onDelta = null }) {
   const messages = [...params.messages];
   const toolEvents = [];
   const streaming = Boolean(onDelta && typeof providerModule.streamRaw === 'function');
@@ -547,6 +547,49 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
   // silently dropped by the Gemini client, which walks
   // candidates[0].content.parts and has no idea what a delta is — the rounds
   // just ran together. chat.js stays provider-agnostic by construction.
+  // Usage capture (U-01, docs/USAGE_MEASUREMENT_DESIGN.md). ONE ROW PER CALL:
+  // this loop is the choke point every round already passes through, which is
+  // why the row count matches the provider-call count rather than the turn
+  // count. Best-effort throughout — a usage write must never cost the user
+  // their turn, so every failure here is logged and swallowed.
+  const recordUsage = (data, round, { aborted = false, partial } = {}) => {
+    try {
+      if (typeof providerModule.extractUsage !== 'function') return;
+      // On an abort, `partial` is whatever the provider latched before the stop
+      // — a normalised shape already, not a raw response.
+      const usage = aborted ? (partial || null) : providerModule.extractUsage(data);
+      if (usage) {
+        dal.addUsageEvent({
+          conversationId: toolContext.conversationId,
+          turn: toolContext.turnOrdinal,
+          round,
+          provider,
+          model: params.model,
+          ...usage,
+          // The output side of an interrupted round is a floor: the count only
+          // settles on the provider's final frame, which never arrived.
+          outputPartial: aborted,
+        });
+      }
+      if (aborted) dal.markTurnAborted(toolContext.conversationId, toolContext.turnOrdinal);
+    } catch (err) {
+      logger.warn({ msg: err.message, round }, 'usage capture failed');
+    }
+  };
+
+  // THE ONLY WAY OUT ON AN ABORT. The loop has three abort exits — a rejected
+  // fetch, a stop noticed after the provider returned, and a stop noticed while
+  // a tool executor was running — and a turn stopped through any of them must
+  // be flagged the same way. Marking at one site and returning bare objects at
+  // the others is exactly the bug this funnel prevents: rounds already written
+  // keep aborted = 0, and a rollup then presents a stopped turn as a completed
+  // one. The executor path is the LIKELIEST place a mid-turn stop lands, since
+  // a round can sit in a tool for seconds with no in-flight request to reject.
+  const abortHere = (round, rest = {}) => {
+    recordUsage(null, round, { aborted: true });
+    return { aborted: true, ...rest };
+  };
+
   let streamedAnyText = false;
   let roundHasText = false;
   const emitDelta = (payload) => {
@@ -569,9 +612,19 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
         ? await providerModule.streamRaw(apiKey, callParams, { onDelta: emitDelta }, signal)
         : await providerModule.chatRaw(apiKey, callParams, signal);
     } catch (err) {
-      if (err.name === 'AbortError') return { aborted: true, toolEvents, streamed: streaming };
+      if (err.name === 'AbortError') {
+        // The interrupted round is not a blank: providers attach whatever they
+        // had latched before the stop (`err.partialUsage`), so the input side —
+        // which Anthropic reports up front on message_start — is exact even
+        // here. Recorded as partial rather than dropped, because under-reporting
+        // is the one failure this feature cannot afford.
+        recordUsage(null, iteration, { aborted: true, partial: err.partialUsage });
+        return { aborted: true, toolEvents, streamed: streaming };
+      }
       throw err;
     }
+
+    recordUsage(data, iteration);
 
     const extraction = providerModule.extractToolCalls(data);
     if (!extraction) {
@@ -583,7 +636,7 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
         : { result: providerModule.formatChatResult(data, params.model), toolEvents };
     }
 
-    if (signal?.aborted) return { aborted: true, toolEvents };
+    if (signal?.aborted) return abortHere(iteration, { toolEvents, streamed: streaming });
 
     messages.push(extraction.rawAssistantMessage);
 
@@ -610,7 +663,7 @@ async function runToolLoop({ providerModule, apiKey, params, toolContext, signal
       toolEvents.push(event);
       onEvent(event);
 
-      if (signal?.aborted) return { aborted: true, toolEvents, streamed: streaming };
+      if (signal?.aborted) return abortHere(iteration, { toolEvents, streamed: streaming });
     }
 
     messages.push(providerModule.buildToolResultMessage(extraction.calls, results));
@@ -693,6 +746,7 @@ router.post('/', asyncHandler(async (req, res) => {
     }, currentTurn);
     const { result: loopResult, toolEvents, aborted } = await runToolLoop({
       providerModule,
+      provider,
       apiKey,
       params: loopParams,
       toolContext,
@@ -803,6 +857,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
       }, currentTurn);
       const { result, toolEvents, aborted, streamed } = await runToolLoop({
         providerModule,
+        provider,
         apiKey,
         params: loopParams,
         toolContext,
@@ -997,6 +1052,10 @@ module.exports = {
   // Exported for headless tool-loop tests (P2-02).
   resolveRequestContainers,
   resolveToolsEnabled,
+  // Exported for the usage-capture test (U-01): the capture path lives inside
+  // the loop, so proving a write failure can't break a turn means driving the
+  // real loop, not a reimplementation of it.
+  _runToolLoop: runToolLoop,
   resolveScratchpadEnabled,
   // AP-01: also used by the presets API (AP-02) to preview a resolution.
   resolvePromptPreset,

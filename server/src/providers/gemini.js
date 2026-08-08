@@ -394,6 +394,50 @@ function parseMultimodalResponse(candidate) {
 }
 
 /**
+ * Normalise Gemini's usageMetadata into the shape usage_events stores (U-01,
+ * docs/USAGE_MEASUREMENT_DESIGN.md).
+ *
+ * THE TRAP, and the reason this function exists rather than a shared mapper:
+ * Anthropic's `output_tokens` already INCLUDES thinking, while Gemini's
+ * `candidatesTokenCount` EXCLUDES it and reports `thoughtsTokenCount` apart.
+ * Summing the two is what makes `outputTokens` mean the same thing on both
+ * sides. Without the sum, every Gemini turn with thinking on under-reports —
+ * and the error grows with thinking level, so it would look like a rounding
+ * discrepancy right up until someone ran level=high.
+ *
+ * `thinkingTokens` keeps the split visible, since Gemini does report it.
+ *
+ * @param {Object} data - a generateContent response (or anything with usageMetadata)
+ * @returns {Object|null} normalised usage, or null when the response carries none
+ */
+function extractUsage(data) {
+  const u = data?.usageMetadata;
+  if (!u) return null;
+  const thoughts = u.thoughtsTokenCount || 0;
+  const cached = u.cachedContentTokenCount || 0;
+  return {
+    // THE SAME TRAP ON THE INPUT SIDE. Anthropic's `input_tokens` is the
+    // UNCACHED remainder — the full prompt is input + cache_read + cache_write
+    // — while Gemini's `promptTokenCount` is the whole prompt, cached part
+    // included. Storing both unadjusted would make `inputTokens + cacheRead`
+    // double-count on Gemini and not on Anthropic: a 2,005-token prompt with
+    // 2,000 cached reads as 2,005 one side and 4,005 the other, for the
+    // identical request. Subtracting keeps the column meaning "uncached input"
+    // on both, so the classes stay addable — which is the whole point of
+    // storing them separately (design doc §6).
+    //
+    // Inert until prompt caching ships, since `cachedContentTokenCount` is
+    // absent today; `raw` keeps the provider's own figure either way.
+    inputTokens: Math.max(0, (u.promptTokenCount || 0) - cached),
+    outputTokens: (u.candidatesTokenCount || 0) + thoughts,
+    cacheRead: cached,
+    cacheWrite: 0,                       // Gemini has no cache-write equivalent
+    thinkingTokens: thoughts,
+    raw: u,
+  };
+}
+
+/**
  * Non-streaming request returning the RAW parsed generateContent response.
  * The tool loop (P2-02) needs the native shape for extractToolCalls; chat()
  * wraps this for the plain no-tools path.
@@ -553,6 +597,7 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
   const decoder = new TextDecoder();
   let buffer = '';
 
+  try {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -584,6 +629,15 @@ async function streamRaw(apiKey, params, { onDelta } = {}, signal) {
     candidates: [{ content: { parts, role: 'model' }, ...(finishReason ? { finishReason } : {}) }],
     ...(usageMetadata ? { usageMetadata } : {}),
   };
+  } catch (err) {
+    // See the matching note in anthropic.js: a stopped turn still spent tokens,
+    // so hand the caller whatever had been latched rather than dropping the
+    // interrupted round entirely.
+    if (err && err.name === 'AbortError') {
+      try { err.partialUsage = extractUsage({ usageMetadata }); } catch { /* never mask the abort */ }
+    }
+    throw err;
+  }
 }
 
 /**
@@ -698,6 +752,7 @@ module.exports = {
   chat,
   chatRaw,
   streamRaw,
+  extractUsage,
   formatChatResult,
   stream,
   listModels,
