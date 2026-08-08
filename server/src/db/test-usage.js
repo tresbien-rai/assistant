@@ -401,7 +401,47 @@ async function check(label, fn) {
       db.prepare('DELETE FROM conversations WHERE id = ?').run(empty.id);
     });
 
+    await check('aborted reaches the total and byModel, not just the turn', () => {
+      const s = dal.summariseUsage(rollupConv.id);
+      assert.strictEqual(s.total.aborted, true, 'a caller must not have to walk turns to learn this');
+      const opus = s.total.byModel.find((m) => m.model === 'claude-opus-4');
+      assert.strictEqual(opus.aborted, true, 'symmetric with outputPartial, which was already there');
+    });
+
+    await check('rounds ship one naming convention and no raw blob', () => {
+      const r = dal.summariseUsage(rollupConv.id).rounds[0];
+      assert.ok('inputTokens' in r, 'camelCase, matching turns and total');
+      assert.ok(!('input_tokens' in r), 'not two conventions in one response');
+      assert.ok(!('raw' in r), 'raw exists for later questions in the DB, not on every read');
+      assert.strictEqual(typeof r.aborted, 'boolean', 'flags are booleans, not 0/1');
+    });
+
     db.prepare('DELETE FROM conversations WHERE id = ?').run(rollupConv.id);
+
+    await check('a provider name containing a slash cannot merge two models', () => {
+      // ('openrouter','x/y') and ('openrouter/x','y') both join to
+      // "openrouter/x/y" — one entry, labelled with whichever arrived first,
+      // and a cross-model total is exactly what the grouping exists to prevent.
+      const c = dal.createConversation(userId, { title: 'key collision' });
+      dal.addUsageEvent({ conversationId: c.id, turn: 1, round: 0, provider: 'openrouter', model: 'x/y', inputTokens: 99 });
+      dal.addUsageEvent({ conversationId: c.id, turn: 1, round: 1, provider: 'openrouter/x', model: 'y', inputTokens: 1000 });
+      const s = dal.summariseUsage(c.id);
+      assert.strictEqual(s.total.byModel.length, 2, 'two distinct providers stay two entries');
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(c.id);
+    });
+
+    await check('null-turn rows do not collapse into one pseudo-turn', () => {
+      // Unreachable today, but the failure is silent: two unrelated sends would
+      // merge, and a partial flag on either would mark both as a floor.
+      const c = dal.createConversation(userId, { title: 'null turns' });
+      dal.addUsageEvent({ conversationId: c.id, round: 0, provider: 'anthropic', model: 'm', inputTokens: 10 });
+      dal.addUsageEvent({ conversationId: c.id, round: 0, provider: 'anthropic', model: 'm', inputTokens: 20, outputPartial: true });
+      const s = dal.summariseUsage(c.id);
+      assert.strictEqual(s.turns.length, 2, 'two sends must stay two turns');
+      assert.strictEqual(s.turns.filter((t) => t.outputPartial).length, 1,
+        'one send being a floor must not contaminate the other');
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(c.id);
+    });
 
     console.log('');
     if (failures > 0) {

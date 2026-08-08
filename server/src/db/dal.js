@@ -2004,40 +2004,77 @@ function summariseUsage(conversationId) {
     return acc;
   };
 
-  // byModel: keyed "provider/model", each an accumulator + its own flags.
+  // Keyed on provider + model with a separator that cannot occur in either.
+  // A plain "provider/model" join collides when a provider name contains a
+  // slash — ('openrouter', 'x/y') and ('openrouter/x', 'y') would merge into
+  // one entry labelled with whichever row arrived first, producing exactly the
+  // un-priceable cross-model figure this grouping exists to prevent. No
+  // current provider can trigger it; the guard costs one character.
   const fold = (subset) => {
     const byModel = new Map();
     for (const r of subset) {
-      const key = `${r.provider}/${r.model}`;
+      const key = `${r.provider} ${r.model}`;
       if (!byModel.has(key)) {
-        byModel.set(key, { provider: r.provider, model: r.model, rounds: 0, ...blank(), outputPartial: false });
+        byModel.set(key, {
+          provider: r.provider, model: r.model, rounds: 0, ...blank(),
+          aborted: false, outputPartial: false,
+        });
       }
       const m = byModel.get(key);
       add(m, r);
       m.rounds += 1;
+      if (r.aborted) m.aborted = true;
       if (r.output_partial) m.outputPartial = true;
     }
     return [...byModel.values()];
   };
 
-  const turnIds = [...new Set(rows.map((r) => r.turn))];
-  const turns = turnIds.map((turn) => {
-    const subset = rows.filter((r) => r.turn === turn);
-    return {
-      turn,
-      rounds: subset.length,
-      aborted: subset.some((r) => r.aborted === 1),
-      outputPartial: subset.some((r) => r.output_partial === 1),
-      byModel: fold(subset),
-    };
-  });
+  // A null turn cannot be grouped, so each such row stands alone rather than
+  // collapsing with every other null-turn row in the conversation. Collapsing
+  // would merge unrelated sends into one pseudo-turn and let a partial flag on
+  // any of them contaminate the rest. Unreachable today — every call site
+  // passes a real ordinal — but the failure would be silent, and silent
+  // under-reporting is the one thing this feature cannot afford.
+  const keyOf = (r) => (r.turn == null ? `null ${r.id}` : `t${r.turn}`);
+
+  const byTurn = new Map();
+  for (const r of rows) {
+    const k = keyOf(r);
+    if (!byTurn.has(k)) byTurn.set(k, []);
+    byTurn.get(k).push(r);
+  }
+
+  const turns = [...byTurn.values()].map((subset) => ({
+    turn: subset[0].turn,
+    rounds: subset.length,
+    aborted: subset.some((r) => r.aborted === 1),
+    outputPartial: subset.some((r) => r.output_partial === 1),
+    byModel: fold(subset),
+  }));
 
   return {
-    rounds: rows,
+    // Normalised to the same camelCase shape as the levels above, and without
+    // the `raw` blob: it exists so a question we have not thought of yet is
+    // answerable from the DB, not so every read ships it over the wire.
+    rounds: rows.map((r) => ({
+      turn: r.turn,
+      round: r.round,
+      provider: r.provider,
+      model: r.model,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      cacheRead: r.cache_read,
+      cacheWrite: r.cache_write,
+      thinkingTokens: r.thinking_tokens,
+      aborted: r.aborted === 1,
+      outputPartial: r.output_partial === 1,
+      createdAt: r.created_at,
+    })),
     turns,
     total: {
       turns: turns.length,
       rounds: rows.length,
+      aborted: rows.some((r) => r.aborted === 1),
       outputPartial: rows.some((r) => r.output_partial === 1),
       byModel: fold(rows),
     },

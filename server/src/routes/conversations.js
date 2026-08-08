@@ -978,9 +978,13 @@ router.get('/:id/usage', asyncHandler(async (req, res) => {
   res.json({
     conversationId: req.params.id,
     ...summary,
-    // Stated rather than implied: without it a client showing "0 tokens" for a
-    // conversation that predates capture looks like a bug, and one showing a
-    // total that predates U-02 would be quietly missing its toolless turns.
+    // Only covers the wholly-empty case: without it, a client showing
+    // "0 tokens" for a conversation that predates capture looks like a bug.
+    // A conversation with SOME rows gets no note even though its older turns
+    // are equally uncounted — there is no marker distinguishing "this turn
+    // predates capture" from "this turn was never recorded", so any such note
+    // would be a guess. Callers should treat every figure here as covering
+    // recorded turns only.
     note: summary.rounds.length === 0
       ? 'No usage recorded for this conversation. Turns taken before usage capture shipped are not counted.'
       : undefined,
