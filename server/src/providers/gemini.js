@@ -7,6 +7,7 @@
 
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
+const { geminiUsageWatcher } = require('./usageWatcher');
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -690,6 +691,9 @@ async function stream(apiKey, params, res, signal) {
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  // U-02: see the matching note in anthropic.js. The watcher strips CR, which
+  // matters here and not there — Google delimits frames with CRLF (#170).
+  const watcher = geminiUsageWatcher();
 
   try {
     while (true) {
@@ -698,6 +702,7 @@ async function stream(apiKey, params, res, signal) {
 
       // Forward raw SSE chunks to client
       const chunk = decoder.decode(value, { stream: true });
+      watcher.push(chunk);
       res.write(chunk);
     }
   } catch (err) {
@@ -711,6 +716,9 @@ async function stream(apiKey, params, res, signal) {
   } finally {
     res.end();
   }
+
+  const usageMetadata = watcher.usage();
+  return usageMetadata ? extractUsage({ usageMetadata }) : null;
 }
 
 /**

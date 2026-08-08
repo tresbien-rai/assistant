@@ -893,7 +893,7 @@ router.post('/stream', asyncHandler(async (req, res) => {
   }
 
   // Call provider's stream method
-  await providerModule.stream(apiKey, {
+  const passthroughUsage = await providerModule.stream(apiKey, {
     model,
     messages: effectiveMessages,
     systemPrompt: effectiveSystemPrompt,
@@ -901,6 +901,29 @@ router.post('/stream', asyncHandler(async (req, res) => {
     prefill,
     attachments,
   }, res, abortController.signal);
+
+  // U-02: the toolless path never touches runToolLoop, so without this a turn
+  // here records nothing and silently vanishes from the user's totals — a
+  // usage feature that is quietly incomplete is worse than one that is
+  // obviously missing. Round 0 because there is exactly one call by
+  // definition: no tools were advertised, so no round can follow.
+  //
+  // Best-effort, same rule as the loop: the reply is already fully delivered
+  // by the time this runs, so nothing here can cost the user anything.
+  if (passthroughUsage) {
+    try {
+      dal.addUsageEvent({
+        conversationId: containers.conversation?.id || null,
+        turn: currentTurn,
+        round: 0,
+        provider,
+        model,
+        ...passthroughUsage,
+      });
+    } catch (err) {
+      logger.warn({ msg: err.message }, 'passthrough usage capture failed');
+    }
+  }
 }));
 
 /**
