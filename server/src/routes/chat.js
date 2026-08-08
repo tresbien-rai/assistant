@@ -573,7 +573,7 @@ async function runToolLoop({ providerModule, provider, apiKey, params, toolConte
       }
       if (aborted) dal.markTurnAborted(toolContext.conversationId, toolContext.turnOrdinal);
     } catch (err) {
-      logger.warn({ msg: err.message, round }, 'usage capture failed');
+      logger.warn({ reason: err.message, round }, 'usage capture failed');
     }
   };
 
@@ -893,35 +893,55 @@ router.post('/stream', asyncHandler(async (req, res) => {
   }
 
   // Call provider's stream method
-  const passthroughUsage = await providerModule.stream(apiKey, {
-    model,
-    messages: effectiveMessages,
-    systemPrompt: effectiveSystemPrompt,
-    modelParams,
-    prefill,
-    attachments,
-  }, res, abortController.signal);
-
   // U-02: the toolless path never touches runToolLoop, so without this a turn
   // here records nothing and silently vanishes from the user's totals — a
   // usage feature that is quietly incomplete is worse than one that is
   // obviously missing. Round 0 because there is exactly one call by
   // definition: no tools were advertised, so no round can follow.
   //
-  // Best-effort, same rule as the loop: the reply is already fully delivered
-  // by the time this runs, so nothing here can cost the user anything.
-  if (passthroughUsage) {
-    try {
-      dal.addUsageEvent({
-        conversationId: containers.conversation?.id || null,
-        turn: currentTurn,
-        round: 0,
-        provider,
-        model,
-        ...passthroughUsage,
-      });
-    } catch (err) {
-      logger.warn({ msg: err.message }, 'passthrough usage capture failed');
+  // Wrapped in try/finally rather than written after the await, so the two
+  // paths that do NOT return normally still record: a mid-stream stop, and a
+  // mid-stream provider error (which rethrows). Both spent tokens.
+  let passthroughUsage = null;
+  let threw = false;
+  try {
+    passthroughUsage = await providerModule.stream(apiKey, {
+      model,
+      messages: effectiveMessages,
+      systemPrompt: effectiveSystemPrompt,
+      modelParams,
+      prefill,
+      attachments,
+    }, res, abortController.signal);
+  } catch (err) {
+    threw = true;
+    passthroughUsage = err?.partialUsage || null;
+    throw err;
+  } finally {
+    // A stop leaves `stream()` returning whatever it had latched — for
+    // Anthropic that is message_start alone, i.e. the exact input and an
+    // output count of 1 that never settled. Recording that as a complete,
+    // exact row is the failure design §8 forbids, and it would put this path
+    // out of step with the loop, which flags the same case. The signal is the
+    // authority: an abort swallowed inside the provider returns normally.
+    const stopped = threw || abortController.signal.aborted;
+    if (passthroughUsage) {
+      try {
+        dal.addUsageEvent({
+          conversationId: containers.conversation?.id || null,
+          turn: currentTurn,
+          round: 0,
+          provider,
+          model,
+          ...passthroughUsage,
+          outputPartial: stopped,
+        });
+        if (stopped) dal.markTurnAborted(containers.conversation?.id || null, currentTurn);
+      } catch (err) {
+        // `msg` is pino's own message key — an object field of that name is
+        // dropped, which left this warning with no detail at all.
+        logger.warn({ reason: err.message }, 'passthrough usage capture failed');
+      }
     }
   }
 }));

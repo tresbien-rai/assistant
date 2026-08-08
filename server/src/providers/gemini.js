@@ -711,6 +711,9 @@ async function stream(apiKey, params, res, signal) {
       logger.debug('Gemini stream aborted by client');
     } else {
       logger.error({ err }, 'Error reading Gemini stream');
+      // See the matching note in anthropic.js.
+      const partial = watcher.usage();
+      if (partial) { try { err.partialUsage = extractUsage({ usageMetadata: partial }); } catch { /* never mask */ } }
       throw err;
     }
   } finally {

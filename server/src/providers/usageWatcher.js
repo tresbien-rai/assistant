@@ -39,11 +39,6 @@ function createUsageWatcher(onPayload) {
     push(text) {
       try {
         buffer += String(text).replace(/\r/g, '');
-        if (buffer.length > MAX_BUFFER_CHARS) {
-          // Keep the tail: a real separator is far likelier to be near the end
-          // than in the megabyte we are discarding.
-          buffer = buffer.slice(-4096);
-        }
 
         let sep;
         while ((sep = buffer.indexOf('\n\n')) !== -1) {
@@ -58,6 +53,15 @@ function createUsageWatcher(onPayload) {
             try { onPayload(payload); } catch { /* a bad handler is not the stream's problem */ }
           }
         }
+
+        // Cap AFTER draining, never before. Capping first can discard frames
+        // that were complete and about to be parsed — and the damage is
+        // invisible: the same bytes delivered in one large chunk versus many
+        // small ones would yield different totals, and the bad case produces a
+        // plausible row with input_tokens: 0 rather than an honest null. Once
+        // the loop above has run, whatever remains is a single incomplete
+        // frame, which is the only thing safe to truncate.
+        if (buffer.length > MAX_BUFFER_CHARS) buffer = buffer.slice(-4096);
       } catch { /* rule 2 */ }
     },
   };

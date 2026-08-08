@@ -150,6 +150,55 @@ check('an unterminated frame does not grow the buffer without bound', () => {
   assert.strictEqual(w.usage().promptTokenCount, 311, 'recovers once real frames resume');
 });
 
+check('the cap never discards COMPLETE frames — chunking cannot change the answer', () => {
+  // The cap must run AFTER draining, not before. Capping first throws away
+  // frames that were ready to parse, and the damage is invisible: the same
+  // bytes delivered as one big chunk versus many small ones would disagree,
+  // and the bad case yields a plausible row with input_tokens 0 rather than an
+  // honest null. Reachable whenever a single read exceeds the cap — likelier
+  // on Gemini, whose frames carry whole candidate parts.
+  // The pad must sit BETWEEN the frame carrying input and the one carrying
+  // output: a cap that keeps only the tail then discards message_start, losing
+  // input_tokens while message_delta survives — a row that looks complete.
+  const A_START = A_WIRE.slice(0, A_WIRE.indexOf('event: content_block_delta'));
+  const A_REST = A_WIRE.slice(A_WIRE.indexOf('event: content_block_delta'));
+  const padded = A_START + `data: ${JSON.stringify({ type: 'x', pad: 'y'.repeat(1_100_000) })}\n\n` + A_REST;
+
+  const oneChunk = anthropicUsageWatcher();
+  oneChunk.push(padded);
+
+  const many = anthropicUsageWatcher();
+  pushInChunks(many, padded, 65536);
+
+  assert.deepStrictEqual(oneChunk.usage(), many.usage(),
+    'identical bytes must give identical usage regardless of chunk size');
+  assert.strictEqual(oneChunk.usage().input_tokens, 2466, 'the real frames must survive the cap');
+  assert.strictEqual(oneChunk.usage().output_tokens, 214);
+});
+
+// ---------------------------------------------------------------------------
+console.log('\n4. An interrupted passthrough is a floor, not a total...');
+
+check('a stop after message_start yields exact input and an unsettled output', () => {
+  // What `stream()` returns when the user hits Stop mid-reply: message_start
+  // arrived (input exact, output_tokens 1 as a placeholder), message_delta
+  // never did. Recording that as a complete row is what design §8 forbids —
+  // the route must flag it partial, and the two paths must agree.
+  const w = anthropicUsageWatcher();
+  w.push(A_WIRE.slice(0, A_WIRE.indexOf('event: content_block_delta')));
+  const u = w.usage();
+  assert.strictEqual(u.input_tokens, 2466, 'input is known up front and is exact');
+  assert.strictEqual(u.output_tokens, 1, 'output never settled — a floor, not a total');
+  const n = anthropic.extractUsage({ usage: u });
+  assert.strictEqual(n.inputTokens, 2466);
+});
+
+check('a stop before any frame lands yields null rather than a row of zeroes', () => {
+  const w = anthropicUsageWatcher();
+  w.push('event: ping\n');   // truncated mid-frame
+  assert.strictEqual(w.usage(), null);
+});
+
 console.log('');
 if (failures > 0) {
   console.error(`${failures} usage-watcher test(s) FAILED`);

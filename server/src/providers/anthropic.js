@@ -546,6 +546,11 @@ async function stream(apiKey, params, res, signal) {
       logger.debug('Anthropic stream aborted by client');
     } else {
       logger.error({ err }, 'Error reading Anthropic stream');
+      // Those tokens were billed even though the stream died. Attach what was
+      // latched so the caller can record the round instead of dropping it —
+      // same contract as streamRaw's abort path.
+      const partial = watcher.usage();
+      if (partial) { try { err.partialUsage = extractUsage({ usage: partial }); } catch { /* never mask */ } }
       throw err;
     }
   } finally {
