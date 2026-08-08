@@ -1970,6 +1970,118 @@ function listUsageEvents(conversationId) {
 }
 
 /**
+ * Roll a conversation's usage up for the read API (U-03).
+ *
+ * Returns BOTH levels rather than a choice between them: the rounds (why a
+ * turn was expensive), the turns (what a user reads day to day), and the
+ * conversation total.
+ *
+ * EVERY level is grouped by (provider, model). Tessera reports tokens and
+ * never money, so a total is only useful if the user can apply a rate to it —
+ * and the composer's quick-switch makes changing model mid-conversation one
+ * click, so a turn's rounds are not guaranteed to share one. A cross-model sum
+ * is a number nobody can price.
+ *
+ * `outputPartial` propagates upward: any level containing an interrupted round
+ * is a floor, and must never be presented as exact.
+ *
+ * @param {string} conversationId
+ * @returns {{rounds: Array, turns: Array, total: Object}}
+ */
+function summariseUsage(conversationId) {
+  const rows = listUsageEvents(conversationId);
+
+  const blank = () => ({ inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, thinkingTokens: null });
+  const add = (acc, r) => {
+    acc.inputTokens += r.input_tokens || 0;
+    acc.outputTokens += r.output_tokens || 0;
+    acc.cacheRead += r.cache_read || 0;
+    acc.cacheWrite += r.cache_write || 0;
+    // null + number must not become the number's own value: a provider that
+    // never reports thinking apart should not read as "0 thinking tokens"
+    // just because another one in the same conversation does.
+    if (r.thinking_tokens != null) acc.thinkingTokens = (acc.thinkingTokens || 0) + r.thinking_tokens;
+    return acc;
+  };
+
+  // Keyed on provider + model with a separator that cannot occur in either.
+  // A plain "provider/model" join collides when a provider name contains a
+  // slash — ('openrouter', 'x/y') and ('openrouter/x', 'y') would merge into
+  // one entry labelled with whichever row arrived first, producing exactly the
+  // un-priceable cross-model figure this grouping exists to prevent. No
+  // current provider can trigger it; the guard costs one character.
+  const fold = (subset) => {
+    const byModel = new Map();
+    for (const r of subset) {
+      const key = `${r.provider} ${r.model}`;
+      if (!byModel.has(key)) {
+        byModel.set(key, {
+          provider: r.provider, model: r.model, rounds: 0, ...blank(),
+          aborted: false, outputPartial: false,
+        });
+      }
+      const m = byModel.get(key);
+      add(m, r);
+      m.rounds += 1;
+      if (r.aborted) m.aborted = true;
+      if (r.output_partial) m.outputPartial = true;
+    }
+    return [...byModel.values()];
+  };
+
+  // A null turn cannot be grouped, so each such row stands alone rather than
+  // collapsing with every other null-turn row in the conversation. Collapsing
+  // would merge unrelated sends into one pseudo-turn and let a partial flag on
+  // any of them contaminate the rest. Unreachable today — every call site
+  // passes a real ordinal — but the failure would be silent, and silent
+  // under-reporting is the one thing this feature cannot afford.
+  const keyOf = (r) => (r.turn == null ? `null ${r.id}` : `t${r.turn}`);
+
+  const byTurn = new Map();
+  for (const r of rows) {
+    const k = keyOf(r);
+    if (!byTurn.has(k)) byTurn.set(k, []);
+    byTurn.get(k).push(r);
+  }
+
+  const turns = [...byTurn.values()].map((subset) => ({
+    turn: subset[0].turn,
+    rounds: subset.length,
+    aborted: subset.some((r) => r.aborted === 1),
+    outputPartial: subset.some((r) => r.output_partial === 1),
+    byModel: fold(subset),
+  }));
+
+  return {
+    // Normalised to the same camelCase shape as the levels above, and without
+    // the `raw` blob: it exists so a question we have not thought of yet is
+    // answerable from the DB, not so every read ships it over the wire.
+    rounds: rows.map((r) => ({
+      turn: r.turn,
+      round: r.round,
+      provider: r.provider,
+      model: r.model,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      cacheRead: r.cache_read,
+      cacheWrite: r.cache_write,
+      thinkingTokens: r.thinking_tokens,
+      aborted: r.aborted === 1,
+      outputPartial: r.output_partial === 1,
+      createdAt: r.created_at,
+    })),
+    turns,
+    total: {
+      turns: turns.length,
+      rounds: rows.length,
+      aborted: rows.some((r) => r.aborted === 1),
+      outputPartial: rows.some((r) => r.output_partial === 1),
+      byModel: fold(rows),
+    },
+  };
+}
+
+/**
  * Where a file came from (P-02, docs/FILE_PROVENANCE_DESIGN.md).
  *
  * Read from the EARLIEST revision, not the latest: a user's file that the model
@@ -2344,6 +2456,7 @@ module.exports = {
   addUsageEvent,
   markTurnAborted,
   listUsageEvents,
+  summariseUsage,
   listConversationFileRevisions,
   countUserMessages,
   deleteFileRevisions,

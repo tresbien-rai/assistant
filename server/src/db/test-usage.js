@@ -316,6 +316,133 @@ async function check(label, fn) {
       db.prepare('DELETE FROM conversations WHERE id = ?').run(conv4.id);
     });
 
+    // -----------------------------------------------------------------------
+    console.log('\n7. U-03 rollup...');
+
+    const rollupConv = dal.createConversation(userId, { title: 'rollup' });
+    const ev = (turn, round, model, over) => dal.addUsageEvent({
+      conversationId: rollupConv.id, turn, round,
+      provider: model.startsWith('gemini') ? 'google' : 'anthropic', model,
+      inputTokens: 100, outputTokens: 10, ...over,
+    });
+
+    await check('rounds, turns and total are all returned — not a choice', () => {
+      ev(1, 0, 'claude-opus-4'); ev(1, 1, 'claude-opus-4'); ev(1, 2, 'claude-opus-4');
+      ev(2, 0, 'claude-opus-4');
+      const s = dal.summariseUsage(rollupConv.id);
+      assert.strictEqual(s.rounds.length, 4);
+      assert.strictEqual(s.turns.length, 2);
+      assert.strictEqual(s.turns[0].rounds, 3, 'the 3-round turn keeps its round count');
+      assert.strictEqual(s.total.rounds, 4);
+      assert.strictEqual(s.total.turns, 2);
+    });
+
+    await check('a model switch mid-conversation is NEVER summed into one figure', () => {
+      // The load-bearing rule: without a money column, a total is only useful
+      // if a rate can be applied to it, and the quick-switch makes changing
+      // model one click. A cross-model sum is a number nobody can price.
+      ev(3, 0, 'gemini-3.1-pro-preview', { inputTokens: 500, outputTokens: 50 });
+      const s = dal.summariseUsage(rollupConv.id);
+      const t3 = s.turns.find((t) => t.turn === 3);
+      assert.strictEqual(t3.byModel.length, 1);
+      assert.strictEqual(t3.byModel[0].provider, 'google');
+      assert.strictEqual(s.total.byModel.length, 2, 'two models must stay two entries');
+      const names = s.total.byModel.map((m) => m.model).sort();
+      assert.deepStrictEqual(names, ['claude-opus-4', 'gemini-3.1-pro-preview']);
+      const opus = s.total.byModel.find((m) => m.model === 'claude-opus-4');
+      assert.strictEqual(opus.inputTokens, 400, '4 rounds x 100, and not a token of the Gemini one');
+    });
+
+    await check('a turn spanning two models splits within that turn', () => {
+      ev(4, 0, 'claude-opus-4'); ev(4, 1, 'gemini-3.1-pro-preview');
+      const t4 = dal.summariseUsage(rollupConv.id).turns.find((t) => t.turn === 4);
+      assert.strictEqual(t4.rounds, 2);
+      assert.strictEqual(t4.byModel.length, 2, 'one turn, two models, two priceable figures');
+    });
+
+    await check('thinkingTokens stays null unless some provider reported it', () => {
+      const s = dal.summariseUsage(rollupConv.id);
+      const opus = s.total.byModel.find((m) => m.model === 'claude-opus-4');
+      assert.strictEqual(opus.thinkingTokens, null,
+        'Anthropic never reports it apart — 0 would be a claim we cannot make');
+    });
+
+    await check('thinkingTokens sums where it IS reported', () => {
+      ev(5, 0, 'gemini-3.1-pro-preview', { thinkingTokens: 190 });
+      ev(5, 1, 'gemini-3.1-pro-preview', { thinkingTokens: 10 });
+      const t5 = dal.summariseUsage(rollupConv.id).turns.find((t) => t.turn === 5);
+      assert.strictEqual(t5.byModel[0].thinkingTokens, 200);
+    });
+
+    await check('outputPartial propagates up so a floor is never shown as a total', () => {
+      ev(6, 0, 'claude-opus-4');
+      ev(6, 1, 'claude-opus-4', { outputPartial: true });
+      const s = dal.summariseUsage(rollupConv.id);
+      const t6 = s.turns.find((t) => t.turn === 6);
+      assert.strictEqual(t6.outputPartial, true, 'one partial round makes the turn a floor');
+      assert.strictEqual(s.total.outputPartial, true, '...and the conversation total too');
+      const clean = s.turns.find((t) => t.turn === 1);
+      assert.strictEqual(clean.outputPartial, false, 'unaffected turns stay exact');
+    });
+
+    await check('an aborted turn is labelled, not hidden', () => {
+      dal.markTurnAborted(rollupConv.id, 2);
+      const s = dal.summariseUsage(rollupConv.id);
+      assert.strictEqual(s.turns.find((t) => t.turn === 2).aborted, true);
+      assert.strictEqual(s.turns.find((t) => t.turn === 1).aborted, false);
+    });
+
+    await check('a conversation with no usage rolls up to empty, not to zeroes', () => {
+      const empty = dal.createConversation(userId, { title: 'empty' });
+      const s = dal.summariseUsage(empty.id);
+      assert.deepStrictEqual(s.rounds, []);
+      assert.deepStrictEqual(s.turns, []);
+      assert.strictEqual(s.total.byModel.length, 0);
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(empty.id);
+    });
+
+    await check('aborted reaches the total and byModel, not just the turn', () => {
+      const s = dal.summariseUsage(rollupConv.id);
+      assert.strictEqual(s.total.aborted, true, 'a caller must not have to walk turns to learn this');
+      const opus = s.total.byModel.find((m) => m.model === 'claude-opus-4');
+      assert.strictEqual(opus.aborted, true, 'symmetric with outputPartial, which was already there');
+    });
+
+    await check('rounds ship one naming convention and no raw blob', () => {
+      const r = dal.summariseUsage(rollupConv.id).rounds[0];
+      assert.ok('inputTokens' in r, 'camelCase, matching turns and total');
+      assert.ok(!('input_tokens' in r), 'not two conventions in one response');
+      assert.ok(!('raw' in r), 'raw exists for later questions in the DB, not on every read');
+      assert.strictEqual(typeof r.aborted, 'boolean', 'flags are booleans, not 0/1');
+    });
+
+    db.prepare('DELETE FROM conversations WHERE id = ?').run(rollupConv.id);
+
+    await check('a provider name containing a slash cannot merge two models', () => {
+      // ('openrouter','x/y') and ('openrouter/x','y') both join to
+      // "openrouter/x/y" — one entry, labelled with whichever arrived first,
+      // and a cross-model total is exactly what the grouping exists to prevent.
+      const c = dal.createConversation(userId, { title: 'key collision' });
+      dal.addUsageEvent({ conversationId: c.id, turn: 1, round: 0, provider: 'openrouter', model: 'x/y', inputTokens: 99 });
+      dal.addUsageEvent({ conversationId: c.id, turn: 1, round: 1, provider: 'openrouter/x', model: 'y', inputTokens: 1000 });
+      const s = dal.summariseUsage(c.id);
+      assert.strictEqual(s.total.byModel.length, 2, 'two distinct providers stay two entries');
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(c.id);
+    });
+
+    await check('null-turn rows do not collapse into one pseudo-turn', () => {
+      // Unreachable today, but the failure is silent: two unrelated sends would
+      // merge, and a partial flag on either would mark both as a floor.
+      const c = dal.createConversation(userId, { title: 'null turns' });
+      dal.addUsageEvent({ conversationId: c.id, round: 0, provider: 'anthropic', model: 'm', inputTokens: 10 });
+      dal.addUsageEvent({ conversationId: c.id, round: 0, provider: 'anthropic', model: 'm', inputTokens: 20, outputPartial: true });
+      const s = dal.summariseUsage(c.id);
+      assert.strictEqual(s.turns.length, 2, 'two sends must stay two turns');
+      assert.strictEqual(s.turns.filter((t) => t.outputPartial).length, 1,
+        'one send being a floor must not contaminate the other');
+      db.prepare('DELETE FROM conversations WHERE id = ?').run(c.id);
+    });
+
     console.log('');
     if (failures > 0) {
       console.error(`${failures} usage test(s) FAILED`);
