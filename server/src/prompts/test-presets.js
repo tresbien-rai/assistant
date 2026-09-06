@@ -22,6 +22,7 @@
 const assert = require('node:assert');
 const {
   buildSystemPrompt, buildContextAck, composeSystemPrompt, describeContextAck,
+  sessionStateBlock, describeSessionState,
   ORIENTATION, CONTEXT_ACK,
 } = require('./tessera');
 const {
@@ -34,6 +35,7 @@ const {
   buildMacroValues,
   MAX_BLOCK_CHARS,
   SYSTEM_BLOCK_IDS,
+  MESSAGE_BLOCK_IDS,
 } = require('./presets');
 
 let failures = 0;
@@ -484,10 +486,15 @@ try {
 // --- SS-02: the session-state block is plumbing -----------------------------
 console.log('\nSession-state block (SS-02)...');
 
-check('state is a system block, present in a preset that predates it', () => {
-  const n = normalizeBlocks({ order: ['orientation', 'expressions', 'scratchpad', 'persona'] });
-  assert.ok(n.order.includes('state'), 'an older preset still gets the block');
-  assert.ok(SYSTEM_BLOCK_IDS.includes('state'));
+check('state is a MESSAGE block, and never lands in the system order', () => {
+  // PC-01 moved it out of the system layer. A preset stored while it WAS a
+  // system block still carries it in `order`; that entry must be dropped, not
+  // honoured, or the block goes back to invalidating the whole cached prefix.
+  const n = normalizeBlocks({ order: ['state', 'orientation', 'expressions', 'scratchpad', 'persona'] });
+  assert.ok(!n.order.includes('state'), 'a pre-PC-01 preset stops positioning it');
+  assert.ok(!SYSTEM_BLOCK_IDS.includes('state'), 'not a system block');
+  assert.ok(MESSAGE_BLOCK_IDS.includes('state'), 'a message-layer block');
+  assert.ok(n.blocks.state, 'still described, so the editor can show it');
 });
 
 check('it cannot be turned off', () => {
@@ -502,40 +509,59 @@ check('it cannot be given text', () => {
   assert.match(res.error, /cannot be edited/);
 });
 
-check('it may be moved', () => {
+check('a stored order mentioning it is still accepted, just not obeyed', () => {
+  // Rejecting it would make every pre-PC-01 preset unsaveable. It is dropped
+  // by normalizeBlocks instead (checked above).
   const res = validateBlocks({ order: ['state', 'orientation', 'expressions', 'scratchpad', 'persona'] });
-  assert.strictEqual(res.ok, true, 'reordering is the one thing allowed');
+  assert.strictEqual(res.ok, true);
 });
 
 check('an already-stored enabled:false is ignored rather than obeyed', () => {
   // Defence in depth: validateBlocks guards the write path, but a preset
   // written before that guard (or hand-edited) must not silently blind the
-  // model. The composer emits the block regardless.
-  const text = buildSystemPrompt(PERSONA, [], {
-    preset: { blocks: { state: { enabled: false } } },
-    sessionState: '<session_state>\nWorkspace: none\n</session_state>',
-  });
-  assert.ok(text.includes('<session_state>'), 'still composed into the prompt');
-});
-
-check('absent session state skips the block instead of emitting an empty one', () => {
-  const text = buildSystemPrompt(PERSONA, [], { preset: {} });
-  assert.ok(!text.includes('<session_state>'), 'nothing to report, nothing emitted');
-});
-
-check('the preset controls WHERE it lands', () => {
+  // model. The block is emitted regardless of what the preset says.
   const state = '<session_state>\nWorkspace: none\n</session_state>';
-  const first = buildSystemPrompt(PERSONA, [], {
-    preset: { order: ['state', 'orientation', 'expressions', 'scratchpad', 'persona'] },
-    sessionState: state,
-  });
-  assert.ok(first.startsWith('<session_state>'), 'moved to the front');
+  assert.strictEqual(
+    sessionStateBlock({ preset: { blocks: { state: { enabled: false } } }, sessionState: state }),
+    state,
+    'still emitted'
+  );
+});
 
-  const later = buildSystemPrompt(PERSONA, [], {
-    preset: { order: ['orientation', 'state', 'expressions', 'scratchpad', 'persona'] },
-    sessionState: state,
+check('absent session state emits nothing rather than an empty block', () => {
+  assert.strictEqual(sessionStateBlock({ preset: {} }), '', 'nothing to report, nothing emitted');
+  assert.strictEqual(describeSessionState({}).included, false);
+  assert.strictEqual(describeSessionState({}).reason, 'no-session-state');
+});
+
+check('no preset can put it back in the system prompt', () => {
+  // The whole point of PC-01: wherever a preset claims it goes, the system
+  // prompt must not contain it. Checked against a hand-written order, which is
+  // the only way the id can still reach composeSystemPrompt.
+  const state = '<session_state>\nWorkspace: none\n</session_state>';
+  for (const order of [
+    ['state', 'orientation', 'expressions', 'scratchpad', 'persona'],
+    ['orientation', 'state', 'expressions', 'scratchpad', 'persona'],
+    ['orientation', 'expressions', 'scratchpad', 'persona', 'state'],
+  ]) {
+    const text = buildSystemPrompt(PERSONA, [], { preset: { order }, sessionState: state });
+    assert.ok(!text.includes('<session_state>'), `order ${order.join(',')} kept it out of system`);
+  }
+});
+
+check('the system prompt is byte-identical across differing session state', () => {
+  // The standing guard (docs/PROMPT_CACHING_DESIGN.md §4). If this fails,
+  // caching is silently off: nothing errors, the bill is just higher.
+  const base = { preset: {}, scratchpad: true };
+  const a = buildSystemPrompt(PERSONA, ['happy'], {
+    ...base,
+    sessionState: '<session_state>\nScratchpad: 12 characters\nFiles: none\n</session_state>',
   });
-  assert.ok(!later.startsWith('<session_state>') && later.includes(state), 'and back after orientation');
+  const b = buildSystemPrompt(PERSONA, ['happy'], {
+    ...base,
+    sessionState: '<session_state>\nScratchpad: 4,918 characters\nFiles: 3 in this conversation\n</session_state>',
+  });
+  assert.strictEqual(a, b, 'session state must not move a single byte of the system prompt');
 });
 
 console.log('\n' + '='.repeat(60));

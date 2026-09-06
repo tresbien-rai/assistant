@@ -380,7 +380,10 @@ const BLOCK_INFO = {
     },
     state: {
         label: 'Session state',
-        description: 'What exists right now — workspace, project, scratchpad, files — including when there is nothing. Position only; always sent, and its text is generated per message.',
+        description: 'What exists right now — workspace, project, scratchpad, files — including when there is nothing. Always sent, and its text is generated per message. It goes with your latest message rather than in the system prompt, so the rest of the conversation can be cached.',
+        // No text box: the server generates this block and rejects an override,
+        // so offering one would be an edit that silently could not be saved.
+        // (The flag predates PC-01, when the block could still be positioned.)
         positionOnly: true,
         locked: true,
     },
@@ -497,6 +500,7 @@ export function renderPresetEditor() {
                     <li><code>{{${escapeHtml(m.name)}}}</code> — ${escapeHtml(m.description)}</li>`).join('')}
             </ul>
             <p class="section-note">An unknown macro is left as-is rather than blanked, so a typo shows up in the prompt instead of vanishing.</p>
+            <p class="section-note"><code>{{time}}</code> changes every minute, so a block using it rewrites the system prompt on every send and nothing in the conversation can be cached. <code>{{date}}</code> is stable within a day. Prefer putting either in your message over the system prompt if you care about cost.</p>
         </details>`;
 
     elements.presetEditor.querySelector('#presetEditorBack')
@@ -538,7 +542,7 @@ function blockCardHTML(id, block, { index = 0, count = 1, draggable }) {
                 <input type="checkbox" data-action="toggle"${block.enabled === false ? '' : ' checked'}>
                 <span>On</span>
             </label>`}
-            ${info.locked ? '<span class="preset-block-locked" title="Always sent — move it, but it cannot be edited or turned off">Always on</span>' : ''}
+            ${info.locked ? '<span class="preset-block-locked" title="Always sent, and generated from live state — it cannot be edited or turned off">Always on</span>' : ''}
         </div>
         <p class="preset-block-desc">
             ${escapeHtml(info.description)}
@@ -577,7 +581,14 @@ function wireEditorEvents() {
             });
         }
 
-        card.querySelector('[data-action="toggle"]').addEventListener('change', (e) => {
+        // A `locked` card (session state) renders NEITHER of these, so both
+        // lookups return null there. Unguarded, the first one threw inside this
+        // forEach and took the whole wiring pass with it — every card after it
+        // lost its toggle and Reset, and wireBlockDragging at the foot never
+        // ran, so blocks could not be dragged at all. Silent: one console error
+        // on open, and controls that simply did nothing.
+        const toggle = card.querySelector('[data-action="toggle"]');
+        if (toggle) toggle.addEventListener('change', (e) => {
             const blocks = editingBlocks();
             if (!blocks) return;
             blocks.blocks[id].enabled = e.target.checked;
@@ -586,7 +597,8 @@ function wireEditorEvents() {
             queuePresetSave();
         });
 
-        card.querySelector('[data-action="reset"]').addEventListener('click', () => {
+        const reset = card.querySelector('[data-action="reset"]');
+        if (reset) reset.addEventListener('click', () => {
             const blocks = editingBlocks();
             if (!blocks) return;
             blocks.blocks[id].text = null;
@@ -976,6 +988,19 @@ export async function renderPromptInspector(host, { presetId } = {}) {
     if (!host) return;
     host.innerHTML = '<p class="section-note">Assembling…</p>';
 
+    // The inspector is reachable without ever opening the preset editor, which
+    // is the only other thing that loads this — and it needs `messageBlockIds`
+    // below to tell the two prompt layers apart.
+    if (!presetDefaults) {
+        try {
+            presetDefaults = await API.presets.defaults();
+        } catch (err) {
+            host.innerHTML = '<p class="section-note">Could not assemble the prompt.</p>';
+            displayError(err, { action: 'load the built-in prompt text' });
+            return;
+        }
+    }
+
     const cfg = getActiveModelConfig();
     let result;
     try {
@@ -997,18 +1022,18 @@ export async function renderPromptInspector(host, { presetId } = {}) {
     }
 
     const blocks = Array.isArray(result.promptBlocks) ? result.promptBlocks : [];
+    const messageIds = presetDefaults.messageBlockIds;
     const included = blocks.filter(b => b.included);
     const excluded = blocks.filter(b => !b.included);
-    const total = included.reduce((n, b) => n + b.chars, 0);
+    // Split by layer. The header counts the SYSTEM prompt only: since PC-01 the
+    // session-state block travels with the user's message instead, and folding
+    // it into this total would report a system prompt longer than the one
+    // actually sent — exactly the drift the inspector exists to prevent.
+    const systemBlocks = included.filter(b => !messageIds.includes(b.id));
+    const messageBlocks = included.filter(b => messageIds.includes(b.id));
+    const total = systemBlocks.reduce((n, b) => n + b.chars, 0);
 
-    host.innerHTML = `
-        <p class="section-note">${describeInspectorContext(presetId)}</p>
-        <div class="inspector-summary">
-            <span><strong>${included.length}</strong> block${included.length === 1 ? '' : 's'}</span>
-            <span><strong>${total.toLocaleString()}</strong> characters</span>
-            <span>${result.presetApplied ? 'Preset applied' : 'Built-in prompt'}</span>
-        </div>
-        ${included.map(b => `
+    const blockHTML = (b) => `
             <details class="inspector-block">
                 <summary>
                     <span class="inspector-block-name">${escapeHtml(blockLabel(b.id))}</span>
@@ -1016,7 +1041,19 @@ export async function renderPromptInspector(host, { presetId } = {}) {
                     <span class="inspector-chars">${b.chars.toLocaleString()}</span>
                 </summary>
                 <pre class="inspector-text">${escapeHtml(b.text || '')}</pre>
-            </details>`).join('')}
+            </details>`;
+
+    host.innerHTML = `
+        <p class="section-note">${describeInspectorContext(presetId)}</p>
+        <div class="inspector-summary">
+            <span><strong>${systemBlocks.length}</strong> block${systemBlocks.length === 1 ? '' : 's'}</span>
+            <span><strong>${total.toLocaleString()}</strong> characters</span>
+            <span>${result.presetApplied ? 'Preset applied' : 'Built-in prompt'}</span>
+        </div>
+        ${systemBlocks.map(blockHTML).join('')}
+        ${messageBlocks.length === 0 ? '' : `
+            <p class="preset-group-label">Sent with your message, not in the system prompt</p>
+            ${messageBlocks.map(blockHTML).join('')}`}
         ${excluded.length === 0 ? '' : `
             <p class="preset-group-label">Not sent this time</p>
             <ul class="inspector-excluded">

@@ -223,25 +223,13 @@ function composeSystemPrompt(personaPrompt, expressionNames, options = {}) {
   for (const id of preset.order) {
     const block = preset.blocks[id];
 
-    // Generated per request from live state, never stored (SS-02). Like the
-    // persona block this is a POSITION marker: the preset decides where it
-    // goes, not what it says.
-    //
-    // Deliberately ABOVE the enabled check — `state` is plumbing and cannot be
-    // switched off (docs/SESSION_STATE_DESIGN.md, D3). A prompt that lies about
-    // what exists is worse than one that stays quiet, and a disabled state
-    // block would put the model back to guessing. The write path refuses to
-    // disable it; this makes an already-stored `enabled: false` harmless too.
-    if (id === 'state') {
-      const text = typeof options.sessionState === 'string' ? options.sessionState.trim() : '';
-      if (!text) {
-        skip(id, 'no-session-state');
-        continue;
-      }
-      parts.push(text);
-      blocks.push({ id, included: true, source: 'generated', chars: text.length, text });
-      continue;
-    }
+    // `state` is NOT handled here any more — it is a message-layer block since
+    // PC-01 (see sessionStateBlock below). normalizeBlocks filters `order` to
+    // SYSTEM_BLOCK_IDS, so a preset stored while it was a system block simply
+    // stops mentioning it; this guard exists only so a hand-written order can
+    // never smuggle it back into the system prompt, where its per-turn churn
+    // would invalidate the cached prefix for the whole conversation.
+    if (id === 'state') continue;
 
     if (!block || !block.enabled) {
       skip(id, 'disabled');
@@ -324,11 +312,48 @@ function describeContextAck(options = {}, hasContext = false) {
   };
 }
 
+/**
+ * The `<session_state>` block as it goes into the MESSAGE layer (PC-01).
+ *
+ * A pass-through of what buildSessionState produced, trimmed — the text is
+ * generated from live state and a preset may neither reword nor suppress it
+ * (docs/SESSION_STATE_DESIGN.md, D3), so unlike every other block there is
+ * nothing here to override. It exists as a named function so the send path and
+ * the inspector reach the block the same way, and so the "which layer does this
+ * live in" answer is in one place.
+ *
+ * @param {Object} [options] - the promptOptions the assembly built
+ * @returns {string} the block, or '' when there is no state to report
+ */
+function sessionStateBlock(options = {}) {
+  return typeof options.sessionState === 'string' ? options.sessionState.trim() : '';
+}
+
+/**
+ * The session-state block's provenance entry (AP-05), in the same shape
+ * composeSystemPrompt produces. Mirrors describeContextAck: a message-layer
+ * block is described separately rather than appearing in the system-prompt
+ * list.
+ *
+ * `source: 'generated'` is carried over from when this was a system block, so
+ * the inspector keeps labelling it the same way.
+ *
+ * @param {Object} [options] - the promptOptions the assembly built
+ */
+function describeSessionState(options = {}) {
+  const id = 'state';
+  const text = sessionStateBlock(options);
+  if (!text) return { id, included: false, reason: 'no-session-state', chars: 0 };
+  return { id, included: true, source: 'generated', chars: text.length, text };
+}
+
 module.exports = {
   buildSystemPrompt,
   composeSystemPrompt,
   buildContextAck,
   describeContextAck,
+  sessionStateBlock,
+  describeSessionState,
   sanitizeExpressionNames,
   ORIENTATION,
   CONTEXT_ACK,
