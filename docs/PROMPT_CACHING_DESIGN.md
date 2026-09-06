@@ -229,3 +229,23 @@ Cache writes near the full conversation size on every request means the prefix
 is still being rewritten upstream of a breakpoint — go back to §2.
 
 This is visible in the usage panel already (U-04) with no further work.
+
+### Measured, 2026-09-06 (PC-02, live against the real API)
+
+Two turns, `claude-opus-5`, tools off:
+
+| | input | cache write | cache read |
+|---|---:|---:|---:|
+| turn 1 | 118 | 1,566 | 0 |
+| turn 2 | 49 | 82 | **1,566** |
+
+The healthy signature above, exactly: turn 2 read the entire prefix turn 1
+wrote, wrote only the 82-token delta the new turn added, and paid full price
+for just the 49-token tail. 92% of turn 2's input was served from cache.
+
+**Gemini is not covered by this measurement.** Its implicit caching needs no
+code (D4) and the prefix is stable as of PC-01, but the minimum cacheable
+prefix is 2,048 tokens (2.5 Flash/Pro) or 4,096 (newer Flash), and a
+tools-off Tessera prefix is around 800. Expect hits once tools are on or the
+conversation grows; below the minimum it simply reports zero, with no error.
+Worth one live confirmation on a tools-on chat.

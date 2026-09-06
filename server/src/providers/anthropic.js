@@ -13,6 +13,125 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models';
 const ANTHROPIC_VERSION = '2023-06-01';
 
+// =============================================================================
+// Prompt caching (PC-02, docs/PROMPT_CACHING_DESIGN.md)
+//
+// Caching is a PREFIX MATCH: the provider reuses the leading bytes of a request
+// only where they are identical to what it cached, and a breakpoint can only be
+// READ at a position some earlier request also WROTE. That single fact decides
+// everything below.
+//
+// Three breakpoints, at the three places the request is genuinely stable:
+//
+//   1. the system prompt — stable until the persona, preset or tool set changes
+//      (a marker on the last system block covers tools + system, since tools
+//      render ahead of system);
+//   2. the end of the STABLE HISTORY, i.e. the message before the newest user
+//      turn — reproduced verbatim by every later turn;
+//   3. the tool-loop tail, but only on a round that continues a tool call —
+//      the loop reuses `system`/`tools` and only appends, so within one turn
+//      the tail IS reproduced by the next round.
+//
+// Three of the four breakpoints the API allows, leaving one spare.
+//
+// WHAT IS DELIBERATELY ABSENT: a marker on the newest user turn, and the
+// top-level automatic `cache_control` that would place one there. The assembly
+// appends `<active_files>`, the scratchpad and `<session_state>` to the last
+// user message at send time and never persists them (see
+// utils/activeFiles.js), so that message reappears BARE on the next turn. A
+// breakpoint there can never be read back — it is the 1.25x write premium
+// charged every turn for an entry nothing will ever use. Do not "improve" this
+// by marking the tail.
+// =============================================================================
+
+const CACHE_CONTROL = { type: 'ephemeral' };
+
+/**
+ * Block types that accept `cache_control`. Notably NOT `thinking` — a marker
+ * there is not documented, and the tool loop replays signed thinking blocks
+ * verbatim, which is not a thing to experiment with.
+ */
+const CACHEABLE_BLOCK_TYPES = new Set(['text', 'image', 'document', 'tool_use', 'tool_result']);
+
+/**
+ * Content in block form. Every message goes through this, not just the ones
+ * that get a marker.
+ *
+ * That uniformity is the point. The marker MOVES — turn N marks message i,
+ * turn N+1 marks message i+2 — so if converting a string to a text block
+ * happened only where a marker lands, the same logical message would be a bare
+ * string on one turn and a block array on the next. The prefix bytes would
+ * differ for a reason that has nothing to do with the conversation, and the
+ * cache would silently miss every turn. Normalising everything makes the wire
+ * shape a pure function of the conversation and independent of placement.
+ *
+ * Arrays pass through untouched (raw-replay discipline, Track A).
+ */
+function toContentBlocks(content) {
+  if (Array.isArray(content)) return content;
+  if (typeof content === 'string' && content !== '') return [{ type: 'text', text: content }];
+  return content; // an unexpected shape is left alone rather than mangled
+}
+
+/**
+ * A copy of `message` with a cache breakpoint on its last eligible block.
+ * Walks backward past anything that cannot carry one; if nothing can, the
+ * message is returned unchanged rather than guessed at.
+ */
+function withCacheBreakpoint(message) {
+  const blocks = message.content;
+  if (!Array.isArray(blocks)) return message;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (CACHEABLE_BLOCK_TYPES.has(blocks[i].type)) {
+      const copy = blocks.slice();
+      copy[i] = { ...blocks[i], cache_control: { ...CACHE_CONTROL } };
+      return { ...message, content: copy };
+    }
+  }
+  return message;
+}
+
+/** Does this message carry tool results (i.e. is it a tool-loop continuation)? */
+function isToolResultMessage(m) {
+  return Boolean(m) && m.role === 'user'
+    && Array.isArray(m.content) && m.content.some((b) => b && b.type === 'tool_result');
+}
+
+/**
+ * Place breakpoints 2 and 3 (see the block comment above). Returns a new array;
+ * the caller's messages are never mutated.
+ */
+function placeCacheBreakpoints(messages) {
+  // The newest ORDINARY user turn — the augmented one. Tool-result messages are
+  // also role 'user', so they are skipped: they are part of the current turn,
+  // not the start of it.
+  let newestTurn = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user' && !isToolResultMessage(messages[i])) {
+      newestTurn = i;
+      break;
+    }
+  }
+
+  const out = messages.slice();
+
+  // (2) The last message before the newest turn. Everything up to here is what
+  // the next turn will reproduce byte for byte.
+  const stableEnd = newestTurn - 1;
+  if (stableEnd >= 0) out[stableEnd] = withCacheBreakpoint(out[stableEnd]);
+
+  // (3) The tool-loop tail — ONLY when the request ends in tool results. A
+  // trailing assistant message here would be a prefill, whose bytes the next
+  // turn replaces with the real reply, so marking it would repeat the mistake
+  // the block comment warns about.
+  const lastIdx = out.length - 1;
+  if (lastIdx > newestTurn && isToolResultMessage(out[lastIdx])) {
+    out[lastIdx] = withCacheBreakpoint(out[lastIdx]);
+  }
+
+  return out;
+}
+
 /**
  * Build request headers for Anthropic API
  * @param {string} apiKey - The user's Anthropic API key
@@ -34,33 +153,34 @@ function buildHeaders(apiKey) {
 function buildRequestBody(params) {
   const { model, messages, systemPrompt, modelParams, prefill, tools, stream = false } = params;
 
-  // Build messages array, handling attachments in the content
-  const formattedMessages = messages.map(msg => {
-    // If content is already an array, use as-is. This is both the attachment
-    // path AND the raw-replay path for the tool loop (assistant messages with
-    // tool_use/thinking blocks, user messages with tool_result blocks) —
-    // blocks must pass through VERBATIM (raw-message discipline, Track A).
-    if (Array.isArray(msg.content)) {
-      return { role: msg.role, content: msg.content };
-    }
-    // Otherwise, simple text content
-    return { role: msg.role, content: msg.content };
-  });
+  // Build messages array, handling attachments in the content.
+  //
+  // Everything is normalised to block form (PC-02) — arrays, which is both the
+  // attachment path AND the raw-replay path for the tool loop (assistant
+  // messages with tool_use/thinking blocks, user messages with tool_result
+  // blocks), pass through VERBATIM (raw-message discipline, Track A); plain
+  // strings become a single text block. See toContentBlocks for why this is
+  // uniform rather than only where a cache marker lands.
+  const formattedMessages = messages.map(msg => ({
+    role: msg.role,
+    content: toContentBlocks(msg.content),
+  }));
 
   // Add prefill as assistant message if provided
   if (prefill && prefill.trim()) {
-    formattedMessages.push({ role: 'assistant', content: prefill.trim() });
+    formattedMessages.push({ role: 'assistant', content: toContentBlocks(prefill.trim()) });
   }
 
   const body = {
     model,
-    messages: formattedMessages,
+    messages: placeCacheBreakpoints(formattedMessages),
     max_tokens: modelParams?.maxTokens || 4096,
   };
 
-  // Add system prompt if provided
+  // Add system prompt if provided. Always the block form, carrying breakpoint 1
+  // — tools render ahead of system, so this one marker caches both.
   if (systemPrompt) {
-    body.system = systemPrompt;
+    body.system = [{ type: 'text', text: systemPrompt, cache_control: { ...CACHE_CONTROL } }];
   }
 
   // Advertise tools (Track A). `tools` arrives in the provider-neutral shape
