@@ -20,7 +20,10 @@ const { resolveActiveFileBlock, appendToLastUserMessage } = require('../utils/ac
 const { resolveScratchpadBlock } = require('../utils/scratchpadContext');
 const { TOOL_DEFINITIONS, SCRATCHPAD_TOOL_DEFINITIONS } = require('../tools/definitions');
 const config = require('../config');
-const { buildSystemPrompt, buildContextAck, composeSystemPrompt, describeContextAck } = require('../prompts/tessera');
+const {
+  buildSystemPrompt, buildContextAck, composeSystemPrompt, describeContextAck,
+  sessionStateBlock, describeSessionState,
+} = require('../prompts/tessera');
 const { buildSessionState } = require('../prompts/sessionState');
 const { PRESET_NONE } = require('../prompts/presets');
 const { executeToolCall } = require('../tools');
@@ -312,6 +315,19 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages, ex
       scratchpadEnabled,
     }),
   };
+
+  // PC-01: `<session_state>` goes in the MESSAGE layer, appended LAST so it
+  // sits directly above the `<active_files>` and scratchpad blocks it refers
+  // to ("current content below" now points at the adjacent block rather than
+  // forward past the whole conversation).
+  //
+  // The reason it is not in the system prompt: it reports the pad's length and
+  // the file counts, which the model changes by doing its job. In `system` that
+  // churn re-wrote the prefix ahead of every message, so the entire history was
+  // re-processed uncached on most turns. Here it lands in the volatile tail,
+  // after the part of the request both this turn and the next reproduce
+  // byte-for-byte (docs/PROMPT_CACHING_DESIGN.md, §2.1).
+  trailingMessages = appendToLastUserMessage(trailingMessages, sessionStateBlock(withState));
 
   const { system, messages: assembled } =
     assembleProviderInput(requestContext, systemPrompt, trailingMessages, expressionNames, scratchpadEnabled, withState);
@@ -1032,6 +1048,9 @@ router.post('/preview', asyncHandler(async (req, res) => {
     scratchpad: scratchpadEnabled,
   }).blocks;
   promptBlocks.push(describeContextAck(promptOptions, !!requestContext?.text));
+  // Message-layer too since PC-01, so it is described alongside the ack rather
+  // than appearing in the system-prompt list composeSystemPrompt returns.
+  promptBlocks.push(describeSessionState(promptOptions));
 
   res.json({
     provider,
@@ -1092,6 +1111,10 @@ module.exports = {
   // Exported for headless context-layering tests.
   resolveRequestContext,
   assembleProviderInput,
+  // Exported for the cache-prefix test (PC-01). The guarantee it checks is a
+  // property of the WHOLE assembly, so the test has to drive the real thing —
+  // a reimplementation would agree with itself while caching stayed broken.
+  assembleChatRequest,
   // Exported for headless tool-loop tests (P2-02).
   resolveRequestContainers,
   resolveToolsEnabled,

@@ -39,21 +39,42 @@ const PRESET_NONE = 'none';
  *   'text'    a section whose content comes from the built-in or an override
  *   'persona' the position marker for the persona's own prompt (its text comes
  *             from the persona record, never from the preset)
- *   'state'   the position marker for the `<session_state>` block (SS-02). Like
- *             'persona' its text is generated, not stored — the server resolves
- *             it per request from the live workspace/project/scratchpad/file
- *             state. Users may MOVE it; they may not edit or disable it,
- *             because a prompt that lies about state is worse than one that
- *             omits it (docs/SESSION_STATE_DESIGN.md, D3).
  */
-const SYSTEM_BLOCK_IDS = ['orientation', 'state', 'expressions', 'scratchpad', 'persona'];
+const SYSTEM_BLOCK_IDS = ['orientation', 'expressions', 'scratchpad', 'persona'];
 
 /**
- * `context_ack` is a block but NOT part of the system layer: it is the synthetic
- * assistant turn after injected KB context, so the assembly positions it, not
- * the user's `order`. Listed here so it is still editable and resettable.
+ * Blocks that are NOT part of the system layer. The assembly positions these,
+ * not the user's `order`; they are listed here so they are still described,
+ * and — where the block allows it — editable and resettable.
+ *
+ *   'context_ack'  the synthetic assistant turn after injected KB context.
+ *   'state'        the `<session_state>` block (SS-02). Its text is generated,
+ *                  not stored — the server resolves it per request from the
+ *                  live workspace/project/scratchpad/file state — and it may
+ *                  be neither edited nor disabled, because a prompt that lies
+ *                  about state is worse than one that omits it
+ *                  (docs/SESSION_STATE_DESIGN.md, D3).
+ *
+ * `state` was a SYSTEM block until PC-01. It moved because it reports the
+ * scratchpad's length and the per-scope file counts, which change during
+ * ordinary tool use: sitting in the system prompt, that churn invalidated the
+ * cached prefix for the WHOLE conversation on most turns, since a system
+ * change invalidates the message cache behind it. In the message layer it sits
+ * with the `<active_files>` and scratchpad blocks it already refers to — after
+ * the cacheable history instead of in front of it
+ * (docs/PROMPT_CACHING_DESIGN.md, D1).
+ *
+ * The cost is that a preset can no longer position it. That knob only ever
+ * meant "where among the other system blocks", which is not a question a
+ * message-layer block has.
  */
-const MESSAGE_BLOCK_IDS = ['context_ack'];
+const MESSAGE_BLOCK_IDS = ['context_ack', 'state'];
+
+/**
+ * The one id a stored `order` may contain that is no longer a system block.
+ * Presets written before PC-01 all carry it; see validateBlocks.
+ */
+const LEGACY_ORDER_ID = 'state';
 
 const ALL_BLOCK_IDS = [...SYSTEM_BLOCK_IDS, ...MESSAGE_BLOCK_IDS];
 
@@ -136,6 +157,12 @@ function validateBlocks(raw) {
   if (raw.order !== undefined) {
     if (!Array.isArray(raw.order)) return { ok: false, error: '"order" must be an array.' };
     for (const id of raw.order) {
+      // `state` is tolerated but not honoured (PC-01). Every preset saved
+      // before it left the system layer carries it here, and rejecting the id
+      // would make those presets unsaveable — an error the user could not act
+      // on, about a block they never chose to place. normalizeBlocks drops it
+      // from the order instead, and the first save after that writes it out.
+      if (id === LEGACY_ORDER_ID) continue;
       if (!SYSTEM_BLOCK_IDS.includes(id)) {
         return { ok: false, error: `Unknown block in "order": ${String(id)}` };
       }
