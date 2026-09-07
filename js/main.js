@@ -1228,6 +1228,16 @@ function setupEventListeners() {
                     <button class="section-new-btn" id="modelsAddBtn" type="button">+ Add model</button>
                 </div>
                 <div class="provider-chips" id="providerChips"></div>
+                <p class="section-note models-roles-note">
+                    A model can hold two roles, and the ⋯ menu on each card is where you set them.
+                    <strong>Active</strong> is the model that answers you in chat — click a card to
+                    switch, or use the model button in the composer. <strong>Aux</strong> is a second,
+                    usually cheaper model the app hands small background jobs to, like naming a new
+                    chat; a model can be both at once. Whatever the aux model spends is billed to
+                    your key and shown in that chat's token breakdown, so pick an expensive one only
+                    if you mean to. With no aux model set, the jobs that would use it fall back to
+                    something simpler rather than failing.
+                </p>
                 <div class="models-catalog" id="modelsCatalog"></div>
             </div>
             <div class="model-detail-panel" id="modelDetailPanel" hidden></div>`;

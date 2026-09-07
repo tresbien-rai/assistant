@@ -72,12 +72,9 @@ function showProjectMenu(anchorEl, projectId) {
         <button class="context-menu-item danger" data-action="delete">Delete</button>
     `;
 
-    const rect = anchorEl.getBoundingClientRect();
-    menu.style.position = 'fixed';
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${rect.left - 80}px`;
-
-    document.body.appendChild(menu);
+    // Same shared placement as every other menu — see showConversationMenu for
+    // why the hand-rolled version clipped.
+    positionPopover(menu, anchorEl, 'right');
 
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -91,14 +88,7 @@ function showProjectMenu(anchorEl, projectId) {
         });
     });
 
-    setTimeout(() => {
-        document.addEventListener('click', function closeMenu(e) {
-            if (!menu.contains(e.target)) {
-                menu.remove();
-                document.removeEventListener('click', closeMenu);
-            }
-        });
-    }, 0);
+    attachPopoverOutsideClose(menu, anchorEl);
 }
 
 /**
