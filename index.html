@@ -354,7 +354,8 @@ When responding, you may optionally include an expression tag like [expression: 
                         <input type="checkbox" id="autoTitleToggle" checked>
                         <span>Name new chats automatically</span>
                     </label>
-                    <p class="section-note">After the first reply, a new chat is named from what it's about instead of staying "New Chat". If you've set an aux model in <strong>Models</strong> (its ⋯ menu → "Use as aux model"), that model writes the name and the cost shows up in this chat's usage; otherwise the opening words of your first message are used, which costs nothing. Renaming a chat yourself always wins — nothing here overwrites a name you chose.</p>
+                    <p class="section-note" id="autoTitleSource"></p>
+                    <p class="section-note">Renaming a chat yourself always wins — nothing here overwrites a name you chose. Naming is retried after each reply while a chat is still called "New Chat", so a failed first turn is named on the next one.</p>
                 </div>
 
                 <div class="settings-section" data-settings-tab="advanced">

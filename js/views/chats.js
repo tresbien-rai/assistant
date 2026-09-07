@@ -13,7 +13,7 @@
 import { state } from '../state.js';
 import { elements } from '../dom.js';
 import { API } from '../api-client.js';
-import { navigate, updateUI, renderMainView, renderShell } from '../shell.js';
+import { navigate, updateUI, renderMainView, renderShell, refreshContainerChats } from '../shell.js';
 import { getActivePersona } from '../state.js';
 import {
     personaModelMode, findModelProvider, applyModelToLayer,
@@ -200,6 +200,10 @@ export function wireConversationRows(container) {
  */
 export function renderConversationList() {
     if ((state.ui.mainView || {}).type === 'chats') renderChatsListMain();
+    // A chat filed under a workspace or project is listed on that container's
+    // page instead, and since its rows carry the same ⋯ menu, the same
+    // rename/clear/delete callers have to repaint it. No-ops elsewhere.
+    else refreshContainerChats();
 }
 
 /**

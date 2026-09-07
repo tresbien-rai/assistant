@@ -23,7 +23,7 @@ import {
 import {
     persistSettings, autoSaveSettings, saveCatalogProviders, saveProviderKey,
     clearStoredApiKey, } from '../settings-store.js';
-import { navigate, updateUI, registerShell } from '../shell.js';
+import { navigate, updateUI, updateSettingsUI, registerShell } from '../shell.js';
 import { loadModelProfileIntoLayer } from '../model-layer.js';
 import { updateFixedPersonaPin } from '../settings-store.js';
 import { escapeHtml } from '../util/format.js';
@@ -608,6 +608,8 @@ export function setAuxModel(aux) {
     API.settings.update({ auxModel: aux }).catch(err => {
         console.error('Failed to persist the aux model:', err);
     });
+    // Settings states which naming path is in use; that answer just changed.
+    updateSettingsUI();
 }
 
 export function showModelCardMenu(anchorEl, modelId, provider) {

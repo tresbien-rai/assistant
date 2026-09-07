@@ -60,6 +60,7 @@ const impl = {
     renderModelsCatalog: null,
     refreshAddModelModal: null,
     renderChatThread: null,
+    refreshContainerChats: null,
 };
 
 /**
@@ -136,6 +137,23 @@ export function renderModelsCatalog() {
 /** Repaint the add-model modal's provider list, if that modal is open. */
 export function refreshAddModelModal() {
     return call('refreshAddModelModal', arguments);
+}
+
+/**
+ * Repaint just the chats list on a workspace or project page.
+ *
+ * The one-or-two growth the note above predicted. Renaming, clearing or
+ * deleting a chat has to repaint whichever list is showing it, and now that the
+ * ⋯ menu is on container-page rows too, that list may be one the other repaints
+ * here do not cover.
+ *
+ * A REGION repaint on purpose: re-rendering the whole container page would
+ * discard whatever unsaved text is sitting in its Instructions box.
+ *
+ * A no-op when the current view is not a container page.
+ */
+export function refreshContainerChats() {
+    return call('refreshContainerChats', arguments);
 }
 
 /**

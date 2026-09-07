@@ -105,6 +105,7 @@ export const elements = {
     showAvatar: document.getElementById('showAvatar'),
     activeFileTurns: document.getElementById('activeFileTurns'),
     autoTitleToggle: document.getElementById('autoTitleToggle'),
+    autoTitleSource: document.getElementById('autoTitleSource'),
 
     // Expression settings
     expressionList: document.getElementById('expressionList'),
