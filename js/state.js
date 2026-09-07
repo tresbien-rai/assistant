@@ -82,7 +82,10 @@ export const state = {
         // Settings/Personas are reached via the rail too (interim: modal/popover).
         mainView: { type: 'chats' },
         // Persona group ids collapsed in the chats list (session-only).
-        collapsedPersonaGroups: new Set()
+        collapsedPersonaGroups: new Set(),
+        // Collapsed list sections on container pages, keyed `<kind>:<id>:<what>`
+        // (session-only, matching the persona groups above).
+        collapsedSections: new Set()
     },
     currentExpression: 'neutral',
     isLoading: false,

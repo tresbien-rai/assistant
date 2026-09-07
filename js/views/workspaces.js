@@ -18,6 +18,7 @@ import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
 import { setupTextareaResizers } from '../components/textarea-resize.js';
+import { sectionHeadHTML, sectionBodyHTML, wireSectionToggles } from '../components/collapsible.js';
 import {
     switchConversation, createConversation,
 } from './chats.js';
@@ -475,6 +476,7 @@ export function renderContainerPage(kind, id) {
     const listsHTML = isWs
         ? containerProjectsListHTML(entity) + containerChatsListHTML(kind, entity)
         : containerChatsListHTML(kind, entity);
+    const filesKey = `${kind}:${id}:files`;
 
     elements.messagesContainer.innerHTML = `
         <div class="container-page" data-kind="${kind}" data-id="${escapeHtml(id)}">
@@ -497,15 +499,23 @@ export function renderContainerPage(kind, id) {
             </div>
 
             <div class="cp-section">
-                <div class="cp-section-label">Files</div>
-                <div class="project-file-list" id="cpFileList"></div>
-                <p class="empty-state small" id="cpNoFiles" hidden>No files yet.</p>
-                <div class="file-upload-wrapper">
-                    <input type="file" id="cpFileInput" class="file-input-hidden" multiple>
-                    <button type="button" class="file-upload-btn" id="cpUploadBtn">${CONTAINER_UPLOAD_SVG} Upload files</button>
-                </div>
-                <p class="help-text">Text, code, and PDF files up to 10MB each.</p>
-                <p class="help-text" id="cpFilesToggleHint" hidden>Unchecked files stay here but aren't loaded into chats. The assistant can still open one on request when file tools are on.</p>
+                ${sectionHeadHTML({
+                    key: filesKey,
+                    label: 'Files',
+                    // The upload input has to live in the head beside its
+                    // button, not in the body: a collapsed body is `hidden`,
+                    // and clicking a hidden file input opens nothing.
+                    action: `<div class="file-upload-wrapper">
+                        <input type="file" id="cpFileInput" class="file-input-hidden" multiple>
+                        <button type="button" class="file-upload-btn" id="cpUploadBtn">${CONTAINER_UPLOAD_SVG} Upload files</button>
+                    </div>`,
+                })}
+                ${sectionBodyHTML(filesKey, `
+                    <div class="project-file-list" id="cpFileList"></div>
+                    <p class="empty-state small" id="cpNoFiles" hidden>No files yet.</p>
+                    <p class="help-text">Text, code, and PDF files up to 10MB each.</p>
+                    <p class="help-text" id="cpFilesToggleHint" hidden>Unchecked files stay here but aren't loaded into chats. The assistant can still open one on request when file tools are on.</p>
+                `)}
             </div>
 
             ${listsHTML}
@@ -523,14 +533,20 @@ function containerProjectsListHTML(workspace) {
         .filter(p => p.workspaceId === workspace.id)
         .sort(byUpdatedDesc);
 
-    let h = `<div class="cp-section"><div class="cp-section-label">Projects</div>`;
-    if (projects.length > 0) {
-        h += `<div class="drill-list">${projects.map(projectRowHTML).join('')}</div>`;
-    } else {
-        h += `<p class="empty-state small">No projects yet.</p>`;
-    }
-    h += `<button class="cp-add-btn" data-action="new-project" type="button">+ New project</button></div>`;
-    return h;
+    const key = `workspace:${workspace.id}:projects`;
+    const body = projects.length > 0
+        ? `<div class="drill-list">${projects.map(projectRowHTML).join('')}</div>`
+        : `<p class="empty-state small">No projects yet.</p>`;
+
+    return `<div class="cp-section">
+        ${sectionHeadHTML({
+            key,
+            label: 'Projects',
+            count: projects.length,
+            action: `<button class="cp-add-btn" data-action="new-project" type="button">+ New project</button>`,
+        })}
+        ${sectionBodyHTML(key, body)}
+    </div>`;
 }
 
 /** Chats list for a container page (workspace-level or project-level chats). */
@@ -542,19 +558,25 @@ function containerChatsListHTML(kind, entity) {
 
     const sectionLabel = kind === 'workspace' ? 'Chats here' : 'Chats';
     const addLabel = kind === 'workspace' ? '+ New chat here' : '+ New chat';
+    const key = `${kind}:${entity.id}:chats`;
 
-    let h = `<div class="cp-section"><div class="cp-section-label">${sectionLabel}</div>`;
-    if (chats.length > 0) {
-        h += `<div class="cp-row-list">` + chats.map(ch =>
+    const body = chats.length > 0
+        ? `<div class="cp-row-list">` + chats.map(ch =>
             `<button class="cp-row" data-open-chat="${escapeHtml(ch.id)}" type="button">
                 <span class="cp-row-name">${escapeHtml(ch.title || 'New Chat')}</span>
                 <span class="cp-row-meta">${formatTimeAgo(ch.updatedAt || ch.createdAt)}</span>
-            </button>`).join('') + `</div>`;
-    } else {
-        h += `<p class="empty-state small">No chats yet.</p>`;
-    }
-    h += `<button class="cp-add-btn" data-action="new-chat" type="button">${addLabel}</button></div>`;
-    return h;
+            </button>`).join('') + `</div>`
+        : `<p class="empty-state small">No chats yet.</p>`;
+
+    return `<div class="cp-section">
+        ${sectionHeadHTML({
+            key,
+            label: sectionLabel,
+            count: chats.length,
+            action: `<button class="cp-add-btn" data-action="new-chat" type="button">${addLabel}</button>`,
+        })}
+        ${sectionBodyHTML(key, body)}
+    </div>`;
 }
 
 /** Wire the interactive elements of the currently-rendered container page. */
@@ -613,6 +635,11 @@ export function wireContainerPage(kind, id) {
         b.addEventListener('click', () => startNewProjectIn(id)));
     page.querySelectorAll('[data-action="new-chat"]').forEach(b =>
         b.addEventListener('click', startNewChatInContainer));
+
+    // Collapse/expand the Files, Projects and Chats sections. Purely local DOM
+    // work — see the note in components/collapsible.js about why this must not
+    // re-render the page (the Instructions box holds unsaved text).
+    wireSectionToggles(page);
 }
 
 /**

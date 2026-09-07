@@ -336,12 +336,55 @@
     flex-direction: column;
 }
 
+/* Head of a collapsible section: toggle on the left, action on the right.
+   A div, not a button — it contains buttons. See components/collapsible.js. */
+.cp-section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.cp-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    padding: 4px 6px;
+    margin-left: -6px;   /* keeps the label optically flush with the rows below */
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.cp-section-toggle:hover {
+    background-color: var(--bg-tertiary);
+}
+
 .cp-section-label {
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-muted);
-    margin-bottom: 6px;
+}
+
+.cp-section-count {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    opacity: 0.75;
+}
+
+/* Capped so one long list can't push every other section off the page. The
+   scroll is confined to this element — the page itself never scrolls
+   sideways, and only this box scrolls down. */
+.cp-section-body {
+    max-height: var(--list-max-height);
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .cp-row-list {
@@ -384,14 +427,16 @@
     color: var(--text-muted);
 }
 
+/* Sits in the section head now (PC of the list unification), so it no longer
+   pushes itself to the start of a column — the head's flex row places it. */
 .cp-add-btn {
-    align-self: flex-start;
-    margin-top: 6px;
+    flex: 0 0 auto;
     padding: 6px 4px;
     background: none;
     border: none;
     color: var(--accent);
     font-size: var(--text-sm);
+    white-space: nowrap;
     cursor: pointer;
 }
 
