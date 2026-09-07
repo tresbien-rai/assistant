@@ -228,6 +228,7 @@ export function persistSettings() {
         customModels: state.settings.customModels,
         currentModelConfig: state.currentModelConfig, // the active layer (WR-12)
         catalogProviders: state.settings.catalogProviders, // Models catalog filter
+        auxModel: state.settings.auxModel,                 // the cheap delegate (AX-01)
     };
     API.settings.update(settingsPayload).catch(err => {
         console.error('Failed to persist settings:', err);

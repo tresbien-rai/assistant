@@ -239,6 +239,15 @@
     border-radius: var(--radius-full);
 }
 
+/* The aux-model marker (AX-01). Quieter than the accent-colored Active badge —
+   a model can carry both at once, and which one is the CHAT model is the more
+   important of the two to read at a glance. */
+.persona-card-badge.aux {
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+}
+
 .tab-content {
     display: none;
     flex-direction: column;

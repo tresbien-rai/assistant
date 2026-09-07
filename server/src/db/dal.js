@@ -642,6 +642,7 @@ function getSettingsByUser(userId) {
     activeFileTurns: 1,
     catalogProviders: null,
     defaultPresetId: null,
+    auxModel: null,
   };
 }
 
@@ -693,6 +694,10 @@ function upsertSettings(userId, data) {
       updates.push('default_preset_id = ?');
       values.push(data.defaultPresetId || null);
     }
+    if (data.auxModel !== undefined) {
+      updates.push('aux_model = ?');
+      values.push(data.auxModel == null ? null : JSON.stringify(data.auxModel));
+    }
 
     if (updates.length > 0) {
       updates.push('updated_at = ?');
@@ -704,8 +709,8 @@ function upsertSettings(userId, data) {
   } else {
     const id = generateId();
     db.prepare(`
-      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, catalog_providers, default_preset_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, catalog_providers, default_preset_id, aux_model, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       userId,
@@ -717,12 +722,25 @@ function upsertSettings(userId, data) {
       data.activeFileTurns !== undefined ? data.activeFileTurns : 1,
       data.catalogProviders == null ? null : JSON.stringify(data.catalogProviders),
       data.defaultPresetId || null,
+      data.auxModel == null ? null : JSON.stringify(data.auxModel),
       timestamp,
       timestamp
     );
   }
 
   return getSettingsByUser(userId);
+}
+
+/** The stored aux model, or null if absent/unparseable/the wrong shape. */
+function parseAuxModel(raw) {
+  if (raw == null) return null;
+  try {
+    const v = JSON.parse(raw);
+    if (!v || typeof v.provider !== 'string' || typeof v.model !== 'string') return null;
+    return { provider: v.provider, model: v.model };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -746,6 +764,10 @@ function parseSettingsJson(settings) {
     // AP-01: the user's default prompt preset. NULL (pre-migration rows and
     // anyone who never made one) reads as the built-in prompt layer.
     defaultPresetId: settings.default_preset_id == null ? null : settings.default_preset_id,
+    // AX-01: {provider, model} for delegated background work, or NULL. Parsed
+    // defensively — a hand-edited row must degrade to "no aux model" rather
+    // than throw on every settings read the user makes.
+    auxModel: parseAuxModel(settings.aux_model),
     createdAt: settings.created_at,
     updatedAt: settings.updated_at,
   };
