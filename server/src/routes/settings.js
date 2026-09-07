@@ -12,7 +12,8 @@ const express = require('express');
 const dal = require('../db/dal');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/AppError');
+const { IMPLEMENTED_PROVIDER_IDS } = require('../providers/registry');
 
 const router = express.Router();
 
@@ -80,8 +81,22 @@ function isValidCatalogProviders(v) {
   return v === null || (Array.isArray(v) && v.every((p) => typeof p === 'string'));
 }
 
+// auxModel (AX-01): {provider, model} naming the cheap model used for delegated
+// background work, or null for "none". The model id is NOT checked against the
+// catalog — the catalog is client-owned and users add their own ids there, so
+// validating against it would reject legitimate models. A provider we cannot
+// dispatch to IS rejected, because that one fails at call time with nothing the
+// user could act on.
+function isValidAuxModel(v) {
+  if (v === null) return true;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  if (typeof v.provider !== 'string' || typeof v.model !== 'string') return false;
+  if (!v.model.trim()) return false;
+  return IMPLEMENTED_PROVIDER_IDS.includes(v.provider);
+}
+
 router.put('/', asyncHandler(async (req, res) => {
-  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns, catalogProviders, defaultPresetId } = req.body;
+  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns, catalogProviders, defaultPresetId, auxModel } = req.body;
 
   // Validate avatarSize if provided (preset name or numeric px string)
   if (avatarSize !== undefined && !isValidAvatarSize(avatarSize)) {
@@ -142,6 +157,12 @@ router.put('/', asyncHandler(async (req, res) => {
     }
   }
 
+  if (auxModel !== undefined && !isValidAuxModel(auxModel)) {
+    throw AppError.validation(
+      `auxModel must be null or {provider, model} with provider one of: ${IMPLEMENTED_PROVIDER_IDS.join(', ')}`
+    );
+  }
+
   // Build update data (only include fields that were provided)
   const updateData = {};
   if (avatarSize !== undefined) updateData.avatarSize = avatarSize;
@@ -152,6 +173,7 @@ router.put('/', asyncHandler(async (req, res) => {
   if (activeFileTurns !== undefined) updateData.activeFileTurns = activeFileTurns;
   if (catalogProviders !== undefined) updateData.catalogProviders = catalogProviders;
   if (defaultPresetId !== undefined) updateData.defaultPresetId = defaultPresetId;
+  if (auxModel !== undefined) updateData.auxModel = auxModel;
 
   // Upsert settings
   const settings = dal.upsertSettings(req.user.userId, updateData);

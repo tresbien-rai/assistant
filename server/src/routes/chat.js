@@ -34,19 +34,11 @@ const { logger } = require('../utils/logger');
 // trip; a healthy exchange needs 2-3, so 5 means something is looping.
 const MAX_TOOL_ITERATIONS = 5;
 
-// Provider modules
-const anthropic = require('../providers/anthropic');
-const gemini = require('../providers/gemini');
-
 const router = express.Router();
 const modelsRouter = express.Router();
 
-// Provider dispatch map - add new providers here
-const providers = {
-  anthropic,
-  google: gemini,
-  // openai will be added in future tasks
-};
+// Provider dispatch map — shared with the other dispatchers (AX-01).
+const { providers } = require('../providers/registry');
 
 // Valid provider names
 const VALID_PROVIDERS = ['anthropic', 'google', 'openai'];

@@ -367,6 +367,13 @@ function hydrateSettings(settings) {
         : null;
     // The account's default prompt preset (AP-02). null = the built-in layer.
     state.settings.defaultPresetId = settings.defaultPresetId || null;
+    // The aux model (AX-01). Shape-checked rather than trusted: a half-written
+    // value must read as "none" so the features that use it fall back cleanly,
+    // instead of dispatching to `undefined` at call time.
+    state.settings.auxModel =
+        settings.auxModel && settings.auxModel.provider && settings.auxModel.model
+            ? { provider: settings.auxModel.provider, model: settings.auxModel.model }
+            : null;
     // The active model layer (WR-12). NULL sentinel = not yet seeded (first
     // load after the de-sync upgrade) — init() seeds it from the active
     // persona once personas are hydrated.

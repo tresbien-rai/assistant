@@ -485,11 +485,15 @@ export function renderModelsCatalog() {
         }
         models.forEach(m => {
             const active = provider === layer.provider && m.id === layer.model;
+            // A model can be both: the active chat model AND the aux delegate.
+            const aux = isAuxModel(provider, m.id);
+            const badges = (active ? '<span class="persona-card-badge">Active</span>' : '')
+                + (aux ? '<span class="persona-card-badge aux">Aux</span>' : '');
             html += `
                 <div class="model-card${active ? ' active' : ''}">
                     <div class="model-card-open" data-model-select="${escapeHtml(m.id)}" data-provider="${provider}">
                         <div class="model-card-info">
-                            <span class="model-card-name">${escapeHtml(m.name)}${active ? '<span class="persona-card-badge">Active</span>' : ''}</span>
+                            <span class="model-card-name">${escapeHtml(m.name)}${badges}</span>
                             <span class="model-card-sub">${escapeHtml(m.id)}</span>
                         </div>
                     </div>
@@ -577,20 +581,56 @@ export function showProviderKeyPopover(anchorEl, provider) {
 }
 
 /** Per-card ⋯ menu on the Models section: Remove from catalog. */
+/**
+ * Is this catalog entry the account's aux model? (AX-01)
+ * @param {string} provider
+ * @param {string} modelId
+ */
+export function isAuxModel(provider, modelId) {
+    const aux = state.settings.auxModel;
+    return !!aux && aux.provider === provider && aux.model === modelId;
+}
+
+/**
+ * Designate (or clear) the aux model — the cheap delegate the app uses for
+ * background work like naming a chat.
+ *
+ * It is deliberately a SEPARATE slot from the active model rather than a
+ * "cheap mode" of it: the whole point is to let the two differ, so a user can
+ * run Opus in the chat and Haiku for the small stuff — or, if they want, pay
+ * Opus prices for chat titles. Clearing it is a first-class choice, not a
+ * broken state: every consumer must work without one.
+ *
+ * @param {{provider: string, model: string}|null} aux
+ */
+export function setAuxModel(aux) {
+    state.settings.auxModel = aux;
+    API.settings.update({ auxModel: aux }).catch(err => {
+        console.error('Failed to persist the aux model:', err);
+    });
+}
+
 export function showModelCardMenu(anchorEl, modelId, provider) {
     const existing = document.querySelector('.context-menu');
     if (existing) existing.remove();
 
+    const isAux = isAuxModel(provider, modelId);
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.innerHTML = `
         <button class="context-menu-item" data-action="edit">Edit settings</button>
+        <button class="context-menu-item" data-action="aux">${isAux ? 'Stop using as aux model' : 'Use as aux model'}</button>
         <button class="context-menu-item danger" data-action="remove">Remove</button>`;
     positionPopover(menu, anchorEl, 'right');
 
     menu.querySelector('[data-action="edit"]').addEventListener('click', () => {
         menu.remove();
         navigate({ type: 'models', detail: { provider, model: modelId } });
+    });
+    menu.querySelector('[data-action="aux"]').addEventListener('click', () => {
+        menu.remove();
+        setAuxModel(isAux ? null : { provider, model: modelId });
+        renderModelsCatalog();
     });
     menu.querySelector('[data-action="remove"]').addEventListener('click', () => {
         menu.remove();

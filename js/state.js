@@ -35,7 +35,11 @@ export const state = {
         catalogProviders: null,
         // The account's default prompt preset id (AP-02), or null for the
         // built-in prompt layer. The Advanced tab is the only writer.
-        defaultPresetId: null
+        defaultPresetId: null,
+        // The aux model (AX-01): {provider, model} for cheap delegated work —
+        // naming chats today, file digests later — or null for "none". Every
+        // consumer must work without one; the Models catalog is the only writer.
+        auxModel: null
     },
     // Prompt presets by id (from API.presets.list). The platform prompt layer's
     // override sets — see docs/ADVANCED_PROMPTS_PLAN.md.
