@@ -643,6 +643,7 @@ function getSettingsByUser(userId) {
     catalogProviders: null,
     defaultPresetId: null,
     auxModel: null,
+    autoTitle: true,
   };
 }
 
@@ -698,6 +699,10 @@ function upsertSettings(userId, data) {
       updates.push('aux_model = ?');
       values.push(data.auxModel == null ? null : JSON.stringify(data.auxModel));
     }
+    if (data.autoTitle !== undefined) {
+      updates.push('auto_title = ?');
+      values.push(data.autoTitle ? 1 : 0);
+    }
 
     if (updates.length > 0) {
       updates.push('updated_at = ?');
@@ -709,8 +714,8 @@ function upsertSettings(userId, data) {
   } else {
     const id = generateId();
     db.prepare(`
-      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, catalog_providers, default_preset_id, aux_model, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO settings (id, user_id, avatar_size, avatar_position, show_avatar, custom_models, current_model_config, active_file_turns, catalog_providers, default_preset_id, aux_model, auto_title, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       userId,
@@ -723,6 +728,7 @@ function upsertSettings(userId, data) {
       data.catalogProviders == null ? null : JSON.stringify(data.catalogProviders),
       data.defaultPresetId || null,
       data.auxModel == null ? null : JSON.stringify(data.auxModel),
+      data.autoTitle === false ? 0 : 1,
       timestamp,
       timestamp
     );
@@ -768,6 +774,9 @@ function parseSettingsJson(settings) {
     // defensively — a hand-edited row must degrade to "no aux model" rather
     // than throw on every settings read the user makes.
     auxModel: parseAuxModel(settings.aux_model),
+    // AX-02: on unless explicitly turned off. NULL (pre-migration rows) reads as
+    // ON, so the feature reaches existing users without them opting in.
+    autoTitle: settings.auto_title == null ? true : Boolean(settings.auto_title),
     createdAt: settings.created_at,
     updatedAt: settings.updated_at,
   };

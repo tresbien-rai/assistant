@@ -378,6 +378,44 @@ export function showConversationMenu(anchorEl, conversationId) {
 }
 
 /**
+ * Name a chat from its opening exchange (AX-02).
+ *
+ * Fire-and-forget by design: this runs after the reply is already on screen, so
+ * nothing here may throw, block, or surface an error. A chat that keeps the
+ * name "New Chat" is a small disappointment; a chat that breaks because naming
+ * failed is not.
+ *
+ * The server decides whether to do anything at all — that rule lives in one
+ * place so a repeated call cannot re-name (or re-charge for) a chat that
+ * already has a title.
+ *
+ * The local title is only adopted if the user has not renamed it in the
+ * meantime: they were here first, and their choice outranks the model's.
+ *
+ * @param {string} conversationId
+ */
+export async function maybeAutoTitle(conversationId) {
+    try {
+        const before = state.conversations[conversationId]?.title;
+        const res = await API.conversations.title(conversationId);
+        if (!res || res.source === 'skipped' || !res.title) return;
+
+        const convo = state.conversations[conversationId];
+        if (!convo) return;                       // deleted while the call was out
+        if (convo.title !== before) return;       // renamed by hand meanwhile
+
+        convo.title = res.title;
+        renderConversationList();
+        // The open chat shows its title in the top bar, so repaint that too.
+        if (state.activeConversationId === conversationId) updateUI();
+    } catch (err) {
+        // Deliberately silent: the user did not ask for this, so a failure is
+        // not something to interrupt them about.
+        console.error('Auto-naming failed:', err);
+    }
+}
+
+/**
  * Prompt to rename a conversation
  * @param {string} conversationId
  */

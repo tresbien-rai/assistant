@@ -352,6 +352,17 @@ const API = (function () {
         return request('GET', `/api/conversations/${encodeURIComponent(id)}/usage`);
       },
       /**
+       * Name a chat from its opening exchange (AX-02). The SERVER decides
+       * whether anything should happen — whether auto-naming is on, whether the
+       * chat still has its default title, whether an aux model is set — so
+       * calling this on an already-named chat is a cheap no-op rather than a
+       * second charge.
+       * @returns {Promise<{title: string, source: 'model'|'fallback'|'skipped'}>}
+       */
+      title(id) {
+        return request('POST', `/api/conversations/${encodeURIComponent(id)}/title`);
+      },
+      /**
        * Roll back model-authored file changes at/after a turn (FC-06a), before
        * re-rolling that turn. Returns { reverted, deleted, warnings }.
        */

@@ -33,6 +33,10 @@ const { saveTextOverFile, restoreFileRevision, writeContentToStore } = require('
 const { validateFilename, resolveMime } = require('../tools/createFile');
 const { applyScratchpadWrite, revertScratchpad } = require('../tools/scratchpad');
 const { revertConversationFiles } = require('../tools/revertFiles');
+const { getProviderModule } = require('../providers/registry');
+const { getDecryptedApiKey } = require('./apiKeys');
+const { buildTitleRequest, sanitizeTitle, fallbackTitle } = require('../prompts/title');
+const { logger } = require('../utils/logger');
 const { formatFileRevision } = require('../utils/format');
 const { trashConversationFiles } = require('../tools/conversationCleanup');
 const {
@@ -989,6 +993,119 @@ router.get('/:id/usage', asyncHandler(async (req, res) => {
       ? 'No usage recorded for this conversation. Turns taken before usage capture shipped are not counted.'
       : undefined,
   });
+}));
+
+
+/**
+ * The title a conversation starts life with. Auto-naming only ever replaces
+ * THIS — a user's own title, or one already generated, is never overwritten.
+ */
+const DEFAULT_TITLE = 'New Chat';
+
+/** Flatten stored message content (string, or a block array) to plain text. */
+function messageText(message) {
+  if (!message) return '';
+  const c = message.content;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) {
+    return c.filter((b) => b && b.type === 'text').map((b) => b.text || '').join('\n');
+  }
+  return '';
+}
+
+/**
+ * POST /api/conversations/:id/title
+ * Name a chat from its opening exchange (AX-02).
+ *
+ * The client calls this after the first reply lands; the SERVER decides whether
+ * anything should happen, so the rule lives in one place and a client that asks
+ * repeatedly cannot spend money repeatedly.
+ *
+ * Three ways it can answer, all 200:
+ *   - `source: 'model'`    the aux model named it
+ *   - `source: 'fallback'` the opening words of the first message
+ *   - `source: 'skipped'`  nothing to do; `title` is what the chat already has
+ *
+ * It never 500s on a naming failure. A title is a nicety and the chat is not:
+ * every provider error falls through to the fallback, which needs no key.
+ */
+router.post('/:id/title', asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const conversation = dal.getConversationMeta(req.params.id, userId);
+  if (!conversation) throw AppError.notFound('Conversation');
+
+  const settings = dal.getSettingsByUser(userId);
+  const skip = (reason) => res.json({ title: conversation.title, source: 'skipped', reason });
+
+  if (settings.autoTitle === false) return skip('auto-naming is off');
+  // Only ever names an untouched chat. This is also what stops the client's
+  // per-turn call from re-naming (and re-charging for) an established chat.
+  if (conversation.title !== DEFAULT_TITLE) return skip('already named');
+
+  const messages = dal.getMessagesByConversation(req.params.id, userId);
+  const firstUser = messages.find((m) => m.role === 'user');
+  const firstReply = messages.find((m) => m.role === 'assistant');
+  const userText = messageText(firstUser);
+  if (!userText.trim()) return skip('nothing said yet');
+
+  const fallback = fallbackTitle(userText);
+  let title = '';
+  let source = 'fallback';
+
+  const aux = settings.auxModel;
+  const providerModule = aux ? getProviderModule(aux.provider) : null;
+  if (providerModule) {
+    try {
+      const apiKey = getDecryptedApiKey(userId, aux.provider);
+      if (apiKey) {
+        const { system, messages: titleMessages } = buildTitleRequest(userText, messageText(firstReply));
+        const data = await providerModule.chatRaw(apiKey, {
+          model: aux.model,
+          messages: titleMessages,
+          systemPrompt: system,
+          // Small and deterministic: a title is a label, not a composition.
+          modelParams: { maxTokens: 32, temperature: 0, temperatureEnabled: true },
+        });
+        const clean = sanitizeTitle(providerModule.formatChatResult(data, aux.model).text);
+        if (clean) {
+          title = clean;
+          source = 'model';
+        }
+
+        // The naming call is a provider call, so it is recorded like any other
+        // (U-01). Deliberately visible rather than hidden: the aux model is the
+        // user's choice, and if they point it at an expensive model the cost
+        // should show up where they already look for cost. `turn: null` marks
+        // it as belonging to no conversation turn.
+        try {
+          const usage = providerModule.extractUsage(data);
+          if (usage) {
+            dal.addUsageEvent({
+              conversationId: req.params.id,
+              turn: null,
+              round: 0,
+              provider: aux.provider,
+              model: aux.model,
+              ...usage,
+            });
+          }
+        } catch (err) {
+          logger.warn({ userId, msg: err.message }, 'title usage capture failed');
+        }
+      }
+    } catch (err) {
+      // Every provider failure lands here: no key, a bad model id, a 429, a
+      // timeout. The fallback below covers all of them identically.
+      logger.warn({ userId, provider: aux.provider, msg: err.message }, 'aux title generation failed');
+    }
+  }
+
+  if (!title) title = fallback;
+  if (!title) return skip('nothing usable to name it from');
+
+  dal.updateConversation(req.params.id, userId, { title });
+  logger.info({ userId, conversationId: req.params.id, source }, 'conversation auto-named');
+  res.json({ title, source });
 }));
 
 module.exports = router;

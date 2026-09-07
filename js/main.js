@@ -374,6 +374,8 @@ function hydrateSettings(settings) {
         settings.auxModel && settings.auxModel.provider && settings.auxModel.model
             ? { provider: settings.auxModel.provider, model: settings.auxModel.model }
             : null;
+    // AX-02: on unless the server says otherwise, matching the server default.
+    state.settings.autoTitle = settings.autoTitle !== false;
     // The active model layer (WR-12). NULL sentinel = not yet seeded (first
     // load after the de-sync upgrade) — init() seeds it from the active
     // persona once personas are hydrated.
@@ -567,6 +569,7 @@ async function updateUI() {
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
     elements.showAvatar.checked = state.settings.showAvatar;
     if (elements.activeFileTurns) elements.activeFileTurns.value = state.settings.activeFileTurns;
+    if (elements.autoTitleToggle) elements.autoTitleToggle.checked = state.settings.autoTitle !== false;
 
     // Model params are shown/edited in the per-model detail view (Slice 5), not
     // a static section here — nothing to load into on a general updateUI.
@@ -1309,6 +1312,15 @@ function setupEventListeners() {
             v = Math.max(0, Math.min(20, v));
             elements.activeFileTurns.value = v;
             state.settings.activeFileTurns = v;
+            autoSaveSettings();
+        });
+    }
+
+    // AX-02: server-backed, so it rides the settings auto-save like the field
+    // above it.
+    if (elements.autoTitleToggle) {
+        elements.autoTitleToggle.addEventListener('change', () => {
+            state.settings.autoTitle = elements.autoTitleToggle.checked;
             autoSaveSettings();
         });
     }
