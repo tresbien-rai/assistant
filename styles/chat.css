@@ -414,6 +414,22 @@
     background: var(--bg-tertiary);
 }
 
+/* Row + its ⋯ button. The menu is a sibling rather than a child of the row
+   button (a button inside a button is invalid), so the two are laid out here. */
+.cp-row-wrap {
+    display: flex;
+    align-items: center;
+}
+
+.cp-row-wrap .cp-row {
+    flex: 1;
+    min-width: 0;
+}
+
+.cp-row-menu {
+    flex: 0 0 auto;
+}
+
 .cp-row-name {
     min-width: 0;
     overflow: hidden;

@@ -9,7 +9,7 @@
 import { state } from '../state.js';
 import { elements } from '../dom.js';
 import { API } from '../api-client.js';
-import { navigate, renderMainView, renderShell } from '../shell.js';
+import { navigate, renderMainView, renderShell, registerShell } from '../shell.js';
 import {
     escapeHtml, formatFileSize, formatTimeAgo, getFileTypeLabel,
 } from '../util/format.js';
@@ -20,7 +20,7 @@ import { confirmDialog, promptName } from '../components/dialogs.js';
 import { setupTextareaResizers } from '../components/textarea-resize.js';
 import { sectionHeadHTML, sectionBodyHTML, wireSectionToggles } from '../components/collapsible.js';
 import {
-    switchConversation, createConversation,
+    switchConversation, createConversation, showConversationMenu,
 } from './chats.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { FilePanel } from '../file-panel/index.js';
@@ -562,10 +562,17 @@ function containerChatsListHTML(kind, entity) {
 
     const body = chats.length > 0
         ? `<div class="cp-row-list">` + chats.map(ch =>
-            `<button class="cp-row" data-open-chat="${escapeHtml(ch.id)}" type="button">
-                <span class="cp-row-name">${escapeHtml(ch.title || 'New Chat')}</span>
-                <span class="cp-row-meta">${formatTimeAgo(ch.updatedAt || ch.createdAt)}</span>
-            </button>`).join('') + `</div>`
+            // Same rename / clear / delete menu the home chat list has — a chat
+            // filed under a workspace or project is not a lesser kind of chat.
+            // The ⋯ is a SIBLING of the row button, not inside it: a button
+            // nested in a button is invalid HTML and the browser drops it.
+            `<div class="cp-row-wrap">
+                <button class="cp-row" data-open-chat="${escapeHtml(ch.id)}" type="button">
+                    <span class="cp-row-name">${escapeHtml(ch.title || 'New Chat')}</span>
+                    <span class="cp-row-meta">${formatTimeAgo(ch.updatedAt || ch.createdAt)}</span>
+                </button>
+                <button class="conversation-menu-btn cp-row-menu" data-chat-menu="${escapeHtml(ch.id)}" type="button" title="Options" aria-label="Chat options">⋯</button>
+            </div>`).join('') + `</div>`
         : `<p class="empty-state small">No chats yet.</p>`;
 
     return `<div class="cp-section">
@@ -580,6 +587,63 @@ function containerChatsListHTML(kind, entity) {
 }
 
 /** Wire the interactive elements of the currently-rendered container page. */
+/**
+ * Repaint ONLY the chats section of the container page currently on screen.
+ *
+ * The shell seam calls this after a chat is renamed, cleared or deleted from a
+ * container-page ⋯ menu. Scoped to the section rather than re-running
+ * openContainerPage because that would rebuild the Instructions textarea and
+ * throw away whatever the user had typed into it but not yet saved.
+ *
+ * Collapse state survives: the section is rebuilt through the same
+ * sectionHeadHTML/sectionBodyHTML helpers, which read it from state.
+ */
+/**
+ * Wire the chat rows and collapse toggles inside `root`.
+ *
+ * Split out of wireContainerPage so a region repaint can re-wire ONLY the
+ * section it replaced. wireContainerPage also reloads the name and Instructions
+ * fields from the stored entity, which is right when the page is built and
+ * wrong afterwards: calling it to refresh a list underneath the Instructions box
+ * silently discarded whatever the user had typed there. (Found exactly that way
+ * — the draft came back empty after a rename.)
+ */
+function wireChatRows(root) {
+    root.querySelectorAll('[data-open-chat]').forEach(b =>
+        b.addEventListener('click', () => switchConversation(b.dataset.openChat)));
+    root.querySelectorAll('[data-chat-menu]').forEach(btn =>
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showConversationMenu(btn, btn.dataset.chatMenu);
+        }));
+}
+
+export function refreshContainerChats() {
+    const v = state.ui.mainView || {};
+    if (v.type !== 'workspace' && v.type !== 'project') return;
+    const entity = v.type === 'workspace' ? state.workspaces[v.id] : state.projects[v.id];
+    if (!entity) return;
+
+    const page = elements.messagesContainer.querySelector('.container-page');
+    const section = page && page.querySelector(`[data-section-body="${v.type}:${v.id}:chats"]`)?.closest('.cp-section');
+    if (!section) return;
+
+    // Replace the section, then re-wire only what was replaced. Anything
+    // outside it — the name field, the Instructions box and its unsaved text —
+    // is left untouched.
+    section.insertAdjacentHTML('afterend', containerChatsListHTML(v.type, entity));
+    const fresh = section.nextElementSibling;
+    section.remove();
+    if (fresh) {
+        wireChatRows(fresh);
+        // The section's own collapse toggle came back with the new markup, so
+        // it needs re-binding — scoped to the section, because the page-wide
+        // call in wireContainerPage would bind the OTHER sections a second time
+        // and make one click toggle them twice.
+        wireSectionToggles(fresh);
+    }
+}
+
 export function wireContainerPage(kind, id) {
     const page = elements.messagesContainer.querySelector('.container-page');
     if (!page) return;
@@ -629,8 +693,7 @@ export function wireContainerPage(kind, id) {
         btn.addEventListener('click', (e) => { e.stopPropagation(); showProjectMenu(btn, btn.dataset.projectId); }));
 
     // Chat rows + add buttons.
-    page.querySelectorAll('[data-open-chat]').forEach(b =>
-        b.addEventListener('click', () => switchConversation(b.dataset.openChat)));
+    wireChatRows(page);
     page.querySelectorAll('[data-action="new-project"]').forEach(b =>
         b.addEventListener('click', () => startNewProjectIn(id)));
     page.querySelectorAll('[data-action="new-chat"]').forEach(b =>
@@ -859,3 +922,6 @@ async function deleteContainerFilePrompt(kind, id, fileId, filename) {
     await loadContainerFiles(kind, id);
 }
 
+// This view owns the container page, so it registers the region repaint the
+// seam exposes for it (see js/shell.js -> refreshContainerChats).
+registerShell({ refreshContainerChats });

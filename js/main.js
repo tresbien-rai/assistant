@@ -528,7 +528,39 @@ function pickActiveConversation() {
  * Update only settings-related UI elements (not conversation)
  * Used by auto-save to avoid re-rendering messages and causing flicker
  */
+/**
+ * Say which of the two naming paths is actually in use (AX-02).
+ *
+ * A standing warning would be the wrong shape here: not having an aux model is
+ * a legitimate configuration, not a fault, and the feature works without one.
+ * But "it silently used the worse path" is exactly how a user ends up thinking
+ * the feature is broken — so the setting states what it is doing right now,
+ * where they are already looking at it, and names the one action that changes
+ * it. Nothing nags, nothing is silent.
+ */
+function syncAutoTitleSource() {
+    const el = elements.autoTitleSource;
+    if (!el) return;
+    const aux = state.settings.auxModel;
+    if (!aux) {
+        el.innerHTML = 'Right now names come from the <strong>opening words of your first message</strong>, '
+            + 'which costs nothing. To get names that describe the topic instead, pick an aux model in '
+            + '<strong>Models</strong> — a model\'s ⋯ menu → "Use as aux model". A cheap one is plenty.';
+        return;
+    }
+    const known = (state.settings.customModels[aux.provider] || []).find(m => m.id === aux.model);
+    const label = known ? known.name : aux.model;
+    el.innerHTML = `Names are written by your aux model, <strong>${escapeHtml(label)}</strong>, `
+        + 'and what it costs appears in that chat\'s token breakdown. '
+        + 'If the call fails, the opening words of your first message are used instead.';
+}
+
 function updateSettingsUI() {
+    // Which naming path is in use can change from the MODELS view (designating
+    // an aux model), which repaints the settings surface rather than the whole
+    // UI — so this belongs here as well as in updateUI().
+    syncAutoTitleSource();
+
     const persona = getActivePersona();
 
     // Update header with assistant name
@@ -570,6 +602,7 @@ async function updateUI() {
     elements.showAvatar.checked = state.settings.showAvatar;
     if (elements.activeFileTurns) elements.activeFileTurns.value = state.settings.activeFileTurns;
     if (elements.autoTitleToggle) elements.autoTitleToggle.checked = state.settings.autoTitle !== false;
+    syncAutoTitleSource();
 
     // Model params are shown/edited in the per-model detail view (Slice 5), not
     // a static section here — nothing to load into on a general updateUI.

@@ -225,6 +225,11 @@ export function renderTopBar() {
     if (elements.modelButton) elements.modelButton.hidden = inChat;
     // Files explorer (CF-01b): per-conversation, so only in a chat.
     if (elements.filesExplorerBtn) elements.filesExplorerBtn.hidden = !inChat;
+    // The token count is PER-CONVERSATION (state.usage is one chat's usage), so
+    // outside a chat it has no subject. Left visible it kept showing whichever
+    // chat was open last — a number attached to nothing on screen, and one that
+    // read as a total for the list you were looking at.
+    if (elements.statusTokensBtn) elements.statusTokensBtn.hidden = !inChat;
 }
 
 // `setModelIndicator` used to live here — another passenger like
