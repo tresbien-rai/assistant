@@ -37,16 +37,22 @@ import { stripExpressionTag, stripPrefillText, splitLeadingExpressionTag } from 
  * @param {string} content - The first message content
  * @returns {string} A truncated title
  */
-export function generateConversationTitle(content) {
-    const maxLength = 50;
-    const cleaned = content.trim().replace(/\s+/g, ' ');
-
-    if (cleaned.length <= maxLength) {
-        return cleaned;
-    }
-
-    return cleaned.substring(0, maxLength).trim() + '...';
-}
+/**
+ * REMOVED in AX-02. This truncated the first user message into the chat's name
+ * — which is why a chat about Redis eviction was called "Help me design a Redis
+ * cache eviction strat...".
+ *
+ * Naming now happens once, after the first reply, in
+ * views/chats.js -> maybeAutoTitle: the aux model writes a real name, and the
+ * same truncation survives as the server-side FALLBACK for users with no aux
+ * model (prompts/title.js -> fallbackTitle), where it is at least applied to a
+ * finished exchange.
+ *
+ * The visible trade: a new chat reads "New Chat" for the few seconds until the
+ * reply lands, instead of showing a truncated echo immediately. Naming is
+ * retried after every reply while the title is still the default, so a failed
+ * or abandoned first turn just gets named on the next one.
+ */
 
 /**
  * Persist a single new message to the server. Returns the server-augmented
@@ -385,9 +391,8 @@ export async function appendMessage(role, content, save = true, explicitIndex = 
         // async (server-generated id), so this whole branch awaits — callers
         // must therefore await appendMessage.
         if (!state.activeConversationId) {
-            const title = role === 'user'
-                ? generateConversationTitle(displayContent)
-                : 'New Chat';
+            // Always the default name — AX-02 names it after the first reply.
+            const title = 'New Chat';
             try {
                 await createConversation(title);
             } catch (err) {
@@ -407,12 +412,6 @@ export async function appendMessage(role, content, save = true, explicitIndex = 
             activeConvo.messages.push(msg);
             messageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
 
-            // Update title from first user message if still default.
-            if (activeConvo.messages.length === 1 && role === 'user' && activeConvo.title === 'New Chat') {
-                activeConvo.title = generateConversationTitle(displayContent);
-                // Title changed; flush metadata to server.
-                saveConversations();
-            }
             activeConvo.updatedAt = Date.now();
 
             // Persist the message and AWAIT the result so msg.id is

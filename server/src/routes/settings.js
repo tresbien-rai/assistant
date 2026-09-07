@@ -96,7 +96,7 @@ function isValidAuxModel(v) {
 }
 
 router.put('/', asyncHandler(async (req, res) => {
-  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns, catalogProviders, defaultPresetId, auxModel } = req.body;
+  const { avatarSize, avatarPosition, showAvatar, customModels, currentModelConfig, activeFileTurns, catalogProviders, defaultPresetId, auxModel, autoTitle } = req.body;
 
   // Validate avatarSize if provided (preset name or numeric px string)
   if (avatarSize !== undefined && !isValidAvatarSize(avatarSize)) {
@@ -174,6 +174,7 @@ router.put('/', asyncHandler(async (req, res) => {
   if (catalogProviders !== undefined) updateData.catalogProviders = catalogProviders;
   if (defaultPresetId !== undefined) updateData.defaultPresetId = defaultPresetId;
   if (auxModel !== undefined) updateData.auxModel = auxModel;
+  if (autoTitle !== undefined) updateData.autoTitle = Boolean(autoTitle);
 
   // Upsert settings
   const settings = dal.upsertSettings(req.user.userId, updateData);

@@ -23,7 +23,7 @@ import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
 import { getActivePersona, getActiveConversation } from '../state.js';
 import { getActiveModelConfig, updateSendButtonState } from '../model-layer.js';
-import { createConversation, renderConversation } from '../views/chats.js';
+import { createConversation, renderConversation, maybeAutoTitle } from '../views/chats.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { renderMarkdown, messageActionsHTML } from '../util/markdown.js';
 import { FilePanel } from '../file-panel/index.js';
@@ -32,7 +32,7 @@ import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
 import {
     appendMessage, persistMessage, showTypingIndicator, hideTypingIndicator,
-    generateConversationTitle, toolEventToAttachment, truncateMessagesFrom,
+    toolEventToAttachment, truncateMessagesFrom,
     renderMessageAttachments, streamingBubble, paintStreamingBubble,
     renderStreamingContent, threadIsVisible, renderChatThread, streamingDisplayText,
     renderMessageBody,
@@ -257,7 +257,7 @@ export async function sendMessage() {
     // opening message of a fresh chat.
     if (textUploads.length > 0 && !state.activeConversationId) {
         try {
-            await createConversation(generateConversationTitle(userMessage || '(attached files)'));
+            await createConversation('New Chat');
         } catch (err) {
             console.error('Could not create conversation for working files:', err);
         }
@@ -765,6 +765,18 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
         state.estimatedTokens = 0;   // superseded by the real figure
         updateStatusBar();
     });
+
+    // AX-02: name the chat from its opening exchange. Fire-and-forget, after
+    // the reply is already on screen — a title is a nicety and must never make
+    // the user wait for it, or cost them their turn if it fails.
+    //
+    // The condition here is only a cheap client-side filter to avoid a pointless
+    // round trip; the SERVER owns the real rule (auto-naming on? still the
+    // default title? aux model set?), so a client that asked anyway could not
+    // rename an established chat or spend twice.
+    if (targetConvo && targetConvo.title === 'New Chat' && state.settings.autoTitle !== false) {
+        maybeAutoTitle(targetConvo.id);
+    }
 
     const finishedIn = state.streamingConversationId;
     state.streamingConversationId = null;

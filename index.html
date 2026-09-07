@@ -348,6 +348,16 @@ When responding, you may optionally include an expression tag like [expression: 
                      A preset overrides Tessera's built-in prompt blocks; "Built-in
                      prompt" is a real choice in the list, not the absence of one. -->
                 <div class="settings-section" data-settings-tab="advanced">
+                    <h3>Chat names</h3>
+                    <p class="section-note">Synced to your account.</p>
+                    <label class="checkbox-row" for="autoTitleToggle">
+                        <input type="checkbox" id="autoTitleToggle" checked>
+                        <span>Name new chats automatically</span>
+                    </label>
+                    <p class="section-note">After the first reply, a new chat is named from what it's about instead of staying "New Chat". If you've set an aux model in <strong>Models</strong> (its ⋯ menu → "Use as aux model"), that model writes the name and the cost shows up in this chat's usage; otherwise the opening words of your first message are used, which costs nothing. Renaming a chat yourself always wins — nothing here overwrites a name you chose.</p>
+                </div>
+
+                <div class="settings-section" data-settings-tab="advanced">
                     <h3>Prompt presets</h3>
                     <p class="section-note">Synced to your account.</p>
                     <p class="section-note">A preset overrides the platform prompt Tessera wraps around your persona — the orientation preamble, the expression protocol, the scratchpad instructions — and the order they appear in. Blocks you don't edit keep following the built-in, so improvements to it still reach you.</p>

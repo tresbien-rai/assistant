@@ -39,7 +39,10 @@ export const state = {
         // The aux model (AX-01): {provider, model} for cheap delegated work —
         // naming chats today, file digests later — or null for "none". Every
         // consumer must work without one; the Models catalog is the only writer.
-        auxModel: null
+        auxModel: null,
+        // Name a new chat from its first exchange (AX-02). On by default; the
+        // server is the authority, this mirrors it for the Settings checkbox.
+        autoTitle: true
     },
     // Prompt presets by id (from API.presets.list). The platform prompt layer's
     // override sets — see docs/ADVANCED_PROMPTS_PLAN.md.

@@ -104,6 +104,7 @@ export const elements = {
     avatarPreviewStatus: document.getElementById('avatarPreviewStatus'),
     showAvatar: document.getElementById('showAvatar'),
     activeFileTurns: document.getElementById('activeFileTurns'),
+    autoTitleToggle: document.getElementById('autoTitleToggle'),
 
     // Expression settings
     expressionList: document.getElementById('expressionList'),
