@@ -22,6 +22,8 @@ export function positionPopover(menu, anchorEl, align) {
     document.body.appendChild(menu);
     const rect = anchorEl.getBoundingClientRect();
     menu.style.position = 'fixed';
+    // Placed below for measurement; the vertical block at the foot decides
+    // where it actually lands once its height is known.
     menu.style.top = `${rect.bottom + 6}px`;
     if (align === 'right') {
         menu.style.right = `${window.innerWidth - rect.right}px`;
@@ -41,8 +43,44 @@ export function positionPopover(menu, anchorEl, align) {
         menu.style.right = 'auto';
         menu.style.left = `${Math.max(MARGIN, Math.min(box.left, maxLeft))}px`;
     }
-    if (rect.bottom + 6 + menu.offsetHeight > window.innerHeight) {
-        menu.style.top = `${Math.max(8, rect.top - 6 - menu.offsetHeight)}px`;
+    // Vertical placement. Below the anchor by default; flipped above when that
+    // would overflow the bottom.
+    //
+    // The flip alone is not enough, and this is the case that was clipping
+    // menus in practice: when the menu is taller than the space on EITHER side
+    // of the anchor — a short viewport, or an anchor near the middle of a tall
+    // menu — flipping just moves the overflow from the bottom edge to the top,
+    // and clamping to `8` then pushes the far end off-screen. The last item was
+    // simply unreachable, with `.context-menu`'s `overflow: hidden` making it
+    // invisible rather than merely out of view.
+    //
+    // So: pick the roomier side, and if the menu still does not fit there, cap
+    // its height and let it scroll. A scrolling menu is not ideal; an
+    // unreachable Delete is a bug.
+    const spaceBelow = window.innerHeight - rect.bottom - 6 - MARGIN;
+    const spaceAbove = rect.top - 6 - MARGIN;
+    const height = menu.offsetHeight;
+
+    if (height <= spaceBelow) {
+        menu.style.top = `${rect.bottom + 6}px`;
+    } else if (height <= spaceAbove) {
+        menu.style.top = `${rect.top - 6 - height}px`;
+    } else {
+        // Fits nowhere: use the roomier side, cap the height, and scroll inside
+        // the menu.
+        //
+        // The 96px floor keeps a squeezed menu usable rather than a 12px slit —
+        // but it is bounded by the viewport first, and the final top is clamped
+        // to both edges. Without that, the floor itself pushed the menu back
+        // off-screen on a very short viewport: the exact failure this branch
+        // exists to prevent, reintroduced by its own minimum.
+        const below = spaceBelow >= spaceAbove;
+        const room = Math.min(window.innerHeight - MARGIN * 2,
+            Math.max(below ? spaceBelow : spaceAbove, 96));
+        menu.style.maxHeight = `${room}px`;
+        menu.style.overflowY = 'auto';
+        const wanted = below ? rect.bottom + 6 : rect.top - 6 - room;
+        menu.style.top = `${Math.min(Math.max(MARGIN, wanted), window.innerHeight - MARGIN - room)}px`;
     }
 }
 

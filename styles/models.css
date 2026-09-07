@@ -72,6 +72,16 @@
     gap: 8px;
 }
 
+/* Explains Active vs Aux, the two roles a card's ⋯ menu can assign. It sits
+   under the chips because that is where someone looking at the catalog is
+   already reading, and the aux role had no explanation anywhere else. Shares
+   the catalog's column width so it lines up with the cards below it. */
+.models-roles-note {
+    max-width: var(--section-max-width);
+    margin: 12px auto 0;
+    line-height: 1.5;
+}
+
 .provider-chip {
     display: inline-flex;
     align-items: center;

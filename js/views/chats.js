@@ -24,6 +24,7 @@ import { personaAvatarHTML, applyPersonaModelSettings } from '../persona-helpers
 import { escapeHtml, formatTimeAgo } from '../util/format.js';
 import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
+import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
 import { updateStatusBar } from '../status-bar.js';
 import { loadUsage } from './usage-panel.js';
 
@@ -346,13 +347,12 @@ export function showConversationMenu(anchorEl, conversationId) {
         <button class="context-menu-item danger" data-action="delete">Delete</button>
     `;
 
-    // Position the menu
-    const rect = anchorEl.getBoundingClientRect();
-    menu.style.position = 'fixed';
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${rect.left - 80}px`;
-
-    document.body.appendChild(menu);
+    // Positioned through the shared helper rather than by hand. The hand-rolled
+    // version pinned the menu below the anchor unconditionally, so a chat row
+    // near the bottom of the viewport put "Delete" past the edge — and
+    // `.context-menu` clips its overflow, so the item was invisible rather than
+    // merely off-screen. The helper flips, clamps and (failing both) scrolls.
+    positionPopover(menu, anchorEl, 'right');
 
     // Handle menu item clicks
     menu.querySelectorAll('.context-menu-item').forEach(item => {
@@ -370,15 +370,9 @@ export function showConversationMenu(anchorEl, conversationId) {
         });
     });
 
-    // Close menu on outside click
-    setTimeout(() => {
-        document.addEventListener('click', function closeMenu(e) {
-            if (!menu.contains(e.target)) {
-                menu.remove();
-                document.removeEventListener('click', closeMenu);
-            }
-        });
-    }, 0);
+    // Excludes the anchor, so clicking ⋯ again closes the menu instead of
+    // closing and immediately reopening it.
+    attachPopoverOutsideClose(menu, anchorEl);
 }
 
 /**

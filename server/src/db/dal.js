@@ -2041,10 +2041,19 @@ function summariseUsage(conversationId) {
   // one entry labelled with whichever row arrived first, producing exactly the
   // un-priceable cross-model figure this grouping exists to prevent. No
   // current provider can trigger it; the guard costs one character.
+  //
+  // The separator is U+0000, written as a six-character unicode ESCAPE in the
+  // source rather than as a literal byte. It was a literal byte until it was
+  // noticed that one makes the whole file read as binary to git and to
+  // editors, and look like corruption to anyone who does not know it is
+  // load-bearing. Identical at runtime.
+  //
+  // Do not 'tidy' it into a space: a space is a character both a provider
+  // name and a model id can contain, which is the collision this avoids.
   const fold = (subset) => {
     const byModel = new Map();
     for (const r of subset) {
-      const key = `${r.provider} ${r.model}`;
+      const key = `${r.provider}\u0000${r.model}`;
       if (!byModel.has(key)) {
         byModel.set(key, {
           provider: r.provider, model: r.model, rounds: 0, ...blank(),
@@ -2063,10 +2072,16 @@ function summariseUsage(conversationId) {
   // A null turn cannot be grouped, so each such row stands alone rather than
   // collapsing with every other null-turn row in the conversation. Collapsing
   // would merge unrelated sends into one pseudo-turn and let a partial flag on
-  // any of them contaminate the rest. Unreachable today — every call site
-  // passes a real ordinal — but the failure would be silent, and silent
-  // under-reporting is the one thing this feature cannot afford.
-  const keyOf = (r) => (r.turn == null ? `null ${r.id}` : `t${r.turn}`);
+  // any of them contaminate the rest.
+  //
+  // This was written as a guard against something unreachable — every call
+  // site passed a real ordinal. It is reachable now: AX-02's chat-naming call
+  // records `turn: null` on purpose, because naming belongs to no conversation
+  // turn. So the aux model's row stands on its own in the per-turn view
+  // instead of being folded into whichever turn happened to be adjacent.
+  //
+  // Same separator note as `fold` above.
+  const keyOf = (r) => (r.turn == null ? `null\u0000${r.id}` : `t${r.turn}`);
 
   const byTurn = new Map();
   for (const r of rows) {
