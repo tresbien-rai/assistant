@@ -239,13 +239,36 @@
     border-radius: var(--radius-full);
 }
 
-/* The aux-model marker (AX-01). Quieter than the accent-colored Active badge —
-   a model can carry both at once, and which one is the CHAT model is the more
-   important of the two to read at a glance. */
-.persona-card-badge.aux {
+/* Model role markers: Main and Aux (AX-01).
+   ONE component, so the two read as a pair. They previously differed in more
+   than colour — the aux one carried a border the main one did not, which made
+   it a pixel taller and visibly a different kind of thing. Now identical in
+   every metric; only the hue says which role it is. Sized off the same box as
+   .persona-card-badge above, which it sits beside on model cards. */
+.role-badge {
+    display: inline-block;
+    flex: 0 0 auto;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.5;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    /* Both carry the explanation on hover, so both say so. */
+    cursor: help;
+}
+
+.role-badge.main {
+    color: var(--accent);
+    background: var(--accent-subtle);
+}
+
+/* Quieter than main: a model can hold both at once, and which one answers you
+   in chat is the more important of the two to read at a glance. */
+.role-badge.aux {
     color: var(--text-secondary);
     background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
 }
 
 .tab-content {

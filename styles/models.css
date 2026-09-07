@@ -96,17 +96,6 @@
     min-width: 0;
 }
 
-.model-role-label {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    /* Carries the explanation as hover text, so the cursor should say so. */
-    cursor: help;
-    border-bottom: 1px dotted var(--border-color);
-}
-
 .model-role-value {
     font-size: var(--text-sm);
     color: var(--text-primary);
@@ -590,26 +579,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-/* Role markers in the switcher. Deliberately quieter than the catalog badges:
-   here they annotate a list you are scanning, rather than labelling a card. */
-.model-menu-role {
-    flex: 0 0 auto;
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 1px 5px;
-    border-radius: var(--radius-full);
-    color: var(--accent);
-    background: var(--accent-subtle);
-}
-
-.model-menu-role.aux {
-    color: var(--text-secondary);
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
 }
 
 .model-menu-rowmenu {
