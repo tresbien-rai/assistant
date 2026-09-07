@@ -221,6 +221,40 @@ async function typeAndSend(text) {
 
 const CHECKS = [
     {
+        id: 'strikethrough-needs-two-tildes',
+        what: 'a lone ~ is punctuation, not a delimiter',
+        // Two single tildes on one line used to swallow everything between
+        // them, which numeric ranges ("2~3년차"), ~/paths and "~5" all trip.
+        // Driven through renderMarkdown, not the raw regex, so a change to how
+        // marked is configured is caught too.
+        async run() {
+            const { renderMarkdown } = await import('/js/util/markdown.js');
+            const cases = [
+                // [input, must contain <del>?, label]
+                ['- 나이: 26~27세 전후 (실무 2~3년차, 초고속 승진).', false, 'numeric ranges'],
+                ['about ~5 to ~10 items', false, 'approximations'],
+                ['see ~/docs and ~/tmp', false, 'home paths'],
+                ['~single~', false, 'a single pair is literal'],
+                ['~~real strike~~', true, 'a double pair still strikes'],
+                ['range 1~2 and ~~gone~~ here', true, 'both in one line'],
+                ['~~**bold strike**~~', true, 'nested formatting survives'],
+            ];
+            for (const [input, wantDel, label] of cases) {
+                const html = renderMarkdown(input);
+                const hasDel = html.includes('<del>');
+                if (hasDel !== wantDel) {
+                    throw new Error(
+                        `${label}: expected ${wantDel ? '' : 'no '}<del> for ${JSON.stringify(input)}, got ${html.trim()}`
+                    );
+                }
+            }
+            // The range text must survive verbatim, not merely un-struck.
+            if (!renderMarkdown('2~3년차').includes('2~3년차')) {
+                throw new Error('the tildes themselves must be preserved in the output');
+            }
+        },
+    },
+    {
         id: 'usage-does-not-leak-between-chats',
         what: 'switching chats never shows one conversation’s billed tokens as another’s',
         // U-04. The status bar is repainted by several callers (every appended

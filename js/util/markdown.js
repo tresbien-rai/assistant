@@ -64,6 +64,46 @@ markedRenderer.link = function(href, title, text) {
 marked.setOptions({ renderer: markedRenderer });
 
 /**
+ * Strikethrough requires TWO tildes.
+ *
+ * GFM allows a single pair (`~text~`), and marked implements it — but a lone
+ * `~` is far more often ordinary punctuation than a delimiter, and any two of
+ * them on one line then swallow everything between:
+ *
+ *     - 나이: 26~27세 전후 (··· 실무 2~3년차, ···)
+ *       -> 26<del>27세 전후 (··· 실무 2</del>3년차
+ *
+ * Numeric ranges do this constantly (`2~3`, `10~15`), and so do `~/paths` and
+ * `~5` for "about five". Nobody types a single tilde MEANING strikethrough —
+ * every editor that offers the shortcut emits `~~`. So the rule is narrowed to
+ * the form people actually write, which makes the common case correct and the
+ * rare one explicit.
+ *
+ * A heuristic was the alternative — ignore a delimiter flanked by digits, say —
+ * but "sometimes a range, sometimes a strikethrough" is much harder to predict
+ * than one flat rule.
+ *
+ * Returning `undefined` rather than `false` matters: marked's `use()` falls
+ * back to the ORIGINAL tokenizer on `false`, which would quietly restore
+ * single-tilde matching and undo all of this.
+ */
+marked.use({
+    tokenizer: {
+        del(src) {
+            // marked's own rule with `~~?` tightened to `~~`.
+            const cap = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/.exec(src);
+            if (!cap) return undefined;
+            return {
+                type: 'del',
+                raw: cap[0],
+                text: cap[2],
+                tokens: this.lexer.inlineTokens(cap[2]),
+            };
+        },
+    },
+});
+
+/**
  * Render Markdown content to HTML
  * @param {string} content - Raw markdown text
  * @returns {string} - HTML string
