@@ -72,14 +72,61 @@
     gap: 8px;
 }
 
-/* Explains Active vs Aux, the two roles a card's ⋯ menu can assign. It sits
-   under the chips because that is where someone looking at the catalog is
-   already reading, and the aux role had no explanation anywhere else. Shares
-   the catalog's column width so it lines up with the cards below it. */
-.models-roles-note {
+/* The two model roles, as current values. Shares the catalog's column width so
+   it lines up with the cards below, and keeps a full row of clear space from
+   the chips above — the previous prose version sat tight against them and read
+   as part of the chip row. */
+.model-roles {
     max-width: var(--section-max-width);
-    margin: 12px auto 0;
-    line-height: 1.5;
+    margin: 20px auto 4px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 24px;
+}
+
+.model-role {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.model-role-label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    /* Carries the explanation as hover text, so the cursor should say so. */
+    cursor: help;
+    border-bottom: 1px dotted var(--border-color);
+}
+
+.model-role-value {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* "None" is a real state, not an error — quiet, not alarming. */
+.model-role-value.none {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Pushed to its own line: it is a footnote, not a third role. */
+.model-role-how {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
 }
 
 .provider-chip {
@@ -506,6 +553,78 @@
 .model-menu-scroll {
     max-height: 50vh;
     overflow-y: auto;
+}
+
+/* Wider than the stock wide menu: a row now carries a name, a role marker and
+   a ⋯, and at 280px the longest model names were ellipsed to nothing useful.
+   Wins over .context-menu-wide by source order — models.css loads after
+   views.css, which is the cascade the <link> order defines. */
+.model-menu {
+    max-width: 340px;
+}
+
+/* A switcher row: the model button plus its role ⋯, side by side. The ⋯ is a
+   sibling rather than a child of the button (nesting buttons is invalid). */
+.model-menu-row {
+    display: flex;
+    align-items: stretch;
+}
+
+/* The row's "Primary" marker already says what the ✓ said, and a floated
+   ::after inside a flex item is fragile besides. Suppressed only here — the
+   persona and settings menus still use the check. */
+.model-menu-row .context-menu-item.active::after {
+    content: none;
+}
+
+.model-menu-row .context-menu-item {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.model-menu-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Role markers in the switcher. Deliberately quieter than the catalog badges:
+   here they annotate a list you are scanning, rather than labelling a card. */
+.model-menu-role {
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 1px 5px;
+    border-radius: var(--radius-full);
+    color: var(--accent);
+    background: var(--accent-subtle);
+}
+
+.model-menu-role.aux {
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+}
+
+.model-menu-rowmenu {
+    flex: 0 0 auto;
+    padding: 0 10px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+.model-menu-rowmenu:hover {
+    color: var(--accent);
+    background: var(--bg-tertiary);
 }
 
 .model-menu-provider {
