@@ -450,10 +450,52 @@ export function toggleProviderChip(chip) {
  * removes the model from the catalog. Filtered by the provider chips
  * (state.settings.catalogProviders); null/empty = show all.
  */
+/** What each role means, in one line. Shared by the panel and the card badges. */
+export const ROLE_HINTS = {
+    primary: 'The model that answers you in chat.',
+    aux: 'A second, usually cheaper model for small background jobs like naming a new chat. Its usage is billed to your key and shown in that chat\'s token breakdown.',
+};
+
+/**
+ * The two model roles, stated as current values rather than explained in prose.
+ *
+ * Replaces a paragraph that described how the roles work. Nobody reads a
+ * paragraph on a settings page — but "Primary: Gemini 3.1 Pro Preview / Aux:
+ * None" answers the same question at a glance, and answers the one people
+ * actually have ("which is which right now?") rather than the one the prose
+ * answered ("what are these?"). The explanation survives as hover text on the
+ * role name and on the card badges, for whoever wants it.
+ */
+function renderModelRoles() {
+    const host = document.getElementById('modelRoles');
+    if (!host) return;
+
+    const layer = getActiveModelConfig();
+    const nameOf = (provider, id) => {
+        if (!id) return null;
+        const found = (state.settings.customModels[provider] || []).find(m => m.id === id);
+        return found ? found.name : id;   // a model removed from the catalog still shows its id
+    };
+
+    const aux = state.settings.auxModel;
+    const rows = [
+        { key: 'primary', label: 'Primary', value: nameOf(layer.provider, layer.model) },
+        { key: 'aux', label: 'Aux', value: aux ? nameOf(aux.provider, aux.model) : null },
+    ];
+
+    host.innerHTML = rows.map(r => `
+        <div class="model-role">
+            <span class="model-role-label" title="${escapeHtml(ROLE_HINTS[r.key])}">${r.label}</span>
+            <span class="model-role-value${r.value ? '' : ' none'}">${r.value ? escapeHtml(r.value) : 'None'}</span>
+        </div>`).join('')
+        + `<p class="model-role-how">Set either from a model's ⋯ menu — here or in the model switcher.</p>`;
+}
+
 export function renderModelsCatalog() {
     const c = document.getElementById('modelsCatalog');
     if (!c) return;
     renderProviderChips(); // chips + catalog always render together, stay in sync
+    renderModelRoles();    // and so does the roles panel — both read the same state
     const layer = getActiveModelConfig();
     const selected = state.settings.catalogProviders;
     const showAll = !Array.isArray(selected) || selected.length === 0;
@@ -487,8 +529,12 @@ export function renderModelsCatalog() {
             const active = provider === layer.provider && m.id === layer.model;
             // A model can be both: the active chat model AND the aux delegate.
             const aux = isAuxModel(provider, m.id);
-            const badges = (active ? '<span class="persona-card-badge">Active</span>' : '')
-                + (aux ? '<span class="persona-card-badge aux">Aux</span>' : '');
+            // The badge is where the explanation lives now that the prose is
+            // gone — hover only, which is the honest trade for not making
+            // everyone read it. (Touch users get the roles panel above.)
+            const badges =
+                (active ? `<span class="persona-card-badge" title="${escapeHtml(ROLE_HINTS.primary)}">Active</span>` : '')
+                + (aux ? `<span class="persona-card-badge aux" title="${escapeHtml(ROLE_HINTS.aux)}">Aux</span>` : '');
             html += `
                 <div class="model-card${active ? ' active' : ''}">
                     <div class="model-card-open" data-model-select="${escapeHtml(m.id)}" data-provider="${provider}">
@@ -857,6 +903,59 @@ export function handleAddModelManually() {
  * @param {Object} [options]
  * @param {boolean} [options.showAll] - Ignore the subset for this opening only.
  */
+/**
+ * The per-row role menu inside the quick switcher: make this model the primary,
+ * or set/clear it as the aux.
+ *
+ * Nested inside another popover, which needs two deliberate touches:
+ *
+ * - it does NOT clear existing `.context-menu` elements the way the top-level
+ *   menus do, because the menu it is opening from is one of them;
+ * - its clicks stopPropagation, so the parent's outside-click handler does not
+ *   see them and close the switcher out from under it.
+ *
+ * Both menus close once an action is taken. Setting the aux gets a toast
+ * because, unlike the primary, nothing in the chrome shows it afterwards.
+ */
+function showRoleMenu(anchorEl, provider, modelId, parentMenu, parentAnchor) {
+    document.querySelectorAll('.role-submenu').forEach(el => el.remove());
+
+    const layer = getActiveModelConfig();
+    const isPrimary = provider === layer.provider && modelId === layer.model;
+    const isAux = isAuxModel(provider, modelId);
+    const name = (state.settings.customModels[provider] || []).find(m => m.id === modelId)?.name || modelId;
+
+    const sub = document.createElement('div');
+    sub.className = 'context-menu role-submenu';
+    sub.innerHTML = `
+        <div class="context-menu-label">${escapeHtml(name)}</div>
+        <button class="context-menu-item" data-action="primary"${isPrimary ? ' disabled' : ''}>${isPrimary ? 'Already the primary' : 'Use as primary model'}</button>
+        <button class="context-menu-item" data-action="aux">${isAux ? 'Stop using as aux model' : 'Use as aux model'}</button>`;
+    sub.addEventListener('click', (e) => e.stopPropagation());
+
+    positionPopover(sub, anchorEl, 'right');
+
+    const closeBoth = () => { sub.remove(); if (parentMenu) parentMenu.remove(); };
+
+    sub.querySelector('[data-action="primary"]').addEventListener('click', () => {
+        if (isPrimary) return;
+        closeBoth();
+        selectModel(modelId, provider);
+    });
+    sub.querySelector('[data-action="aux"]').addEventListener('click', () => {
+        closeBoth();
+        setAuxModel(isAux ? null : { provider, model: modelId });
+        renderModelsCatalog();   // no-ops unless the catalog is the open view
+        showToast(isAux
+            ? `${name} is no longer your aux model.`
+            : `${name} is now your aux model.`);
+    });
+
+    attachPopoverOutsideClose(sub, anchorEl);
+    // Reopening the switcher from its own anchor would leave this orphaned.
+    if (parentAnchor) parentAnchor.addEventListener('click', () => sub.remove(), { once: true });
+}
+
 export function showModelMenu(anchorEl, { showAll = false } = {}) {
     const existing = document.querySelector('.context-menu');
     if (existing) existing.remove();
@@ -886,7 +985,19 @@ export function showModelMenu(anchorEl, { showAll = false } = {}) {
         </div>`;
         for (const m of state.settings.customModels[provider]) {
             const active = provider === modelConfig.provider && m.id === modelConfig.model;
-            groups += `<button class="context-menu-item${active ? ' active' : ''}" data-model-id="${escapeHtml(m.id)}" data-provider="${provider}">${escapeHtml(m.name)}</button>`;
+            const aux = isAuxModel(provider, m.id);
+            // Role markers, and a ⋯ to change either without leaving the
+            // switcher. The ⋯ is a SIBLING of the row button, never inside it —
+            // a button nested in a button is invalid and the browser drops the
+            // inner one.
+            const marks = (active ? '<span class="model-menu-role">Primary</span>' : '')
+                + (aux ? '<span class="model-menu-role aux">Aux</span>' : '');
+            groups += `<div class="model-menu-row">
+                <button class="context-menu-item${active ? ' active' : ''}" data-model-id="${escapeHtml(m.id)}" data-provider="${provider}">
+                    <span class="model-menu-name">${escapeHtml(m.name)}</span>${marks}
+                </button>
+                <button class="model-menu-rowmenu" data-role-menu="${escapeHtml(m.id)}" data-provider="${provider}" type="button" title="Set this model's role" aria-label="Set this model's role">⋯</button>
+            </div>`;
         }
     }
 
@@ -903,6 +1014,13 @@ export function showModelMenu(anchorEl, { showAll = false } = {}) {
     menu.innerHTML = html;
 
     positionPopover(menu, anchorEl, 'right');
+
+    menu.querySelectorAll('[data-role-menu]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();   // the row underneath must not also switch model
+            showRoleMenu(btn, btn.dataset.provider, btn.dataset.roleMenu, menu, anchorEl);
+        });
+    });
 
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', () => {
