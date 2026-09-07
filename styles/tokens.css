@@ -45,6 +45,7 @@
     --input-height: 80px;
     --chat-max-width: 780px; /* shared by the message column and the composer */
     --section-max-width: 720px; /* shared by every main-area view (section lists, container pages, settings, persona editor) */
+    --list-max-height: 22rem; /* cap on a collapsible list body (container-page sections, persona groups) before it scrolls inside itself */
 
     /* Corner radii — softer/rounder; text buttons use --radius-full (pills) */
     --radius-sm: 6px;

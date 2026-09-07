@@ -422,6 +422,14 @@
     flex: 0 0 auto;
 }
 
+/* Capped like the container-page sections, so a persona with 60 chats doesn't
+   bury every other persona below it. Same token, same behaviour. */
+.persona-group-body {
+    max-height: var(--list-max-height);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
 /* Slightly indent chat rows under a persona header */
 .persona-group-body .conversation-item {
     margin-left: 8px;
