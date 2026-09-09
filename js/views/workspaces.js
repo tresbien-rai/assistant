@@ -21,11 +21,15 @@ import { setupTextareaResizers } from '../components/textarea-resize.js';
 import { sectionHeadHTML, sectionBodyHTML, wireSectionToggles } from '../components/collapsible.js';
 import {
     switchConversation, createConversation, showConversationMenu,
+    conversationActivityAt,
 } from './chats.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { FilePanel } from '../file-panel/index.js';
 
 const byUpdatedDesc = (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0);
+// Chats sort on real activity instead — a rename must not move a chat (see
+// conversationActivityAt).
+const byActivityDesc = (a, b) => conversationActivityAt(b) - conversationActivityAt(a);
 
 function workspaceRowHTML(w) {
     const pc = w.projectCount || 0;
@@ -544,7 +548,7 @@ function containerChatsListHTML(kind, entity) {
     const chats = (kind === 'workspace'
         ? Object.values(state.conversations).filter(c => c.workspaceId === entity.id && !c.projectId)
         : Object.values(state.conversations).filter(c => c.projectId === entity.id)
-    ).sort(byUpdatedDesc);
+    ).sort(byActivityDesc);
 
     const sectionLabel = kind === 'workspace' ? 'Chats here' : 'Chats';
     const addLabel = kind === 'workspace' ? '+ New chat here' : '+ New chat';
@@ -559,7 +563,7 @@ function containerChatsListHTML(kind, entity) {
             `<div class="cp-row-wrap">
                 <button class="cp-row" data-open-chat="${escapeHtml(ch.id)}" type="button">
                     <span class="cp-row-name">${escapeHtml(ch.title || 'New Chat')}</span>
-                    <span class="cp-row-meta">${formatTimeAgo(ch.updatedAt || ch.createdAt)}</span>
+                    <span class="cp-row-meta">${formatTimeAgo(conversationActivityAt(ch))}</span>
                 </button>
                 <button class="conversation-menu-btn cp-row-menu" data-chat-menu="${escapeHtml(ch.id)}" type="button" title="Options" aria-label="Chat options">⋯</button>
             </div>`).join('') + `</div>`

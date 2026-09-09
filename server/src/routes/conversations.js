@@ -100,6 +100,13 @@ function formatConversation(conversation) {
     formatted.messageCount = conversation.message_count;
   }
 
+  // When the chat last had something SAID in it, as opposed to `updatedAt`,
+  // which any metadata write bumps. Null for a chat with no messages yet.
+  // Only list queries derive it; a single-conversation fetch has no such column.
+  if (conversation.last_message_at !== undefined) {
+    formatted.lastMessageAt = conversation.last_message_at;
+  }
+
   // Include messages if present (from get by ID)
   if (conversation.messages !== undefined) {
     formatted.messages = conversation.messages.map(formatMessage);

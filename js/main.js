@@ -75,7 +75,7 @@ import {
 import {
     restoreConversationModel, loadConversationMessages,
     switchConversation, renderConversation,
-    renderConversationList, } from './views/chats.js';
+    renderConversationList, conversationActivityAt, } from './views/chats.js';
 import {
     showPersonaPopover, } from './views/personas.js';
 import {
@@ -405,6 +405,11 @@ function hydrateConversations(conversations) {
             scratchpadEnabled: c.scratchpadEnabled ?? null,
             createdAt: c.createdAt,
             updatedAt: c.updatedAt,
+            // When something was last SAID in this chat (server-derived from
+            // the messages themselves). Null until the first message. The chat
+            // list shows and sorts on this, not on updatedAt — see
+            // conversationActivityAt() in views/chats.js.
+            lastMessageAt: c.lastMessageAt || null,
             messageCount: c.messageCount || 0,
             messages: undefined,
         };
@@ -512,7 +517,7 @@ function pickActiveConversation() {
         return;
     }
     const mostRecent = convos.reduce((a, b) =>
-        (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a
+        conversationActivityAt(b) > conversationActivityAt(a) ? b : a
     );
     setActiveConversation(mostRecent.id, { outgoing: 'none' });
 
