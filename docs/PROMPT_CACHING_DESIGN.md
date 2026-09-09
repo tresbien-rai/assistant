@@ -243,9 +243,21 @@ The healthy signature above, exactly: turn 2 read the entire prefix turn 1
 wrote, wrote only the 82-token delta the new turn added, and paid full price
 for just the 49-token tail. 92% of turn 2's input was served from cache.
 
-**Gemini is not covered by this measurement.** Its implicit caching needs no
-code (D4) and the prefix is stable as of PC-01, but the minimum cacheable
-prefix is 2,048 tokens (2.5 Flash/Pro) or 4,096 (newer Flash), and a
-tools-off Tessera prefix is around 800. Expect hits once tools are on or the
-conversation grows; below the minimum it simply reports zero, with no error.
-Worth one live confirmation on a tools-on chat.
+### Gemini — confirmed 2026-09-08
+
+Confirmed in ordinary use on tools-on chats: **`cache_read` is non-zero and
+grows as the conversation does, while `cache_write` stays 0.**
+
+That is the correct signature, and it is worth knowing why it is conclusive.
+On Gemini, `cacheRead` is mapped from exactly one field —
+`usageMetadata.cachedContentTokenCount`, which Google populates only on a hit —
+and `cacheWrite` is hardcoded to 0, because Gemini has no cache-write concept
+(`providers/gemini.js` → `extractUsage`). So nothing but a real hit can make
+that column non-zero, and **a non-zero `cache_write` on a Gemini row would mean
+the reporter is broken**, not that a cache was written.
+
+Implicit caching needed no provider code (D4); the prefix stability from PC-01
+is the whole mechanism. The one thing to keep in mind is the floor: the minimum
+cacheable prefix is 2,048 tokens (2.5 Flash/Pro) or 4,096 (newer Flash) against
+a tools-OFF Tessera prefix of roughly 800 — so short toolless chats will report
+zero, correctly and with no error.
