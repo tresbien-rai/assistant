@@ -161,6 +161,7 @@ Everything new is a preset block. Nothing new is invented to support it.
 
 | id | slice | notes |
 |---|---|---|
+| BR-01 | `BRAND` constant, server + client; user-visible strings read from it | §8 — lands first so all later work uses it |
 | UP-01 | `user_profile` schema + DAL + routes + api-client | includes `preferred_name` |
 | UP-02 | Profile view (new rail surface) — sections, add/remove, placeholders | top-level, not buried in Settings |
 | UP-03 | `profile` system block; `{{user}}` rewired to `preferred_name`; per-persona switch (D6) | the slice that makes it reach the model |
@@ -182,10 +183,18 @@ UP-05/UP-06 are tier 2 and can wait.
   trimming. Not a v1 problem, but the scratchpad's "replace, don't append"
   principle is the likely answer.
 
-## 8. Open thread — the rename
+## 8. The rename — decided approach, undecided name
 
 Separate from this feature, but the reason it surfaced now: the user wants a name
-evoking a personal *study*. Three places "Tessera" is **data**, not branding:
+evoking a personal *study*.
+
+**Decided 2026-09-09: a `BRAND` constant lands first (BR-01), and all new work
+uses it.** The goal is that choosing a name later is a one-line, purely cosmetic
+change rather than a codebase-wide sweep. Nothing about the name needs deciding
+before building.
+
+Three places "Tessera" is **data**, not branding, and must NOT be
+brand-templated:
 
 - the Drive root folder name (`server/src/config.js:45`) — safest of the three,
   since Drive **folder ids** are what we store, so renaming the display folder
@@ -195,8 +204,10 @@ evoking a personal *study*. Three places "Tessera" is **data**, not branding:
   already exported;
 - `window.__tessera`, the smoke-harness seam (`js/main.js`).
 
-Recommended prerequisite: a single `BRAND` constant, so the product name and the
-storage identifiers can be renamed independently.
+The `BRAND` constant covers the *display* name only, so the product name and the
+storage identifiers rename independently. `BUNDLE_FORMAT` in particular stays the
+literal `'tessera.bundle'` forever unless a compat reader ships with the change —
+a renamed magic string silently rejects every bundle already exported.
 
 Candidates raised: **Solar** (the private upper room of a medieval house),
 **Carrel** (a library study nook), Scriptorium, Alcove, Marginalia, Escritoire,
