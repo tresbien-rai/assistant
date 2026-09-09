@@ -313,14 +313,16 @@ function parsePersonaJson(persona) {
  * @param {string} [options.projectId] - Only chats in this project
  * @param {number} [options.limit] - Limit results
  * @param {number} [options.offset] - Offset for pagination
- * @returns {Array} Array of conversation records with message counts
+ * @returns {Array} Array of conversation records with message counts and
+ *   `last_message_at` (the newest message's timestamp, null for an empty chat)
  */
 function getConversationsByUser(userId, { personaId, unfiled, workspaceId, workspaceLevelOnly, projectId, limit, offset } = {}) {
   const db = getDb();
 
   let query = `
     SELECT c.*,
-           (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) as message_count
+           (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) as message_count,
+           (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at
     FROM conversations c
     WHERE c.user_id = ?
   `;
@@ -344,7 +346,11 @@ function getConversationsByUser(userId, { personaId, unfiled, workspaceId, works
     }
   }
 
-  query += ' ORDER BY c.updated_at DESC';
+  // Ordered by real activity, not by the last edit: `updated_at` is bumped by
+  // metadata writes too (a rename, a per-chat toggle), which would otherwise
+  // shuffle a chat to the top of the list without anything having been said in
+  // it. A chat with no messages yet falls back to when it was created.
+  query += ' ORDER BY COALESCE(last_message_at, c.created_at) DESC';
 
   if (limit) {
     query += ' LIMIT ?';

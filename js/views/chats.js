@@ -57,6 +57,7 @@ export async function createConversation(title = 'New Chat', container = null) {
         presetId: created.presetId ?? null,
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
+        lastMessageAt: null,   // nothing said in it yet
         messageCount: 0,
         messages: [],
     };
@@ -152,6 +153,23 @@ export function saveConversations() {
 }
 
 /**
+ * When this chat was last ACTIVE — the timestamp of its newest message, or,
+ * for a chat nothing has been said in yet, when it was created.
+ *
+ * Deliberately not `updatedAt`: that is bumped by every metadata write, so
+ * renaming a chat used to reset it to "Just now" and shuffle the row to the top
+ * of the list. Reorganising a chat history made every chat look the same age.
+ * `lastMessageAt` comes from the server (MAX of the messages' timestamps) and is
+ * kept fresh locally by the two paths that append a message.
+ *
+ * @param {Object} convo
+ * @returns {number} epoch ms
+ */
+export function conversationActivityAt(convo) {
+    return convo.lastMessageAt || convo.createdAt || convo.updatedAt || 0;
+}
+
+/**
  * Markup for a single conversation row. `showPersonaAvatar` adds the owning
  * persona's avatar (used in the workspace list where personas are mixed; the
  * home list shows the avatar on the group header instead).
@@ -160,7 +178,7 @@ export function saveConversations() {
  * @returns {string}
  */
 export function conversationRowHTML(convo, showPersonaAvatar) {
-    const timeAgo = formatTimeAgo(convo.updatedAt || convo.createdAt);
+    const timeAgo = formatTimeAgo(conversationActivityAt(convo));
     const active = convo.id === state.activeConversationId ? 'active' : '';
     const avatar = showPersonaAvatar
         ? `<div class="conversation-persona-avatar">${personaAvatarHTML(state.personas[convo.personaId])}</div>`
@@ -231,7 +249,7 @@ export function renderGroupedChatList(container) {
         if (!groups.has(pid)) groups.set(pid, { convos: [], latest: 0 });
         const g = groups.get(pid);
         g.convos.push(c);
-        g.latest = Math.max(g.latest, c.updatedAt || c.createdAt || 0);
+        g.latest = Math.max(g.latest, conversationActivityAt(c));
     }
 
     // Order: active persona first, then by most-recent activity.
@@ -247,7 +265,7 @@ export function renderGroupedChatList(container) {
         const name = persona ? (persona.name || 'Untitled') : 'No persona';
         const collapsed = state.ui.collapsedPersonaGroups.has(pid);
         const rows = g.convos
-            .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+            .sort((a, b) => conversationActivityAt(b) - conversationActivityAt(a))
             .map(c => conversationRowHTML(c, false))
             .join('');
         html += `
@@ -433,9 +451,23 @@ export async function renameConversationPrompt(conversationId) {
     if (!state.conversations[conversationId]) return;
 
     convo.title = newTitle;
-    convo.updatedAt = Date.now();
-    saveConversations();
+    // Not a bump of `updatedAt`: renaming is not activity, and the row's
+    // timestamp and position now come from conversationActivityAt().
+    //
+    // Addressed directly rather than via saveConversations(), which only ever
+    // flushes the ACTIVE conversation — renaming any OTHER chat from its row
+    // menu wrote the active chat's title back instead, so the new name was
+    // local-only and vanished on the next reload.
+    API.conversations.update(conversationId, {
+        title: newTitle,
+        personaId: convo.personaId,
+    }).catch(err => {
+        console.error(`Failed to rename conversation ${conversationId}:`, err);
+        displayError(err, { action: 'rename chat' });
+    });
     renderConversationList();
+    // The open chat shows its title in the top bar, so repaint that too.
+    if (state.activeConversationId === conversationId) updateUI();
 }
 
 /**
@@ -491,6 +523,9 @@ export async function clearConversationPrompt(conversationId) {
     stillThere.messages = [];
     stillThere.title = 'New Chat';
     stillThere.updatedAt = Date.now();
+    // Emptied: there is no last message any more, so the row falls back to when
+    // the chat was created (which is what the server will report on reload too).
+    stillThere.lastMessageAt = null;
     // Addressed directly rather than via saveConversations(), which only ever
     // flushes the ACTIVE conversation — clearing a chat from the list while a
     // different one is open would otherwise re-PUT the wrong chat's title.
@@ -543,7 +578,7 @@ export async function deleteConversationPrompt(conversationId) {
         // where it could be sent into whichever chat we land on instead.
         const remaining = Object.values(state.conversations);
         const next = remaining.length > 0
-            ? remaining.reduce((a, b) => ((b.updatedAt || 0) > (a.updatedAt || 0) ? b : a)).id
+            ? remaining.reduce((a, b) => (conversationActivityAt(b) > conversationActivityAt(a) ? b : a)).id
             : null;
         setActiveConversation(next, { outgoing: 'discard' });
         // Lazy-load the newly-active conversation's messages.

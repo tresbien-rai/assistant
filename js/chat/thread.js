@@ -413,6 +413,9 @@ export async function appendMessage(role, content, save = true, explicitIndex = 
             messageDiv.dataset.msgIndex = activeConvo.messages.length - 1;
 
             activeConvo.updatedAt = Date.now();
+            // What the chat list shows and sorts on — kept in step with the
+            // server's derived value without waiting for a reload.
+            activeConvo.lastMessageAt = Date.now();
 
             // Persist the message and AWAIT the result so msg.id is
             // populated before control returns. Edit/delete handlers depend

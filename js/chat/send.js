@@ -742,6 +742,7 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
         targetConvo.messages.push(msg);
         if (bubble) bubble.dataset.msgIndex = targetConvo.messages.length - 1;
         targetConvo.updatedAt = Date.now();
+        targetConvo.lastMessageAt = Date.now();
         try {
             const saved = await persistMessage(targetConvo.id, msg);
             if (saved && saved.id) msg.id = saved.id;
