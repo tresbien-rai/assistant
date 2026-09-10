@@ -5,7 +5,28 @@
 
 require('dotenv').config();
 
+/**
+ * The product's display name — the ONE place the brand is written (BR-01).
+ *
+ * Everything the user reads should interpolate this rather than spelling the
+ * name out, so renaming the product is a one-line change here (or a
+ * `BRAND_NAME` env var) instead of a sweep across the codebase. The frontend
+ * gets it from `GET /api/auth/config`, so there is no second copy to keep in
+ * sync.
+ *
+ * What this is NOT for: identifiers that are *data*. `BUNDLE_FORMAT` in
+ * utils/personaBundle.js and the `.tessera` file extension are magic strings
+ * written into files users have already exported — renaming those silently
+ * rejects every existing bundle, so they stay literal. The Drive root folder
+ * follows the brand (below) because Drive folders are addressed by id, not by
+ * name, so renaming the display folder orphans nothing.
+ */
+const BRAND = process.env.BRAND_NAME || 'Tessera';
+
 const config = {
+  // The product display name. See BRAND above before using it anywhere.
+  brand: BRAND,
+
   // Server
   port: parseInt(process.env.PORT, 10) || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -40,9 +61,10 @@ const config = {
   dbPath: process.env.DB_PATH || './data/assistant.db',
 
   // Name of the app's root folder on the user's Google Drive (contains
-  // `projects/`). Overridable via env so the brand can change without a code
-  // edit; defaults to the app name.
-  driveRootFolder: process.env.DRIVE_ROOT_FOLDER || 'Tessera',
+  // `projects/`). Follows the brand, and is separately overridable via env for
+  // a deployment that wants the folder named something else. Safe to rename:
+  // stored `drive_folder_id`s address folders by id, not by path.
+  driveRootFolder: process.env.DRIVE_ROOT_FOLDER || BRAND,
 
   // Project files (Phase 1)
   // Centralizes the limits/allow-list for project knowledge files so they are

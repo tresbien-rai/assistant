@@ -406,7 +406,7 @@ async function importPersonaFromFile(file) {
     try {
         bundle = JSON.parse(await file.text());
     } catch {
-        showToast("That file isn't a readable Tessera bundle", { type: 'warning' });
+        showToast(`That file isn't a readable ${CONFIG.brand} bundle`, { type: 'warning' });
         return;
     }
 

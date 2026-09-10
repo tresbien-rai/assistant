@@ -21,6 +21,7 @@
  */
 
 import { state } from '../state.js';
+import { CONFIG } from '../config.js';
 import { elements } from '../dom.js';
 import { API } from '../api-client.js';
 import { getActivePersona, getActiveConversation } from '../state.js';
@@ -179,7 +180,7 @@ export function renderPresetList() {
         <div class="preset-row${activeId === null ? ' active' : ''}" data-preset-id="">
             <div class="preset-row-main">
                 <span class="preset-name">Built-in prompt</span>
-                <span class="preset-note">Tessera's default prompt layer</span>
+                <span class="preset-note">${CONFIG.brand}'s default prompt layer</span>
             </div>
             ${activeId === null
                 ? '<span class="preset-badge">Default</span>'
@@ -376,7 +377,12 @@ export async function deletePreset(presetId) {
 const BLOCK_INFO = {
     orientation: {
         label: 'Orientation',
-        description: 'What Tessera is, and that the text after it is a persona to embody.',
+        // A getter, not a string: this object is built when the module loads,
+        // which is BEFORE applyBrand() hears back from the server (BR-01), so a
+        // baked-in string would freeze the fallback name.
+        get description() {
+            return `What ${CONFIG.brand} is, and that the text after it is a persona to embody.`;
+        },
     },
     state: {
         label: 'Session state',
@@ -1148,14 +1154,14 @@ export async function importPresetFromFile(file) {
     try {
         bundle = JSON.parse(await file.text());
     } catch {
-        showToast("That file isn't a readable Tessera preset.", { type: 'warning' });
+        showToast(`That file isn't a readable ${CONFIG.brand} preset.`, { type: 'warning' });
         return;
     }
     if (!bundle || bundle.kind !== 'preset' || !bundle.preset) {
         showToast(
             bundle && bundle.kind === 'persona'
                 ? 'That is a persona bundle — import it from the Personas section.'
-                : "That file isn't a Tessera preset.",
+                : `That file isn't a ${CONFIG.brand} preset.`,
             { type: 'warning' }
         );
         return;

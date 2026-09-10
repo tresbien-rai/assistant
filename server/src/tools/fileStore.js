@@ -24,6 +24,7 @@
 
 const dal = require('../db/dal');
 const drive = require('../utils/drive');
+const config = require('../config');
 
 // Per-kind store builders. Kept separate so writes can pick ONE destination by
 // precedence (resolveFileStore) while reads can search SEVERAL (resolveReadStores)
@@ -197,7 +198,7 @@ function resolveToolDriveAuth(userId) {
   try {
     return { auth: drive.getAuthForUser(userId) };
   } catch (err) {
-    return { unavailable: 'Google Drive is not connected for this account. Ask the user to reconnect Google Drive in Tessera.' };
+    return { unavailable: `Google Drive is not connected for this account. Ask the user to reconnect Google Drive in ${config.brand}.` };
   }
 }
 
