@@ -11,6 +11,14 @@
 // model-list traffic goes through window.API → /api/chat[/stream] and
 // /api/models/:provider, and the backend holds the keys.
 export const CONFIG = {
+    // The product's display name (BR-01). The server owns the real value and
+    // sends it on `GET /api/auth/config`; `applyBrand()` in main.js overwrites
+    // this at boot. The literal here is only the pre-fetch fallback, so it must
+    // match the server's default or the login screen flashes the wrong name.
+    //
+    // Use it for anything the USER reads. Do NOT use it for the `.tessera`
+    // bundle extension or its format string — those are data, not branding.
+    brand: 'Tessera',
     defaults: {
         provider: 'anthropic',
         model: 'claude-sonnet-4-20250514',

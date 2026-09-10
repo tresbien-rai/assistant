@@ -43,6 +43,11 @@
 const { sanitizeExpressionNames } = require('../prompts/tessera');
 const AppError = require('./AppError');
 
+// DATA, not branding — deliberately NOT `config.brand` (BR-01). This string is
+// written into every `.tessera` file a user has already exported, and imports
+// are rejected unless it matches. Renaming it with the product would silently
+// make every existing bundle unreadable, so it stays literal; a future rename
+// that wants to change it owes a compat reader that accepts both.
 const BUNDLE_FORMAT = 'tessera.bundle';
 const BUNDLE_VERSION = 1;
 const BUNDLE_KIND_PERSONA = 'persona';

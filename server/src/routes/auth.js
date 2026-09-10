@@ -271,10 +271,16 @@ router.get('/status', (req, res) => {
 /**
  * GET /api/auth/config
  * Public, non-sensitive auth capabilities for the frontend to adapt its login
- * screen. Currently just whether the dev-login bypass is available.
+ * screen: whether the dev-login bypass is available, and the product's display
+ * name.
+ *
+ * `brand` rides along here (BR-01) rather than getting its own endpoint because
+ * this is the one call the client already makes BEFORE authenticating, and the
+ * login screen is the first place the name is shown. That keeps the server the
+ * single source of truth for the brand with no extra round-trip.
  */
 router.get('/config', (req, res) => {
-  res.json({ devLogin: config.allowDevLogin });
+  res.json({ devLogin: config.allowDevLogin, brand: config.brand });
 });
 
 /**

@@ -337,7 +337,7 @@ async function init() {
         );
     }
 
-    console.log('Tessera initialized!');
+    console.log(`${CONFIG.brand} initialized!`);
 }
 
 // ===== Server → state hydration =====
@@ -1893,6 +1893,23 @@ function consumeAuthCallbackParams() {
 }
 
 /**
+ * Apply the product display name the server reported (BR-01).
+ *
+ * `CONFIG.brand` is the value every other module reads, so it is set first and
+ * the DOM follows. Only the two places the name is baked into static HTML need
+ * touching here — the tab title and the login heading; everything else builds
+ * its copy from `CONFIG.brand` at render time, which happens after this runs.
+ *
+ * @param {string} brand - the display name from GET /api/auth/config
+ */
+function applyBrand(brand) {
+    CONFIG.brand = brand;
+    document.title = brand;
+    const loginTitle = document.querySelector('.login-title');
+    if (loginTitle) loginTitle.textContent = brand;
+}
+
+/**
  * Bootstrap entry point. Runs before init().
  * Decides between login screen and main app based on session state.
  */
@@ -1909,11 +1926,14 @@ async function bootstrap() {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogoutClick);
 
-    // Reveal the dev-login button only when the server reports the bypass is
-    // enabled (development + ALLOW_DEV_LOGIN). Non-fatal: a failed probe just
-    // leaves the button hidden, so normal Google sign-in is unaffected.
+    // One pre-auth probe, two jobs: apply the product name (BR-01), and reveal
+    // the dev-login button when the server reports the bypass is enabled
+    // (development + ALLOW_DEV_LOGIN). Non-fatal: a failed probe leaves the
+    // button hidden and the brand at its built-in fallback, so normal Google
+    // sign-in is unaffected.
     try {
         const authConfig = await API.auth.config();
+        if (authConfig && authConfig.brand) applyBrand(authConfig.brand);
         if (authConfig && authConfig.devLogin) {
             const devBtn = document.getElementById('devLoginBtn');
             if (devBtn) {

@@ -31,6 +31,11 @@ const RESERVED_EXPRESSIONS = new Set(['generating']);
 // The preset layer (AP-01) supplies the override/normalisation rules and the
 // macro expander. This module owns the TEXT; presets.js owns the SHAPE.
 const { normalizeBlocks, expandMacros, buildMacroValues } = require('./presets');
+// The product name is interpolated from config rather than written here (BR-01)
+// so a rename never has to touch prompt text. It is a per-deployment constant,
+// so ORIENTATION stays byte-identical across requests and remains the shared
+// cache prefix it was designed to be.
+const config = require('../config');
 
 /**
  * Expression names are interpolated into the system prompt, so they're
@@ -46,9 +51,9 @@ const MAX_EXPRESSIONS = 24;
  * The constant half of the base layer. Contains nothing user- or
  * persona-specific — keep it that way so it stays a cacheable shared prefix.
  */
-const ORIENTATION = `# Tessera
+const ORIENTATION = `# ${config.brand}
 
-You are running inside Tessera, a personal AI workspace where one user does
+You are running inside ${config.brand}, a personal AI workspace where one user does
 real, ongoing work with you. This is not a one-off chat window: conversations
 persist, files accumulate, and the user returns to them over time.
 

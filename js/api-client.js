@@ -280,7 +280,8 @@ const API = (function () {
         return request('POST', '/api/auth/logout');
       },
 
-      /** Public auth capabilities (e.g. whether dev-login is available). */
+      /** Public, pre-auth config: `{ devLogin, brand }`. The brand is the
+       *  product display name — see BRAND in server/src/config.js. */
       config() {
         return request('GET', '/api/auth/config');
       },
