@@ -313,6 +313,42 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id);
 
+-- User profile (UP-01, docs/PROFILE_DESIGN.md tier 1)
+-- Who the USER is, in their own words — the layer that was missing, since the
+-- persona prompt describes the model, container instructions describe the work,
+-- and the scratchpad describes the current task. One row per user.
+--
+-- Deliberately NOT more columns on `settings`: settings holds device-ish app
+-- preferences that never reach the model, while this is prompt content with its
+-- own versioning and its own size budget. Mixing them would make "how big is my
+-- prompt" unanswerable from either table.
+--
+-- `preferred_name` is a real column rather than a section because it is the one
+-- structured thing here (D1) — it feeds the `{{user}}` macro, replacing the
+-- Google account display name.
+--
+-- `sections` is the freeform half: a JSON ARRAY (order is the user's, and is the
+-- order they reach the model) of { id, title, body, enabled }.
+--
+-- `source` is 'user' for every row today. It exists from the first migration
+-- because tier 2 (persona notes) is model-written, and retrofitting provenance
+-- onto content that already exists is the expensive mistake the file layer
+-- already made once (docs/FILE_PROVENANCE_DESIGN.md).
+--
+-- New table => created here by CREATE TABLE IF NOT EXISTS on boot; no migration
+-- needed (user_files / WR-02b precedent).
+CREATE TABLE IF NOT EXISTS user_profile (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    preferred_name  TEXT DEFAULT '',
+    sections        TEXT DEFAULT '[]',  -- JSON array: [{ id, title, body, enabled }]
+    source          TEXT DEFAULT 'user',
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profile_user_id ON user_profile(user_id);
+
 -- API Keys table
 -- Encrypted API keys for AI providers
 CREATE TABLE IF NOT EXISTS api_keys (
