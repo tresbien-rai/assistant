@@ -674,6 +674,29 @@ const API = (function () {
     },
 
     // -------------------------------------------------------------------------
+    // USER PROFILE (UP-01) — who the user is, in their own words
+    // -------------------------------------------------------------------------
+    profile: {
+      /** `{ preferredName, sections, updatedAt, textLength }`. Never 404s — a
+       *  user who has written nothing gets an empty profile. */
+      get() {
+        return request('GET', '/api/profile');
+      },
+      /** Replaces the profile wholesale — send the whole document, not a patch.
+       *  Sections are an ORDERED array; their order is the order the model
+       *  eventually reads them in. */
+      update(data) {
+        return request('PUT', '/api/profile', { body: data });
+      },
+      /** `{ sections, limits }` — the seed sections offered for a blank profile,
+       *  and the server's caps, so the editor enforces the same numbers rather
+       *  than keeping a second copy that drifts. */
+      suggested() {
+        return request('GET', '/api/profile/suggested');
+      },
+    },
+
+    // -------------------------------------------------------------------------
     // PROMPT PRESETS (AP-02) — override sets for the platform prompt layer
     // -------------------------------------------------------------------------
     presets: {

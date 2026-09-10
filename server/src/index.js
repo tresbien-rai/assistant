@@ -26,6 +26,7 @@ const conversationsRoutes = require('./routes/conversations');
 const workspacesRoutes = require('./routes/workspaces');
 const projectsRoutes = require('./routes/projects');
 const settingsRoutes = require('./routes/settings');
+const profileRoutes = require('./routes/profile');
 const presetsRoutes = require('./routes/presets');
 const filesRoutes = require('./routes/files');
 const { chatRouter, modelsRouter } = require('./routes/chat');
@@ -100,6 +101,9 @@ app.use('/api/projects', projectsRoutes);
 
 // User settings
 app.use('/api/settings', settingsRoutes);
+
+// User profile (UP-01) — who the user is, in their own words
+app.use('/api/profile', profileRoutes);
 
 // Prompt presets (AP-02) — the platform prompt layer's override sets
 app.use('/api/presets', presetsRoutes);

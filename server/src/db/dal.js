@@ -6,6 +6,7 @@
  */
 
 const { getDb, generateId, now } = require('./connection');
+const { normalizeProfile } = require('../utils/userProfile');
 
 // =============================================================================
 // USERS
@@ -741,6 +742,77 @@ function upsertSettings(userId, data) {
   }
 
   return getSettingsByUser(userId);
+}
+
+// =============================================================================
+// User profile (UP-01, docs/PROFILE_DESIGN.md tier 1)
+// =============================================================================
+
+/**
+ * Get the user's profile, or an empty one if they have never written it.
+ *
+ * Always returns a usable profile rather than null — every caller wants "what
+ * do we know about this user", and "nothing" is a perfectly good answer to
+ * that. It saves the prompt assembly (UP-03) from a null check on the hot path.
+ *
+ * The stored JSON goes through the TOLERANT normalizer, so a row that is
+ * malformed — hand-edited, or written by a future version — degrades to a
+ * sane profile instead of throwing inside a chat request.
+ *
+ * @param {string} userId - The user's UUID
+ * @returns {{preferredName: string, sections: Array, updatedAt: number|null}}
+ */
+function getUserProfile(userId) {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM user_profile WHERE user_id = ?').get(userId);
+  if (!row) return { ...normalizeProfile(null), updatedAt: null };
+
+  let parsed = null;
+  try {
+    parsed = JSON.parse(row.sections);
+  } catch {
+    parsed = null;
+  }
+  const profile = normalizeProfile({ preferredName: row.preferred_name, sections: parsed });
+  return { ...profile, updatedAt: row.updated_at };
+}
+
+/**
+ * Create or replace the user's profile.
+ *
+ * A full REPLACE, not a merge: the profile is edited as one document (sections
+ * get reordered, renamed and deleted), so a field-by-field patch could not
+ * express "I deleted the third section" without a separate delete call. The
+ * caller is expected to send the whole profile — which is what the editor has
+ * in hand anyway.
+ *
+ * Takes an ALREADY-VALIDATED profile (see utils/userProfile.validateProfile);
+ * this function does not re-check it, in the same way upsertSettings trusts its
+ * route.
+ *
+ * @param {string} userId - The user's UUID
+ * @param {{preferredName: string, sections: Array}} profile - validated profile
+ * @returns {Object} The stored profile, read back
+ */
+function upsertUserProfile(userId, profile) {
+  const db = getDb();
+  const timestamp = now();
+  const sections = JSON.stringify(profile.sections || []);
+  const preferredName = profile.preferredName || '';
+
+  const existing = db.prepare('SELECT id FROM user_profile WHERE user_id = ?').get(userId);
+  if (existing) {
+    db.prepare(
+      'UPDATE user_profile SET preferred_name = ?, sections = ?, updated_at = ? WHERE user_id = ?'
+    ).run(preferredName, sections, timestamp, userId);
+  } else {
+    db.prepare(
+      `INSERT INTO user_profile (id, user_id, preferred_name, sections, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'user', ?, ?)`
+    ).run(generateId(), userId, preferredName, sections, timestamp, timestamp);
+  }
+
+  return getUserProfile(userId);
 }
 
 /** The stored aux model, or null if absent/unparseable/the wrong shape. */
@@ -2435,6 +2507,10 @@ module.exports = {
   // Settings
   getSettingsByUser,
   upsertSettings,
+
+  // User profile (UP-01)
+  getUserProfile,
+  upsertUserProfile,
 
   // API Keys
   getApiKey,
