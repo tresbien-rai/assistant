@@ -1159,6 +1159,7 @@ function setupEventListeners() {
             const section = item.dataset.section;
             if (section === 'chats') navigate({ type: 'chats' });
             else if (section === 'workspaces') navigate({ type: 'workspaces' });
+            else if (section === 'profile') navigate({ type: 'profile' });
             else if (section === 'personas') navigate({ type: 'personas' });
             else if (section === 'models') navigate({ type: 'models' });
             else if (section === 'settings') navigate({ type: 'settings' });

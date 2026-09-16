@@ -34,6 +34,7 @@ import { renderChatsListMain } from './views/chats.js';
 import { renderWorkspacesListMain, renderBreadcrumb, renderContainerPage } from './views/workspaces.js';
 import { renderPersonasListMain } from './views/personas.js';
 import { renderModelsView } from './views/models.js';
+import { renderProfileView, flushProfileSave } from './views/profile.js';
 import { FilePanel } from './file-panel/index.js';
 // The composer is chrome this module shows and hides, so it also owns the
 // resize that only becomes measurable at the moment it is shown.
@@ -159,10 +160,22 @@ export function renderMainView() {
     const isSettings = v.type === 'settings';
     const isPersonaEdit = v.type === 'persona-edit';
     const isModels = v.type === 'models';
+    const isProfile = v.type === 'profile';
     if (elements.settingsView) elements.settingsView.hidden = !isSettings;
     if (elements.personaEditView) elements.personaEditView.hidden = !isPersonaEdit;
     if (elements.modelsView) elements.modelsView.hidden = !isModels;
-    if (elements.messagesContainer) elements.messagesContainer.hidden = isSettings || isPersonaEdit || isModels;
+    if (elements.profileView) elements.profileView.hidden = !isProfile;
+    if (elements.messagesContainer) {
+        elements.messagesContainer.hidden = isSettings || isPersonaEdit || isModels || isProfile;
+    }
+    // Leaving the Profile view commits whatever is still sitting in its save
+    // debounce. Clicking the rail is faster than 300ms, and a lost sentence is
+    // the worst thing that page could do to you.
+    if (!isProfile) flushProfileSave();
+    if (isProfile) {
+        renderProfileView();
+        return;
+    }
     if (isModels) {
         renderModelsView();
         return;

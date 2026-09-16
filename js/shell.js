@@ -100,6 +100,7 @@ export function currentSection() {
     const v = state.ui.mainView || {};
     if (v.type === 'settings') return 'settings';
     if (v.type === 'models') return 'models';
+    if (v.type === 'profile') return 'profile';
     if (v.type === 'personas' || v.type === 'persona-edit') return 'personas';
     if (v.type === 'workspaces' || v.type === 'workspace' || v.type === 'project') return 'workspaces';
     if (v.type === 'chat') {

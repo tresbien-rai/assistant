@@ -47,6 +47,12 @@ export const state = {
     // Prompt presets by id (from API.presets.list). The platform prompt layer's
     // override sets — see docs/ADVANCED_PROMPTS_PLAN.md.
     presets: {},
+    // The user's own profile (UP-02): { preferredName, sections, updatedAt,
+    // textLength }, or null until the Profile view first loads it. Lazily
+    // fetched rather than loaded at boot — nothing outside that view reads it
+    // yet, and it must not add a request to every cold start. UP-03, which
+    // renders it into the prompt, reads the copy the SERVER holds, not this one.
+    profile: null,
     // The active model layer (WR-12): provider + model + params that every
     // chat send and the model/params UI use. User-level, persisted in
     // settings.currentModelConfig. Effectively "the loaded model profile" —

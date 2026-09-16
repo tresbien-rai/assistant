@@ -874,4 +874,137 @@
 .avatar-menu-check.off {
     visibility: hidden;
 }
-
+
+/* ===== Profile section (UP-02) — the user as a character =====
+   Sibling of the Personas grid in the rail, and deliberately shaped like the
+   persona editor rather than the Settings form: a persona describes who the
+   model plays, this describes who it plays to. */
+
+.profile-intro {
+    margin-bottom: 18px;
+}
+
+/* A section is a card so the list reads as discrete blocks rather than one
+   long form. The disabled state stays legible — it is kept content, not
+   deleted content, and greying it out to unreadable would misreport that. */
+.profile-section {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    margin-bottom: 12px;
+    background: var(--bg-tertiary);
+    transition: border-color 0.15s, opacity 0.15s;
+}
+
+.profile-section.disabled {
+    opacity: 0.6;
+    border-style: dashed;
+}
+
+.profile-section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+/* The title is an input, but should read as a heading until you touch it —
+   a boxed field here made every section look like an unfilled form. */
+.profile-section-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    border-color: transparent;
+    background: transparent;
+    font-size: var(--text-base);
+    font-weight: 600;
+}
+
+.profile-section-title:hover {
+    border-color: var(--border-color);
+}
+
+.profile-section-title:focus {
+    border-color: var(--accent);
+    background: var(--bg-secondary);
+}
+
+.profile-section-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.profile-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 4px 0 0;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.profile-section-toggle input {
+    margin: 0;
+}
+
+.profile-section-btn {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.profile-section-btn:hover {
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+}
+
+.profile-section-btn.danger:hover {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+/* Body textareas carry the app-wide field appearance; only the reset of the
+   resizable wrapper's margin belongs to this view. */
+.profile-section .textarea-resizable {
+    margin-bottom: 0;
+}
+
+.profile-section-body {
+    width: 100%;
+    margin-bottom: 0;
+}
+
+.profile-empty {
+    margin: 0 0 12px;
+    padding: 16px;
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+}
+
+/* The running cost line. Quiet by default; it is reassurance, not a warning. */
+.profile-status {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+
+.profile-status.pending {
+    color: var(--accent);
+}

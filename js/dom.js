@@ -143,6 +143,7 @@ export const elements = {
     settingsView: document.getElementById('settingsView'),
     personaEditView: document.getElementById('personaEditView'),
     modelsView: document.getElementById('modelsView'),
+    profileView: document.getElementById('profileView'),
     inputContainer: document.getElementById('inputContainer'),
     messageInput: document.getElementById('messageInput'),
     sendButton: document.getElementById('sendButton'),
