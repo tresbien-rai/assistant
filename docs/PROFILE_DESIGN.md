@@ -90,19 +90,35 @@ Cache note: the shared cross-user prefix ends at `orientation`. Irrelevant here 
 Tessera is a single-user-per-account app and the profile is stable within a
 user, so their own prefix caches fine.
 
-### D3 — Answer preferences are a SEPARATE block, stored alongside
+### D3 — ~~Answer preferences are a SEPARATE block~~ WITHDRAWN 2026-09-15
 
-"Working preferences" splits in two:
+**Built as UP-04 (#199), then reverted (#200). Do not rebuild it without
+re-reading this.**
 
-- **App preferences** (theme, avatar, aux model, default preset) — already in
-  Settings, never reach the model, stay exactly where they are.
-- **Answer preferences** ("keep it brief", "British spelling", "don't apologise")
-  — these are prompt content and must be injected.
+The original decision split "working preferences" in two: app preferences
+(theme, avatar, aux model) stay in Settings and never reach the model, while
+answer preferences ("keep it brief", "British spelling") are prompt content and
+get their own `preferences` block surfaced in Settings.
 
-The second kind gets its own `preferences` system block next to `profile`. Same
-storage table, distinct block, because "who I am" and "how to answer me" are
-different instructions and a persona may want one without the other. It is
-surfaced in Settings, not on the Profile page, per the user's framing.
+It shipped, worked, and was wrong. Seeing it in place made the problem obvious:
+
+**The persona prompt already is the answer-preferences field.** "Keep it brief,
+British spelling, don't apologise" is a description of how you want to be
+spoken to — which is precisely what a persona prompt says. A second global box
+saying the same kind of thing is not a complementary layer, it is a competing
+one. Two places now answer "why is it replying like this", they can contradict
+each other, and the user has another form to fill in before the app behaves.
+
+It was included because it is a common feature elsewhere, not because this
+app's architecture needed it. Tessera has a persona system; products that ship
+a global "custom instructions" box mostly do not.
+
+**What stays true from D3:** app preferences are not prompt content and belong
+in Settings. That half was never in question.
+
+**What replaces it:** the persona itself, likely segmented into authored parts
+that assemble into one prompt rather than one freeform textarea. That work is
+being designed separately — see §9.
 
 ### D4 — Persona notes are written BETWEEN conversations, by the aux model
 
@@ -146,7 +162,6 @@ acquaintances" model that makes the feature coherent.
 ```
 orientation        shared, cache anchor
 profile            NEW — who the user is
-preferences        NEW — how they want to be answered
 expressions
 persona
 [scratchpad]
@@ -165,12 +180,12 @@ Everything new is a preset block. Nothing new is invented to support it.
 | UP-01 | `user_profile` schema + DAL + routes + api-client | includes `preferred_name` |
 | UP-02 | Profile view (new rail surface) — sections, add/remove, placeholders | top-level, not buried in Settings |
 | UP-03 | `profile` system block; `{{user}}` rewired to `preferred_name`; per-persona switch (D6) | the slice that makes it reach the model |
-| UP-04 | `preferences` block + its Settings surface (D3) | |
+| ~~UP-04~~ | ~~`preferences` block + its Settings surface~~ | **WITHDRAWN** — built (#199), reverted (#200). See D3. |
 | UP-05 | `persona_notes` schema + persona-page surface: read, edit, delete (D5) | ships empty — no writer yet |
 | UP-06 | Aux-model distillation at end of conversation → writes notes (D4, D7) | mirrors AX-02's trigger |
 
-UP-01…UP-03 are the feature standing on its own. UP-04 is small and independent.
-UP-05/UP-06 are tier 2 and can wait.
+UP-01…UP-03 are the feature standing on its own, and are **complete and
+live-confirmed**. UP-04 was withdrawn (D3). UP-05/UP-06 are tier 2.
 
 ## 7. Deferred
 
@@ -212,3 +227,13 @@ a renamed magic string silently rejects every bundle already exported.
 Candidates raised: **Solar** (the private upper room of a medieval house),
 **Carrel** (a library study nook), Scriptorium, Alcove, Marginalia, Escritoire,
 Athenaeum. Undecided.
+
+## 9. Open — segmenting the persona
+
+Arising from the D3 reversal. If the persona prompt is the place "how to answer
+me" belongs, then the persona being a single freeform textarea is doing a lot of
+work invisibly. The direction being explored is to segment the persona into
+authored parts that assemble into one prompt block — the same move the profile
+already makes with its sections, applied to the other side of the conversation.
+
+Nothing is decided. Design discussion pending.

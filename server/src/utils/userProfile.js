@@ -46,13 +46,6 @@ const AppError = require('./AppError');
  * every conversation forever.
  */
 const MAX_PREFERRED_NAME_CHARS = 60;
-/**
- * Answer preferences (UP-04) are capped tighter than a profile section on
- * purpose. They are standing instructions the model must hold across every
- * reply — "keep it brief", "British spelling" — and a page of them is not
- * instructions any more, it is a second persona prompt fighting the first.
- */
-const MAX_PREFERENCES_CHARS = 2000;
 const MAX_SECTIONS = 12;
 const MAX_TITLE_CHARS = 60;
 const MAX_BODY_CHARS = 4000;
@@ -60,38 +53,7 @@ const MAX_PROFILE_CHARS = 16000;
 
 /** A profile with nothing in it — what a user has before they write one. */
 function emptyProfile() {
-  return { preferredName: '', sections: [], preferences: '' };
-}
-
-/**
- * Coerce a stored/incoming preferences value. TOLERANT, like normalizeProfile.
- * @param {unknown} raw
- * @returns {string}
- */
-function normalizePreferences(raw) {
-  return typeof raw === 'string' ? raw.slice(0, MAX_PREFERENCES_CHARS) : '';
-}
-
-/**
- * Validate incoming preferences text. STRICT — throws AppError.validation.
- *
- * Separate from validateProfile because it arrives on its own endpoint: the
- * Settings surface edits preferences without holding the profile document, and
- * making it send one it did not load is how a half-loaded page silently wipes
- * somebody's sections.
- *
- * @param {unknown} raw
- * @returns {string} the value to store
- */
-function validatePreferences(raw) {
-  if (raw === undefined || raw === null) return '';
-  if (typeof raw !== 'string') {
-    throw AppError.validation('Preferences must be a string');
-  }
-  if (raw.length > MAX_PREFERENCES_CHARS) {
-    throw AppError.validation(`Preferences must be ${MAX_PREFERENCES_CHARS} characters or fewer`);
-  }
-  return raw.trim();
+  return { preferredName: '', sections: [] };
 }
 
 /**
@@ -157,7 +119,7 @@ function normalizeProfile(raw) {
     }
   }
 
-  return { preferredName, sections, preferences: normalizePreferences(raw.preferences) };
+  return { preferredName, sections };
 }
 
 /**
@@ -243,7 +205,7 @@ function validateProfile(raw) {
  * @returns {number}
  */
 function profileTextLength(profile) {
-  let total = profile.preferredName.length + (profile.preferences || '').length;
+  let total = profile.preferredName.length;
   for (const section of profile.sections) {
     if (!section.enabled) continue;
     total += section.title.length + section.body.length;
@@ -254,13 +216,10 @@ function profileTextLength(profile) {
 module.exports = {
   emptyProfile,
   normalizeProfile,
-  normalizePreferences,
   validateProfile,
-  validatePreferences,
   profileTextLength,
   SUGGESTED_SECTIONS,
   MAX_PREFERRED_NAME_CHARS,
-  MAX_PREFERENCES_CHARS,
   MAX_SECTIONS,
   MAX_TITLE_CHARS,
   MAX_BODY_CHARS,
