@@ -1,0 +1,34 @@
+# Line endings
+#
+# The repo was mixed: most files were stored LF, but a handful (styles/base.css,
+# tokens.css, buttons.css, models.css, system.css, server/src/routes/settings.js)
+# were stored CRLF. Nothing chose that — it is an accident of which editor last
+# wrote each file on Windows. The cost is real: touching one of those files with
+# a tool that writes LF rewrites EVERY line, so a ten-line change arrives as a
+# two-thousand-line diff and the actual edit becomes unreviewable.
+#
+# So: normalize to LF in the repository. Working copies are unaffected on
+# Windows as long as core.autocrlf is left at its default `true` — Git converts
+# on checkout — and editors here handle LF regardless.
+#
+# This was applied once with `git add --renormalize .`, which is why the commit
+# introducing this file also rewrites those six.
+* text=auto eol=lf
+
+# Binary types, declared ahead of need. There are none tracked today, but
+# avatars and expression art are filesystem-stored and could plausibly land
+# here later; a normalized PNG is a corrupted PNG, and it is much cheaper to
+# say so now than to debug it then.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.pdf   binary
+*.zip   binary
+*.db    binary
+*.sqlite binary
