@@ -530,4 +530,3 @@ input:where([type="range"])::-moz-range-thumb {
     align-self: flex-end;
     margin-top: 8px;
 }
-

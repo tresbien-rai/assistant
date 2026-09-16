@@ -12,7 +12,7 @@ const express = require('express');
 const dal = require('../db/dal');
 const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/AppError');
 const { IMPLEMENTED_PROVIDER_IDS } = require('../providers/registry');
 
 const router = express.Router();
