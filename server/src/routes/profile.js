@@ -6,9 +6,8 @@
  * why there is no partial patch.
  *
  * Endpoints:
- * - GET /api/profile             - the authenticated user's profile (empty if never written)
- * - PUT /api/profile             - replace name + sections wholesale
- * - PUT /api/profile/preferences - replace the answer preferences (UP-04)
+ * - GET /api/profile          - the authenticated user's profile (empty if never written)
+ * - PUT /api/profile          - replace it wholesale
  * - GET /api/profile/suggested - the seed sections offered for a blank profile
  *
  * Nothing here reaches the model yet. UP-03 adds the `profile` system block
@@ -22,9 +21,7 @@ const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const {
   validateProfile,
-  validatePreferences,
   profileTextLength,
-  MAX_PREFERENCES_CHARS,
   SUGGESTED_SECTIONS,
   MAX_PREFERRED_NAME_CHARS,
   MAX_SECTIONS,
@@ -47,7 +44,6 @@ router.use(authenticate);
  */
 const LIMITS = {
   preferredNameChars: MAX_PREFERRED_NAME_CHARS,
-  preferencesChars: MAX_PREFERENCES_CHARS,
   sections: MAX_SECTIONS,
   titleChars: MAX_TITLE_CHARS,
   bodyChars: MAX_BODY_CHARS,
@@ -77,23 +73,6 @@ router.get('/', asyncHandler(async (req, res) => {
 router.put('/', asyncHandler(async (req, res) => {
   const validated = validateProfile(req.body);
   const profile = dal.upsertUserProfile(req.user.userId, validated);
-  res.json({ ...profile, textLength: profileTextLength(profile) });
-}));
-
-/**
- * PUT /api/profile/preferences
- * Replace the answer preferences — how the user wants to be answered, as
- * opposed to who they are.
- *
- * Its OWN endpoint rather than a field on PUT /api/profile, because it is
- * edited from Settings while the profile document lives on the Profile page.
- * Folding it into the document write would mean the Settings screen had to send
- * sections it never loaded, and a save before that load would silently erase
- * them.
- */
-router.put('/preferences', asyncHandler(async (req, res) => {
-  const preferences = validatePreferences(req.body && req.body.preferences);
-  const profile = dal.updateUserPreferences(req.user.userId, preferences);
   res.json({ ...profile, textLength: profileTextLength(profile) });
 }));
 

@@ -39,7 +39,7 @@ import { FilePanel } from './file-panel/index.js';
 // The composer is chrome this module shows and hides, so it also owns the
 // resize that only becomes measurable at the moment it is shown.
 import { autoResizeTextarea } from './chat/composer.js';
-import { syncPresetPill, syncAnswerPreferences, flushPreferencesSave } from './views/settings.js';
+import { syncPresetPill } from './views/settings.js';
 
 /**
  * The persona's base file-tools setting (its default for new chats). Stored in
@@ -172,7 +172,6 @@ export function renderMainView() {
     // debounce. Clicking the rail is faster than 300ms, and a lost sentence is
     // the worst thing that page could do to you.
     if (!isProfile) flushProfileSave();
-    if (!isSettings) flushPreferencesSave();
     if (isProfile) {
         renderProfileView();
         return;
@@ -188,13 +187,7 @@ export function renderMainView() {
         syncPersonaEditTitle();
         return;
     }
-    if (isSettings) {
-        // Fills the answer-preferences field on first show. The settings panel
-        // is static markup that is shown rather than rendered, so this is the
-        // only hook where "the user is now looking at it" is knowable.
-        syncAnswerPreferences();
-        return;
-    }
+    if (isSettings) return;
 
     if (v.type === 'workspace') {
         if (!state.workspaces[v.id]) return navigate({ type: 'workspaces' });

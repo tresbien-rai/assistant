@@ -688,13 +688,6 @@ const API = (function () {
       update(data) {
         return request('PUT', '/api/profile', { body: data });
       },
-      /** Replace the answer preferences (UP-04). Its own call, not a field on
-       *  update(): Settings edits these without holding the profile document,
-       *  and folding them together would mean sending sections it never
-       *  loaded. */
-      setPreferences(preferences) {
-        return request('PUT', '/api/profile/preferences', { body: { preferences } });
-      },
       /** `{ sections, limits }` — the seed sections offered for a blank profile,
        *  and the server's caps, so the editor enforces the same numbers rather
        *  than keeping a second copy that drifts. */

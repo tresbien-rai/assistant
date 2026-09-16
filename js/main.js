@@ -38,7 +38,7 @@ import { createSidebarOverlay, openSidebar, closeSidebar, setupSidebarResize } f
 import {
     setupSettingsTabs, handlePresetListClick, createPreset,
     syncPresetPill, showPresetMenu, syncPersonaPresetControl, setPersonaPresetBase,
-    renderPromptInspector, promptPresetImport, wireAnswerPreferences,
+    renderPromptInspector, promptPresetImport,
 } from './views/settings.js';
 import { ICON_SVG } from './util/markdown.js';
 import { ImageStore } from './util/image-store.js';
@@ -1486,8 +1486,6 @@ function setupEventListeners() {
     if (elements.personaToolsBase) {
         elements.personaToolsBase.addEventListener('change', () => setPersonaToolsBase(elements.personaToolsBase.checked));
     }
-    // Answer preferences (UP-04) — one-time wiring for the Settings field.
-    wireAnswerPreferences();
     if (elements.personaProfileEnabled) {
         elements.personaProfileEnabled.addEventListener('change',
             () => setPersonaProfileEnabled(elements.personaProfileEnabled.checked));

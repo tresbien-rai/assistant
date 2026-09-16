@@ -342,12 +342,6 @@ CREATE TABLE IF NOT EXISTS user_profile (
     user_id         TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     preferred_name  TEXT DEFAULT '',
     sections        TEXT DEFAULT '[]',  -- JSON array: [{ id, title, body, enabled }]
-    -- Answer preferences (UP-04): standing instructions for HOW to answer, as
-    -- opposed to WHO the user is. A separate column, not another section: it
-    -- gets its own UI surface (Settings, not the Profile page) and its own
-    -- prompt block, because a persona may want one without the other (D3).
-    -- Added to existing databases by migration 014.
-    preferences     TEXT DEFAULT '',
     source          TEXT DEFAULT 'user',
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
