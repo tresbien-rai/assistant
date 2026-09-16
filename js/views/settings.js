@@ -398,6 +398,11 @@ const BLOCK_INFO = {
         description: 'Who you are, from the Profile section — your preferred name and whatever sections you have switched on. Reword the framing here if you like; the content always comes from your Profile page.',
         conditional: 'Sent only when you have written a profile and the persona is allowed to see it.',
     },
+    preferences: {
+        label: 'How you like to be answered',
+        description: 'Your standing answer preferences, from Settings → Advanced. Separate from your profile: that is who you are, this is how you want replies written. Every persona gets these.',
+        conditional: 'Sent only when you have written some.',
+    },
     expressions: {
         label: 'Expression protocol',
         description: 'How to emit [expression: name] tags.',
@@ -973,6 +978,7 @@ const EXCLUSION_REASONS = {
     'no-persona-prompt': 'the persona has no prompt text',
     'no-profile': 'you have not written a profile yet',
     'profile-off': 'this persona is set not to see your profile',
+    'no-preferences': 'you have not set any answer preferences',
     'no-session-state': 'no session state was resolved for this request',
     'no-context': 'this chat has no workspace or project files',
     empty: 'the text is empty',
@@ -1202,4 +1208,101 @@ function uniquePresetName(name) {
         if (!taken.has(candidate)) return candidate;
     }
     return `${name} (${Date.now()})`;
+}
+
+// ===== Answer preferences (UP-04) =====
+//
+// "How you like to be answered", as opposed to the Profile page's "who you
+// are". Both are prompt content and both render as system blocks; they are
+// split across two screens because they are different kinds of instruction
+// (docs/PROFILE_DESIGN.md, D3).
+//
+// The write goes to its own endpoint rather than the profile document, so this
+// screen never has to send sections it did not load — see API.profile
+// .setPreferences.
+
+/** Debounce handle for the preferences PUT. Same 300ms as everything else here. */
+let prefsSaveTimeout = null;
+/** Guards against the load overwriting what the user is mid-way through typing. */
+let prefsLoaded = false;
+
+/** Characters remaining + the saved/saving line. */
+function syncPreferencesStatus(pending) {
+    const field = elements.answerPreferences;
+    if (!field) return;
+    if (elements.answerPreferencesCount) {
+        elements.answerPreferencesCount.textContent = `${field.value.length}/${field.maxLength}`;
+    }
+    if (elements.answerPreferencesStatus) {
+        elements.answerPreferencesStatus.textContent = pending ? 'Saving…' : '';
+    }
+}
+
+async function savePreferences() {
+    prefsSaveTimeout = null;
+    const field = elements.answerPreferences;
+    if (!field) return;
+    syncPreferencesStatus(true);
+    try {
+        const saved = await API.profile.setPreferences(field.value);
+        // Keep the shared profile object current so the Profile page's size
+        // readout and any later save agree with what the server now holds.
+        if (state.profile) {
+            state.profile.preferences = saved.preferences;
+            state.profile.textLength = saved.textLength;
+        }
+    } catch (err) {
+        displayError(err, { action: 'save your preferences' });
+    } finally {
+        syncPreferencesStatus(false);
+    }
+}
+
+function schedulePreferencesSave() {
+    if (prefsSaveTimeout) clearTimeout(prefsSaveTimeout);
+    prefsSaveTimeout = setTimeout(savePreferences, 300);
+    syncPreferencesStatus(true);
+}
+
+/**
+ * Commit a pending preferences save immediately.
+ * Called when Settings is navigated away from, for the same reason the Profile
+ * view flushes: the debounce outlives a rail click.
+ */
+export function flushPreferencesSave() {
+    if (!prefsSaveTimeout) return;
+    clearTimeout(prefsSaveTimeout);
+    savePreferences();
+}
+
+/**
+ * Populate the preferences field when Settings is shown.
+ *
+ * Loads once. Re-filling it on every visit would clobber an unsaved edit the
+ * moment the user tabbed away and back, and the field is already the source of
+ * truth after the first load.
+ */
+export async function syncAnswerPreferences() {
+    const field = elements.answerPreferences;
+    if (!field || prefsLoaded) return;
+    try {
+        if (!state.profile) state.profile = await API.profile.get();
+        field.value = state.profile.preferences || '';
+        prefsLoaded = true;
+        syncPreferencesStatus(false);
+    } catch (err) {
+        // Non-fatal: an unreachable profile leaves an empty box rather than
+        // breaking the whole Settings screen.
+        console.warn('Could not load answer preferences:', err);
+    }
+}
+
+/** Wire the field. Called once from setupEventListeners. */
+export function wireAnswerPreferences() {
+    const field = elements.answerPreferences;
+    if (!field) return;
+    field.addEventListener('input', () => {
+        if (state.profile) state.profile.preferences = field.value;
+        schedulePreferencesSave();
+    });
 }

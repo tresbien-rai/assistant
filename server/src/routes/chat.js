@@ -457,6 +457,7 @@ function resolvePromptOptions(req, containers, model, presetOverride) {
       personaName: persona?.name || '',
       userName: resolveUserName(profile, dal.findUserById(userId)?.display_name),
       profileText: renderProfile(profile),
+      preferencesText: (profile && profile.preferences) || '',
       workspaceName: containers.workspace?.name || '',
       projectName: containers.project?.name || '',
       model: model || '',

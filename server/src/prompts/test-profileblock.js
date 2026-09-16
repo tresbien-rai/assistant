@@ -14,7 +14,7 @@
 
 const assert = require('node:assert');
 const { renderProfile, resolveUserName } = require('./profile');
-const { composeSystemPrompt, buildSystemPrompt, PROFILE_SECTION } = require('./tessera');
+const { composeSystemPrompt, buildSystemPrompt, PROFILE_SECTION, PREFERENCES_SECTION } = require('./tessera');
 const { normalizeProfile } = require('../utils/userProfile');
 
 let failures = 0;
@@ -155,7 +155,53 @@ check('a preset may reword the framing but not the content', () => {
   assert.ok(!block.text.includes('Secret'), 'a preset cannot resurrect a disabled section');
 });
 
-console.log('\n4. position + caching...');
+console.log('\n4. answer preferences (UP-04)...');
+
+check('included when there is preferences text', () => {
+  const block = composeSystemPrompt('PERSONA', [], {
+    macros: { preferencesText: 'Keep it brief. British spelling.' },
+  }).blocks.find((b) => b.id === 'preferences');
+  assert.strictEqual(block.included, true);
+  assert.ok(block.text.includes('Keep it brief'));
+  assert.ok(block.text.includes('How they like to be answered'), 'framing present');
+});
+
+check('empty preferences => no-preferences, and no empty heading is emitted', () => {
+  const out = composeSystemPrompt('PERSONA', [], { macros: { preferencesText: '' } });
+  const block = out.blocks.find((b) => b.id === 'preferences');
+  assert.strictEqual(block.included, false);
+  assert.strictEqual(block.reason, 'no-preferences');
+  assert.ok(!out.text.includes('How they like to be answered'));
+});
+
+check('preferences are INDEPENDENT of the profile switch', () => {
+  // D3: they are different instructions and a persona may want one without the
+  // other. A persona opted out of the profile still gets the preferences.
+  const out = composeSystemPrompt('PERSONA', [], {
+    profileEnabled: false,
+    macros: { profileText: renderProfile(FULL), preferencesText: 'Keep it brief.' },
+  });
+  assert.ok(!out.text.includes('Jack'), 'profile still suppressed');
+  assert.ok(out.text.includes('Keep it brief.'), 'preferences still sent');
+});
+
+check('profile and preferences render as two separate blocks, in order', () => {
+  const ids = composeSystemPrompt('PERSONA', [], {
+    profileEnabled: true,
+    macros: { profileText: renderProfile(FULL), preferencesText: 'Keep it brief.' },
+  }).blocks.filter((b) => b.included).map((b) => b.id);
+  assert.deepStrictEqual(ids.slice(0, 3), ['orientation', 'profile', 'preferences']);
+});
+
+check('the framing says a live request beats a standing preference', () => {
+  // Without this, "keep it brief" defeats "give me the long version" and the
+  // model becomes impossible to steer.
+  // Whitespace-collapsed: the phrase wraps across a line in the source, and a
+  // test that breaks when the wording is re-wrapped is a test about formatting.
+  assert.ok(/what they just asked for wins/i.test(PREFERENCES_SECTION.replace(/\s+/g, ' ')));
+});
+
+console.log('\n5. position + caching...');
 
 check('built-in position is directly after the orientation', () => {
   const ids = composeSystemPrompt('PERSONA', [], {
@@ -182,7 +228,7 @@ check('the built-in framing tells the model not to recite it', () => {
   // The behaviour this guards is real: given a block of facts about someone,
   // models tend to perform having read it. If this wording is ever dropped,
   // this test should fail loudly rather than the app quietly getting weird.
-  assert.ok(/do not recite/i.test(PROFILE_SECTION));
+  assert.ok(/do not recite/i.test(PROFILE_SECTION.replace(/\s+/g, ' ')));
 });
 
 console.log('\n' + '='.repeat(60));
