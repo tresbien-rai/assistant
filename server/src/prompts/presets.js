@@ -40,7 +40,17 @@ const PRESET_NONE = 'none';
  *   'persona' the position marker for the persona's own prompt (its text comes
  *             from the persona record, never from the preset)
  */
-const SYSTEM_BLOCK_IDS = ['orientation', 'expressions', 'scratchpad', 'persona'];
+const SYSTEM_BLOCK_IDS = ['orientation', 'profile', 'expressions', 'scratchpad', 'persona'];
+
+// NOTE on `profile` (UP-03): it is listed second because that is its BUILT-IN
+// position — right after the orientation, so the model learns who it is talking
+// to before anything else. A preset saved before UP-03 has no `profile` in its
+// stored order, and normalizeBlocks APPENDS unknown-to-the-preset blocks rather
+// than slotting them in at the built-in index (see the comment there). Such a
+// preset therefore renders the profile LAST, after the persona. That is the
+// deliberate trade SS-02 already made: a user's explicit order wins over our
+// idea of where a new block belongs, and re-ordering it is one drag in the
+// preset editor.
 
 /**
  * Blocks that are NOT part of the system layer. The assembly positions these,
@@ -272,7 +282,14 @@ function buildMacroValues(ctx = {}) {
   const when = ctx.now instanceof Date ? ctx.now : new Date();
   return {
     char: ctx.personaName || '',
+    // `userName` is already the RESOLVED name (preferred, else account) — see
+    // prompts/profile.js resolveUserName. This macro does not know which it got,
+    // and should not: every caller must resolve it the same way.
     user: ctx.userName || '',
+    // The rendered user profile (UP-03). Empty when the user has written none,
+    // when the persona has it switched off, or on a request that never loaded
+    // one — the block skips itself in all three cases.
+    profile: ctx.profileText || '',
     expressions: Array.isArray(ctx.expressionNames) ? ctx.expressionNames.join(', ') : '',
     workspace: ctx.workspaceName || '',
     project: ctx.projectName || '',
@@ -285,7 +302,8 @@ function buildMacroValues(ctx = {}) {
 /** Macro names + one-line descriptions, for the editor's reference list (AP-03). */
 const MACRO_REFERENCE = [
   { name: 'char', description: "The active persona's name" },
-  { name: 'user', description: 'Your display name' },
+  { name: 'user', description: 'What to call you — your Profile name, else your account name' },
+  { name: 'profile', description: 'Your Profile: preferred name + enabled sections' },
   { name: 'expressions', description: "The persona's expression names, comma-separated" },
   { name: 'workspace', description: "The chat's workspace name, if any" },
   { name: 'project', description: "The chat's project name, if any" },

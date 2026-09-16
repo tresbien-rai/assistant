@@ -155,6 +155,7 @@ export const elements = {
     composerModelName: document.getElementById('composerModelName'),
     toolsToggleBtn: document.getElementById('toolsToggleBtn'),
     personaToolsBase: document.getElementById('personaToolsBase'),
+    personaProfileEnabled: document.getElementById('personaProfileEnabled'),
     
     // Status bar
     headerAssistantName: document.getElementById('headerAssistantName'),

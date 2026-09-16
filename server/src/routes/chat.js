@@ -25,6 +25,7 @@ const {
   sessionStateBlock, describeSessionState,
 } = require('../prompts/tessera');
 const { buildSessionState } = require('../prompts/sessionState');
+const { renderProfile, resolveUserName } = require('../prompts/profile');
 const { PRESET_NONE } = require('../prompts/presets');
 const { executeToolCall } = require('../tools');
 const AppError = require('../utils/AppError');
@@ -433,19 +434,52 @@ function resolvePromptOptions(req, containers, model, presetOverride) {
   const persona = conversation?.persona_id
     ? dal.getPersonaById(conversation.persona_id, userId)
     : null;
+  // The user profile (UP-03). Read on every request because it is prompt
+  // content and must be current; it is a single indexed row, and the block it
+  // feeds is byte-stable between edits, so it neither costs much nor disturbs
+  // the cached prefix (docs/PROFILE_DESIGN.md D2).
+  let profile = null;
+  try {
+    profile = dal.getUserProfile(userId);
+  } catch (err) {
+    // A profile that cannot be read must not take the chat down with it. The
+    // block simply skips, exactly as it does for a user who wrote none.
+    logger.warn({ userId, msg: err.message }, 'Could not load user profile; omitting the profile block');
+  }
+
   return {
     // `presetOverride` is the inspector previewing a specific preset (AP-05);
     // it is resolved user-scoped by the caller, and only the preview route
     // passes it. The real send paths always resolve from the conversation.
     preset: presetOverride !== undefined ? presetOverride : resolvePromptPreset(userId, conversation),
+    profileEnabled: resolveProfileEnabled(persona),
     macros: {
       personaName: persona?.name || '',
-      userName: dal.findUserById(userId)?.display_name || '',
+      userName: resolveUserName(profile, dal.findUserById(userId)?.display_name),
+      profileText: renderProfile(profile),
       workspaceName: containers.workspace?.name || '',
       projectName: containers.project?.name || '',
       model: model || '',
     },
   };
+}
+
+/**
+ * Whether this persona is shown the user profile (UP-03, D6).
+ *
+ * ON unless the persona explicitly opted out — the inverse of `toolsEnabled`,
+ * which stores only `true`. The defaults differ because the features do: file
+ * tools reach outside the chat and should be asked for, while the profile is
+ * the whole point of writing one. Defaulting it off would mean a user fills in
+ * the page, and then nothing happens until they also visit every persona.
+ *
+ * One switch for the whole profile, never per section (D6).
+ *
+ * @param {Object|null} persona - personas row, model_config already parsed
+ * @returns {boolean}
+ */
+function resolveProfileEnabled(persona) {
+  return persona?.modelConfig?.profileEnabled !== false;
 }
 
 /**

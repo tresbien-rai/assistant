@@ -239,6 +239,16 @@ When responding, you may optionally include an expression tag like [expression: 
                         <span>Enable file tools by default</span>
                     </label>
                     <p class="help-text">Lets this persona create, read, and list files on your Google Drive during a chat. You can override it per conversation with the toggle next to the composer.</p>
+
+                    <!-- Profile visibility (UP-03, D6). ON unless switched off:
+                         the profile exists to be seen, so defaulting it off
+                         would mean filling in the page and nothing happening.
+                         One switch for the whole profile, never per section. -->
+                    <label class="checkbox-row" for="personaProfileEnabled" style="margin-top: 12px;">
+                        <input type="checkbox" id="personaProfileEnabled" checked>
+                        <span>Let this persona see your profile</span>
+                    </label>
+                    <p class="help-text">Sends what you wrote in <strong>Profile</strong> to this persona, so it knows who it is talking to. Turn it off for a persona you would rather keep at arm's length.</p>
                 </div>
 
                 <!-- Persona avatar image (re-parented into #personaEditView on load — WR-08) -->
