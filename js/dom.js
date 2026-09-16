@@ -156,6 +156,7 @@ export const elements = {
     toolsToggleBtn: document.getElementById('toolsToggleBtn'),
     personaToolsBase: document.getElementById('personaToolsBase'),
     personaProfileEnabled: document.getElementById('personaProfileEnabled'),
+    personaSectionFields: document.getElementById('personaSectionFields'),
     
     // Status bar
     headerAssistantName: document.getElementById('headerAssistantName'),

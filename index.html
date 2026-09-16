@@ -213,10 +213,22 @@
                     <input type="text" id="personaRoleLabel" maxlength="24" placeholder="Researcher">
                     <p class="help-text">Optional short label shown as a chip on the card.</p>
 
-                    <!-- PS-01: this field now edits the GENERAL GUIDANCE section.
-                         It still writes `persona.systemPrompt` — the column was
-                         repurposed rather than migrated — and the named sections
-                         get their own fields in PS-02. -->
+                    <!-- Persona sections (PS-02). The five named fields are
+                         rendered from the vocabulary in js/persona-sections.js
+                         rather than written out here, so adding or renaming a
+                         section is a one-line change in one file.
+
+                         General guidance stays STATIC and keeps the id
+                         `systemPrompt`: it writes the original column (PS-01
+                         repurposed it rather than migrating), which keeps every
+                         existing cache, listener and save path valid. -->
+                    <p class="help-text persona-sections-intro">
+                        Fill in what is useful — every box is optional, and empty ones are skipped
+                        entirely. A persona written only in <em>General guidance</em> works exactly
+                        as it always has.
+                    </p>
+                    <div id="personaSectionFields"></div>
+
                     <label for="systemPrompt">General guidance</label>
                     <div class="textarea-resizable">
                         <textarea id="systemPrompt" rows="8" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.

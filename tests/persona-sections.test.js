@@ -96,7 +96,7 @@ check('backstory comes after the behaviour sections', () => {
     // Deliberate: lore is reliably the longest thing anyone writes, and a long
     // history should not bury a two-line voice instruction.
     const out = assemblePersonaPrompt(FULL);
-    assert.ok(out.indexOf('## Speech') < out.indexOf('## Backstory'));
+    assert.ok(out.indexOf('## Voice') < out.indexOf('## Backstory'));
     assert.ok(out.indexOf('## Personality') < out.indexOf('## Backstory'));
 });
 
@@ -107,7 +107,7 @@ check('general guidance comes last', () => {
 
 check('an unfilled section leaves no trace', () => {
     const out = assemblePersonaPrompt({ sections: { speech: 'Terse.' } });
-    assert.strictEqual(out, '## Speech\nTerse.');
+    assert.strictEqual(out, '## Voice\nTerse.');
     assert.ok(!out.includes('Personality'));
     assert.ok(!/\n\n\n/.test(out), 'no blank run where a section was skipped');
 });
@@ -116,7 +116,7 @@ check('sections are separated by exactly one blank line', () => {
     const out = assemblePersonaPrompt({
         sections: { personality: 'A.', speech: 'B.' },
     });
-    assert.strictEqual(out, '## Personality\nA.\n\n## Speech\nB.');
+    assert.strictEqual(out, '## Personality\nA.\n\n## Voice\nB.');
 });
 
 console.log('\n3. vocabulary...');

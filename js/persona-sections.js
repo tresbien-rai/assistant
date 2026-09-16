@@ -56,9 +56,12 @@ export const PERSONA_SECTIONS = [
         placeholder: 'Dry and unflappable. Amused by chaos rather than alarmed by it. Says what they think, then lets it sit.',
     },
     {
+        // The id stays `speech` while the label reads "Voice": the id is stored
+        // data and renaming it would orphan every persona that has written one,
+        // for a change nobody can see.
         id: 'speech',
-        label: 'Speech',
-        heading: 'Speech',
+        label: 'Voice',
+        heading: 'Voice',
         help: 'How they actually talk. The first thing to drift in a long conversation, so it is worth being specific.',
         placeholder: 'Short sentences. No exclamation marks. Never opens with "Certainly" or "Great question".',
     },
