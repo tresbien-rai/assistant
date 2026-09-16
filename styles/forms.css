@@ -1506,3 +1506,22 @@
     color: var(--text-secondary);
     line-height: 1.5;
 }
+
+/* ===== Persona section fields (PS-02) =====
+   The five named persona sections in the editor. They use the app-wide field
+   appearance; only the rhythm between them belongs here, so a stack of six
+   labelled boxes reads as a form rather than a wall. */
+
+.persona-sections-intro {
+    margin-bottom: 14px;
+}
+
+/* Tighter than the default gap under a textarea: each field's help text sits
+   directly beneath it, and the next label needs the visual break instead. */
+#personaSectionFields .textarea-resizable {
+    margin-bottom: 4px;
+}
+
+#personaSectionFields .help-text {
+    margin-bottom: 16px;
+}

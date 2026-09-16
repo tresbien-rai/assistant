@@ -77,7 +77,7 @@ import {
     switchConversation, renderConversation,
     renderConversationList, conversationActivityAt, } from './views/chats.js';
 import {
-    showPersonaPopover, } from './views/personas.js';
+    showPersonaPopover, syncPersonaSectionFields, } from './views/personas.js';
 import {
     updateWorkspaceUI,
 } from './views/workspaces.js';
@@ -633,6 +633,8 @@ async function updateUI() {
     elements.personaRoleLabel.value = persona ? (persona.roleLabel || '') : '';
     syncPersonaFieldCounters();
     elements.systemPrompt.value = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
+    // The five named sections (PS-02). `systemPrompt` above is the sixth.
+    syncPersonaSectionFields(persona);
     elements.showAvatar.checked = state.settings.showAvatar;
     if (elements.activeFileTurns) elements.activeFileTurns.value = state.settings.activeFileTurns;
     if (elements.autoTitleToggle) elements.autoTitleToggle.checked = state.settings.autoTitle !== false;

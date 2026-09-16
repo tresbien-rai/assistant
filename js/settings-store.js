@@ -25,6 +25,10 @@ import { getActivePersona } from './state.js';
 import { confirmDialog } from './components/dialogs.js';
 import { updateSettingsUI, renderModelsCatalog, refreshAddModelModal } from './shell.js';
 import { displayError } from './components/errors.js';
+// The pure vocabulary leaf. Deliberately NOT views/personas.js, which owns the
+// rendering side: that module already imports this one, and importing it back
+// would be the dependency cycle docs/REFACTOR_PLAN.md rule 3 forbids.
+import { AUTHORED_SECTION_IDS } from './persona-sections.js';
 
 /**
  * Keep the active fixed persona's pin pointing at the layer's current model.
@@ -147,8 +151,33 @@ export function saveAllSettingsFromUI() {
         persona.tagline = elements.personaTagline.value.trim();
         persona.roleLabel = elements.personaRoleLabel.value.trim();
         persona.systemPrompt = elements.systemPrompt.value || CONFIG.defaults.systemPrompt;
+        persona.sections = readPersonaSectionFields();
         persona.updatedAt = Date.now();
     }
+}
+
+/**
+ * Read the persona editor's section fields into a sections object (PS-02).
+ *
+ * Empty fields are omitted rather than stored as '' — an untouched persona keeps
+ * an empty `{}` instead of accumulating five blank keys, so the stored row stays
+ * honest about what was actually written.
+ *
+ * Reads the DOM directly, by the id convention the editor builds them under.
+ * The alternative — importing the reader from views/personas.js, which renders
+ * them — would close an import cycle with this module.
+ *
+ * @returns {Object} section id -> text
+ */
+function readPersonaSectionFields() {
+    const out = {};
+    for (const id of AUTHORED_SECTION_IDS) {
+        const field = document.getElementById(`personaSection_${id}`);
+        if (!field) continue;
+        const value = field.value.trim();
+        if (value) out[id] = value;
+    }
+    return out;
 }
 
 /**

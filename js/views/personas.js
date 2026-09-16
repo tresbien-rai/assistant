@@ -18,7 +18,8 @@ import { getActivePersona } from '../state.js';
 import {
     personaAvatarHTML, createPersona, applyPersonaModelSettings, hydratePersonas,
 } from '../persona-helpers.js';
-import { savePersonas } from '../settings-store.js';
+import { savePersonas, autoSaveSettings } from '../settings-store.js';
+import { PERSONA_SECTIONS, AUTHORED_SECTION_IDS, sectionText } from '../persona-sections.js';
 import { renderConversationList, renderConversation } from './chats.js';
 import { setActiveConversation, forgetConversationDraft } from '../active-conversation.js';
 import { UiPrefs } from '../ui-prefs.js';
@@ -461,3 +462,74 @@ function showPersonaCardMenu(anchorEl, personaId) {
     attachPopoverOutsideClose(menu, anchorEl);
 }
 
+
+// ===== Persona section fields (PS-02) =====
+//
+// The five named sections get their own textareas in the persona editor. They
+// are BUILT from the vocabulary in js/persona-sections.js rather than written
+// into index.html, so adding, renaming or reordering a section is a one-line
+// change in one file and the editor follows automatically.
+//
+// `general` is deliberately NOT built here: it is the static `#systemPrompt`
+// textarea, which writes the original column. Keeping it static keeps every
+// existing DOM cache, listener and save path valid, and PS-01's whole point was
+// that nothing about the legacy field had to move.
+
+/** True once the fields exist, so a repaint sets values instead of rebuilding. */
+let sectionFieldsBuilt = false;
+
+/** The textarea for one section id. */
+function sectionField(id) {
+    return document.getElementById(`personaSection_${id}`);
+}
+
+/**
+ * Build the section textareas once.
+ *
+ * Rebuilding on every sync would destroy the caret mid-word, the same trap the
+ * Profile view avoids — so this runs once and `syncPersonaSectionFields` only
+ * ever writes values afterwards.
+ */
+function buildPersonaSectionFields() {
+    const host = elements.personaSectionFields;
+    if (!host) return;
+    host.innerHTML = AUTHORED_SECTION_IDS.map((id) => {
+        const section = PERSONA_SECTIONS.find((s) => s.id === id);
+        return `
+            <label for="personaSection_${escapeHtml(id)}">${escapeHtml(section.label)}</label>
+            <div class="textarea-resizable">
+                <textarea id="personaSection_${escapeHtml(id)}" class="persona-section-field"
+                          data-section-id="${escapeHtml(id)}" rows="3"
+                          placeholder="${escapeHtml(section.placeholder)}"></textarea>
+                <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+            </div>
+            <p class="help-text">${escapeHtml(section.help)}</p>`;
+    }).join('');
+
+    // One delegated listener rather than five: the fields never change identity,
+    // but delegation keeps this correct if the vocabulary grows.
+    host.addEventListener('input', (e) => {
+        if (e.target.dataset.sectionId) autoSaveSettings();
+    });
+    sectionFieldsBuilt = true;
+}
+
+/**
+ * Reflect a persona's sections into the editor fields.
+ *
+ * Skips whichever field currently has focus. Every other field in this editor
+ * is written unconditionally on repaint, which is fine because a repaint does
+ * not happen while typing — but this one is cheap insurance against that
+ * assumption changing, and a persona prompt is a bad place to lose a sentence.
+ *
+ * @param {Object|null} persona
+ */
+export function syncPersonaSectionFields(persona) {
+    if (!elements.personaSectionFields) return;
+    if (!sectionFieldsBuilt) buildPersonaSectionFields();
+    for (const id of AUTHORED_SECTION_IDS) {
+        const field = sectionField(id);
+        if (!field || field === document.activeElement) continue;
+        field.value = persona ? sectionText(persona, id) : '';
+    }
+}
