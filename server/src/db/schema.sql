@@ -29,7 +29,18 @@ CREATE TABLE IF NOT EXISTS personas (
     name            TEXT NOT NULL,
     tagline         TEXT DEFAULT '',     -- one-line in-character intro (card display only)
     role_label      TEXT DEFAULT '',     -- short role chip, e.g. "Researcher" (card display only)
+    -- The general-guidance section of the persona prompt (PS-01). Named
+    -- `system_prompt` for its whole history and kept that way: every existing
+    -- persona's text lives here, and repurposing the column in place means no
+    -- data migration and no character reshaped by an upgrade.
     system_prompt   TEXT DEFAULT '',
+    -- The authored persona parts (PS-01), JSON: { personality, speech,
+    -- expertise, relationship, backstory }. Empty keys are never assembled.
+    -- The CLIENT owns the vocabulary and the assembly (js/persona-sections.js);
+    -- the server stores this opaquely and only bounds its size, the same way it
+    -- has always accepted arbitrary `system_prompt` text.
+    -- Added to existing databases by migration 015.
+    sections        TEXT DEFAULT '{}',
     prefill         TEXT DEFAULT '',
     avatar_filename TEXT DEFAULT '',
     expressions     TEXT DEFAULT '{}',   -- JSON: { "happy": { "emoji": "😊", "imageKey": "..." }, ... }

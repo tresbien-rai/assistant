@@ -42,6 +42,7 @@ export async function createPersona(name = CONFIG.defaults.assistantName) {
         tagline: created.tagline || '',
         roleLabel: created.roleLabel || '',
         systemPrompt: created.systemPrompt || '',
+        sections: (created.sections && typeof created.sections === 'object') ? created.sections : {},
         prefill: created.prefill || '',
         avatarFilename: created.avatarFilename || '',
         expressions: (created.expressions && typeof created.expressions === 'object')
@@ -114,6 +115,9 @@ export function hydratePersonas(personas) {
             tagline: p.tagline || '',
             roleLabel: p.roleLabel || '',
             systemPrompt: p.systemPrompt || '',
+            // PS-01: the authored persona parts. `systemPrompt` remains the
+            // general-guidance section, which is why nothing migrates.
+            sections: (p.sections && typeof p.sections === 'object') ? p.sections : {},
             prefill: p.prefill || '',
             avatarFilename: p.avatarFilename || '',
             expressions,

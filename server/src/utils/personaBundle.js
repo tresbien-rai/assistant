@@ -58,6 +58,12 @@ const MAX_NAME = 80;
 const MAX_TAGLINE = 80;
 const MAX_ROLE_LABEL = 24;
 const MAX_SYSTEM_PROMPT = 100_000;
+// Persona sections (PS-01). Bound an import the same way the write route bounds
+// an edit, and generously: a bundle is a file someone chose to import.
+const MAX_SECTION_KEYS = 12;
+const MAX_SECTION_KEY = 40;
+const MAX_SECTION_VALUE = 8000;
+const MAX_SECTION_TOTAL = 24_000;
 const MAX_EXPRESSIONS = 24;
 const MAX_EMOJI = 8;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // matches the avatar upload limit
@@ -138,11 +144,43 @@ function decodeImage(image, where) {
  *
  * @param {unknown} bundle - Parsed bundle JSON
  * @returns {{
- *   persona: { name: string, tagline: string, roleLabel: string, systemPrompt: string, expressions: Object },
+ *   persona: { name: string, tagline: string, roleLabel: string, systemPrompt: string, sections: Object, expressions: Object },
  *   avatar: { buffer: Buffer, mimeType: string, ext: string }|null,
  *   expressionImages: Array<{ name: string, buffer: Buffer, mimeType: string, ext: string }>
  * }}
  */
+/**
+ * Sanitize the persona sections of an imported bundle (PS-01).
+ *
+ * TOLERANT, not strict: a bundle is an untrusted file that may have been
+ * written by an older Tessera (no sections at all), a newer one (sections this
+ * build has never heard of), or hand-edited. None of those should fail an
+ * import — the worst outcome is a persona missing a part the user can retype,
+ * and the best is that a future section survives a round-trip through this
+ * version untouched.
+ *
+ * Keys are kept as-is for that forward-compatibility reason; only shape and
+ * size are enforced.
+ *
+ * @param {unknown} raw
+ * @returns {Object} section id -> text
+ */
+function sanitizeSections(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  let total = 0;
+  for (const key of Object.keys(raw)) {
+    if (Object.keys(out).length >= MAX_SECTION_KEYS) break;
+    if (typeof key !== 'string' || key.length > MAX_SECTION_KEY) continue;
+    if (typeof raw[key] !== 'string') continue;
+    const value = str(raw[key], MAX_SECTION_VALUE);
+    if (total + value.length > MAX_SECTION_TOTAL) break;
+    total += value.length;
+    out[key] = value;
+  }
+  return out;
+}
+
 function validateBundle(bundle) {
   if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
     throw AppError.validation('Not a valid Tessera bundle');
@@ -194,6 +232,7 @@ function validateBundle(bundle) {
       tagline: str(src.tagline, MAX_TAGLINE),
       roleLabel: str(src.roleLabel, MAX_ROLE_LABEL),
       systemPrompt: str(src.systemPrompt, MAX_SYSTEM_PROMPT),
+      sections: sanitizeSections(src.sections),
       expressions,
     },
     avatar,

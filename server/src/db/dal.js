@@ -141,14 +141,14 @@ function getPersonaById(personaId, userId) {
  * @param {Object} data - Persona data
  * @returns {Object} The created persona record
  */
-function createPersona(userId, { name, tagline, roleLabel, systemPrompt, prefill, avatarFilename, expressions, modelConfig }) {
+function createPersona(userId, { name, tagline, roleLabel, systemPrompt, sections, prefill, avatarFilename, expressions, modelConfig }) {
   const db = getDb();
   const id = generateId();
   const timestamp = now();
 
   const stmt = db.prepare(`
-    INSERT INTO personas (id, user_id, name, tagline, role_label, system_prompt, prefill, avatar_filename, expressions, model_config, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO personas (id, user_id, name, tagline, role_label, system_prompt, sections, prefill, avatar_filename, expressions, model_config, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -158,6 +158,7 @@ function createPersona(userId, { name, tagline, roleLabel, systemPrompt, prefill
     tagline || '',
     roleLabel || '',
     systemPrompt || '',
+    JSON.stringify(sections || {}),
     prefill || '',
     avatarFilename || '',
     JSON.stringify(expressions || {}),
@@ -200,6 +201,10 @@ function updatePersona(personaId, userId, data) {
   if (data.systemPrompt !== undefined) {
     updates.push('system_prompt = ?');
     values.push(data.systemPrompt);
+  }
+  if (data.sections !== undefined) {
+    updates.push('sections = ?');
+    values.push(JSON.stringify(data.sections || {}));
   }
   if (data.prefill !== undefined) {
     updates.push('prefill = ?');
@@ -287,7 +292,22 @@ function parsePersonaJson(persona) {
     ...persona,
     expressions: JSON.parse(persona.expressions || '{}'),
     modelConfig: JSON.parse(persona.model_config || '{}'),
+    // PS-01. Tolerant: a row written before the column existed, or hand-edited
+    // into nonsense, reads as "no sections" rather than throwing inside a
+    // persona list request.
+    sections: parsePersonaSections(persona.sections),
   };
+}
+
+/** Parse the persona sections column. Never throws; bad input reads as {}. */
+function parsePersonaSections(raw) {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
 }
 
 // =============================================================================
