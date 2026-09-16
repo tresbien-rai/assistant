@@ -75,6 +75,10 @@
                     <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
                     <span>Workspaces</span>
                 </button>
+                <button class="rail-item" data-section="profile" type="button">
+                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-3-3.87"></path><path d="M13 3.13a4 4 0 0 1 0 7.75"></path><circle cx="8" cy="7" r="4"></circle><path d="M15 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path></svg>
+                    <span>Profile</span>
+                </button>
                 <button class="rail-item" data-section="personas" type="button">
                     <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
                     <span>Personas</span>
@@ -491,6 +495,12 @@ When responding, you may optionally include an expression tag like [expression: 
                      from the settings form at load; shown when editing a persona
                      from the Personas section. -->
                 <div class="main-view-panel" id="personaEditView" hidden></div>
+
+                <!-- Profile section (UP-02): who the USER is, in their own
+                     words. Built by js/views/profile.js rather than re-parented
+                     from the settings form like its neighbours — it is new, so
+                     it has no legacy markup to inherit. -->
+                <div class="main-view-panel" id="profileView" hidden></div>
 
                 <!-- Models & Providers section (WR-13): catalog of added models
                      grouped by provider + the active-model/API-key and advanced-
