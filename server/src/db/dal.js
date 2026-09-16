@@ -773,7 +773,11 @@ function getUserProfile(userId) {
   } catch {
     parsed = null;
   }
-  const profile = normalizeProfile({ preferredName: row.preferred_name, sections: parsed });
+  const profile = normalizeProfile({
+    preferredName: row.preferred_name,
+    sections: parsed,
+    preferences: row.preferences,
+  });
   return { ...profile, updatedAt: row.updated_at };
 }
 
@@ -812,6 +816,38 @@ function upsertUserProfile(userId, profile) {
     ).run(generateId(), userId, preferredName, sections, timestamp, timestamp);
   }
 
+  return getUserProfile(userId);
+}
+
+/**
+ * Replace the user's answer preferences (UP-04).
+ *
+ * Deliberately its OWN writer rather than a field on upsertUserProfile. The two
+ * are edited from different screens — Settings holds the preferences, the
+ * Profile page holds the name and sections — and a Settings save that had to
+ * send the whole profile document would wipe every section the moment it ran
+ * before that document was loaded.
+ *
+ * Inserts a profile row if the user has none, so writing preferences first (a
+ * perfectly normal order of events) works.
+ *
+ * @param {string} userId
+ * @param {string} preferences - ALREADY-VALIDATED text
+ * @returns {Object} the stored profile, read back
+ */
+function updateUserPreferences(userId, preferences) {
+  const db = getDb();
+  const timestamp = now();
+  const existing = db.prepare('SELECT id FROM user_profile WHERE user_id = ?').get(userId);
+  if (existing) {
+    db.prepare('UPDATE user_profile SET preferences = ?, updated_at = ? WHERE user_id = ?')
+      .run(preferences, timestamp, userId);
+  } else {
+    db.prepare(
+      `INSERT INTO user_profile (id, user_id, preferred_name, sections, preferences, source, created_at, updated_at)
+       VALUES (?, ?, '', '[]', ?, 'user', ?, ?)`
+    ).run(generateId(), userId, preferences, timestamp, timestamp);
+  }
   return getUserProfile(userId);
 }
 
@@ -2508,9 +2544,10 @@ module.exports = {
   getSettingsByUser,
   upsertSettings,
 
-  // User profile (UP-01)
+  // User profile (UP-01) + answer preferences (UP-04)
   getUserProfile,
   upsertUserProfile,
+  updateUserPreferences,
 
   // API Keys
   getApiKey,

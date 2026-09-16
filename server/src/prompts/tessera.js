@@ -155,6 +155,28 @@ toward it. If it is ever contradicted by what they tell you in the conversation,
 believe the conversation.`;
 
 /**
+ * The answer-preferences block (UP-04).
+ *
+ * Separate from the profile block because the two say different kinds of thing
+ * and a persona may warrant one without the other: the profile is WHO the user
+ * is, this is HOW they want to be answered. Keeping them apart also means a
+ * preset can drop one and keep the other, and the inspector can report their
+ * costs separately.
+ *
+ * The closing line exists because standing instructions and in-conversation
+ * instructions collide constantly — a user whose preference says "keep it
+ * brief" still means it when they ask for the long version, and a model that
+ * treats the standing rule as the stronger one becomes impossible to steer.
+ */
+const PREFERENCES_SECTION = `## How they like to be answered
+
+{{preferences}}
+
+These are standing preferences, not orders for this turn. Follow them by
+default; when the user asks for something that departs from them, what they
+just asked for wins.`;
+
+/**
  * The scratchpad collaboration nudge (SP-05). Included only when the scratchpad
  * is active for the request, so it costs nothing on ordinary chats. This is the
  * adoption lever — models default to putting substance in the chat reply, so it
@@ -190,6 +212,7 @@ const CONTEXT_ACK = "Understood — I'll use the reference material above as bac
 const BUILTIN_BLOCK_TEXT = {
   orientation: ORIENTATION,
   profile: PROFILE_SECTION,
+  preferences: PREFERENCES_SECTION,
   expressions: EXPRESSION_SECTION,
   scratchpad: SCRATCHPAD_SECTION,
   context_ack: CONTEXT_ACK,
@@ -298,6 +321,10 @@ function composeSystemPrompt(personaPrompt, expressionNames, options = {}) {
         continue;
       }
     }
+    if (id === 'preferences' && !macros.preferences) {
+      skip(id, 'no-preferences');
+      continue;
+    }
     if (id === 'expressions' && names.length === 0) {
       skip(id, 'no-expressions');
       continue;
@@ -405,6 +432,7 @@ module.exports = {
   sanitizeExpressionNames,
   ORIENTATION,
   PROFILE_SECTION,
+  PREFERENCES_SECTION,
   CONTEXT_ACK,
   BUILTIN_BLOCK_TEXT,
   RESERVED_EXPRESSIONS,

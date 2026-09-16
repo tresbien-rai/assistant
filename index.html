@@ -372,6 +372,25 @@ When responding, you may optionally include an expression tag like [expression: 
                     <p class="section-note">Renaming a chat yourself always wins — nothing here overwrites a name you chose. Naming is retried after each reply while a chat is still called "New Chat", so a failed first turn is named on the next one.</p>
                 </div>
 
+                <!-- Answer preferences (UP-04). Lives in Settings, not on the
+                     Profile page: the profile is WHO you are, this is HOW you
+                     want to be answered. Both are prompt content, and they
+                     render as two independent blocks. -->
+                <div class="settings-section" data-settings-tab="advanced">
+                    <h3>How you like to be answered</h3>
+                    <p class="section-note">Synced to your account.</p>
+                    <label for="answerPreferences">
+                        Standing preferences <span class="field-counter" id="answerPreferencesCount"></span>
+                    </label>
+                    <div class="textarea-resizable">
+                        <textarea id="answerPreferences" rows="4" maxlength="2000"
+                                  placeholder="Keep answers short unless I ask for detail. British spelling. Don't apologise — just correct it."></textarea>
+                        <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+                    </div>
+                    <p class="help-text">Sent with every message, to every persona. These are defaults, not orders — asking for something different in the conversation still wins.</p>
+                    <p class="section-note" id="answerPreferencesStatus"></p>
+                </div>
+
                 <div class="settings-section" data-settings-tab="advanced">
                     <h3>Prompt presets</h3>
                     <p class="section-note">Synced to your account.</p>
