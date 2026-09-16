@@ -39,6 +39,14 @@ const router = express.Router();
 const TAGLINE_MAX = 80;
 const ROLE_LABEL_MAX = 24;
 
+// Persona section caps (PS-01). Generous — a detailed character fits well
+// inside them — but present, because every one of these is sent on every
+// message of every conversation with that persona.
+const SECTION_MAX_KEYS = 12;
+const SECTION_KEY_MAX = 40;
+const SECTION_VALUE_MAX = 8000;
+const SECTION_TOTAL_MAX = 24000;
+
 // All routes require authentication
 router.use(authenticate);
 
@@ -58,6 +66,47 @@ function normalizeDisplayField(value, field, max) {
 }
 
 /**
+ * Validate the persona `sections` object (PS-01).
+ *
+ * Shape only — the server does NOT know the section vocabulary. That lives in
+ * js/persona-sections.js, which also does the assembly, and duplicating it here
+ * would give two lists to keep in step for no gain: the server has always
+ * accepted arbitrary persona prompt text, so restricting which KEYS that text
+ * arrives under protects nothing. What it does enforce is size, because these
+ * are sent on every message.
+ *
+ * @param {unknown} sections
+ * @returns {Object} the object to store
+ */
+function validatePersonaSections(sections) {
+  if (typeof sections !== 'object' || Array.isArray(sections) || sections === null) {
+    throw AppError.validation('sections must be an object');
+  }
+  const keys = Object.keys(sections);
+  if (keys.length > SECTION_MAX_KEYS) {
+    throw AppError.validation(`A persona may have at most ${SECTION_MAX_KEYS} sections`);
+  }
+  let total = 0;
+  for (const key of keys) {
+    if (key.length > SECTION_KEY_MAX) {
+      throw AppError.validation('A section name is too long');
+    }
+    const value = sections[key];
+    if (typeof value !== 'string') {
+      throw AppError.validation('Each section must be a string');
+    }
+    if (value.length > SECTION_VALUE_MAX) {
+      throw AppError.validation(`Each section must be ${SECTION_VALUE_MAX} characters or fewer`);
+    }
+    total += value.length;
+  }
+  if (total > SECTION_TOTAL_MAX) {
+    throw AppError.validation(`The persona sections are too long (limit ${SECTION_TOTAL_MAX} characters)`);
+  }
+  return sections;
+}
+
+/**
  * Format a persona record for API response
  * Converts snake_case DB fields to camelCase
  * @param {Object} persona - Persona record from DAL (with parsed JSON fields)
@@ -71,6 +120,7 @@ function formatPersona(persona) {
     tagline: persona.tagline || '',
     roleLabel: persona.role_label || '',
     systemPrompt: persona.system_prompt,
+    sections: persona.sections || {},
     prefill: persona.prefill,
     avatarFilename: persona.avatar_filename,
     expressions: persona.expressions,
@@ -127,7 +177,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
  * Creates a persona linked to the authenticated user.
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, tagline, roleLabel, systemPrompt, prefill, expressions, modelConfig } = req.body;
+  const { name, tagline, roleLabel, systemPrompt, sections, prefill, expressions, modelConfig } = req.body;
 
   if (!name || typeof name !== 'string' || name.trim() === '') {
     throw AppError.validation('Name is required');
@@ -136,6 +186,7 @@ router.post('/', asyncHandler(async (req, res) => {
   if (systemPrompt !== undefined && typeof systemPrompt !== 'string') {
     throw AppError.validation('systemPrompt must be a string');
   }
+  if (sections !== undefined) validatePersonaSections(sections);
   if (prefill !== undefined && typeof prefill !== 'string') {
     throw AppError.validation('prefill must be a string');
   }
@@ -151,6 +202,7 @@ router.post('/', asyncHandler(async (req, res) => {
     tagline: tagline === undefined ? '' : normalizeDisplayField(tagline, 'tagline', TAGLINE_MAX),
     roleLabel: roleLabel === undefined ? '' : normalizeDisplayField(roleLabel, 'roleLabel', ROLE_LABEL_MAX),
     systemPrompt,
+    sections,
     prefill,
     expressions,
     modelConfig,
@@ -182,6 +234,7 @@ router.post('/import', express.json({ limit: '32mb' }), asyncHandler(async (req,
     tagline: incoming.tagline,
     roleLabel: incoming.roleLabel,
     systemPrompt: incoming.systemPrompt,
+    sections: incoming.sections,
     prefill: '',
     expressions: incoming.expressions,
     modelConfig: {}, // shared mode; never inherit a pin or toolsEnabled
@@ -236,7 +289,7 @@ router.post('/import', express.json({ limit: '32mb' }), asyncHandler(async (req,
  * Updates persona (only if owned by user) and bumps updatedAt.
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { name, tagline, roleLabel, systemPrompt, prefill, avatarFilename, expressions, modelConfig } = req.body;
+  const { name, tagline, roleLabel, systemPrompt, sections, prefill, avatarFilename, expressions, modelConfig } = req.body;
   const updateData = {};
 
   if (name !== undefined) {
@@ -256,6 +309,9 @@ router.put('/:id', asyncHandler(async (req, res) => {
       throw AppError.validation('systemPrompt must be a string');
     }
     updateData.systemPrompt = systemPrompt;
+  }
+  if (sections !== undefined) {
+    updateData.sections = validatePersonaSections(sections);
   }
   if (prefill !== undefined) {
     if (typeof prefill !== 'string') {

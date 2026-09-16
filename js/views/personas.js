@@ -379,6 +379,7 @@ async function exportPersona(personaId, opts = {}) {
                 tagline: persona.tagline || '',
                 roleLabel: persona.roleLabel || '',
                 systemPrompt: persona.systemPrompt || '',
+                sections: persona.sections || {},
                 avatar,
                 expressions,
             },

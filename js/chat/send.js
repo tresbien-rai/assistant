@@ -18,6 +18,7 @@
  */
 
 import { state } from '../state.js';
+import { assemblePersonaPrompt } from '../persona-sections.js';
 import { elements, scrollToBottom, scrollToBottomIfPinned, isPinnedToBottom } from '../dom.js';
 import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
@@ -382,7 +383,11 @@ export function buildChatRequest() {
     const persona = getActivePersona();
     const activeConvo = getActiveConversation();
     const conversationMessages = activeConvo ? activeConvo.messages : [];
-    const systemPrompt = persona ? persona.systemPrompt : CONFIG.defaults.systemPrompt;
+    // PS-01: the persona prompt is ASSEMBLED from its sections rather than read
+    // from one field. Every caller that composes a request goes through this
+    // helper, so the prompt the inspector previews and the prompt actually sent
+    // can never drift apart.
+    const systemPrompt = persona ? assemblePersonaPrompt(persona) : CONFIG.defaults.systemPrompt;
     // Prefill is an engine param: it rides on the model profile, not the persona.
     const prefillText = modelConfig.modelParams?.prefill?.trim() || '';
 

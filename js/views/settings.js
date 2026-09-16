@@ -31,6 +31,7 @@ import { displayError } from '../components/errors.js';
 import { confirmDialog, promptName } from '../components/dialogs.js';
 import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
 import { setupTextareaResizers } from '../components/textarea-resize.js';
+import { assemblePersonaPrompt } from '../persona-sections.js';
 // AP-04 only: the composer pill's menu can jump to this view, and the persona
 // editor's picker writes through the persona save path like every other field.
 import { navigate } from '../shell.js';
@@ -1023,7 +1024,8 @@ export async function renderPromptInspector(host, { presetId } = {}) {
             // One representative user turn: the assembly appends per-turn blocks
             // to the LAST user message, so an empty thread would under-report.
             messages: [{ role: 'user', content: '…' }],
-            systemPrompt: getActivePersona()?.systemPrompt || '',
+            // Assembled, exactly as the send path builds it (PS-01).
+            systemPrompt: getActivePersona() ? assemblePersonaPrompt(getActivePersona()) : '',
             expressionNames: Object.keys(getActivePersona()?.expressions || {}),
             conversationId: state.activeConversationId || undefined,
             ...(presetId ? { presetId } : {}),

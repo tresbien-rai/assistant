@@ -213,14 +213,18 @@
                     <input type="text" id="personaRoleLabel" maxlength="24" placeholder="Researcher">
                     <p class="help-text">Optional short label shown as a chip on the card.</p>
 
-                    <label for="systemPrompt">System Prompt</label>
+                    <!-- PS-01: this field now edits the GENERAL GUIDANCE section.
+                         It still writes `persona.systemPrompt` — the column was
+                         repurposed rather than migrated — and the named sections
+                         get their own fields in PS-02. -->
+                    <label for="systemPrompt">General guidance</label>
                     <div class="textarea-resizable">
                         <textarea id="systemPrompt" rows="8" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
 
 When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.</textarea>
                         <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
                     </div>
-                    <p class="help-text">This defines your assistant's personality and behavior.</p>
+                    <p class="help-text">Anything that defines this persona. More specific sections — personality, speech, expertise, relationship, backstory — are coming to this editor; anything written here is assembled into the persona prompt alongside them.</p>
 
                     <!-- Model-settings mode (WR-12, reshaped by model profiles):
                          shared = persona never touches the active model;
