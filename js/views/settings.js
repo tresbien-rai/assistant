@@ -393,6 +393,11 @@ const BLOCK_INFO = {
         positionOnly: true,
         locked: true,
     },
+    profile: {
+        label: 'Your profile',
+        description: 'Who you are, from the Profile section — your preferred name and whatever sections you have switched on. Reword the framing here if you like; the content always comes from your Profile page.',
+        conditional: 'Sent only when you have written a profile and the persona is allowed to see it.',
+    },
     expressions: {
         label: 'Expression protocol',
         description: 'How to emit [expression: name] tags.',
@@ -966,6 +971,8 @@ const EXCLUSION_REASONS = {
     'no-expressions': 'the persona has no expressions',
     'scratchpad-inactive': 'the scratchpad is off for this chat',
     'no-persona-prompt': 'the persona has no prompt text',
+    'no-profile': 'you have not written a profile yet',
+    'profile-off': 'this persona is set not to see your profile',
     'no-session-state': 'no session state was resolved for this request',
     'no-context': 'this chat has no workspace or project files',
     empty: 'the text is empty',

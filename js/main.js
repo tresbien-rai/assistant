@@ -146,6 +146,35 @@ function syncPersonaToolsBaseControl() {
     if (elements.personaToolsBase) {
         elements.personaToolsBase.checked = personaToolsBase(getActivePersona());
     }
+    if (elements.personaProfileEnabled) {
+        elements.personaProfileEnabled.checked = personaProfileEnabled(getActivePersona());
+    }
+}
+
+/**
+ * Whether a persona is allowed to see the user profile (UP-03, D6).
+ *
+ * ON unless explicitly switched off — the inverse of toolsEnabled, which stores
+ * only . Mirrors resolveProfileEnabled on the server; if these two ever
+ * disagree, the checkbox lies about what the next message will send.
+ */
+function personaProfileEnabled(persona) {
+    return persona?.modelConfig?.profileEnabled !== false;
+}
+
+/**
+ * Persona editor checkbox: let this persona see the user profile, or not.
+ * Stores only the opt-OUT, so an untouched persona carries no key at all and
+ * the default can still be changed later without migrating every record.
+ */
+function setPersonaProfileEnabled(on) {
+    const persona = getActivePersona();
+    if (!persona) return;
+    persona.modelConfig = { ...persona.modelConfig };
+    if (on) delete persona.modelConfig.profileEnabled;
+    else persona.modelConfig.profileEnabled = false;
+    persona.updatedAt = Date.now();
+    savePersonas();
 }
 
 // A generic `updateConversation(id, updates)` used to sit here with no callers.
@@ -1456,6 +1485,10 @@ function setupEventListeners() {
     }
     if (elements.personaToolsBase) {
         elements.personaToolsBase.addEventListener('change', () => setPersonaToolsBase(elements.personaToolsBase.checked));
+    }
+    if (elements.personaProfileEnabled) {
+        elements.personaProfileEnabled.addEventListener('change',
+            () => setPersonaProfileEnabled(elements.personaProfileEnabled.checked));
     }
 
     // Provider/model switching and the API-key field moved out of Settings in

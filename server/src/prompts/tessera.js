@@ -128,6 +128,33 @@ never mention it, explain it, or apologize for it. If you omit it, your avatar
 simply keeps its previous expression.`;
 
 /**
+ * The user-profile block (UP-03).
+ *
+ * Included only when there IS a profile and the persona has not switched it
+ * off, so it costs nothing for a user who never wrote one.
+ *
+ * The framing matters more than it looks. Without the last paragraph, models
+ * given a block of facts about someone tend to perform having read it —
+ * greeting the user with their own biography, or steering every answer toward a
+ * stated interest. The profile is meant to be background the way knowing a
+ * colleague is background: it shapes how you talk to them, and you do not
+ * recite it at them.
+ *
+ * `{{profile}}` is a macro rather than an interpolation for the same reason
+ * `{{expressions}}` is — a preset may reword this framing and place the content
+ * wherever it wants, but it can never change what the content IS.
+ */
+const PROFILE_SECTION = `## The person you are talking to
+
+{{profile}}
+
+Let this shape how you speak to them — what to call them, what they already
+know, what they care about — and treat it as something you simply know about
+them. Do not recite it back, bring it up unprompted, or steer the conversation
+toward it. If it is ever contradicted by what they tell you in the conversation,
+believe the conversation.`;
+
+/**
  * The scratchpad collaboration nudge (SP-05). Included only when the scratchpad
  * is active for the request, so it costs nothing on ordinary chats. This is the
  * adoption lever — models default to putting substance in the chat reply, so it
@@ -162,6 +189,7 @@ const CONTEXT_ACK = "Understood — I'll use the reference material above as bac
 /** Built-in text for every block, by id. `persona` has none — see below. */
 const BUILTIN_BLOCK_TEXT = {
   orientation: ORIENTATION,
+  profile: PROFILE_SECTION,
   expressions: EXPRESSION_SECTION,
   scratchpad: SCRATCHPAD_SECTION,
   context_ack: CONTEXT_ACK,
@@ -190,6 +218,7 @@ function blockText(preset, id) {
  * @param {unknown} [expressionNames] - The persona's expression names, unsanitized
  * @param {Object} [options]
  * @param {boolean} [options.scratchpad] - the scratchpad is active for this request (SP-05)
+ * @param {boolean} [options.profileEnabled] - the persona may see the user profile (UP-03)
  * @param {Object} [options.preset] - resolved preset blocks; omit for the built-in layer
  * @param {Object} [options.macros] - buildMacroValues() input (persona name, model, …)
  * @returns {string} The assembled system prompt
@@ -254,6 +283,20 @@ function composeSystemPrompt(personaPrompt, expressionNames, options = {}) {
       // counts add up to the prompt the model receives.
       blocks.push({ id, included: true, source: 'persona', chars: span.length, text: span });
       continue;
+    }
+    if (id === 'profile') {
+      // Two distinct silences, reported separately: the persona was told not
+      // to see the profile, versus there is no profile to see. The inspector
+      // turns these into different sentences, and "why is my profile not in
+      // the prompt" has exactly these two answers.
+      if (!options.profileEnabled) {
+        skip(id, 'profile-off');
+        continue;
+      }
+      if (!macros.profile) {
+        skip(id, 'no-profile');
+        continue;
+      }
     }
     if (id === 'expressions' && names.length === 0) {
       skip(id, 'no-expressions');
@@ -361,6 +404,7 @@ module.exports = {
   describeSessionState,
   sanitizeExpressionNames,
   ORIENTATION,
+  PROFILE_SECTION,
   CONTEXT_ACK,
   BUILTIN_BLOCK_TEXT,
   RESERVED_EXPRESSIONS,
