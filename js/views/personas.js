@@ -23,6 +23,7 @@ import { PERSONA_SECTIONS, AUTHORED_SECTION_IDS, sectionText } from '../persona-
 import { renderConversationList, renderConversation } from './chats.js';
 import { setActiveConversation, forgetConversationDraft } from '../active-conversation.js';
 import { UiPrefs } from '../ui-prefs.js';
+import { setupTextareaResizers } from '../components/textarea-resize.js';
 import { escapeHtml, formatFileSize } from '../util/format.js';
 import { blobToBase64, downloadBlob } from '../util/blob.js';
 import { positionPopover, attachPopoverOutsideClose } from '../components/menus.js';
@@ -511,6 +512,9 @@ function buildPersonaSectionFields() {
     host.addEventListener('input', (e) => {
         if (e.target.dataset.sectionId) autoSaveSettings();
     });
+    // The handles this just rendered are inert until wired. Built once, so
+    // wired once; the call is idempotent regardless.
+    setupTextareaResizers();
     sectionFieldsBuilt = true;
 }
 

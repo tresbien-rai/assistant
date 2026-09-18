@@ -30,6 +30,7 @@ import { showToast } from '../components/toast.js';
 import { confirmDialog } from '../components/dialogs.js';
 import { displayError } from '../components/errors.js';
 import { escapeHtml } from '../util/format.js';
+import { setupTextareaResizers } from '../components/textarea-resize.js';
 
 /**
  * Server limits + suggested sections, fetched once and cached.
@@ -147,7 +148,15 @@ export function flushProfileSave() {
 // Rendering
 // ---------------------------------------------------------------------------
 
-/** One section's markup. Ids are data-attributes so delegation can find them. */
+/**
+ * One section's markup.
+ *
+ * The section id appears twice on purpose: as `data-section-id` on the wrapper,
+ * which is how event delegation finds the model object, and as the textarea's
+ * own `id`, which is what setupTextareaResizers keys a dragged height on. Without
+ * the second one a resized box would snap back every time the list re-renders —
+ * which it does on every add, delete and reorder.
+ */
 function sectionMarkup(section, index, limits) {
     const enabled = section.enabled !== false;
     const placeholder = (meta.sections[index] && meta.sections[index].placeholder)
@@ -169,7 +178,8 @@ function sectionMarkup(section, index, limits) {
                 </div>
             </div>
             <div class="textarea-resizable">
-                <textarea class="profile-section-body" data-field="body" rows="4"
+                <textarea id="profileSection_${escapeHtml(section.id)}"
+                          class="profile-section-body" data-field="body" rows="4"
                           maxlength="${limits.bodyChars}"
                           placeholder="${escapeHtml(placeholder)}">${escapeHtml(section.body || '')}</textarea>
                 <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
@@ -237,6 +247,10 @@ function renderSections() {
         return;
     }
     host.innerHTML = sections.map((s, i) => sectionMarkup(s, i, meta.limits)).join('');
+    // Fresh handles are inert until wired, and this runs again on every add,
+    // delete and reorder — so the call belongs here rather than in build().
+    // setupTextareaResizers is idempotent and skips handles it already knows.
+    setupTextareaResizers();
 }
 
 /** The saved / saving / size line under the form. */
