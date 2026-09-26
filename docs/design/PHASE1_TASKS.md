@@ -1,11 +1,13 @@
 # Phase 1 — Projects (Google Drive file context)
 
+> **Status (2026-09-25):** Complete — Phase 1 (Projects + Drive context) shipped and live-validated, 2026-06-25. Current status of everything: `docs/PROJECT.md`.
+
 > **STATUS: ✅ COMPLETE (2026-06-25).** All tasks P1-01 … P1-12 shipped and merged.
 > Live-validated end-to-end on Anthropic and Gemini (Drive file creation + project
-> context injection confirmed). Next: **Phase 2** — see `docs/PHASE2_HANDOFF.md`.
+> context injection confirmed). Next: **Phase 2** — see `docs/archive/PHASE2_HANDOFF.md`.
 
-Detailed task breakdown for Phase 1. Companion to `docs/PHASE1_HANDOFF.md`
-(orientation) and the Phase 1 section of `PLANNING.txt` (the original spec).
+Detailed task breakdown for Phase 1. Companion to `docs/archive/PHASE1_HANDOFF.md`
+(orientation) and the Phase 1 section of `docs/archive/PLANNING.txt` (the original spec).
 
 ## Goal
 A **Projects** system that gives conversations persistent background context

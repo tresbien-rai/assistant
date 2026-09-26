@@ -3,7 +3,7 @@
  *
  * Maps a conversation's context to WHERE its tool files live: the Drive folder
  * and the DAL accessors for the matching table. Destination precedence
- * (decision 1 in docs/PHASE2_TASKS.md): active project → active workspace →
+ * (decision 1 in docs/design/PHASE2_TASKS.md): active project → active workspace →
  * the user's Tessera/Downloads/ (unfiled).
  *
  * Routing is PURE (no I/O): `ensureFolder(auth)` is a lazy closure, so read-only

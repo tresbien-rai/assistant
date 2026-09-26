@@ -52,7 +52,7 @@ function groupDigits(n) {
 
 /**
  * How a write changed the size of something: before -> after, with a signed
- * delta (docs/SESSION_STATE_DESIGN.md, D1).
+ * delta (docs/design/SESSION_STATE_DESIGN.md, D1).
  *
  * A total alone cannot confirm a write did what was intended — the same number
  * before and after reads identically — so the model had to re-read to be sure.

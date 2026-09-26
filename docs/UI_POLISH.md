@@ -6,7 +6,7 @@ anything that breaks behaviour should be fixed where it is found instead.
 
 ---
 
-## P-01 — Preset editor: the font changes mid-block
+## UIP-01 — Preset editor: the font changes mid-block
 
 **Status:** open. Raised 2026-09-16.
 
@@ -60,7 +60,7 @@ not a free-text field.
 
 ---
 
-## P-02 — A wording pass over the whole UI
+## UIP-02 — A wording pass over the whole UI
 
 **Status:** open, expected. Raised 2026-09-16.
 

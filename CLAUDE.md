@@ -51,7 +51,7 @@ exists because skipping it cost us something before.
 
 ### 2. Design (anything bigger than one PR)
 - Talk it through with the user first; they share their thinking before a plan.
-- Write the decision record in `docs/<FEATURE>_DESIGN.md`: problem, decisions
+- Write the decision record in `docs/design/<FEATURE>_DESIGN.md`: problem, decisions
   (with the reasoning), and slices with IDs. Register a new ID prefix in
   `docs/PROJECT.md` §10 — check it isn't taken.
 - Merge the design doc as its own PR before building. Decisions it records as
@@ -160,7 +160,7 @@ The data model, server layout and prompt assembly are described in
 | `server/src/middleware/` | Express middleware | authenticate, errorHandler, rateLimiter |
 | `server/src/utils/` | Utilities | context gathering, provenance, Drive, logger, encryption, AppError |
 | `tests/` | Frontend tests | `frontend-smoke.js` (run in the browser), `persona-sections.test.js` (node) |
-| `docs/` | Documentation | `PROJECT.md` (master), one design record per feature, `archive/` |
+| `docs/` | Documentation | `PROJECT.md` (master), `design/` (one decision record per feature), `UI_POLISH.md`, `DEPLOY_RAILWAY.md`, `archive/` |
 
 ## Error Handling
 
@@ -281,7 +281,7 @@ ALLOW_DEV_LOGIN=true   # local only; enables the dev-login bypass
   is a solid destructive button, `.danger-quiet` a destructive one that sits
   next to a primary. Nothing inside `.modal-overlay` may use `transition: all`
   — it delays the inherited `visibility` flip and makes the element
-  unfocusable when the modal opens (see `docs/CONFIRM_DIALOG_PLAN.md`).
+  unfocusable when the modal opens (see `docs/design/CONFIRM_DIALOG_PLAN.md`).
 - All data operations go through `js/api-client.js`
 - State loaded from server on init, kept in memory during session
 

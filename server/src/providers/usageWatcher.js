@@ -1,5 +1,5 @@
 /**
- * Passthrough usage watcher (U-02, docs/USAGE_MEASUREMENT_DESIGN.md).
+ * Passthrough usage watcher (U-02, docs/design/USAGE_MEASUREMENT_DESIGN.md).
  *
  * The toolless path (`provider.stream()`) is a dumb byte pipe: it forwards the
  * provider's SSE straight to the client and never touches the tool loop, so a

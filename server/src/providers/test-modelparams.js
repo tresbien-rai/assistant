@@ -8,7 +8,7 @@
  * The reason this file exists: Anthropic rejects `temperature` and `top_p` in
  * the same request (Claude 4.5+), and the STOCK profile enables both, so every
  * Anthropic send failed with a 400 until the guard landed. See
- * docs/REFACTOR_PLAN.md (F-01).
+ * docs/design/REFACTOR_PLAN.md (F-01).
  *
  * Run: node src/providers/test-modelparams.js (part of `npm test`).
  */

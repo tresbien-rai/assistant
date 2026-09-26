@@ -319,7 +319,7 @@ async function assembleChatRequest(req, containers, { systemPrompt, messages, ex
   // churn re-wrote the prefix ahead of every message, so the entire history was
   // re-processed uncached on most turns. Here it lands in the volatile tail,
   // after the part of the request both this turn and the next reproduce
-  // byte-for-byte (docs/PROMPT_CACHING_DESIGN.md, §2.1).
+  // byte-for-byte (docs/design/PROMPT_CACHING_DESIGN.md, §2.1).
   trailingMessages = appendToLastUserMessage(trailingMessages, sessionStateBlock(withState));
 
   const { system, messages: assembled } =
@@ -437,7 +437,7 @@ function resolvePromptOptions(req, containers, model, presetOverride) {
   // The user profile (UP-03). Read on every request because it is prompt
   // content and must be current; it is a single indexed row, and the block it
   // feeds is byte-stable between edits, so it neither costs much nor disturbs
-  // the cached prefix (docs/PROFILE_DESIGN.md D2).
+  // the cached prefix (docs/design/PROFILE_DESIGN.md D2).
   let profile = null;
   try {
     profile = dal.getUserProfile(userId);
@@ -493,7 +493,7 @@ function resolveProfileEnabled(persona) {
  * active only once it already had content. That was written before the
  * scratchpad's role was settled, and it contradicts it — the pad is meant to be
  * the default place ideas get developed
- * (docs/SESSION_STATE_DESIGN.md §3), but auto-arm meant the tools were not
+ * (docs/design/SESSION_STATE_DESIGN.md §3), but auto-arm meant the tools were not
  * advertised at all until the USER seeded the pad first. The model could never
  * open the door itself: a fresh chat reported `tools: []`, so it could not
  * offer to put anything there, only wait to be invited.
@@ -540,7 +540,7 @@ function resolveAdvertisedTools(toolsEnabled, scratchpadEnabled) {
 }
 
 /**
- * The Track A tool loop (decision 3 in docs/PHASE2_TASKS.md): repeatedly call
+ * The Track A tool loop (decision 3 in docs/design/PHASE2_TASKS.md): repeatedly call
  * the provider NON-streaming; when the model requests tools, execute them and
  * continue with the raw assistant message + a tool-result message appended
  * (raw-message discipline — decision 4); stop at the first response with no
@@ -589,7 +589,7 @@ async function runToolLoop({ providerModule, provider, apiKey, params, toolConte
   // silently dropped by the Gemini client, which walks
   // candidates[0].content.parts and has no idea what a delta is — the rounds
   // just ran together. chat.js stays provider-agnostic by construction.
-  // Usage capture (U-01, docs/USAGE_MEASUREMENT_DESIGN.md). ONE ROW PER CALL:
+  // Usage capture (U-01, docs/design/USAGE_MEASUREMENT_DESIGN.md). ONE ROW PER CALL:
   // this loop is the choke point every round already passes through, which is
   // why the row count matches the provider-call count rather than the turn
   // count. Best-effort throughout — a usage write must never cost the user

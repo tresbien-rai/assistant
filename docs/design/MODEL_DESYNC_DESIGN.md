@@ -1,5 +1,7 @@
 # Model / Persona De-sync — Design Note
 
+> **Status (2026-09-25):** Complete — WR-10…14 shipped (#56–#61). Current status of everything: `docs/PROJECT.md`.
+
 *Decided with the human 2026-07-01. Follow-up to the Workspace Restructure
 (WR-01..09); tasks numbered WR-10..14.*
 
@@ -59,7 +61,7 @@ involvement.
 > DOES restore the model that wrote its last reply (derived from the
 > per-message tag below — no extra storage). Opening a chat is user
 > involvement, and profiles make the switch safe. Fixed personas still win.
-> See docs/MODEL_PROFILES_DESIGN.md §4.
+> See docs/design/MODEL_PROFILES_DESIGN.md §4.
 
 Adopted instead (RisuAI-style): **each assistant message records which
 provider/model generated it**, displayed as a small tag on the message. Coming
@@ -89,10 +91,10 @@ the writes). WR-14 is independent of all of them.
 ## Non-goals (for now)
 
 - ~~Per-conversation model memory (see above — rejected).~~ Superseded
-  2026-07-19 — see §3 note and docs/MODEL_PROFILES_DESIGN.md §4.
+  2026-07-19 — see §3 note and docs/design/MODEL_PROFILES_DESIGN.md §4.
 - ~~Model "profiles"/presets as a separate concept — the fixed-mode persona
   already covers the curated-parameters case without a third entity.~~
   **Superseded 2026-07-18:** per-model profiles adopted; fixed personas
-  became slim pins to a model. See docs/MODEL_PROFILES_DESIGN.md.
+  became slim pins to a model. See docs/design/MODEL_PROFILES_DESIGN.md.
 - Floating avatar as live preview on the persona editor (noted for later,
   separate idea).

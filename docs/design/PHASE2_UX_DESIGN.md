@@ -1,15 +1,17 @@
 # Phase 2 — UX Redesign Design Note (P2-U3)
 
+> **Status (2026-09-25):** Complete, partly superseded — the workspace model was replaced by WORKSPACE_RESTRUCTURE.md; the top-bar and persona-grouping parts still stand. Current status of everything: `docs/PROJECT.md`.
+
 > **⚠ Partially superseded (2026-06-28).** The workspace model below (flat
 > "Projects → Workspaces you enter", modal editing, home showing *all* chats)
 > shipped in PRs #37–#43 and is **live**, but is being reworked by the
-> **Workspace Restructure** — see `docs/WORKSPACE_RESTRUCTURE.md` (two-level
+> **Workspace Restructure** — see `docs/design/WORKSPACE_RESTRUCTURE.md` (two-level
 > Workspace ⊃ Project hierarchy, chat separation, inline container pages,
 > breadcrumb indicator), which lands **before Track A**. The top-bar
 > persona/model controls and the persona-grouping mechanics here still stand.
 
-Agreed design for the Phase 2 UX overhaul. Companion to `docs/PHASE2_TASKS.md`
-(the P2-U3 entry) and `docs/PHASE2_HANDOFF.md`. Decided with the human in a
+Agreed design for the Phase 2 UX overhaul. Companion to `docs/design/PHASE2_TASKS.md`
+(the P2-U3 entry) and `docs/archive/PHASE2_HANDOFF.md`. Decided with the human in a
 design discussion; this note is the source of truth for the redesign — read it
 before touching the tab/sidebar/top-bar code.
 

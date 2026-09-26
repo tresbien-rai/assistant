@@ -57,7 +57,7 @@ check('every tool has description + object input_schema', () => {
 
 check('SS-04: no description asserts a container the chat may not have', () => {
   // The tool list is advertised whether or not the chat is in a workspace or
-  // project (deliberately stable — see docs/SESSION_STATE_DESIGN.md D4), so a
+  // project (deliberately stable — see docs/design/SESSION_STATE_DESIGN.md D4), so a
   // description claiming "the current project or workspace" describes something
   // that cannot exist in a bare chat. What EXISTS is <session_state>'s job.
   // This guards the wording from drifting back.
@@ -76,7 +76,7 @@ check('SS-04: no description asserts a container the chat may not have', () => {
 check('SS-04: the scratchpad tools still carry the churn principle', () => {
   // The pass shortened these; the behavioural rules they exist to teach must
   // survive it. Replace-don't-append is the defining principle of the pad
-  // (docs/SCRATCHPAD_DESIGN.md), and an empty pad being a normal starting
+  // (docs/design/SCRATCHPAD_DESIGN.md), and an empty pad being a normal starting
   // point is what SS-03 made true.
   const write = SCRATCHPAD_TOOL_DEFINITIONS.find((t) => t.name === 'write_scratchpad');
   assert.match(write.description, /current state/i, 'says the pad holds current state');

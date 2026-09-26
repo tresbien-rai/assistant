@@ -166,7 +166,7 @@ async function executeEditFile(input, ctx) {
   );
 
   return {
-    // Reports the CHANGE, not just the new total (docs/SESSION_STATE_DESIGN.md
+    // Reports the CHANGE, not just the new total (docs/design/SESSION_STATE_DESIGN.md
     // D1) — and in the same shape edit_scratchpad uses, so the two editing
     // tools confirm success identically.
     // `content.length` is CHARACTERS while `bytes.length` is BYTES; comparing

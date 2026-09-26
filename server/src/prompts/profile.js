@@ -1,7 +1,7 @@
 /**
  * Rendering the user profile into prompt text (UP-03)
  *
- * Tier 1 of docs/PROFILE_DESIGN.md. The stored profile is structured — a
+ * Tier 1 of docs/design/PROFILE_DESIGN.md. The stored profile is structured — a
  * preferred name plus ordered, individually toggleable sections — and this
  * turns it into the prose the model actually reads.
  *

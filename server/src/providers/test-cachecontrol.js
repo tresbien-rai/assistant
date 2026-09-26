@@ -1,5 +1,5 @@
 /**
- * Anthropic cache-breakpoint placement (PC-02, docs/PROMPT_CACHING_DESIGN.md)
+ * Anthropic cache-breakpoint placement (PC-02, docs/design/PROMPT_CACHING_DESIGN.md)
  *
  * Asserts WHERE `cache_control` lands in the built request body — and, just as
  * importantly, where it does NOT.

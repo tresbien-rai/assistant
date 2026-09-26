@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Tessera — a personal AI assistant with customizable personas",
   "scripts": {
-    "dev": "npx http-server . -p 3000 -c-1"
+    "dev": "npm run dev --prefix server"
   },
   "keywords": ["ai", "assistant", "claude", "openai", "gemini"],
   "author": "",

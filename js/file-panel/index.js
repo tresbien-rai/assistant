@@ -5,7 +5,7 @@
  * editor, revision history, version restore, and the per-file context toggle.
  * At ~1,300 lines it was already the most self-contained region of the old
  * file, which is why it moves as one piece rather than being split further —
- * see docs/REFACTOR_PLAN.md.
+ * see docs/design/REFACTOR_PLAN.md.
  *
  * The INJECT_MODE_* constants travel with it because nothing else uses them.
  */

@@ -1,5 +1,7 @@
 # Advanced — Editable Prompt Presets
 
+> **Status (2026-09-25):** Complete — AP-01…06 shipped (#151–#156); a live + visual pass is owed. Current status of everything: `docs/PROJECT.md`.
+
 Design + task plan for the Advanced settings surface: making Tessera's
 platform-level prompt layer visible, editable, and switchable, for users coming
 from SillyTavern / RisuAI who expect to own their prompt stack.

@@ -1,7 +1,8 @@
 # Usage Measurement — design
 
-**Status:** specified, not built.
-**Relates to:** prompt caching (this unblocks measuring it), `docs/SESSION_STATE_DESIGN.md`.
+> **Status (2026-09-25):** Complete — U-01…05 shipped (#175–#179); U-05 needed no code. Current status of everything: `docs/PROJECT.md`.
+
+**Relates to:** prompt caching (this unblocks measuring it), `docs/design/SESSION_STATE_DESIGN.md`.
 
 Tessera reports **tokens, never money** (§6) — every provider prices per million
 tokens, so identifiable usage is enough for the user to price it themselves.

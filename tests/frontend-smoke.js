@@ -11,7 +11,7 @@
  * what is actually on screen.
  *
  * Why it exists: `app.js` is 10,476 lines with no test net, and the refactor in
- * docs/REFACTOR_PLAN.md is about to move all of it. Run this before and after
+ * docs/design/REFACTOR_PLAN.md is about to move all of it. Run this before and after
  * every R-slice.
  *
  * SAFETY
@@ -24,7 +24,7 @@
  * All state it mutates (stubs, API-key status, the streaming flag, the active
  * conversation, the current view) is captured up front and restored in `finally`.
  *
- * @see docs/REFACTOR_PLAN.md
+ * @see docs/design/REFACTOR_PLAN.md
  */
 
 const SCRATCH_TITLE = '[smoke-harness] safe to delete';

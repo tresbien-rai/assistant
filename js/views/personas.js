@@ -76,7 +76,7 @@ export function editPersona(personaId) {
 /**
  * Top-bar persona button popover: edit the current persona, create a new one,
  * or jump to another persona's chats. Switching does NOT reassign the current
- * conversation — see docs/PHASE2_UX_DESIGN.md.
+ * conversation — see docs/design/PHASE2_UX_DESIGN.md.
  * @param {HTMLElement} anchorEl
  */
 export function showPersonaPopover(anchorEl) {

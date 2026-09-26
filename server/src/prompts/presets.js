@@ -5,7 +5,7 @@
  * null renders from the built-in in ./tessera.js. That is what lets the built-in
  * wording keep improving for blocks a user never touched, and makes "reset to
  * built-in" the same operation as "never edited" (Decision D2 in
- * docs/ADVANCED_PROMPTS_PLAN.md).
+ * docs/design/ADVANCED_PROMPTS_PLAN.md).
  *
  * WHAT A PRESET CANNOT DO (D3): turn a capability on. Whether tools are
  * advertised, whether the scratchpad is injected, whether KB files are loaded is
@@ -63,7 +63,7 @@ const SYSTEM_BLOCK_IDS = ['orientation', 'profile', 'expressions', 'scratchpad',
  *                  live workspace/project/scratchpad/file state — and it may
  *                  be neither edited nor disabled, because a prompt that lies
  *                  about state is worse than one that omits it
- *                  (docs/SESSION_STATE_DESIGN.md, D3).
+ *                  (docs/design/SESSION_STATE_DESIGN.md, D3).
  *
  * `state` was a SYSTEM block until PC-01. It moved because it reports the
  * scratchpad's length and the per-scope file counts, which change during
@@ -72,7 +72,7 @@ const SYSTEM_BLOCK_IDS = ['orientation', 'profile', 'expressions', 'scratchpad',
  * change invalidates the message cache behind it. In the message layer it sits
  * with the `<active_files>` and scratchpad blocks it already refers to — after
  * the cacheable history instead of in front of it
- * (docs/PROMPT_CACHING_DESIGN.md, D1).
+ * (docs/design/PROMPT_CACHING_DESIGN.md, D1).
  *
  * The cost is that a preset can no longer position it. That knob only ever
  * meant "where among the other system blocks", which is not a question a
@@ -196,7 +196,7 @@ function validateBlocks(raw) {
       if (b.enabled !== undefined && typeof b.enabled !== 'boolean') {
         return { ok: false, error: `Block "${id}": "enabled" must be true or false.` };
       }
-      // `state` is plumbing (docs/SESSION_STATE_DESIGN.md, D3): its position is
+      // `state` is plumbing (docs/design/SESSION_STATE_DESIGN.md, D3): its position is
       // the user's to choose, its content and presence are not. Rejected on the
       // write path so an edit that would take effect is refused loudly, rather
       // than silently ignored later by the composer.

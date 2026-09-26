@@ -1,5 +1,5 @@
 /**
- * User Profile Routes (UP-01, docs/PROFILE_DESIGN.md tier 1)
+ * User Profile Routes (UP-01, docs/design/PROFILE_DESIGN.md tier 1)
  *
  * The user's own description of themselves — the layer that tells a persona who
  * it is talking to. Read and written as ONE document; see upsertUserProfile for

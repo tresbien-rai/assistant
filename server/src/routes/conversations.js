@@ -869,7 +869,7 @@ router.put('/:id/files/:fileId/content', asyncHandler(async (req, res) => {
 }));
 
 // =============================================================================
-// SCRATCHPAD (docs/SCRATCHPAD_DESIGN.md, SP-03a)
+// SCRATCHPAD (docs/design/SCRATCHPAD_DESIGN.md, SP-03a)
 //
 // User-facing endpoints for the per-conversation scratchpad. They follow the
 // file panel's `/content` → `/revisions` URL convention deliberately, so the
@@ -967,7 +967,7 @@ router.post('/:id/scratchpad/revisions/:revId/restore', asyncHandler(async (req,
 /**
  * GET /api/conversations/:id/usage
  *
- * What this conversation consumed (U-03, docs/USAGE_MEASUREMENT_DESIGN.md).
+ * What this conversation consumed (U-03, docs/design/USAGE_MEASUREMENT_DESIGN.md).
  *
  * Returns all three levels rather than making the caller pick: `rounds` (why a
  * turn was expensive — the per-call breakdown), `turns` (what a user reads day

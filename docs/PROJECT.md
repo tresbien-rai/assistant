@@ -2,7 +2,7 @@
 
 **This is the one document to read before starting work.** It says what Tessera
 is, how it is put together, what state every feature is in, what is owed, and
-what bit us before. Everything else in `docs/` is a *decision record* for one
+what bit us before. Everything in `docs/design/` is a *decision record* for one
 feature — read it when you touch that feature, not before.
 
 How we work (branches, verification, merging, wrap-up) lives in
@@ -46,11 +46,11 @@ sides edit; every file keeps a revision history.
 - **Providers built:** Anthropic, Google Gemini. OpenAI has key storage but no
   provider module yet.
 - **Deployed on:** Railway (Hobby), one Express service serving API + frontend.
-  See [`DEPLOY_RAILWAY.md`](../DEPLOY_RAILWAY.md).
+  See [`docs/DEPLOY_RAILWAY.md`](DEPLOY_RAILWAY.md).
 - **Name:** "Tessera" — a single tile in a mosaic. The name sits behind a
   `BRAND` constant in `server/src/config.js` (BR-01) because a rename toward
   something evoking a personal *study* is still being considered.
-  `docs/PROFILE_DESIGN.md` §8 lists the places where "Tessera" is data, not
+  `docs/design/PROFILE_DESIGN.md` §8 lists the places where "Tessera" is data, not
   branding (e.g. the Drive root folder).
 - **Collaboration model:** the user is a novice developer who sets vision and
   direction; Claude is the architect and implementer. Explain trade-offs in
@@ -67,8 +67,10 @@ store whose job it is.
 |---|---|---|
 | `CLAUDE.md` | **How we work**: workflow, conventions, file map, code style | Automatically, every session |
 | `docs/PROJECT.md` (this) | **What exists and where it stands**: architecture, principles, feature status, owed items, gotchas | Read at session start |
-| `docs/*_DESIGN.md`, `*_PLAN.md` | **Why a feature is the way it is**: one decision record per feature, with its slices | When touching that feature |
-| `docs/archive/` | Finished phase plans and retired files. History only | Never, unless digging |
+| `docs/design/` | **Why a feature is the way it is**: one decision record per feature, with its slices | When touching that feature |
+| `docs/UI_POLISH.md` | Backlog of cosmetic and copy fixes noticed in passing | When doing a polish pass |
+| `docs/DEPLOY_RAILWAY.md` | How to deploy (and redeploy) to Railway | When deploying |
+| `docs/archive/` | Session handoffs, the original plan, retired scripts. History only | Never, unless digging | Never, unless digging |
 | Claude's memory (local, per machine) | Facts about the user and their preferences that don't belong in the repo; a pointer here | Automatically |
 
 Memory is **not** the place for project status: it lives only on one machine,
@@ -214,11 +216,11 @@ Advanced settings (shows which block every span came from).
 ## 6. Feature index
 
 Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built ·
-⏸ deferred. Design docs are in `docs/` unless noted.
+⏸ deferred. Design records are in `docs/design/` unless noted.
 
 | Feature | Status | Slices / PRs | Design record |
 |---|---|---|---|
-| Phase 0 — backend, auth, deploy | ✅ | P0-01…18, #1–#24 | `archive/PHASE0_TASKS.txt` |
+| Phase 0 — backend, auth, deploy | ✅ | P0-01…18, #1–#24 | `../archive/PHASE0_TASKS.txt` |
 | Phase 1 — Projects + Drive context | ✅ | P1-01…12 | `PHASE1_TASKS.md` |
 | Phase 2 UX — top bar, persona grouping | ✅ | P2-U1…U4, #37–#43 | `PHASE2_UX_DESIGN.md` (partly superseded) |
 | Workspace restructure (Workspace ⊃ Project) | ✅ | WR-01…09, #45–#55 | `WORKSPACE_RESTRUCTURE.md` |
@@ -238,7 +240,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Frontend refactor (`app.js` → modules) | ✅ | F-, R-, S-01, #124–#147 | `REFACTOR_PLAN.md` |
 | Advanced prompt presets + inspector | 🟡 | AP-01…06, #151–#156 | `ADVANCED_PROMPTS_PLAN.md` |
 | Shared form controls | ✅ | #157, #158 | — |
-| Streaming tool loop | ✅ live-verified | TS-01…06, #159–#161, #167–#171 | (in `HANDOFF_2026-07-31.md`) |
+| Streaming tool loop | ✅ live-verified | TS-01…06, #159–#161, #167–#171 | (in `../archive/HANDOFF_2026-07-31.md`) |
 | Session state + tool feedback | ✅ | SS-01…04, #162–#166 | `SESSION_STATE_DESIGN.md` |
 | File provenance | ✅ live-verified | FP-01…04 (were "P-"), #173, #174 | `FILE_PROVENANCE_DESIGN.md` |
 | Usage measurement | ✅ | U-01…05, #175–#179 | `USAGE_MEASUREMENT_DESIGN.md` |
@@ -250,7 +252,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona sections + six-field editor | ✅ | PS-01, PS-02, #201–#203 | `PROFILE_DESIGN.md` §9 |
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
-| UI polish backlog | 📐 | UIP-01, UIP-02 | `UI_POLISH.md` |
+| UI polish backlog | 📐 | UIP-01, UIP-02 | `../UI_POLISH.md` |
 
 ---
 
@@ -260,15 +262,15 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 1. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
-   the aux model" target. Design: `PROFILE_DESIGN.md`.
-2. **UI polish pass** (`UI_POLISH.md`): UIP-01, the preset-editor font jump
+   the aux model" target. Design: `docs/design/PROFILE_DESIGN.md`.
+2. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
    (`--font-mono` names Fira Code, which is never loaded) plus the agreed
    font-picker extension; UIP-02, a whole-UI wording pass with persona
    placeholders as the highest-leverage copy. The user deliberately deferred
    wording until the feature set is complete.
 
 **Later:**
-3. **File digests** (`SESSION_STATE_DESIGN.md` §7) — deterministic first line,
+3. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
    then model-written summaries, then aux model; store provenance from day one.
 4. **More providers — OpenAI first.** Key storage and validation exist; it
    needs a provider module and one entry in `providers/registry.js`. The user's
@@ -312,8 +314,6 @@ in a session. Treat each as open until checked and recorded here.
   `file_revisions.turn`); tidy up some time.
 - Intermittent: about 1 turn in 12 on Gemini once returned tool-call syntax as
   text with no tool run. Not reproducible; looks model-side.
-- Root `package.json` has a pre-server `dev` script (`http-server`) that no
-  longer reflects how the app runs.
 
 ---
 
@@ -412,5 +412,5 @@ check it isn't here, then add it.** (Two features once both used `P-`.)
 | BR | Branding |
 | UP | User profile + persona notes |
 | PS | Persona sections |
-| UIP | UI polish backlog (the doc still says `P-`) |
+| UIP | UI polish backlog |
 | DOC | Documentation housekeeping |

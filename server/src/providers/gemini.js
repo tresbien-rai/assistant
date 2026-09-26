@@ -181,7 +181,7 @@ function buildRequestBody(params) {
 // =============================================================================
 // Tool contract (Track A, P2-01) — formatTools / extractToolCalls /
 // buildToolResultMessage. Mirrors providers/anthropic.js so the chat loop
-// stays provider-agnostic. See "Decisions" in docs/PHASE2_TASKS.md.
+// stays provider-agnostic. See "Decisions" in docs/design/PHASE2_TASKS.md.
 // =============================================================================
 
 /**
@@ -396,7 +396,7 @@ function parseMultimodalResponse(candidate) {
 
 /**
  * Normalise Gemini's usageMetadata into the shape usage_events stores (U-01,
- * docs/USAGE_MEASUREMENT_DESIGN.md).
+ * docs/design/USAGE_MEASUREMENT_DESIGN.md).
  *
  * THE TRAP, and the reason this function exists rather than a shared mapper:
  * Anthropic's `output_tokens` already INCLUDES thinking, while Gemini's

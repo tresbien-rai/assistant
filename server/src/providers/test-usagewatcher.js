@@ -1,5 +1,5 @@
 /**
- * Passthrough usage watcher test (U-02, docs/USAGE_MEASUREMENT_DESIGN.md)
+ * Passthrough usage watcher test (U-02, docs/design/USAGE_MEASUREMENT_DESIGN.md)
  *
  * The watcher rides the toolless byte pipe, so the cases that matter are the
  * hostile ones: CRLF frames (the #170 bug that made Gemini a silent no-op),

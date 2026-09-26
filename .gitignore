@@ -22,8 +22,3 @@ server/data/avatars/*
 # Misc
 nul
 *.log
-
-# Build-and-Review Script files
-REVIEW.txt
-run-task.ps1
-run-task.sh

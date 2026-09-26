@@ -8,7 +8,7 @@
  * (each declares `data-settings-tab`), so adding a section to a tab is an
  * attribute, not a change here.
  *
- * Three layers live here, in order down the file (see docs/ADVANCED_PROMPTS_PLAN.md):
+ * Three layers live here, in order down the file (see docs/design/ADVANCED_PROMPTS_PLAN.md):
  *   AP-02  the preset lifecycle — create, duplicate, rename, delete, account default
  *   AP-03  the block editor behind a preset's Edit
  *   AP-04  selection — the composer pill + menu, and the persona editor's picker

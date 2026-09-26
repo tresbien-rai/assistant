@@ -14,7 +14,7 @@ const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models';
 const ANTHROPIC_VERSION = '2023-06-01';
 
 // =============================================================================
-// Prompt caching (PC-02, docs/PROMPT_CACHING_DESIGN.md)
+// Prompt caching (PC-02, docs/design/PROMPT_CACHING_DESIGN.md)
 //
 // Caching is a PREFIX MATCH: the provider reuses the leading bytes of a request
 // only where they are identical to what it cached, and a breakpoint can only be
@@ -244,7 +244,7 @@ function buildRequestBody(params) {
 // Tool contract (Track A, P2-01) — formatTools / extractToolCalls /
 // buildToolResultMessage. The chat loop (P2-02) stays provider-agnostic by
 // only ever touching this trio; adding a provider means implementing the same
-// three functions there. See "Decisions" in docs/PHASE2_TASKS.md.
+// three functions there. See "Decisions" in docs/design/PHASE2_TASKS.md.
 // =============================================================================
 
 /**
@@ -354,7 +354,7 @@ function mapApiError(response, errorData) {
 
 /**
  * Normalise Anthropic's usage into the shape usage_events stores (U-01,
- * docs/USAGE_MEASUREMENT_DESIGN.md).
+ * docs/design/USAGE_MEASUREMENT_DESIGN.md).
  *
  * `thinkingTokens` is deliberately NULL, not 0: Anthropic bills thinking inside
  * `output_tokens` and never reports it apart, so 0 would be a claim we cannot

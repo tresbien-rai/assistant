@@ -1,5 +1,7 @@
 # Orphaned Avatar/Expression Images — Design Note
 
+> **Status (2026-09-25):** Complete — OI-01…03 shipped (#95). Current status of everything: `docs/PROJECT.md`.
+
 *Decided with the human 2026-07-22. Follow-up to the recent persona work
 (persona cards #94, export/import `.tessera` bundles). Tasks numbered
 OI-01..03.*

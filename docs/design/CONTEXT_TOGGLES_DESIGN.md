@@ -1,10 +1,12 @@
 # Context toggles — design note
 
+> **Status (2026-09-25):** Complete — CT-01…06 shipped (#117–#123); a live pass with real keys is owed. Current status of everything: `docs/PROJECT.md`.
+
 Per-file control over what actually rides in the prompt: a checkbox on every
 knowledge file (workspace / project) and an inject-mode control on every chat
 working file. Layers onto the File Collaboration system
-(`docs/FILE_COLLAB_DESIGN.md`) and the workspace hierarchy
-(`docs/WORKSPACE_RESTRUCTURE.md`).
+(`docs/design/FILE_COLLAB_DESIGN.md`) and the workspace hierarchy
+(`docs/design/WORKSPACE_RESTRUCTURE.md`).
 
 > **Status (2026-07-24):** Design **locked** with the human. Four decisions
 > settled: "off" = *excluded but listed*; toggles live in **both** places,

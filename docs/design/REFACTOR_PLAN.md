@@ -1,5 +1,7 @@
 # Frontend refactor — plan
 
+> **Status (2026-09-25):** Complete — 20 PRs (#125–#144) plus follow-ups (#145–#147). Its module rules (e.g. rule 3, no import cycles) still apply and are cited from code. Current status of everything: `docs/PROJECT.md`.
+
 Splitting `app.js` (10,476 lines / 450 KB) into modules, and fixing the class of
 bug that its size has been hiding. Written to be picked up cold in a new session:
 each slice is independently shippable and says what "done" means.
