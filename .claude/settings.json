@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "git fetch --prune --quiet 2>/dev/null; n=$(git rev-list --count main..origin/main 2>/dev/null || echo '?'); if [ \"$n\" = \"0\" ]; then echo '[session start] git fetch done: local main is up to date with origin.'; else echo \"[session start] git fetch done: local main is $n commit(s) BEHIND origin/main. Pull main before reading or changing code.\"; fi; true",
+            "timeout": 30,
+            "statusMessage": "Fetching latest from origin"
+          }
+        ]
+      }
+    ]
+  }
+}
