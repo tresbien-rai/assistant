@@ -12,7 +12,8 @@ How we work (branches, verification, merging, wrap-up) lives in
 > ships, a debt is paid, or a new trap is found, it is recorded here before the
 > session ends. A stale line here is worse than a missing one.
 >
-> **Last updated:** 2026-09-25 (created by consolidating memory + design docs).
+> **Last updated:** 2026-09-25: created from memory + design docs (DOC-01), docs reorganised (DOC-02),
+> `/start` + `/wrap` + auto-fetch added (DOC-03).
 
 ---
 
@@ -253,6 +254,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | UI polish backlog | 📐 | UIP-01, UIP-02 | `../UI_POLISH.md` |
+| Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
 ---
 
@@ -382,6 +384,13 @@ Things that cost real time. Most were silent — nothing errored.
 - The auth cookie doesn't survive a server restart; click dev login again.
 - `npm start` doesn't auto-reload — restart after server edits.
 - Rows seeded directly into the DB only appear after a browser reload.
+- CSS transitions don’t advance while `document.hidden` is true, so a modal in
+  a background tab reads `opacity: 0` even though its class and CSS are right.
+- Clipboard writes throw `NotAllowedError` when the document isn’t focused, so
+  copy-button toasts never appear in automated runs. That is not a bug.
+- A browser-pane eval can time out while the page keeps executing; split long
+  test chains into small evals.
+- Screenshots have been unreliable here; verify visuals with computed styles too.
 
 ---
 
