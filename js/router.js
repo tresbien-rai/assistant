@@ -5,7 +5,7 @@
  * highlight, the contextual top bar, the breadcrumb, and the chrome that only
  * belongs in a chat (composer, floating avatar, file panel). `renderMainView`
  * is the one place that decides which view owns the main region — rule 2 of
- * docs/REFACTOR_PLAN.md, now enforced by the module graph rather than
+ * docs/design/REFACTOR_PLAN.md, now enforced by the module graph rather than
  * convention.
  *
  * It imports every view, and NOTHING imports it except js/main.js, the entry

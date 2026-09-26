@@ -1,6 +1,8 @@
 # User Profile & Persona Notes — Design
 
-Status: **design agreed, nothing built** (brainstormed 2026-09-08)
+> **Status (2026-09-25):** In progress — BR-01, UP-01…03, PS-01/02 shipped (#194–#203); UP-04 reverted on purpose (#200); UP-05/06 (persona notes) designed, not built. Current status of everything: `docs/PROJECT.md`.
+
+Designed 2026-09-08.
 Arising from: `project_next_targets` item 3 — "a user profile the user can customise"
 
 ---
@@ -56,7 +58,7 @@ persona_notes  (id, persona_id, text, source, conversation_id, created_at)
 
 `source` is `'user' | 'persona'` from the first migration even though tier 1
 ships user-authored only. Retrofitting provenance is expensive — the file layer
-learned that the hard way (`docs/FILE_PROVENANCE_DESIGN.md`) — and a nullable
+learned that the hard way (`docs/design/FILE_PROVENANCE_DESIGN.md`) — and a nullable
 column costs nothing now.
 
 ## 4. Locked decisions

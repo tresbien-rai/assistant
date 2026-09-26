@@ -1,5 +1,5 @@
 /**
- * Usage breakdown (U-04, docs/USAGE_MEASUREMENT_DESIGN.md).
+ * Usage breakdown (U-04, docs/design/USAGE_MEASUREMENT_DESIGN.md).
  *
  * Answers the question the status bar's single number cannot: WHERE the tokens
  * went. A tools-on turn is up to five provider calls, each re-sending the whole
@@ -197,7 +197,7 @@ export function showUsagePanel() {
     document.body.style.overflow = 'hidden';
     document.body.appendChild(overlay);
     // Deferred so the browser paints the element before `visible` transitions
-    // it — the modal-chrome rule from docs/CONFIRM_DIALOG_PLAN.md.
+    // it — the modal-chrome rule from docs/design/CONFIRM_DIALOG_PLAN.md.
     requestAnimationFrame(() => {
         overlay.classList.add('visible');
         overlay.querySelector('.modal-close').focus();

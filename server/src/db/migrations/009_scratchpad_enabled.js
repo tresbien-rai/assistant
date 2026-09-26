@@ -4,7 +4,7 @@
  * Adds `conversations.scratchpad_enabled` (INTEGER, nullable tri-state): the
  * scratchpad toggle for this conversation. NULL = inherit the persona base
  * (model_config.scratchpadEnabled), then auto-arm when the pad is non-empty;
- * 1 = on, 0 = off. See docs/SCRATCHPAD_DESIGN.md (Decision 2).
+ * 1 = on, 0 = off. See docs/design/SCRATCHPAD_DESIGN.md (Decision 2).
  *
  * Idempotent: guarded by table + column existence (mirrors migration 004).
  */

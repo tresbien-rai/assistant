@@ -365,7 +365,7 @@ function describeContextAck(options = {}, hasContext = false) {
  *
  * A pass-through of what buildSessionState produced, trimmed — the text is
  * generated from live state and a preset may neither reword nor suppress it
- * (docs/SESSION_STATE_DESIGN.md, D3), so unlike every other block there is
+ * (docs/design/SESSION_STATE_DESIGN.md, D3), so unlike every other block there is
  * nothing here to override. It exists as a named function so the send path and
  * the inspector reach the block the same way, and so the "which layer does this
  * live in" answer is in one place.

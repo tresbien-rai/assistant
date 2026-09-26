@@ -9,7 +9,7 @@
  *   conversations.preset_id         a per-chat override of it
  *
  * Both nullable; NULL means "inherit the next level down", ending at the
- * built-in prompt layer. See docs/ADVANCED_PROMPTS_PLAN.md (Decision D4) for the
+ * built-in prompt layer. See docs/design/ADVANCED_PROMPTS_PLAN.md (Decision D4) for the
  * resolution order.
  *
  * No FK constraint on purpose: SQLite can't add one with ALTER TABLE, and the

@@ -1,5 +1,5 @@
 /**
- * File provenance wording (P-03, docs/FILE_PROVENANCE_DESIGN.md).
+ * File provenance wording (P-03, docs/design/FILE_PROVENANCE_DESIGN.md).
  *
  * One word per file, telling the model where that file came from. Three
  * surfaces show it — the <available_files> manifest, the header on a loaded

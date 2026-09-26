@@ -765,7 +765,7 @@ function upsertSettings(userId, data) {
 }
 
 // =============================================================================
-// User profile (UP-01, docs/PROFILE_DESIGN.md tier 1)
+// User profile (UP-01, docs/design/PROFILE_DESIGN.md tier 1)
 // =============================================================================
 
 /**
@@ -881,7 +881,7 @@ function parseSettingsJson(settings) {
 }
 
 // =============================================================================
-// PROMPT PRESETS (AP-01 — docs/ADVANCED_PROMPTS_PLAN.md)
+// PROMPT PRESETS (AP-01 — docs/design/ADVANCED_PROMPTS_PLAN.md)
 // =============================================================================
 
 /** Shape a prompt_presets row for the API / the composer. */
@@ -1492,7 +1492,7 @@ function deleteWorkspaceFile(fileId, workspaceId) {
 // =============================================================================
 //
 // create_file OVERWRITES an existing file with the same name in its scope
-// (decision 6 in docs/PHASE2_TASKS.md): the row keeps its id (so previously
+// (decision 6 in docs/design/PHASE2_TASKS.md): the row keeps its id (so previously
 // shared download links keep working, now serving the new content) and points
 // at the replacement Drive file.
 
@@ -1760,7 +1760,7 @@ function deleteConversationFile(fileId, conversationId) {
 }
 
 // =============================================================================
-// CONTEXT TOGGLES (CT-01 — docs/CONTEXT_TOGGLES_DESIGN.md)
+// CONTEXT TOGGLES (CT-01 — docs/design/CONTEXT_TOGGLES_DESIGN.md)
 // =============================================================================
 //
 // Three storage concerns behind the per-file context controls:
@@ -2012,7 +2012,7 @@ function listFileRevisions(scope, fileId) {
 }
 
 /**
- * Record one provider call's usage (U-01, docs/USAGE_MEASUREMENT_DESIGN.md).
+ * Record one provider call's usage (U-01, docs/design/USAGE_MEASUREMENT_DESIGN.md).
  *
  * One row per CALL, not per turn — a tools-on turn is up to
  * MAX_TOOL_ITERATIONS calls, and the per-round breakdown is the whole point.
@@ -2226,7 +2226,7 @@ function summariseUsage(conversationId) {
 }
 
 /**
- * Where a file came from (P-02, docs/FILE_PROVENANCE_DESIGN.md).
+ * Where a file came from (P-02, docs/design/FILE_PROVENANCE_DESIGN.md).
  *
  * Read from the EARLIEST revision, not the latest: a user's file that the model
  * later edited is still the user's file. `'unknown'` is a first-class answer,
@@ -2338,7 +2338,7 @@ function countUserMessages(conversationId) {
 }
 
 // =============================================================================
-// SCRATCHPAD (docs/SCRATCHPAD_DESIGN.md)
+// SCRATCHPAD (docs/design/SCRATCHPAD_DESIGN.md)
 // =============================================================================
 
 /**
@@ -2616,7 +2616,7 @@ module.exports = {
   // Version restore (FC-06b)
   getFileRevisionById,
 
-  // Prompt presets (AP-01, docs/ADVANCED_PROMPTS_PLAN.md)
+  // Prompt presets (AP-01, docs/design/ADVANCED_PROMPTS_PLAN.md)
   listPromptPresets,
   getPromptPreset,
   createPromptPreset,

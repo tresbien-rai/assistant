@@ -5,7 +5,7 @@
  * "active model layer" — provider + model + params — that every chat send
  * uses. Personas keep their own model_config; a per-persona mode flag inside
  * that JSON ('shared' | 'fixed') decides whether activating the persona loads
- * its config into the layer. See docs/MODEL_DESYNC_DESIGN.md.
+ * its config into the layer. See docs/design/MODEL_DESYNC_DESIGN.md.
  *
  * No backfill: the column stays NULL and the client seeds the layer from the
  * active persona's config on first load after the upgrade, so nothing visibly

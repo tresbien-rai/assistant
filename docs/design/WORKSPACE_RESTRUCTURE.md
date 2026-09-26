@@ -1,7 +1,9 @@
 # Workspace Restructure — design + tasks
 
+> **Status (2026-09-25):** Complete — WR-01…09 shipped (#45–#55). Current status of everything: `docs/PROJECT.md`.
+
 Agreed plan (2026-06-28) to rework the workspace model **before Track A (Tool
-Use)**. Supersedes the workspace/sidebar parts of `docs/PHASE2_UX_DESIGN.md`
+Use)**. Supersedes the workspace/sidebar parts of `docs/design/PHASE2_UX_DESIGN.md`
 (the flat "Projects → Workspaces" model shipped in PRs #39/#40). Decided with
 the human; this is the source of truth for the restructure.
 
@@ -110,7 +112,7 @@ Hierarchy: **Workspace ⊃ Project ⊃ Chat**, plus **unfiled** chats at home.
 ## Sequencing
 **Restructure first, then Track A (Tool Use).** Tool-created files must target
 the right workspace/project Drive folders, so the hierarchy lands before tool
-executors are built. After WR-06, resume Track A (`docs/PHASE2_TASKS.md`) on the
+executors are built. After WR-06, resume Track A (`docs/design/PHASE2_TASKS.md`) on the
 new model — tool file destinations = active project folder → active workspace
 folder → `Tessera/Downloads/` (unfiled).
 
@@ -165,7 +167,7 @@ folder → `Tessera/Downloads/` (unfiled).
 upload for workspace + project pages), migration tested against a copy of real
 data, `/code-review`, then merge the WR-04→WR-05 stack.
 
-**Then Track A (Tool Use)** resumes on the new model (`docs/PHASE2_TASKS.md`):
+**Then Track A (Tool Use)** resumes on the new model (`docs/design/PHASE2_TASKS.md`):
 tool file destinations = active project folder → active workspace folder →
 `Tessera/Downloads/` (unfiled). Drive layout helpers live in `server/src/utils/drive.js`
 (`ensureWorkspaceFolder`, plus `ensureProjectFolderId` in `routes/projects.js`).

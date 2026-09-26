@@ -1,5 +1,5 @@
 /**
- * Cache-prefix stability test (PC-01, docs/PROMPT_CACHING_DESIGN.md §4)
+ * Cache-prefix stability test (PC-01, docs/design/PROMPT_CACHING_DESIGN.md §4)
  *
  * Prompt caching is a prefix match: the provider serves the leading bytes of a
  * request from cache only when they are IDENTICAL to the bytes it cached last

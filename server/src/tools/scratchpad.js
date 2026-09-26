@@ -201,7 +201,7 @@ async function executeEditScratchpad(input, ctx) {
 
   logger.info({ userId: ctx.userId, conversationId: ctx.conversationId, sizeBytes: bytes, replacements, replaceAll }, 'edit_scratchpad executed');
 
-  // Report the CHANGE, not just the total (docs/SESSION_STATE_DESIGN.md D1). A
+  // Report the CHANGE, not just the total (docs/design/SESSION_STATE_DESIGN.md D1). A
   // total alone cannot confirm an edit landed — 3,860 before and 3,860 after
   // read identically — so the model had to re-read the pad to be sure. The
   // before → after pair plus the replacement count is that confirmation.

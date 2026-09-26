@@ -1,5 +1,5 @@
 /**
- * User Profile Test (UP-01, docs/PROFILE_DESIGN.md tier 1)
+ * User Profile Test (UP-01, docs/design/PROFILE_DESIGN.md tier 1)
  *
  * Two parts:
  *   1. Pure shape handling (no DB): the tolerant normalizer degrades junk

@@ -1,7 +1,9 @@
 # Model Profiles — Design Note
 
+> **Status (2026-09-25):** Complete — shipped in #73. Current status of everything: `docs/PROJECT.md`.
+
 *Decided with the human 2026-07-18. Follow-up to the Model/Persona De-sync
-(docs/MODEL_DESYNC_DESIGN.md, WR-10..14).*
+(docs/design/MODEL_DESYNC_DESIGN.md, WR-10..14).*
 
 ## Premise
 

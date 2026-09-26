@@ -1,6 +1,7 @@
 # Session State & Tool Feedback — Design
 
-Status: **SS-01…SS-04 shipped**; §7 (file digests) analysed, not yet built
+> **Status (2026-09-25):** Complete — SS-01…04 shipped (#162–#166); §7 file digests designed, not built. Current status of everything: `docs/PROJECT.md`.
+
 Arising from: live testing of the streaming tool loop (TS-01…TS-03)
 
 ---

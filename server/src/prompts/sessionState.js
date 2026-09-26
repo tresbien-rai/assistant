@@ -1,5 +1,5 @@
 /**
- * The `<session_state>` block (SS-02, docs/SESSION_STATE_DESIGN.md).
+ * The `<session_state>` block (SS-02, docs/design/SESSION_STATE_DESIGN.md).
  *
  * What the model is told about the state of its own workspace — and crucially
  * about ABSENCE. Before this, an empty scratchpad, a conversation with no

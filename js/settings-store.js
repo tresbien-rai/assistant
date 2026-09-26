@@ -27,7 +27,7 @@ import { updateSettingsUI, renderModelsCatalog, refreshAddModelModal } from './s
 import { displayError } from './components/errors.js';
 // The pure vocabulary leaf. Deliberately NOT views/personas.js, which owns the
 // rendering side: that module already imports this one, and importing it back
-// would be the dependency cycle docs/REFACTOR_PLAN.md rule 3 forbids.
+// would be the dependency cycle docs/design/REFACTOR_PLAN.md rule 3 forbids.
 import { AUTHORED_SECTION_IDS } from './persona-sections.js';
 
 /**
@@ -112,7 +112,7 @@ export function autoSaveSettings() {
  * Set the Models catalog "daily drivers" provider filter and persist it
  * (debounced). `providers` is an array of provider ids, or null/[] for "All" —
  * an empty selection normalises to null so the catalog never renders blank
- * (docs/MODELS_TAB_REDESIGN.md). Plumbing only in this slice; the provider
+ * (docs/design/MODELS_TAB_REDESIGN.md). Plumbing only in this slice; the provider
  * chips are the caller in a later slice.
  * @param {string[] | null} providers
  */

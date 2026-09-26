@@ -10,7 +10,7 @@
  * the directory against the database and deletes anything unreferenced.
  *
  * It is the catch-all safety net, not the primary mechanism. See
- * docs/ORPHANED_IMAGES_DESIGN.md.
+ * docs/design/ORPHANED_IMAGES_DESIGN.md.
  *
  * Guards against reaping live files:
  *   - `tmp_*` — multer's in-flight upload temp files.

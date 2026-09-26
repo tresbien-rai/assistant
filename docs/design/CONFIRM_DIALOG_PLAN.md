@@ -1,5 +1,7 @@
 # In-App Confirm Dialogs — Plan
 
+> **Status (2026-09-25):** Complete — CD-01…04 shipped (#96–#98); no native dialogs remain. Current status of everything: `docs/PROJECT.md`.
+
 Replace every native `window.confirm()` in the frontend with an in-app dialog
 matching Tessera's own visual language.
 

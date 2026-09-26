@@ -1,5 +1,7 @@
 # Prompt Caching — Design
 
+> **Status (2026-09-25):** Complete — PC-01/02 shipped (#180–#182), live-verified at 92% cache hit. Current status of everything: `docs/PROJECT.md`.
+
 Tessera re-sends the whole conversation on every turn, and pays full input
 price for all of it. Both providers will serve most of that prefix from cache
 instead — Anthropic for an explicit ~90% discount, Gemini automatically — but
@@ -7,7 +9,7 @@ only if the bytes ahead of the newest turn are **identical to last turn's**.
 
 They are not. This document says why, and what to change.
 
-`docs/USAGE_MEASUREMENT_DESIGN.md` §5 is the neighbour: `cache_read` and
+`docs/design/USAGE_MEASUREMENT_DESIGN.md` §5 is the neighbour: `cache_read` and
 `cache_write` have been captured per provider call since U-01 and read `0`
 because nothing writes a cache yet. Nothing here adds instrumentation — the
 measurement already exists and starts reporting the moment this lands.

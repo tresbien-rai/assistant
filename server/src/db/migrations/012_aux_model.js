@@ -3,7 +3,7 @@
  *
  * Adds `settings.aux_model` (TEXT, nullable): JSON `{provider, model}` naming a
  * second, usually cheaper model the app may delegate small background work to —
- * naming a new chat today, file digests later (docs/SESSION_STATE_DESIGN.md §7).
+ * naming a new chat today, file digests later (docs/design/SESSION_STATE_DESIGN.md §7).
  *
  * NULL means "no aux model", which is the honest default: every consumer has to
  * work without one, because a user who never sets it must not lose a feature.

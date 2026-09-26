@@ -1,5 +1,5 @@
 /**
- * Prompt preset test (AP-01, docs/ADVANCED_PROMPTS_PLAN.md)
+ * Prompt preset test (AP-01, docs/design/ADVANCED_PROMPTS_PLAN.md)
  *
  * Three things, in descending order of how much they'd hurt to get wrong:
  *
@@ -550,7 +550,7 @@ check('no preset can put it back in the system prompt', () => {
 });
 
 check('the system prompt is byte-identical across differing session state', () => {
-  // The standing guard (docs/PROMPT_CACHING_DESIGN.md §4). If this fails,
+  // The standing guard (docs/design/PROMPT_CACHING_DESIGN.md §4). If this fails,
   // caching is silently off: nothing errors, the bill is just higher.
   const base = { preset: {}, scratchpad: true };
   const a = buildSystemPrompt(PERSONA, ['happy'], {

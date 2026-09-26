@@ -248,7 +248,7 @@ CREATE TABLE IF NOT EXISTS file_revisions (
 CREATE INDEX IF NOT EXISTS idx_file_revisions_file ON file_revisions(scope, file_id);
 CREATE INDEX IF NOT EXISTS idx_file_revisions_conversation_id ON file_revisions(conversation_id);
 
--- Scratchpad (docs/SCRATCHPAD_DESIGN.md): a per-conversation, DB-resident shared
+-- Scratchpad (docs/design/SCRATCHPAD_DESIGN.md): a per-conversation, DB-resident shared
 -- document the user and model edit together. Deliberately NOT a working file —
 -- no Drive presence, its own tables — because it is CHURNED (content is
 -- replaced/overwritten, not appended) and is treated differently by the
@@ -283,7 +283,7 @@ CREATE TABLE IF NOT EXISTS scratchpad_revisions (
 CREATE INDEX IF NOT EXISTS idx_scratchpad_revisions_pad ON scratchpad_revisions(scratchpad_id);
 CREATE INDEX IF NOT EXISTS idx_scratchpad_revisions_conversation_id ON scratchpad_revisions(conversation_id);
 
--- Prompt presets (AP-01, docs/ADVANCED_PROMPTS_PLAN.md)
+-- Prompt presets (AP-01, docs/design/ADVANCED_PROMPTS_PLAN.md)
 -- A named override set for the PLATFORM prompt layer: block text, block order,
 -- and which blocks are on. Presets store OVERRIDES, never copies — a block with
 -- text NULL renders from the built-in in prompts/tessera.js, so improvements to
@@ -324,7 +324,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id);
 
--- User profile (UP-01, docs/PROFILE_DESIGN.md tier 1)
+-- User profile (UP-01, docs/design/PROFILE_DESIGN.md tier 1)
 -- Who the USER is, in their own words — the layer that was missing, since the
 -- persona prompt describes the model, container instructions describe the work,
 -- and the scratchpad describes the current task. One row per user.
@@ -344,7 +344,7 @@ CREATE INDEX IF NOT EXISTS idx_settings_user_id ON settings(user_id);
 -- `source` is 'user' for every row today. It exists from the first migration
 -- because tier 2 (persona notes) is model-written, and retrofitting provenance
 -- onto content that already exists is the expensive mistake the file layer
--- already made once (docs/FILE_PROVENANCE_DESIGN.md).
+-- already made once (docs/design/FILE_PROVENANCE_DESIGN.md).
 --
 -- New table => created here by CREATE TABLE IF NOT EXISTS on boot; no migration
 -- needed (user_files / WR-02b precedent).
@@ -375,7 +375,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_provider ON api_keys(user_id, provider);
 
--- Usage events (U-01, docs/USAGE_MEASUREMENT_DESIGN.md)
+-- Usage events (U-01, docs/design/USAGE_MEASUREMENT_DESIGN.md)
 -- ONE ROW PER PROVIDER CALL, not per turn: with tools on, a single user message
 -- becomes up to MAX_TOOL_ITERATIONS provider calls, each re-sending the whole
 -- history plus the tool block. Per-turn totals could not show that, and cache

@@ -45,7 +45,7 @@ export const state = {
         autoTitle: true
     },
     // Prompt presets by id (from API.presets.list). The platform prompt layer's
-    // override sets — see docs/ADVANCED_PROMPTS_PLAN.md.
+    // override sets — see docs/design/ADVANCED_PROMPTS_PLAN.md.
     presets: {},
     // The user's own profile (UP-02): { preferredName, sections, updatedAt,
     // textLength }, or null until the Profile view first loads it. Lazily
@@ -56,8 +56,8 @@ export const state = {
     // The active model layer (WR-12): provider + model + params that every
     // chat send and the model/params UI use. User-level, persisted in
     // settings.currentModelConfig. Effectively "the loaded model profile" —
-    // switching models saves/loads profiles (docs/MODEL_PROFILES_DESIGN.md);
-    // fixed-mode personas pin a model (docs/MODEL_DESYNC_DESIGN.md). Seeded
+    // switching models saves/loads profiles (docs/design/MODEL_PROFILES_DESIGN.md);
+    // fixed-mode personas pin a model (docs/design/MODEL_DESYNC_DESIGN.md). Seeded
     // in init(); the default here only covers pre-hydration.
     currentModelConfig: getDefaultModelConfig(),
     // Per-provider key presence metadata from API.apiKeys.list().

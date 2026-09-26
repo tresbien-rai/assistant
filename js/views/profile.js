@@ -1,5 +1,5 @@
 /**
- * Profile view (UP-02, docs/PROFILE_DESIGN.md tier 1)
+ * Profile view (UP-02, docs/design/PROFILE_DESIGN.md tier 1)
  *
  * Who the USER is, in their own words — the counterpart to the persona editor.
  * A persona describes the character the model plays; this describes the person

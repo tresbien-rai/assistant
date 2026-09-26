@@ -2,7 +2,7 @@
  * Migration 010 — Per-file context toggles (CT-01)
  *
  * Adds the container-level default and the chat-file inject mode that
- * docs/CONTEXT_TOGGLES_DESIGN.md builds on:
+ * docs/design/CONTEXT_TOGGLES_DESIGN.md builds on:
  *
  *   - `project_files.enabled`      INTEGER, default 1 — is this knowledge file
  *   - `workspace_files.enabled`    INTEGER, default 1   loaded into chats?

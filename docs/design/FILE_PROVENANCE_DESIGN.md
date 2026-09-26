@@ -1,7 +1,8 @@
 # File Provenance — design
 
-**Status:** BUILT and live-verified (P-01…P-04).
-**Relates to:** `docs/SESSION_STATE_DESIGN.md` §7 (file digests), `docs/FILE_COLLAB_DESIGN.md`.
+> **Status (2026-09-25):** Complete — shipped and live-verified (#173, #174). Slices here are called P-01…P-04; they are FP-01…04 in the registry. Current status of everything: `docs/PROJECT.md`.
+
+**Relates to:** `docs/design/SESSION_STATE_DESIGN.md` §7 (file digests), `docs/design/FILE_COLLAB_DESIGN.md`.
 
 One word per file, telling the model where that file came from: *it wrote it*,
 *the user provided it*, or *nobody knows*.

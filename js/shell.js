@@ -6,7 +6,7 @@
  * the settings-persistence code, all calling each other. A cluster like that
  * cannot be split by moving code: whichever boundary you draw through it, the
  * two halves import each other, which is the dependency cycle rule 3 of
- * docs/REFACTOR_PLAN.md forbids.
+ * docs/design/REFACTOR_PLAN.md forbids.
  *
  * Measuring the graph showed the knot is held together by just three
  * "repaint everything" calls. Cutting them shrinks the largest cluster from

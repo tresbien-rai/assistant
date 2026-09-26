@@ -3,7 +3,7 @@
  *
  * Adds `messages.model` (TEXT, nullable): the model id that generated an
  * assistant message, recorded at send time by the client. Old messages stay
- * NULL and simply render without a tag. See docs/MODEL_DESYNC_DESIGN.md.
+ * NULL and simply render without a tag. See docs/design/MODEL_DESYNC_DESIGN.md.
  *
  * Idempotent: guarded by table + column existence (test fixtures may omit
  * tables they don't exercise; fresh installs get the column from schema.sql).

@@ -6,7 +6,7 @@
  * which is why anything that outgrows it can be moved out safely — there are no
  * consumers to update.
  *
- * WHAT BELONGS HERE. The refactor (docs/REFACTOR_PLAN.md, complete) gave every
+ * WHAT BELONGS HERE. The refactor (docs/design/REFACTOR_PLAN.md, complete) gave every
  * feature an owning module, so this file is no longer "the app" — it is the four
  * jobs only an entry point can do:
  *
@@ -2041,7 +2041,7 @@ async function bootstrap() {
 // The single, DELIBERATE handle the frontend smoke harness reaches through
 // (`tests/frontend-smoke.js`). It exists so the harness never depends on
 // incidental globals: today everything in this file happens to be global, but
-// after the module refactor (docs/REFACTOR_PLAN.md, R-00…R-05) nothing will be.
+// after the module refactor (docs/design/REFACTOR_PLAN.md, R-00…R-05) nothing will be.
 // Keeping the harness pointed at ONE seam means it survives the extraction
 // unchanged — and a slice that forgets to wire something here fails loudly
 // instead of silently losing coverage. Nothing secret lives here; the browser

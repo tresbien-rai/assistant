@@ -1,14 +1,16 @@
 # Scratchpad — design note
 
+> **Status (2026-09-25):** Complete — SP-01…05 shipped (#112–#116); the live adoption pass (model actually using the pad) is owed. Current status of everything: `docs/PROJECT.md`.
+
 A shared, always-current document that both the user and the model edit
 directly, attached to every request like an active file. Layers onto the File
-Collaboration system (`docs/FILE_COLLAB_DESIGN.md`) and reuses most of its
+Collaboration system (`docs/design/FILE_COLLAB_DESIGN.md`) and reuses most of its
 machinery.
 
 > **Status (2026-07-23):** Design **locked** with the human — all open questions
 > confirmed (availability auto-arms, own table, diff depth 3, size cap is a high
 > warning-only threshold). CF-01, CF-01b, and CF-02 are merged; the scratchpad is
-> next. **Build order below (SP-01 → SP-05).** Nothing built yet.
+> next. **Build order below (SP-01 → SP-05).** (Written before the build.)
 >
 > **Defining principle (added 2026-07-23, human):** the scratchpad is a
 > *churning* surface — the collaborators are expected to **erase, overwrite, and

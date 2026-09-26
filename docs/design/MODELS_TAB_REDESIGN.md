@@ -1,7 +1,9 @@
 # Models Tab Redesign — Design Note
 
+> **Status (2026-09-25):** Complete — slices 1–8 shipped (#99–#108). Current status of everything: `docs/PROJECT.md`.
+
 *Decided with the human 2026-07-22. Builds on the model-profiles work
-(docs/MODEL_PROFILES_DESIGN.md) and the WR-13 re-parenting that first moved the
+(docs/design/MODEL_PROFILES_DESIGN.md) and the WR-13 re-parenting that first moved the
 active-model / advanced-params sections into `#modelsView`.*
 
 **Status: complete.** Slices 1–6 landed 2026-07-22 (PRs #99–#105). Slices 7–8,

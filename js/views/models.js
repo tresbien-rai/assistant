@@ -392,7 +392,7 @@ export function selectModel(modelId, provider) {
  * "All" chip plus one per provider. The chips are the writer for the "daily
  * drivers" filter (state.settings.catalogProviders) — multi-select, "All" =
  * show every provider. A status dot shows API-key presence; 'soon' providers
- * render disabled. See docs/MODELS_TAB_REDESIGN.md.
+ * render disabled. See docs/design/MODELS_TAB_REDESIGN.md.
  */
 export function renderProviderChips() {
     const row = document.getElementById('providerChips');

@@ -1,9 +1,11 @@
 # File Collaboration — Conversation Scope, Revisions & Live Injection
 
+> **Status (2026-09-25):** Complete — FC-01…06b shipped (#82–#92); FC-06c dropped, search tools deferred. Current status of everything: `docs/PROJECT.md`.
+
 Design + task plan for the next extension of the file-tool system. Builds on
 Phase 2 Track A (`create_file`/`read_file`/`list_files`/`edit_file`) and the
-edit-in-context FilePanel (#76–#78). Companion to `docs/PHASE2_TASKS.md`
-(Track A decisions) and `docs/WORKSPACE_RESTRUCTURE.md` (the Workspace ⊃ Project
+edit-in-context FilePanel (#76–#78). Companion to `docs/design/PHASE2_TASKS.md`
+(Track A decisions) and `docs/design/WORKSPACE_RESTRUCTURE.md` (the Workspace ⊃ Project
 hierarchy this layers onto).
 
 > **Status (2026-07-20):** Design **locked** with the human across a full design

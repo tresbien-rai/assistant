@@ -1,5 +1,5 @@
 /**
- * File Provenance Test (P-01..P-03, docs/FILE_PROVENANCE_DESIGN.md)
+ * File Provenance Test (P-01..P-03, docs/design/FILE_PROVENANCE_DESIGN.md)
  *
  * Covers the three states (model / user / unknown), the two capture gaps this
  * feature had to close first (container uploads logging no revision at all, and

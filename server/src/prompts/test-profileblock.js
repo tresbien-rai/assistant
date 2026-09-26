@@ -1,5 +1,5 @@
 /**
- * Profile prompt block test (UP-03, docs/PROFILE_DESIGN.md tier 1)
+ * Profile prompt block test (UP-03, docs/design/PROFILE_DESIGN.md tier 1)
  *
  * Covers the three things that can go wrong once the profile reaches the model:
  *   1. Rendering — disabled sections must not leak, order must be the user's.
@@ -167,7 +167,7 @@ check('built-in position is directly after the orientation', () => {
 
 check('the profile block is byte-identical across differing session state', () => {
   // It lives in the SYSTEM prompt, so any per-turn variation in it would
-  // re-write the cached prefix on every message (docs/PROMPT_CACHING_DESIGN.md).
+  // re-write the cached prefix on every message (docs/design/PROMPT_CACHING_DESIGN.md).
   const opts = (sessionState) => ({
     profileEnabled: true,
     sessionState,

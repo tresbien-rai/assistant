@@ -4,7 +4,7 @@
  * Writes model-authored text content to the user's Google Drive and records
  * it, so the user can download it from the conversation.
  *
- * Destination (decision 1 in docs/PHASE2_TASKS.md):
+ * Destination (decision 1 in docs/design/PHASE2_TASKS.md):
  *   active project folder → active workspace folder → Tessera/Downloads/
  * recorded in project_files / workspace_files / user_files respectively.
  *

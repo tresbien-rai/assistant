@@ -1,5 +1,5 @@
 /**
- * Prompt Preset Routes (AP-02, docs/ADVANCED_PROMPTS_PLAN.md)
+ * Prompt Preset Routes (AP-02, docs/design/ADVANCED_PROMPTS_PLAN.md)
  *
  * CRUD over the user's prompt presets — the override sets for the platform
  * prompt layer that AP-01 resolves and composes.

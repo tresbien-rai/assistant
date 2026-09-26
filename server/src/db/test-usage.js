@@ -1,5 +1,5 @@
 /**
- * Usage Measurement Test (U-01, docs/USAGE_MEASUREMENT_DESIGN.md)
+ * Usage Measurement Test (U-01, docs/design/USAGE_MEASUREMENT_DESIGN.md)
  *
  * Covers the normalisers (including the Gemini thinking-sum trap), the
  * null-vs-zero distinction on thinking_tokens, per-round recording through the

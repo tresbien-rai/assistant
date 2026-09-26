@@ -4,7 +4,7 @@
  * Adds `conversations.tools_enabled` (INTEGER, nullable tri-state): the
  * composer's file-tools override for this conversation. NULL = inherit the
  * persona's base setting (model_config.toolsEnabled), 1 = on, 0 = off.
- * See "Decisions" (2) in docs/PHASE2_TASKS.md.
+ * See "Decisions" (2) in docs/design/PHASE2_TASKS.md.
  *
  * Idempotent: guarded by table + column existence (test fixtures may omit
  * tables they don't exercise; fresh installs get the column from schema.sql).

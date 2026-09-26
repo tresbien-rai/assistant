@@ -1,7 +1,7 @@
 /**
  * User profile — shape definition, tolerant read, strict write (UP-01)
  *
- * The Profile is tier 1 of `docs/PROFILE_DESIGN.md`: one per user, authored by
+ * The Profile is tier 1 of `docs/design/PROFILE_DESIGN.md`: one per user, authored by
  * the user, and eventually rendered into a `profile` system block (UP-03) that
  * tells the persona who it is talking to.
  *

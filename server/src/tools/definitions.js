@@ -6,7 +6,7 @@
  * (name / description / input_schema, where input_schema is plain JSON
  * Schema); each provider translates it via its formatTools() —
  * Anthropic: pass-through; Gemini: functionDeclarations with proto-enum
- * types. See "Decisions" in docs/PHASE2_TASKS.md.
+ * types. See "Decisions" in docs/design/PHASE2_TASKS.md.
  *
  * No execution lives here — executors land in P2-03/P2-04, and the chat
  * loop (P2-02) advertises these only when the tools toggle is on.
@@ -18,7 +18,7 @@
  * - Destination (project / workspace / Downloads) is implicit from the
  *   conversation — the model never chooses a path.
  *
- * SCOPE-NEUTRAL WORDING (SS-04, docs/SESSION_STATE_DESIGN.md D4). These
+ * SCOPE-NEUTRAL WORDING (SS-04, docs/design/SESSION_STATE_DESIGN.md D4). These
  * descriptions used to assert a container — "the current project or workspace"
  * — on every read and write. The tool list is deliberately STABLE (advertised
  * whether or not the chat has a container, so it cannot churn mid-conversation
@@ -131,7 +131,7 @@ const TOOL_DEFINITIONS = [
 ];
 
 /**
- * Scratchpad tools (docs/SCRATCHPAD_DESIGN.md). Defined SEPARATELY from the file
+ * Scratchpad tools (docs/design/SCRATCHPAD_DESIGN.md). Defined SEPARATELY from the file
  * tools because they are gated independently: the scratchpad toggle advertises
  * these regardless of whether the file-tools toggle is on (Decision 3).
  *

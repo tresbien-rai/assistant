@@ -8,7 +8,7 @@
  * WHY IT ARRIVES LATE. js/chat/thread.js's header explains that these stayed in
  * main.js "until js/chat/send.js lands", because a re-run re-enters the send path
  * and extracting them earlier would have meant importing back into main.js — the
- * cycle rule 3 of docs/REFACTOR_PLAN.md forbids. send.js landed in R-05 (#139)
+ * cycle rule 3 of docs/design/REFACTOR_PLAN.md forbids. send.js landed in R-05 (#139)
  * and nobody came back for these, so they sat in the entry point as a parked
  * slice rather than a decision. This is that slice.
  *
