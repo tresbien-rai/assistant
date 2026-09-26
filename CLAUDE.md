@@ -43,8 +43,10 @@ Every session follows the same shape. The steps are short on purpose; each
 exists because skipping it cost us something before.
 
 ### 1. Start
-1. `git fetch --prune` and `git status -sb`. If `main` is behind origin, pull
-   before reading any code.
+`/start` runs these steps and briefs the user; follow them by hand otherwise.
+1. A SessionStart hook (`.claude/settings.json`) fetches automatically and
+   reports whether local `main` is behind origin. If it is, pull before
+   reading any code.
 2. Read `docs/PROJECT.md` — at least §7 (current focus) and §8 (owed). If the
    session touches a feature, read that feature's design doc too.
 3. If the user hasn't stated the session's goal, ask.
@@ -92,7 +94,7 @@ exists because skipping it cost us something before.
   `main` should remain.
 
 ### 6. Wrap up — before the session ends
-Run `/wrap` (or do it by hand when the user says we're done):
+Run `/wrap` (`.claude/skills/wrap/`) when the user says we're done. It covers:
 - Update `docs/PROJECT.md`: the feature index row (§6), current focus (§7),
   owed/deferred (§8), any new gotcha (§9), and the "Last updated" line.
 - Update the design doc's status header if its feature moved.
