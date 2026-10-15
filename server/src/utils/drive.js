@@ -315,32 +315,64 @@ async function findConversationFolder(auth, conversationId) {
 // =============================================================================
 
 /**
+ * Whether a stored folder id still names a usable folder: false if it was
+ * deleted (404) or sits in the trash. A stored id goes stale when the user
+ * removes the folder in Drive itself, and every upload into it then fails, so
+ * the row-aware helpers below check before trusting it.
+ * @param {import('google-auth-library').OAuth2Client} auth
+ * @param {string} folderId
+ * @returns {Promise<boolean>}
+ */
+function folderIsLive(auth, folderId) {
+  return execute(auth, 'folderIsLive', async (drive) => {
+    try {
+      const res = await drive.files.get({ fileId: folderId, fields: 'id, trashed' });
+      return !res.data.trashed;
+    } catch (err) {
+      // Only "gone" is an answer; anything else (a 401 to refresh on, an
+      // outage) propagates to execute() as before.
+      if ((err?.response?.status ?? err?.code) === 404) return false;
+      throw err;
+    }
+  });
+}
+
+/**
  * Ensure a workspace row has a backing Drive folder, persisting its id if just
- * created. Returns the folder id.
+ * created (or re-created because the stored one was deleted or trashed).
+ * Returns the folder id.
  * @param {import('google-auth-library').OAuth2Client} auth
  * @param {string} userId
  * @param {Object} workspace - workspaces row
  * @returns {Promise<string>} The workspace folder id
  */
 async function ensureWorkspaceFolderId(auth, userId, workspace) {
-  if (workspace.drive_folder_id) return workspace.drive_folder_id;
+  if (workspace.drive_folder_id) {
+    if (await folderIsLive(auth, workspace.drive_folder_id)) return workspace.drive_folder_id;
+    logger.warn({ userId, workspaceId: workspace.id }, 'Workspace Drive folder is gone; re-creating it');
+  }
   const folderId = await ensureWorkspaceFolder(auth, workspace.name);
   dal.updateWorkspace(workspace.id, userId, { driveFolderId: folderId });
+  workspace.drive_folder_id = folderId;
   return folderId;
 }
 
 /**
  * Ensure a project row has a backing Drive folder under its workspace
- * (`{root}/<Workspace>/<Project>/`), persisting its id if just created. Falls
- * back to the legacy `{root}/projects/` folder for an orphan project that has
- * no workspace. Returns the folder id. Requires a working Drive auth.
+ * (`{root}/<Workspace>/<Project>/`), persisting its id if just created (or
+ * re-created because the stored one was deleted or trashed). Falls back to the
+ * legacy `{root}/projects/` folder for an orphan project that has no
+ * workspace. Returns the folder id. Requires a working Drive auth.
  * @param {import('google-auth-library').OAuth2Client} auth
  * @param {string} userId
  * @param {Object} project - projects row
  * @returns {Promise<string>} The project folder id
  */
 async function ensureProjectFolderId(auth, userId, project) {
-  if (project.drive_folder_id) return project.drive_folder_id;
+  if (project.drive_folder_id) {
+    if (await folderIsLive(auth, project.drive_folder_id)) return project.drive_folder_id;
+    logger.warn({ userId, projectId: project.id }, 'Project Drive folder is gone; re-creating it');
+  }
 
   let parentId = null;
   if (project.workspace_id) {
@@ -356,6 +388,7 @@ async function ensureProjectFolderId(auth, userId, project) {
 
   const folderId = await createFolder(auth, project.name, parentId);
   dal.updateProject(project.id, userId, { driveFolderId: folderId });
+  project.drive_folder_id = folderId;
   return folderId;
 }
 
