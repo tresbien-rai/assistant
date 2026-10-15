@@ -13,9 +13,36 @@ and implementer — responsible for all technical decisions, code structure, and
 implementation. Explain technical trade-offs in plain language when relevant, and
 don't assume the human has deep familiarity with the codebase internals.
 
-Sessions can run on the desktop or in the cloud (a session *started* from the
-mobile app runs in the cloud and merges without the local checkout seeing it).
-So never assume local `main` is current — fetch first (see the workflow below).
+Sessions run from more than one place: the desktop PC, a laptop (its own
+clone, set up per `docs/PROJECT.md` §9 *New machine*), or the cloud (a session
+*started* from the mobile app runs there). Each merges without the other
+checkouts seeing it, so never assume local `main` is current — fetch first
+(see the workflow below). Anything only one machine knows (Claude's memory, a
+`.env`) is invisible to the others; working rules belong in this file.
+
+### Working with the user
+
+These are standing rules learned over many sessions. They apply every session.
+
+- **Ask before designing.** For new scope, open with questions about what it
+  is *for*. The user shares their thinking first; a plan comes after.
+- **Recommend one option, then let them choose.** Give the trade-off in plain
+  language. They often take the recommendation but sometimes don't, and the
+  choice is theirs. Record the decision and its reasoning in the design doc.
+- **Features first, wording last.** Copy and placeholder polish waits until a
+  feature set is complete.
+- **Mitigate reasonably; don't over-engineer.** Not everything needs to be
+  user-failure-proof. An accepted risk isn't re-litigated.
+- **Build small, then live with it.** Low-value work is dropped readily, and
+  something already built may be reverted if living with it shows it isn't
+  needed (UP-04).
+- **Live checks with real keys are recorded as owed, not nagged about.** The
+  user runs them, often in a later session. A test Google account for live
+  checks is being set up; see `docs/PROJECT.md` §9.
+- **Tessera is private and single-user until the user decides to release
+  it.** Build for that: there are no other users' data or deployments to stay
+  compatible with, so prefer the simpler design. Security basics (auth,
+  per-user scoping, encrypted keys) still hold, because release is the plan.
 
 ### Model tiering / sub-agents
 
@@ -98,8 +125,9 @@ Run `/wrap` (`.claude/skills/wrap/`) when the user says we're done. It covers:
 - Update `docs/PROJECT.md`: the feature index row (§6), current focus (§7),
   owed/deferred (§8), any new gotcha (§9), and the "Last updated" line.
 - Update the design doc's status header if its feature moved.
-- Memory is for facts about the user and their preferences only — never
-  project status (that goes in `PROJECT.md`, where every session can see it).
+- New feedback on how to work becomes a rule under *Working with the user*
+  above, not a memory: memory lives on one machine only. Project status goes
+  in `PROJECT.md`, where every session can see it.
 - Tell the user: what shipped, what's owed, and the suggested next step.
 
 ### Design doc status header

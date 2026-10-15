@@ -1,6 +1,6 @@
 ---
 name: wrap
-description: Wrap up a Tessera work session — make sure work is merged and cleaned up, then bring docs/PROJECT.md, the touched design docs, and memory up to date and report to the user. Use when the user types /wrap, or says the session is done ("let's wrap up", "that's it for today", "close out").
+description: Wrap up a Tessera work session — make sure work is merged and cleaned up, then bring docs/PROJECT.md, the touched design docs, and the working rules in CLAUDE.md up to date and report to the user. Use when the user types /wrap, or says the session is done ("let's wrap up", "that's it for today", "close out").
 ---
 
 # Wrap up a session
@@ -48,12 +48,13 @@ Commit as `docs: wrap-up YYYY-MM-DD`, PR, and merge it — no review agent
 needed for a wrap-up, but reread the diff once for accuracy. If the session
 changed nothing worth recording, say so and skip the PR.
 
-## 4. Memory
+## 4. Working rules
 
-Memory holds facts about the user and how they like to work — not project
-status. Save a memory only if the user revealed a preference, gave feedback on
-how to work, or corrected an approach. Anything about the project goes in
-`PROJECT.md` instead. If a memory contradicts what was learned, fix it.
+If the user revealed a preference, gave feedback on how to work, or corrected
+an approach, add or fix the rule in `CLAUDE.md` → *Working with the user*
+(in the wrap-up PR), worded as a neutral working rule. Don't save it to
+memory: memory is per machine, and the user works from more than one.
+Anything about the project goes in `PROJECT.md`.
 
 ## 5. Report to the user
 

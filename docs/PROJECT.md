@@ -13,7 +13,8 @@ How we work (branches, verification, merging, wrap-up) lives in
 > session ends. A stale line here is worse than a missing one.
 >
 > **Last updated:** 2026-09-25: created from memory + design docs (DOC-01), docs reorganised (DOC-02),
-> `/start` + `/wrap` + auto-fetch added (DOC-03).
+> `/start` + `/wrap` + auto-fetch added (DOC-03). 2026-10-14: deleted project Drive folders
+> self-heal (#208); working rules moved from memory to `CLAUDE.md`; new-machine setup and test-account notes (§9).
 
 ---
 
@@ -55,7 +56,9 @@ sides edit; every file keeps a revision history.
   branding (e.g. the Drive root folder).
 - **Collaboration model:** the user is a novice developer who sets vision and
   direction; Claude is the architect and implementer. Explain trade-offs in
-  plain language.
+  plain language. Working rules: `CLAUDE.md`, *Working with the user*.
+- **Audience:** private and single-user until the user chooses to release it.
+  The GitHub repo is being made private (decided 2026-10-14).
 
 ---
 
@@ -72,7 +75,7 @@ store whose job it is.
 | `docs/UI_POLISH.md` | Backlog of cosmetic and copy fixes noticed in passing | When doing a polish pass |
 | `docs/DEPLOY_RAILWAY.md` | How to deploy (and redeploy) to Railway | When deploying |
 | `docs/archive/` | Session handoffs, the original plan, retired scripts. History only | Never, unless digging | Never, unless digging |
-| Claude's memory (local, per machine) | Facts about the user and their preferences that don't belong in the repo; a pointer here | Automatically |
+| Claude's memory (local, per machine) | A pointer here. Nothing a session needs: the working rules moved to `CLAUDE.md`, because each machine has its own memory | Automatically |
 
 Memory is **not** the place for project status: it lives only on one machine,
 cloud sessions can't see it, and it drifted badly when used that way. Status
@@ -293,6 +296,8 @@ in a session. Treat each as open until checked and recorded here.
 - [ ] **Scratchpad adoption**: the model actually tool-calls the pad instead of narrating in chat. SP-05 wording is a starting point; tune it live in `prompts/tessera.js`, `utils/scratchpadContext.js`, `tools/definitions.js`.
 - [ ] **Context toggles**: pin/auto/mute injection into a real request; the model calling `read_file` on a manifested file.
 - [ ] **Advanced presets visual pass**: the prompt inspector, the block editor at narrow widths, the composer's preset pill. Only verified through the DOM so far.
+- [ ] **Project upload after a deleted Drive folder** (#208): upload to a project whose folder was removed; it should re-create the folder.
+- [ ] **Railway still deploys** after the repo goes private: confirm on the first merge after the switch.
 
 ### Deferred on purpose
 - **CF-02b** — PDFs as working files.
@@ -312,6 +317,11 @@ in a session. Treat each as open until checked and recorded here.
 - **UP-04** answer preferences — built and reverted; see §4.
 
 ### Small open items
+- File rows whose Drive file was deleted outside the app still list, then fail
+  to open with the generic Drive error. Re-uploading fixes one by hand.
+- `wrapDriveError` (`utils/drive.js`) says "Please reconnect your account" for
+  every Drive failure, 404s included, so non-auth problems look like auth
+  problems. Word it by cause.
 - `conversation_files.last_touched_turn` is unused (superseded by
   `file_revisions.turn`); tidy up some time.
 - Intermittent: about 1 turn in 12 on Gemini once returned tool-call syntax as
@@ -376,11 +386,33 @@ Things that cost real time. Most were silent — nothing errored.
 - `normalizeBlocks` *appends* missing preset blocks on purpose; the user's order wins.
 - `IMPLEMENTED_PROVIDER_IDS` ≠ valid provider ids.
 
+### New machine
+Setting up another computer (e.g. the laptop) to work exactly like the PC:
+1. Install Git, Node.js (LTS) and the Claude desktop app; sign in to GitHub
+   (`gh auth login`) so the private repo can be cloned and pushed.
+2. Clone `tresbien-rai/assistant`, then `cd server && npm install`.
+3. Copy `server/.env` from the PC **by hand** (USB stick or a password
+   manager — never email, chat or git). It holds `JWT_SECRET`,
+   `ENCRYPTION_KEY` and the Google OAuth client. The values must match the
+   PC's only if the PC's database is copied too; a fresh database (created on
+   first start) works with any values.
+4. Start the `server` preview, click dev login, and run `npm test` once.
+5. The Claude memory on that machine starts empty. That's fine: the working
+   rules are in `CLAUDE.md`.
+
 ### Local testing
 - **Dev login:** set `ALLOW_DEV_LOGIN=true` (with `NODE_ENV=development`) in the
   gitignored `server/.env`, start the `server` preview (port 3457), click
   "Dev login (local)". The stub user has **no Drive token**, so Drive-backed
   features can't be exercised — that is why live checks are owed.
+- **Real Google sign-in locally (test account):** `GOOGLE_REDIRECT_URI` in
+  the local `.env` already points at `http://localhost:3457/...`, so "Sign in
+  with Google" works in the preview if that URI is listed on the OAuth client
+  in Google Cloud Console (and, while the consent screen is in *Testing*, the
+  account is a listed test user). The user signs a dedicated **test Google
+  account** into the browser pane once; Claude never types its password. That
+  account exercises real Drive features before merge. The same works on the
+  live Railway site, sharing the production database under a separate user.
 - The auth cookie doesn't survive a server restart; click dev login again.
 - `npm start` doesn't auto-reload — restart after server edits.
 - Rows seeded directly into the DB only appear after a browser reload.
