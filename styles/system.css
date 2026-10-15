@@ -150,18 +150,25 @@
 
 /* ===== Error Display System (P0-17) ===== */
 
-/* --- Critical Banner (full-width, top, persistent) --- */
+/* --- Critical Banner (full-width, top, persistent) ---
+   Overlays the top of the app rather than sitting in the flow: the app shell
+   is a fixed full-viewport layout, so an in-flow banner pushed its bottom
+   (composer included) off-screen where it couldn't be scrolled to. Opaque
+   background because it now sits over content. */
 .critical-banner {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 12px 20px;
-    background-color: color-mix(in srgb, var(--error) 15%, transparent);
+    background-color: color-mix(in srgb, var(--error) 15%, var(--bg-secondary));
     border-bottom: 2px solid var(--error);
     color: var(--text-primary);
     font-size: 14px;
     z-index: 2000;
-    position: relative;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
     box-shadow: var(--shadow); /* lift the alert above the content below it */
 }
 
