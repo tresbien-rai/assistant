@@ -152,7 +152,10 @@ disagreement between these two would be worse than no provenance.
   would duplicate the manifest and contradict it the moment they disagree —
   the failure its own header warns against.
 - **Replaying tool calls into history.** Grows the prompt without bound and
-  duplicates state the DB already holds authoritatively.
+  duplicates state the DB already holds authoritatively. *Narrowed
+  2026-10-15:* tool results and inputs are still never replayed, but each past
+  reply now carries a one-line trail of tool names and targets
+  ([`TOOL_TRAIL_DESIGN.md`](TOOL_TRAIL_DESIGN.md)).
 
 ---
 
