@@ -164,7 +164,50 @@ check('thinking guard applies on the streaming path too', () => {
 });
 
 // ---------------------------------------------------------------------------
-console.log('\n4. Gemini: no such restriction — both still sent...');
+console.log('\n4. Anthropic: current-generation models take no sampling params...');
+
+// Live-confirmed 2026-10-15: claude-haiku-5-5 with the stock profile returned
+// a 400, "`top_k` is deprecated for this model". Claude 4.7+ reject
+// temperature/top_p/top_k and `budget_tokens` thinking outright.
+const current = (modelParams, model = 'claude-haiku-5-5') => ({ ...base(modelParams), model });
+
+check('generation detection: 4.7+ current, 4.6 and older not', () => {
+  const yes = ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5',
+    'claude-opus-4-7', 'claude-opus-4-8', 'claude-fable-5-1', 'claude-opus-5'];
+  const no = ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001',
+    'claude-opus-4-20250514', 'claude-3-5-sonnet-20241022', 'my-custom-model', '', undefined];
+  for (const id of yes) assert.ok(anthropic.isCurrentGenerationModel(id), `${id} should be current`);
+  for (const id of no) assert.ok(!anthropic.isCurrentGenerationModel(id), `${id} should be older`);
+});
+
+check('stock profile on a current model → no temperature, top_p or top_k (this was the 400)', () => {
+  const body = anthropic.buildRequestBody(current(STOCK));
+  for (const k of ['temperature', 'top_p', 'top_k']) assert.ok(!(k in body), `${k} must be absent`);
+  assert.strictEqual(body.max_tokens, 8192);
+});
+
+check('thinking on a current model → adaptive, never budget_tokens', () => {
+  const body = anthropic.buildRequestBody(current(THINKING, 'claude-opus-5-5'));
+  assert.deepStrictEqual(body.thinking, { type: 'adaptive' });
+});
+
+check('thinking off on a current model → no thinking field (model default)', () => {
+  const body = anthropic.buildRequestBody(current(STOCK));
+  assert.ok(!('thinking' in body));
+});
+
+check('stop_sequences still sent on a current model', () => {
+  const body = anthropic.buildRequestBody(current({ ...STOCK, stopSequences: ['END'] }));
+  assert.deepStrictEqual(body.stop_sequences, ['END']);
+});
+
+check('streaming body on a current model is guarded identically', () => {
+  const body = anthropic.buildRequestBody({ ...current(STOCK), stream: true });
+  assert.ok(!('top_k' in body) && !('temperature' in body) && body.stream === true);
+});
+
+// ---------------------------------------------------------------------------
+console.log('\n5. Gemini: no such restriction — both still sent...');
 
 check('gemini sends temperature AND topP together', () => {
   const body = gemini.buildRequestBody({

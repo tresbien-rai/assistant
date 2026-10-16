@@ -152,6 +152,7 @@ function buildHeaders(apiKey) {
  */
 function buildRequestBody(params) {
   const { model, messages, systemPrompt, modelParams, prefill, tools, stream = false } = params;
+  const current = isCurrentGenerationModel(model);
 
   // Build messages array, handling attachments in the content.
   //
@@ -192,6 +193,22 @@ function buildRequestBody(params) {
   // Add stream flag
   if (stream) {
     body.stream = true;
+  }
+
+  // Current-generation models (Claude 4.7 and later — see
+  // isCurrentGenerationModel) take no sampling parameters at all and only
+  // adaptive thinking: `temperature`/`top_p`/`top_k` and `budget_tokens` each
+  // return a 400. Live-confirmed 2026-10-15 on claude-haiku-5-5 ("`top_k` is
+  // deprecated for this model"); the stock profile enables all three, so every
+  // send to a current model failed.
+  if (current && modelParams) {
+    if (modelParams.stopSequences && modelParams.stopSequences.length > 0) {
+      body.stop_sequences = modelParams.stopSequences;
+    }
+    if (modelParams.anthropic?.thinkingEnabled) {
+      body.thinking = { type: 'adaptive' };
+    }
+    return body;
   }
 
   // Add optional parameters if enabled
@@ -238,6 +255,24 @@ function buildRequestBody(params) {
   }
 
   return body;
+}
+
+/**
+ * Whether a model id names a current-generation Claude model: Claude 4.7 or
+ * later (Opus 4.7/4.8/5/5.5, Sonnet 5/5.5, Haiku 5.5, Fable, Mythos). Those
+ * reject sampling parameters and `budget_tokens` thinking; 4.6 and earlier
+ * still accept both. Ids are `claude-<family>-<major>[-<minor>][-<date>]`;
+ * anything that doesn't parse (old `claude-3-5-sonnet-…` naming, a custom id)
+ * is treated as older, i.e. sent exactly as before.
+ * @param {string} model
+ * @returns {boolean}
+ */
+function isCurrentGenerationModel(model) {
+  const m = /^claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(String(model || ''));
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = m[2] === undefined ? 0 : Number(m[2]);
+  return major > 4 || (major === 4 && minor >= 7);
 }
 
 // =============================================================================
@@ -714,6 +749,7 @@ module.exports = {
   // Exposed for the request inspector (P2-U4): builds the exact provider body
   // without sending it. The API key is never part of the body (it's a header).
   buildRequestBody,
+  isCurrentGenerationModel,
   // Tool contract (Track A, P2-01) — consumed by the chat tool loop.
   formatTools,
   extractToolCalls,
