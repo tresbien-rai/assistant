@@ -123,6 +123,21 @@ const toolContext = { userId: 'u1', workspace: null, project: null, conversation
     check('caller messages array not mutated', baseParams.messages.length === 1);
   }
 
+  // --- 1b. move_file's destination rides on the event (TT-01) --------------
+  console.log('\n1b. move_file event carries its destination...');
+  {
+    const moveCall = {
+      content: [{ type: 'tool_use', id: 'toolu_m', name: 'move_file', input: { filename: 'notes.md', destination: 'project' } }],
+      stop_reason: 'tool_use',
+      model: 'claude-test',
+    };
+    const provider = makeFakeProvider([moveCall, structuredClone(finalResponse)]);
+    const out = await runToolLoop({ providerModule: provider, apiKey: 'k', params: { ...baseParams }, toolContext });
+    check('move_file event has filename and destination', out.toolEvents.length === 1
+      && out.toolEvents[0].filename === 'notes.md'
+      && out.toolEvents[0].destination === 'project');
+  }
+
   // --- 2. Parallel calls: all results in ONE continuation message ----------
   console.log('\n2. Parallel calls answered in one message, in order...');
   {
