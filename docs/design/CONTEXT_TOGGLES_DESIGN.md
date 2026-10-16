@@ -1,6 +1,6 @@
 # Context toggles — design note
 
-> **Status (2026-09-25):** Complete — CT-01…06 shipped (#117–#123); a live pass with real keys is owed. Current status of everything: `docs/PROJECT.md`.
+> **Status (2026-10-15):** Complete — CT-01…06 shipped (#117–#123); the live pass with real keys passed on 2026-10-15 (`docs/PROJECT.md` §8). Current status of everything: `docs/PROJECT.md`.
 
 Per-file control over what actually rides in the prompt: a checkbox on every
 knowledge file (workspace / project) and an inject-mode control on every chat

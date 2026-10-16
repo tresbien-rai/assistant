@@ -1,6 +1,6 @@
 # Scratchpad — design note
 
-> **Status (2026-09-25):** Complete — SP-01…05 shipped (#112–#116); the live adoption pass (model actually using the pad) is owed. Current status of everything: `docs/PROJECT.md`.
+> **Status (2026-10-15):** Complete — SP-01…05 shipped (#112–#116); the live adoption pass passed on 2026-10-15 (Haiku 5.5 and Gemini Flash both write and edit the pad unprompted). Current status of everything: `docs/PROJECT.md`.
 
 A shared, always-current document that both the user and the model edit
 directly, attached to every request like an active file. Layers onto the File
