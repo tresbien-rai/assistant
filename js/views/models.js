@@ -17,7 +17,7 @@ import { API } from '../api-client.js';
 import {
     PROVIDERS, providerIconHtml, getActiveModelConfig, getCatalogEntry, applyModelToLayer,
     getModelParamsForEdit, getParamByPath, setParamByPath,
-    paramVisible, descByPath, fmtParamValue, unavailableParams,
+    paramVisible, descByPath, fmtParamValue, modelParamRules,
     getModelDisplayName, setModelIndicator, ensureActiveModelValid,
     updateSendButtonState, } from '../model-layer.js';
 import {
@@ -116,14 +116,15 @@ export function renderModelDetail(provider, modelId) {
     const isActive = layer.provider === provider && layer.model === modelId;
     const params = getModelParamsForEdit(provider, modelId);
 
-    // Params this model rejects are hidden, with a note in their place — shown
-    // only when one of them would otherwise be on screen (the thinking budget
-    // only appears with thinking on).
+    // Adapt the provider's params to this model (modelParamRules): what it
+    // doesn't take is hidden — with a note in its place when one of those
+    // params would otherwise be on screen — and help/options follow the model.
+    const rules = modelParamRules(provider, modelId);
     const shown = meta.params.filter(d => paramVisible(d, params));
-    const unavailable = unavailableParams(provider, modelId)
-        .filter(u => shown.some(d => u.paths.includes(d.path)));
-    const hidden = new Set(unavailable.flatMap(u => u.paths));
-    const visible = shown.filter(d => !hidden.has(d.path));
+    const unavailable = rules.notes.filter(u => shown.some(d => u.paths.includes(d.path)));
+    const hidden = new Set([...rules.hidden, ...unavailable.flatMap(u => u.paths)]);
+    const visible = shown.filter(d => !hidden.has(d.path))
+        .map(d => rules.overrides[d.path] ? { ...d, ...rules.overrides[d.path] } : d);
     let html = `
         <div class="model-detail-head">
             <button class="back-link" id="modelDetailBack" type="button">‹ Models</button>

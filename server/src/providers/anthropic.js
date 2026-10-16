@@ -283,7 +283,7 @@ function acceptsPrefill(model) {
   return !claudeAtLeast(model, 4, 6);
 }
 
-// The model view mirrors these two rules in js/util/claude-models.js;
+// The model view mirrors these two rules in js/util/model-rules.js;
 // test-modelparams.js checks the copies agree, so change both together.
 function claudeAtLeast(model, major, minor) {
   const m = /^claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(String(model || ''));

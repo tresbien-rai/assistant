@@ -26,7 +26,7 @@ import { state } from './state.js';
 import { elements } from './dom.js';
 import { getDefaultModelConfig } from './config.js';
 import { FilePanel } from './file-panel/index.js';
-import { isCurrentGenerationModel, acceptsPrefill } from './util/claude-models.js';
+import { isCurrentClaude, claudeAcceptsPrefill, isCurrentGemini } from './util/model-rules.js';
 
 /**
  * Get the ACTIVE MODEL LAYER (WR-12) — the provider/model/params every send
@@ -158,26 +158,54 @@ export function paramVisible(d, params) {
 }
 
 /**
- * The params a model rejects, grouped by the note the detail view shows in
- * their place. The server drops them from the request anyway (they 400 on
- * these models); hiding them keeps the view honest. Empty for Gemini and for
- * older Claude models.
- * @returns {Array<{group: string, paths: string[], note: string}>}
+ * How the detail view adapts a provider's params to one model. The server
+ * drops what a model rejects or ignores (see js/util/model-rules.js); this
+ * keeps the view honest about it:
+ * - `notes`: params hidden, with a note in their place (shown only when one of
+ *   them would otherwise be on screen);
+ * - `hidden`: params hidden silently, because another control's help says why;
+ * - `overrides`: per-path descriptor fields (`help`, `options`) that differ
+ *   for this model, so wording follows the model instead of one fixed hint.
+ * Empty for older models, which see every control as before.
+ * @returns {{notes: Array<{group: string, paths: string[], note: string}>,
+ *            hidden: string[], overrides: Object<string, Object>}}
  */
-export function unavailableParams(provider, modelId) {
-    if (provider !== 'anthropic') return [];
-    const out = [];
-    if (isCurrentGenerationModel(modelId)) {
-        out.push({ group: 'sampling', paths: ['temperature', 'topP', 'topK'],
-            note: 'Temperature, Top P and Top K aren’t available on Claude 4.7 and later — the model sets its own sampling.' });
-        out.push({ group: 'behaviour', paths: ['anthropic.thinkingBudget'],
-            note: 'Thinking is adaptive on Claude 4.7 and later — the model decides how much to think, so there’s no budget to set.' });
+export function modelParamRules(provider, modelId) {
+    const rules = { notes: [], hidden: [], overrides: {} };
+    if (provider === 'anthropic') {
+        const current = isCurrentClaude(modelId);
+        if (current) {
+            rules.notes.push({ group: 'sampling', paths: ['temperature', 'topP', 'topK'],
+                note: 'Temperature, Top P and Top K aren’t available on Claude 4.7 and later — the model sets its own sampling.' });
+            rules.hidden.push('anthropic.thinkingBudget');
+        }
+        if (!claudeAcceptsPrefill(modelId)) {
+            rules.notes.push({ group: 'behaviour', paths: ['prefill'],
+                note: 'Response prefill isn’t supported on Claude 4.6 and later, so it isn’t sent.' });
+        }
+        rules.overrides['anthropic.thinkingEnabled'] = { help: current
+            ? 'Deeper reasoning. Claude 4.7 and later decide for themselves how much to think — there’s no budget to set.'
+            : 'Deeper reasoning, up to the token budget you set.' };
+    } else if (provider === 'google' && isCurrentGemini(modelId)) {
+        rules.notes.push({ group: 'sampling', paths: ['temperature', 'topP', 'topK'],
+            note: 'Gemini 3.5 and later ignore Temperature, Top P and Top K — the model uses its own settings, so they aren’t sent.' });
+        rules.notes.push({ group: 'behaviour', paths: ['prefill'],
+            note: 'Response prefill isn’t supported on Gemini 3.5 and later, so it isn’t sent.' });
+        // No budget mode: a budget stored from an older model shows as (and is
+        // sent as) "Model default".
+        rules.hidden.push('google.thinkingBudget');
+        rules.overrides['google.thinkingApi'] = {
+            options: [{ value: 'off', label: 'Model default' }, { value: 'level', label: 'Level' }],
+            help: 'Gemini 3.5 and later think by level. Model default lets the model choose.',
+        };
     }
-    if (!acceptsPrefill(modelId)) {
-        out.push({ group: 'behaviour', paths: ['prefill'],
-            note: 'Response prefill isn’t supported on Claude 4.6 and later, so it isn’t sent.' });
-    }
-    return out;
+    return rules;
+}
+
+/** Whether a model takes a param at all (false = the server won't send it). */
+export function paramSupported(provider, modelId, path) {
+    const rules = modelParamRules(provider, modelId);
+    return !rules.hidden.includes(path) && !rules.notes.some(n => n.paths.includes(path));
 }
 
 /** Find a provider's descriptor by path. */

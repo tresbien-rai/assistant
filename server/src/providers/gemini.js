@@ -24,12 +24,32 @@ function buildHeaders(apiKey) {
 }
 
 /**
+ * Whether a model id names a current-generation Gemini model: Gemini 3.5 or
+ * later (3.6 Flash, 3.5 Flash-Lite, 3.8 Flash, 4 Argon; 3.5 Flash is routed to
+ * 3.6). Those ignore temperature/topP/topK, reject prefill with a 400, and
+ * take thinkingLevel rather than thinkingBudget. Ids are
+ * `gemini-<major>[.<minor>]-<name>`; anything that doesn't parse (an alias like
+ * `gemini-flash-latest`, a custom id) is treated as older.
+ * The model view mirrors this in js/util/model-rules.js; test-modelparams.js
+ * checks the copies agree, so change both together.
+ * @param {string} model
+ * @returns {boolean}
+ */
+function isCurrentGenerationModel(model) {
+  const m = /^gemini-(\d+)(?:\.(\d+))?-/.exec(String(model || ''));
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = m[2] === undefined ? 0 : Number(m[2]);
+  return major > 3 || (major === 3 && minor >= 5);
+}
+
+/**
  * Build the request body for Gemini API
  * @param {Object} params - Chat parameters
  * @returns {Object} Request body
  */
 function buildRequestBody(params) {
-  const { messages, systemPrompt, modelParams, prefill, tools } = params;
+  const { model, messages, systemPrompt, modelParams, prefill, tools } = params;
 
   // Convert messages to Google format: 'assistant' -> 'model', 'user' -> 'user'
   const contents = messages.map(msg => {
@@ -89,8 +109,15 @@ function buildRequestBody(params) {
     };
   });
 
+  // Current-generation models (Gemini 3.5 and later — see
+  // isCurrentGenerationModel) reject a trailing model turn with a 400, ignore
+  // temperature/topP/topK (a 400 in future generations, per Google), and
+  // deprecate thinkingBudget in favour of thinkingLevel. None of those is sent
+  // to them; the model view hides the matching controls.
+  const current = isCurrentGenerationModel(model);
+
   // Add prefill as model message if provided
-  if (prefill && prefill.trim()) {
+  if (prefill && prefill.trim() && !current) {
     contents.push({ role: 'model', parts: [{ text: prefill.trim() }] });
   }
 
@@ -99,13 +126,13 @@ function buildRequestBody(params) {
     maxOutputTokens: modelParams?.maxTokens || 4096,
   };
 
-  if (modelParams?.temperatureEnabled !== false && modelParams?.temperature !== undefined) {
+  if (!current && modelParams?.temperatureEnabled !== false && modelParams?.temperature !== undefined) {
     generationConfig.temperature = modelParams.temperature;
   }
-  if (modelParams?.topPEnabled !== false && modelParams?.topP !== undefined) {
+  if (!current && modelParams?.topPEnabled !== false && modelParams?.topP !== undefined) {
     generationConfig.topP = modelParams.topP;
   }
-  if (modelParams?.topKEnabled !== false && modelParams?.topK !== undefined) {
+  if (!current && modelParams?.topKEnabled !== false && modelParams?.topK !== undefined) {
     generationConfig.topK = modelParams.topK;
   }
   if (modelParams?.stopSequences && modelParams.stopSequences.length > 0) {
@@ -121,7 +148,10 @@ function buildRequestBody(params) {
     || ((g.thinkingLevel && g.thinkingLevel !== 'off') ? 'level' : 'off');
   if (thinkingApi === 'level' && g.thinkingLevel && g.thinkingLevel !== 'off') {
     generationConfig.thinkingConfig = { thinkingLevel: g.thinkingLevel };
-  } else if (thinkingApi === 'budget' && typeof g.thinkingBudget === 'number' && g.thinkingBudget !== 0) {
+  } else if (thinkingApi === 'budget' && !current
+    && typeof g.thinkingBudget === 'number' && g.thinkingBudget !== 0) {
+    // A budget left on a profile from before the switch to a current model is
+    // dropped: the model then thinks at its default level ("Model default").
     generationConfig.thinkingConfig = { thinkingBudget: g.thinkingBudget };
   }
 
@@ -770,6 +800,7 @@ module.exports = {
   // Exposed for the request inspector (P2-U4): builds the exact provider body
   // without sending it. The API key is never part of the body (it's a header).
   buildRequestBody,
+  isCurrentGenerationModel,
   // Tool contract (Track A, P2-01) — consumed by the chat tool loop.
   formatTools,
   extractToolCalls,
