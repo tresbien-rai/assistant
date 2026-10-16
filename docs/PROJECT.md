@@ -269,25 +269,23 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 ## 7. Current focus and next targets
 
 **Next up (unless the user redirects):**
-1. **Reference files read as "already there"** — found in the TT-03 run
-   (§8). Needs the user's call before any design.
-2. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
+1. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
    the aux model" target. Design: `docs/design/PROFILE_DESIGN.md`.
-3. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
+2. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
    (`--font-mono` names Fira Code, which is never loaded) plus the agreed
    font-picker extension; UIP-02, a whole-UI wording pass with persona
    placeholders as the highest-leverage copy. The user deliberately deferred
    wording until the feature set is complete.
 
 **Later:**
-4. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
+3. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
    then model-written summaries, then aux model; store provenance from day one.
-5. **More providers — OpenAI first.** Key storage and validation exist; it
+4. **More providers — OpenAI first.** Key storage and validation exist; it
    needs a provider module and one entry in `providers/registry.js`. The user's
    framing: do this once the platform is stable.
-6. **Rename** — blocked only on choosing a name.
+5. **Rename** — blocked only on choosing a name.
 
 ---
 
@@ -343,9 +341,18 @@ server log and against Drive, not just from the model's reply:
   added a line to a project file, it saw that line in the reference block,
   placed before its own edit, and wondered whether the line had been there
   all along. The header says "(you created this)" but not that the block shows
-  the latest version, including edits made later in this chat. A prompt
-  nudge (one phrase in the header or base prompt) is likely enough; the
-  block's position is a caching choice. Not seen on Flash. The user's call.
+  the latest version, including edits made later in this chat. Not seen on
+  Flash. **Fixed 2026-10-15** (user chose the prompt-level fix over moving
+  edited files to the end): both reference headers now say each file shows its
+  current saved version, including later changes in this chat. Re-run on
+  Haiku 5.5 (create + move, edit, title): no doubt. If it comes back, the
+  next step is showing edited project files in `<active_files>` at the end.
+- **Editing a project file breaks the cache for the whole chat.** Noticed while
+  looking at the above, not measured. The reference block is the first message
+  and carries current content, so any project or workspace file change alters
+  the start of every later request, and the next message re-processes the
+  whole history uncached. Already true before TT; worth measuring with the
+  usage panel before deciding anything.
 - **A muted chat file can be overlooked.** `<session_state>` says "1 in this
   conversation", but asked about "my working file", Haiku read the project
   files and never called `list_files`. Asked to list, it found and read it. A

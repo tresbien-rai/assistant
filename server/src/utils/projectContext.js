@@ -170,6 +170,13 @@ async function gatherFileTexts(userId, container, files, budgetRemaining, proven
   return { sections, usedChars: used, skipped, driveFailed: false };
 }
 
+// The blocks sit at the START of the conversation but carry each file's CURRENT
+// content, so a file edited later in the chat appears, already edited, ahead of
+// the request that changed it. Without this note a model reads its own edit as
+// "already there" (found in the TT-03 live run, docs/PROJECT.md §8).
+const CURRENT_VERSION_NOTE =
+  'Each file shows its current saved version, including any changes made later in this conversation.';
+
 /**
  * Wrap a project's instruction + file sections in a delimited context block.
  */
@@ -178,7 +185,7 @@ function wrapProjectBlock(project, sections) {
     '<project_context>',
     `The following is reference material for this conversation from the user's ` +
       `project "${project.name}". Treat it as authoritative background knowledge ` +
-      `provided by the user.`,
+      `provided by the user. ${CURRENT_VERSION_NOTE}`,
     '',
     sections.join('\n\n'),
     '</project_context>',
@@ -195,7 +202,7 @@ function wrapWorkspaceBlock(workspace, sections) {
     '<workspace_context>',
     `The following is shared reference material for this conversation from the ` +
       `user's workspace "${workspace.name}". Treat it as authoritative background ` +
-      `knowledge provided by the user.`,
+      `knowledge provided by the user. ${CURRENT_VERSION_NOTE}`,
     '',
     sections.join('\n\n'),
     '</workspace_context>',
