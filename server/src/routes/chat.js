@@ -698,6 +698,9 @@ async function runToolLoop({ providerModule, provider, apiKey, params, toolConte
       const event = {
         tool: call.name,
         ...(typeof call.input?.filename === 'string' ? { filename: call.input.filename } : {}),
+        // move_file's target scope, so the history trail can say where the
+        // file went (TT-01, docs/design/TOOL_TRAIL_DESIGN.md).
+        ...(typeof call.input?.destination === 'string' ? { destination: call.input.destination } : {}),
         ok: !result.isError,
         // Executors may attach display extras (e.g. a download URL, P2-03).
         ...(result.display || {}),

@@ -526,7 +526,9 @@ export function toolEventToAttachment(ev) {
             ...pos,
         };
     }
-    return { type: 'tool_event', tool: ev.tool, filename: ev.filename || null, ok: ev.ok !== false, ...pos };
+    // destination: move_file's target scope, read by the history trail (TT-01).
+    const dest = typeof ev.destination === 'string' ? { destination: ev.destination } : {};
+    return { type: 'tool_event', tool: ev.tool, filename: ev.filename || null, ok: ev.ok !== false, ...dest, ...pos };
 }
 
 /**
