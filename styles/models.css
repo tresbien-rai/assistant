@@ -386,6 +386,16 @@
     line-height: 1.4;
 }
 
+/* Stands in for controls the selected model rejects (Claude 4.6+/4.7+). */
+.param-unavailable {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.4;
+    padding-left: 10px;
+    border-left: 2px solid var(--border-color);
+}
+
 /* Appearance comes from the base field rules — these only set the widths, the
    one thing the base rule leaves to context. A stacked row's control spans the
    card; an inline row's sits at a fixed width beside its label. */

@@ -167,8 +167,10 @@ function buildRequestBody(params) {
     content: toContentBlocks(msg.content),
   }));
 
-  // Add prefill as assistant message if provided
-  if (prefill && prefill.trim()) {
+  // Add prefill as assistant message if provided. Claude 4.6+ reject a
+  // trailing assistant message with a 400, so it's dropped for them (the model
+  // view hides the field for those models too).
+  if (prefill && prefill.trim() && acceptsPrefill(model)) {
     formattedMessages.push({ role: 'assistant', content: toContentBlocks(prefill.trim()) });
   }
 
@@ -268,11 +270,27 @@ function buildRequestBody(params) {
  * @returns {boolean}
  */
 function isCurrentGenerationModel(model) {
+  return claudeAtLeast(model, 4, 7);
+}
+
+/**
+ * Whether a model accepts prefill (a trailing assistant message). Claude 4.6
+ * and later reject it with a 400.
+ * @param {string} model
+ * @returns {boolean}
+ */
+function acceptsPrefill(model) {
+  return !claudeAtLeast(model, 4, 6);
+}
+
+// The model view mirrors these two rules in js/util/claude-models.js;
+// test-modelparams.js checks the copies agree, so change both together.
+function claudeAtLeast(model, major, minor) {
   const m = /^claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(String(model || ''));
   if (!m) return false;
-  const major = Number(m[1]);
-  const minor = m[2] === undefined ? 0 : Number(m[2]);
-  return major > 4 || (major === 4 && minor >= 7);
+  const maj = Number(m[1]);
+  const min = m[2] === undefined ? 0 : Number(m[2]);
+  return maj > major || (maj === major && min >= minor);
 }
 
 // =============================================================================
@@ -750,6 +768,7 @@ module.exports = {
   // without sending it. The API key is never part of the body (it's a header).
   buildRequestBody,
   isCurrentGenerationModel,
+  acceptsPrefill,
   // Tool contract (Track A, P2-01) — consumed by the chat tool loop.
   formatTools,
   extractToolCalls,

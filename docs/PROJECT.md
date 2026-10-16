@@ -337,10 +337,12 @@ server log and against Drive, not just from the model's reply:
   conversation", but asked about "my working file", Haiku read the project
   files and never called `list_files`. Asked to list, it found and read it. A
   prompt nudge, not a bug.
-- **The model view still offers temperature / top-p / top-k for Claude 4.7+**,
-  which the server now drops (#212). Hide them for those models.
-- **Prefill is rejected by Claude 4.6+** with a 400; the API's message is
-  clear, so it's left as is. Hide or warn in the UI with the above.
+- ~~**The model view still offers temperature / top-p / top-k for Claude 4.7+**~~
+  and ~~**prefill on Claude 4.6+**~~ — resolved: the detail view hides them
+  (and the thinking budget on 4.7+) with a note in their place, and neither
+  the client nor the server sends a prefill to 4.6+. The client's rule
+  (`js/util/claude-models.js`) mirrors `providers/anthropic.js`;
+  `test-modelparams.js` fails if the two disagree.
 
 ### Small open items
 - File rows whose Drive file was deleted outside the app still list, then fail
