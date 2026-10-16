@@ -24,6 +24,7 @@ import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
 import { getActivePersona, getActiveConversation } from '../state.js';
 import { getActiveModelConfig, updateSendButtonState } from '../model-layer.js';
+import { acceptsPrefill } from '../util/claude-models.js';
 import { createConversation, renderConversation, maybeAutoTitle } from '../views/chats.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { renderMarkdown, messageActionsHTML } from '../util/markdown.js';
@@ -389,7 +390,11 @@ export function buildChatRequest() {
     // can never drift apart.
     const systemPrompt = persona ? assemblePersonaPrompt(persona) : CONFIG.defaults.systemPrompt;
     // Prefill is an engine param: it rides on the model profile, not the persona.
-    const prefillText = modelConfig.modelParams?.prefill?.trim() || '';
+    // Claude 4.6+ reject it (the server drops it, the model view hides it), so
+    // it isn't sent — nor stripped from a reply that happens to start the same.
+    const prefillText = (modelConfig.provider !== 'anthropic' || acceptsPrefill(modelConfig.model))
+        ? (modelConfig.modelParams?.prefill?.trim() || '')
+        : '';
 
     // The model echoes back the prefill — track it so appendStreamChunk and
     // the non-streaming branch can strip it from displayed/persisted output.

@@ -26,6 +26,7 @@ import { state } from './state.js';
 import { elements } from './dom.js';
 import { getDefaultModelConfig } from './config.js';
 import { FilePanel } from './file-panel/index.js';
+import { isCurrentGenerationModel, acceptsPrefill } from './util/claude-models.js';
 
 /**
  * Get the ACTIVE MODEL LAYER (WR-12) — the provider/model/params every send
@@ -154,6 +155,29 @@ export function setParamByPath(params, path, value) {
 export function paramVisible(d, params) {
     if (!d.showWhen) return true;
     return getParamByPath(params, d.showWhen.path) === d.showWhen.eq;
+}
+
+/**
+ * The params a model rejects, grouped by the note the detail view shows in
+ * their place. The server drops them from the request anyway (they 400 on
+ * these models); hiding them keeps the view honest. Empty for Gemini and for
+ * older Claude models.
+ * @returns {Array<{group: string, paths: string[], note: string}>}
+ */
+export function unavailableParams(provider, modelId) {
+    if (provider !== 'anthropic') return [];
+    const out = [];
+    if (isCurrentGenerationModel(modelId)) {
+        out.push({ group: 'sampling', paths: ['temperature', 'topP', 'topK'],
+            note: 'Temperature, Top P and Top K aren’t available on Claude 4.7 and later — the model sets its own sampling.' });
+        out.push({ group: 'behaviour', paths: ['anthropic.thinkingBudget'],
+            note: 'Thinking is adaptive on Claude 4.7 and later — the model decides how much to think, so there’s no budget to set.' });
+    }
+    if (!acceptsPrefill(modelId)) {
+        out.push({ group: 'behaviour', paths: ['prefill'],
+            note: 'Response prefill isn’t supported on Claude 4.6 and later, so it isn’t sent.' });
+    }
+    return out;
 }
 
 /** Find a provider's descriptor by path. */

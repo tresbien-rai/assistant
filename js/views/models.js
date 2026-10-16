@@ -17,7 +17,7 @@ import { API } from '../api-client.js';
 import {
     PROVIDERS, providerIconHtml, getActiveModelConfig, getCatalogEntry, applyModelToLayer,
     getModelParamsForEdit, getParamByPath, setParamByPath,
-    paramVisible, descByPath, fmtParamValue,
+    paramVisible, descByPath, fmtParamValue, unavailableParams,
     getModelDisplayName, setModelIndicator, ensureActiveModelValid,
     updateSendButtonState, } from '../model-layer.js';
 import {
@@ -116,7 +116,14 @@ export function renderModelDetail(provider, modelId) {
     const isActive = layer.provider === provider && layer.model === modelId;
     const params = getModelParamsForEdit(provider, modelId);
 
-    const visible = meta.params.filter(d => paramVisible(d, params));
+    // Params this model rejects are hidden, with a note in their place — shown
+    // only when one of them would otherwise be on screen (the thinking budget
+    // only appears with thinking on).
+    const shown = meta.params.filter(d => paramVisible(d, params));
+    const unavailable = unavailableParams(provider, modelId)
+        .filter(u => shown.some(d => u.paths.includes(d.path)));
+    const hidden = new Set(unavailable.flatMap(u => u.paths));
+    const visible = shown.filter(d => !hidden.has(d.path));
     let html = `
         <div class="model-detail-head">
             <button class="back-link" id="modelDetailBack" type="button">‹ Models</button>
@@ -132,6 +139,8 @@ export function renderModelDetail(provider, modelId) {
         const descs = visible.filter(d => d.group === group);
         if (descs.length === 0) continue;
         html += `<div class="param-group-title">${gLabel}</div><div class="param-card">`;
+        unavailable.filter(u => u.group === group)
+            .forEach(u => html += `<p class="param-unavailable">${escapeHtml(u.note)}</p>`);
         descs.filter(d => !d.subgroup).forEach(d => html += renderParamControl(d, params));
         const subs = [...new Set(descs.filter(d => d.subgroup).map(d => d.subgroup))];
         subs.forEach(sub => {

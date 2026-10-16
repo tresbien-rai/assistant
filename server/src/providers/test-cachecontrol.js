@@ -122,7 +122,7 @@ check('a prefill is never marked', () => {
     { role: 'user', content: 'Plot a course.' },
     { role: 'assistant', content: 'Heading 041, mark.' },
     { role: 'user', content: AUGMENTED },
-  ], { prefill: 'Certainly,' });
+  ], { prefill: 'Certainly,', model: 'claude-haiku-4-5' }); // 4.6+ get no prefill at all
   assert.strictEqual(body.messages[body.messages.length - 1].role, 'assistant');
   assert.deepStrictEqual(markedIndices(body), [1], 'the prefill at index 3 is untouched');
 });

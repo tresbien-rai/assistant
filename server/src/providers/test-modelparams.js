@@ -221,11 +221,63 @@ check('gemini sends temperature AND topP together', () => {
 });
 
 // ---------------------------------------------------------------------------
-console.log('');
-if (failures > 0) {
-  console.error(`${failures} model-parameter test(s) FAILED`);
+console.log('\n6. Anthropic: prefill is dropped for Claude 4.6+...');
+
+// Claude 4.6 and later return a 400 for a trailing assistant message. The
+// model view hides the field for them; this keeps a stored value from failing
+// every send anyway.
+const withPrefill = (model) => ({ ...base(STOCK), model, prefill: 'Sure,' });
+const lastRole = (body) => body.messages[body.messages.length - 1].role;
+
+check('prefill sent on Claude 4.5 and older', () => {
+  assert.strictEqual(lastRole(anthropic.buildRequestBody(withPrefill('claude-haiku-4-5-20251001'))), 'assistant');
+  assert.strictEqual(lastRole(anthropic.buildRequestBody(withPrefill('claude-3-5-sonnet-20241022'))), 'assistant');
+});
+
+check('prefill dropped on Claude 4.6 and current models', () => {
+  for (const id of ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-opus-4-7', 'claude-haiku-5-5', 'claude-fable-5-1']) {
+    assert.strictEqual(lastRole(anthropic.buildRequestBody(withPrefill(id))), 'user', `${id} must get no prefill`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 7. The model view's copy of the rule (js/util/claude-models.js) must agree
+// with the server's. It's a browser ES module with no imports, so it loads
+// here from a data: URL — that works on any Node version, whatever the
+// package's module type.
+const IDS = ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5',
+  'claude-opus-5', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-fable-5-1', 'claude-sonnet-4-6',
+  'claude-opus-4-6', 'claude-sonnet-4-5', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514',
+  'claude-opus-4-1-20250805', 'claude-3-5-sonnet-20241022', 'claude-3-7-sonnet-latest',
+  'gemini-2.5-flash', 'my-custom-model', '', undefined];
+
+(async () => {
+  console.log('\n7. The model view agrees with the server on every id...');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../../js/util/claude-models.js'), 'utf8');
+  const client = await import(`data:text/javascript,${encodeURIComponent(src)}`);
+
+  check('isCurrentGenerationModel: client === server', () => {
+    for (const id of IDS) {
+      assert.strictEqual(client.isCurrentGenerationModel(id), anthropic.isCurrentGenerationModel(id), String(id));
+    }
+  });
+  check('acceptsPrefill: client === server', () => {
+    for (const id of IDS) {
+      assert.strictEqual(client.acceptsPrefill(id), anthropic.acceptsPrefill(id), String(id));
+    }
+  });
+
+  console.log('');
+  if (failures > 0) {
+    console.error(`${failures} model-parameter test(s) FAILED`);
+    process.exit(1);
+  }
+  console.log('='.repeat(60));
+  console.log('All model-parameter tests passed!');
+  console.log('='.repeat(60));
+})().catch((err) => {
+  console.error(err);
   process.exit(1);
-}
-console.log('='.repeat(60));
-console.log('All model-parameter tests passed!');
-console.log('='.repeat(60));
+});
