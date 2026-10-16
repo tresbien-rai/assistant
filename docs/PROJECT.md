@@ -15,7 +15,8 @@ How we work (branches, verification, merging, wrap-up) lives in
 > **Last updated:** 2026-09-25: created from memory + design docs (DOC-01), docs reorganised (DOC-02),
 > `/start` + `/wrap` + auto-fetch added (DOC-03). 2026-10-14: deleted project Drive folders
 > self-heal (#208); working rules moved from memory to `CLAUDE.md`; new-machine setup and test-account notes (§9).
-> 2026-10-15: test-account Google sign-in working locally; #208 confirmed against real Drive.
+> 2026-10-15: test-account Google sign-in working locally; #208 confirmed against real Drive;
+> repo private, Railway deploy confirmed; failed API-key saves no longer show as saved.
 
 ---
 
@@ -59,7 +60,7 @@ sides edit; every file keeps a revision history.
   direction; Claude is the architect and implementer. Explain trade-offs in
   plain language. Working rules: `CLAUDE.md`, *Working with the user*.
 - **Audience:** private and single-user until the user chooses to release it.
-  The GitHub repo is being made private (decided 2026-10-14).
+  The GitHub repo is private (since 2026-10-15); Railway deploys from it fine.
 
 ---
 
@@ -300,7 +301,6 @@ that account, which the user enters.
 - [ ] **Scratchpad adoption**: the model actually tool-calls the pad instead of narrating in chat. SP-05 wording is a starting point; tune it live in `prompts/tessera.js`, `utils/scratchpadContext.js`, `tools/definitions.js`.
 - [ ] **Context toggles**: pin/auto/mute injection into a real request; the model calling `read_file` on a manifested file.
 - [ ] **Advanced presets visual pass**: the prompt inspector, the block editor at narrow widths, the composer's preset pill. Only verified through the DOM so far.
-- [ ] **Railway still deploys** after the repo goes private: confirm on the first merge after the switch.
 
 ### Deferred on purpose
 - **CF-02b** — PDFs as working files.
@@ -427,6 +427,8 @@ Setting up another computer (e.g. the laptop) to work exactly like the PC:
     weekly symptom is a Drive error until you sign out and back in.
 
   If the preview is still on the dev user, go to `/api/auth/google` directly.
+  **Leave the preview running when handing the pane to the user:** if it's
+  stopped, everything they try there fails with "Network request failed".
   The same account also works on the live Railway site (production database,
   separate user).
 - The auth cookie doesn't survive a server restart; click dev login again.
