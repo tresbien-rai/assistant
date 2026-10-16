@@ -311,6 +311,7 @@ server log and against Drive, not just from the model's reply:
 - [x] **Scratchpad adoption**: unprompted, both models wrote a plan to the pad, then made a targeted `edit_scratchpad` on a follow-up.
 - [x] **Context toggles**: auto and pin inject a chat file, mute keeps it out (still in `list_files`, readable); a knowledge file switched off for the chat leaves the content and stays named in `<available_files>`, and Haiku read it from there.
 - [ ] **Advanced presets visual pass**: the prompt inspector, the block editor at narrow widths, the composer's preset pill. Only verified through the DOM so far.
+- [ ] **Gemini 3.5+ trimmed body** (#217): one real send on `gemini-3.8-flash` (and `gemini-4-argon` if keyed) with tools off and thinking on Model default, then on Level; expect a normal reply. The body only lost fields, so low risk.
 
 ### Deferred on purpose
 - **CF-02b** — PDFs as working files.
