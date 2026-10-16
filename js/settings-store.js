@@ -191,7 +191,8 @@ function readPersonaSectionFields() {
 export async function saveProviderKey(provider, value) {
     if (!provider || !value) return;
     // Optimistic: reflect a saved key in the catalog + chips right away.
-    state.apiKeyStatus[provider] = { ...state.apiKeyStatus[provider], hasKey: true };
+    const previous = state.apiKeyStatus[provider];
+    state.apiKeyStatus[provider] = { ...previous, hasKey: true };
     renderModelsCatalog();
     updateSendButtonState();
     try {
@@ -202,7 +203,11 @@ export async function saveProviderKey(provider, value) {
         };
     } catch (err) {
         console.error(`Failed to persist API key for ${provider}:`, err);
-        // Resync so the optimistic hasKey doesn't mislead about what's saved.
+        // Undo the optimistic hasKey first, then resync from the server. The
+        // resync alone isn't enough: when the server is unreachable it fails
+        // too, and the badge kept saying "API key saved" for a key that wasn't.
+        if (previous) state.apiKeyStatus[provider] = previous;
+        else delete state.apiKeyStatus[provider];
         try {
             hydrateApiKeyStatus(await API.apiKeys.list());
         } catch (refetchErr) {
