@@ -1,6 +1,6 @@
 # Phase 2 — Tool Use + UI Polish
 
-> **Status (2026-09-25):** Complete — Phase 2 marked done 2026-07-07. Its Decisions section is still cited by the file-tool code; the P2-06 live check is owed. Current status of everything: `docs/PROJECT.md`.
+> **Status (2026-10-15):** Complete — Phase 2 marked done 2026-07-07. Its Decisions section is still cited by the file-tool code; the P2-06 live check passed on 2026-10-15. Current status of everything: `docs/PROJECT.md`.
 
 Detailed task breakdown for Phase 2. Companion to `docs/archive/PHASE2_HANDOFF.md`
 (orientation) and the **Phase 2: Tool Use** section of `docs/archive/PLANNING.txt` (the

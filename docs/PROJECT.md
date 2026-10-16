@@ -16,7 +16,8 @@ How we work (branches, verification, merging, wrap-up) lives in
 > `/start` + `/wrap` + auto-fetch added (DOC-03). 2026-10-14: deleted project Drive folders
 > self-heal (#208); working rules moved from memory to `CLAUDE.md`; new-machine setup and test-account notes (§9).
 > 2026-10-15: test-account Google sign-in working locally; #208 confirmed against real Drive;
-> repo private, Railway deploy confirmed; failed API-key saves no longer show as saved.
+> repo private, Railway deploy confirmed; failed API-key saves no longer show as saved;
+> Claude 4.7+ requests fixed (#212); five owed live checks passed, two findings recorded (§8).
 
 ---
 
@@ -295,11 +296,14 @@ in a session. Treat each as open until checked and recorded here. Since
 (§9, *Local testing*); checks that need a model reply also need an AI key on
 that account, which the user enters.
 
-- [ ] **File tools end-to-end** (P2-06): create/read/list against real Drive.
-- [ ] **File panel user editing** (slice 3): edit in the panel, confirm the model sees it via `read_file`. *Save half done 2026-10-15:* a panel-style save reached Drive and logged a `user:edit` revision; the model half needs an AI key.
-- [ ] **`move_file`** (FC-05) with real Drive.
-- [ ] **Scratchpad adoption**: the model actually tool-calls the pad instead of narrating in chat. SP-05 wording is a starting point; tune it live in `prompts/tessera.js`, `utils/scratchpadContext.js`, `tools/definitions.js`.
-- [ ] **Context toggles**: pin/auto/mute injection into a real request; the model calling `read_file` on a manifested file.
+**Run 2026-10-15** with the test account on `claude-haiku-5-5` and
+`gemini-3.8-flash`, through the real composer; each result confirmed in the
+server log and against Drive, not just from the model's reply:
+- [x] **File tools end-to-end** (P2-06): both models created a file, listed, and the content round-tripped on Drive.
+- [x] **File panel user editing** (slice 3): a panel save reached Drive with a `user:edit` revision, and both models quoted the edited text via a real `read_file`.
+- [x] **`move_file`** (FC-05): both models promoted their chat file into the project; content intact.
+- [x] **Scratchpad adoption**: unprompted, both models wrote a plan to the pad, then made a targeted `edit_scratchpad` on a follow-up.
+- [x] **Context toggles**: auto and pin inject a chat file, mute keeps it out (still in `list_files`, readable); a knowledge file switched off for the chat leaves the content and stays named in `<available_files>`, and Haiku read it from there.
 - [ ] **Advanced presets visual pass**: the prompt inspector, the block editor at narrow widths, the composer's preset pill. Only verified through the DOM so far.
 
 ### Deferred on purpose
@@ -318,6 +322,25 @@ that account, which the user enters.
 ### Dropped
 - **FC-06c** two-version compare — the user's call.
 - **UP-04** answer preferences — built and reverted; see §4.
+
+### Found in the 2026-10-15 live run — needs a decision
+- **Current models think they made up their own tool results.** History stores
+  only each reply's final text; tool calls aren't replayed (a locked decision,
+  `FILE_PROVENANCE_DESIGN.md` §4, to keep prompts from growing without bound).
+  `claude-haiku-5-5` sees its earlier "Created… moved…" with no record behind
+  it, and opens the *next* reply with an apology for "reporting results I
+  hadn't seen" — then often re-runs the tools. It happened on every turn
+  after tool use. Not seen on Flash. A new reason to revisit that decision; a
+  compact per-turn trail (tool names + targets, not full results) is one
+  option. The user's call.
+- **A muted chat file can be overlooked.** `<session_state>` says "1 in this
+  conversation", but asked about "my working file", Haiku read the project
+  files and never called `list_files`. Asked to list, it found and read it. A
+  prompt nudge, not a bug.
+- **The model view still offers temperature / top-p / top-k for Claude 4.7+**,
+  which the server now drops (#212). Hide them for those models.
+- **Prefill is rejected by Claude 4.6+** with a 400; the API's message is
+  clear, so it's left as is. Hide or warn in the UI with the above.
 
 ### Small open items
 - File rows whose Drive file was deleted outside the app still list, then fail
@@ -372,6 +395,11 @@ Things that cost real time. Most were silent — nothing errored.
   `input_tokens` excludes cached; Gemini's includes it. `thinkingTokens` is
   `null` on Anthropic, which is not the same as 0.
 - Anthropic rejects `top_k`/`top_p` with extended thinking; the guard drops them.
+- **Claude 4.7 and later take no sampling parameters and no `budget_tokens`**
+  (400 on any of them). `isCurrentGenerationModel` in `providers/anthropic.js`
+  routes those models to a body with neither, and maps the thinking toggle to
+  `{type: "adaptive"}` (#212). New model ids parse automatically; ids that
+  don't parse are sent the old way.
 - Google terminates SSE lines with CRLF.
 
 ### Frontend
