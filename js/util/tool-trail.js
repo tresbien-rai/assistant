@@ -19,7 +19,7 @@ const TRAIL_TYPES = new Set(['tool_event', 'created_file']);
 
 // A leading trail, possibly after whitespace. Used to keep a model that copies
 // the line into its own reply from turning it into "evidence" next turn.
-const LEADING_TRAIL = /^\s*<tool_trail>[\s\S]*?<\/tool_trail>\s*/;
+const LEADING_TRAILS = /^(?:\s*<tool_trail>[\s\S]*?<\/tool_trail>)+\s*/;
 
 // Filenames are user/model-chosen: one line, and no angle brackets that could
 // close the tag early.
@@ -67,7 +67,5 @@ export function withToolTrail(content, attachments) {
  * @returns {string}
  */
 export function stripToolTrail(text) {
-    let out = text;
-    while (LEADING_TRAIL.test(out)) out = out.replace(LEADING_TRAIL, '');
-    return out;
+    return text.replace(LEADING_TRAILS, '');
 }
