@@ -510,6 +510,9 @@ export function toolEventToAttachment(ev) {
     // Absent on the non-streaming path (all tools finish before any text
     // exists), which renderMessageBody reads as "render above the text".
     const pos = Number.isInteger(ev.textOffset) ? { textOffset: ev.textOffset } : {};
+    // move_file's target scope, read by the history trail (TT-01). A successful
+    // move returns a download url, so it lands in the card branch below.
+    const dest = typeof ev.destination === 'string' ? { destination: ev.destination } : {};
 
     // A download url on a successful event IS the "produced a file" signal —
     // read/list tools never carry one, and any future file-producing tool
@@ -523,11 +526,10 @@ export function toolEventToAttachment(ev) {
             mimeType: ev.mimeType || '',
             sizeBytes: ev.sizeBytes || 0,
             overwritten: !!ev.overwritten,
+            ...dest,
             ...pos,
         };
     }
-    // destination: move_file's target scope, read by the history trail (TT-01).
-    const dest = typeof ev.destination === 'string' ? { destination: ev.destination } : {};
     return { type: 'tool_event', tool: ev.tool, filename: ev.filename || null, ok: ev.ok !== false, ...dest, ...pos };
 }
 

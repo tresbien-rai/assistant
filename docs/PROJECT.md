@@ -260,7 +260,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona sections + six-field editor | ✅ | PS-01, PS-02, #201–#203 | `PROFILE_DESIGN.md` §9 |
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
-| Tool trail in history | 🟡 | TT-01, TT-02, #214–#216 | `TOOL_TRAIL_DESIGN.md` |
+| Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
 | UI polish backlog | 📐 | UIP-01, UIP-02 | `../UI_POLISH.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -269,10 +269,8 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 ## 7. Current focus and next targets
 
 **Next up (unless the user redirects):**
-1. **TT-03 — tool trail live pass.** TT-01/02 shipped: each past reply goes
-   out with a one-line `<tool_trail>` of the tools it ran, plus one base-prompt
-   sentence. Owed: re-run the 2026-10-15 scenario on Haiku 5.5 and Flash (§8).
-   Design: `docs/design/TOOL_TRAIL_DESIGN.md`.
+1. **Reference files read as "already there"** — found in the TT-03 run
+   (§8). Needs the user's call before any design.
 2. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
@@ -310,7 +308,7 @@ server log and against Drive, not just from the model's reply:
 - [x] **`move_file`** (FC-05): both models promoted their chat file into the project; content intact.
 - [x] **Scratchpad adoption**: unprompted, both models wrote a plan to the pad, then made a targeted `edit_scratchpad` on a follow-up.
 - [x] **Context toggles**: auto and pin inject a chat file, mute keeps it out (still in `list_files`, readable); a knowledge file switched off for the chat leaves the content and stays named in `<available_files>`, and Haiku read it from there.
-- [ ] **Tool trail** (TT-03): on `claude-haiku-5-5` and `gemini-3.8-flash`, a tool-using turn then two follow-ups. Pass = no "results I hadn't seen" apology, no needless re-runs, no `<tool_trail>` copied into a reply. If Haiku still doubts itself, tune the base-prompt sentence first.
+- [x] **Tool trail** (TT-03), 2026-10-15, test account, four turns each on `claude-haiku-5-5` and `gemini-3.8-flash` (create + move, recall, edit, title): no "results I hadn't seen" apology, no tool re-runs, no `<tool_trail>` copied; both edits confirmed on Drive. It also showed a successful move saving no destination (a move is a file card), fixed in #218. One new doubt on Haiku, below.
 - [ ] **Advanced presets visual pass**: the prompt inspector, the block editor at narrow widths, the composer's preset pill. Only verified through the DOM so far.
 - [ ] **Gemini 3.5+ trimmed body** (#217): one real send on `gemini-3.8-flash` (and `gemini-4-argon` if keyed) with tools off and thinking on Model default, then on Level; expect a normal reply. The body only lost fields, so low risk.
 
@@ -337,7 +335,17 @@ server log and against Drive, not just from the model's reply:
   "Created… moved…" with no record behind it and apologised on every turn
   after tool use (not seen on Flash). **Decided 2026-10-15:** a compact
   per-reply tool trail, not full replay (≈50× cheaper, no stale file copies).
-  Design: `docs/design/TOOL_TRAIL_DESIGN.md` (TT-01…03, §7 item 1).
+  Design: `docs/design/TOOL_TRAIL_DESIGN.md`. **Shipped and live-verified**
+  (TT-01…03).
+- **Reference files read as "already there".** Found in the TT-03 run.
+  Project and workspace files are injected as reference material at the
+  *start* of the conversation, but with their *current* content. After Haiku
+  added a line to a project file, it saw that line in the reference block,
+  placed before its own edit, and wondered whether the line had been there
+  all along. The header says "(you created this)" but not that the block shows
+  the latest version, including edits made later in this chat. A prompt
+  nudge (one phrase in the header or base prompt) is likely enough; the
+  block's position is a caching choice. Not seen on Flash. The user's call.
 - **A muted chat file can be overlooked.** `<session_state>` says "1 in this
   conversation", but asked about "my working file", Haiku read the project
   files and never called `list_files`. Asked to list, it found and read it. A
