@@ -17,7 +17,8 @@ How we work (branches, verification, merging, wrap-up) lives in
 > self-heal (#208); working rules moved from memory to `CLAUDE.md`; new-machine setup and test-account notes (§9).
 > 2026-10-15: test-account Google sign-in working locally; #208 confirmed against real Drive;
 > repo private, Railway deploy confirmed; failed API-key saves no longer show as saved;
-> Claude 4.7+ requests fixed (#212); five owed live checks passed, two findings recorded (§8).
+> Claude 4.7+ requests fixed (#212); five owed live checks passed, two findings recorded (§8);
+> tool trail designed (`TOOL_TRAIL_DESIGN.md`).
 
 ---
 
@@ -259,6 +260,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona sections + six-field editor | ✅ | PS-01, PS-02, #201–#203 | `PROFILE_DESIGN.md` §9 |
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
+| Tool trail in history | 📐 | TT-01…03 | `TOOL_TRAIL_DESIGN.md` |
 | UI polish backlog | 📐 | UIP-01, UIP-02 | `../UI_POLISH.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -267,23 +269,27 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 ## 7. Current focus and next targets
 
 **Next up (unless the user redirects):**
-1. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
+1. **TT-01…03 — tool trail in history.** Each past reply gets a one-line
+   `<tool_trail>` naming the tools it ran (no results), plus one base-prompt
+   sentence, so current Claude models stop thinking they made up their own
+   tool results. Design: `docs/design/TOOL_TRAIL_DESIGN.md`.
+2. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
    the aux model" target. Design: `docs/design/PROFILE_DESIGN.md`.
-2. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
+3. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
    (`--font-mono` names Fira Code, which is never loaded) plus the agreed
    font-picker extension; UIP-02, a whole-UI wording pass with persona
    placeholders as the highest-leverage copy. The user deliberately deferred
    wording until the feature set is complete.
 
 **Later:**
-3. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
+4. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
    then model-written summaries, then aux model; store provenance from day one.
-4. **More providers — OpenAI first.** Key storage and validation exist; it
+5. **More providers — OpenAI first.** Key storage and validation exist; it
    needs a provider module and one entry in `providers/registry.js`. The user's
    framing: do this once the platform is stable.
-5. **Rename** — blocked only on choosing a name.
+6. **Rename** — blocked only on choosing a name.
 
 ---
 
@@ -325,14 +331,11 @@ server log and against Drive, not just from the model's reply:
 
 ### Found in the 2026-10-15 live run — needs a decision
 - **Current models think they made up their own tool results.** History stores
-  only each reply's final text; tool calls aren't replayed (a locked decision,
-  `FILE_PROVENANCE_DESIGN.md` §4, to keep prompts from growing without bound).
-  `claude-haiku-5-5` sees its earlier "Created… moved…" with no record behind
-  it, and opens the *next* reply with an apology for "reporting results I
-  hadn't seen" — then often re-runs the tools. It happened on every turn
-  after tool use. Not seen on Flash. A new reason to revisit that decision; a
-  compact per-turn trail (tool names + targets, not full results) is one
-  option. The user's call.
+  only each reply's final text, so `claude-haiku-5-5` saw its earlier
+  "Created… moved…" with no record behind it and apologised on every turn
+  after tool use (not seen on Flash). **Decided 2026-10-15:** a compact
+  per-reply tool trail, not full replay (≈50× cheaper, no stale file copies).
+  Design: `docs/design/TOOL_TRAIL_DESIGN.md` (TT-01…03, §7 item 1).
 - **A muted chat file can be overlooked.** `<session_state>` says "1 in this
   conversation", but asked about "my working file", Haiku read the project
   files and never called `list_files`. Asked to list, it found and read it. A
@@ -503,3 +506,4 @@ check it isn't here, then add it.** (Two features once both used `P-`.)
 | PS | Persona sections |
 | UIP | UI polish backlog |
 | DOC | Documentation housekeeping |
+| TT | Tool trail in history |
