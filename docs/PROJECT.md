@@ -15,6 +15,7 @@ How we work (branches, verification, merging, wrap-up) lives in
 > **Last updated:** 2026-09-25: created from memory + design docs (DOC-01), docs reorganised (DOC-02),
 > `/start` + `/wrap` + auto-fetch added (DOC-03). 2026-10-14: deleted project Drive folders
 > self-heal (#208); working rules moved from memory to `CLAUDE.md`; new-machine setup and test-account notes (§9).
+> 2026-10-15: test-account Google sign-in working locally; #208 confirmed against real Drive.
 
 ---
 
@@ -286,17 +287,19 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 
 ## 8. Owed, deferred and open
 
-### Live checks owed (need real Drive + provider keys; the user drives)
+### Live checks owed (need real Drive + provider keys)
 The user believes some of these were done informally; none was confirmed
-in a session. Treat each as open until checked and recorded here.
+in a session. Treat each as open until checked and recorded here. Since
+2026-10-15 Claude can run the Drive half itself through the test account
+(§9, *Local testing*); checks that need a model reply also need an AI key on
+that account, which the user enters.
 
 - [ ] **File tools end-to-end** (P2-06): create/read/list against real Drive.
-- [ ] **File panel user editing** (slice 3): edit in the panel, confirm the model sees it via `read_file`.
+- [ ] **File panel user editing** (slice 3): edit in the panel, confirm the model sees it via `read_file`. *Save half done 2026-10-15:* a panel-style save reached Drive and logged a `user:edit` revision; the model half needs an AI key.
 - [ ] **`move_file`** (FC-05) with real Drive.
 - [ ] **Scratchpad adoption**: the model actually tool-calls the pad instead of narrating in chat. SP-05 wording is a starting point; tune it live in `prompts/tessera.js`, `utils/scratchpadContext.js`, `tools/definitions.js`.
 - [ ] **Context toggles**: pin/auto/mute injection into a real request; the model calling `read_file` on a manifested file.
 - [ ] **Advanced presets visual pass**: the prompt inspector, the block editor at narrow widths, the composer's preset pill. Only verified through the DOM so far.
-- [ ] **Project upload after a deleted Drive folder** (#208): upload to a project whose folder was removed; it should re-create the folder.
 - [ ] **Railway still deploys** after the repo goes private: confirm on the first merge after the switch.
 
 ### Deferred on purpose
@@ -405,14 +408,27 @@ Setting up another computer (e.g. the laptop) to work exactly like the PC:
   gitignored `server/.env`, start the `server` preview (port 3457), click
   "Dev login (local)". The stub user has **no Drive token**, so Drive-backed
   features can't be exercised — that is why live checks are owed.
-- **Real Google sign-in locally (test account):** `GOOGLE_REDIRECT_URI` in
-  the local `.env` already points at `http://localhost:3457/...`, so "Sign in
-  with Google" works in the preview if that URI is listed on the OAuth client
-  in Google Cloud Console (and, while the consent screen is in *Testing*, the
-  account is a listed test user). The user signs a dedicated **test Google
-  account** into the browser pane once; Claude never types its password. That
-  account exercises real Drive features before merge. The same works on the
-  live Railway site, sharing the production database under a separate user.
+- **Real Google sign-in locally (test account), working since 2026-10-15.**
+  A dedicated test Google account (no real data at stake) is signed into the
+  browser pane; Claude never types its password. With it, Claude exercises
+  real Drive features before merge — drive the API from the page with
+  `fetch` (the pane has no file picker; build a `File` for `FormData`). It
+  needs four things, all in place on the PC:
+  - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in the local `.env` (the same
+    OAuth client as Railway's; copy from Railway → Variables).
+  - `GOOGLE_REDIRECT_URI=http://localhost:3457/api/auth/google/callback` in
+    the local `.env`. **Not** the Railway address: that sends the login to the
+    live site, which rejects it. The two environments differ on this one value.
+  - That localhost URI listed under *Authorized redirect URIs* on the OAuth
+    client, next to the Railway one. A missing one shows `redirect_uri_mismatch`.
+  - The account on the consent screen's test-user list. The app stays in
+    *Testing* until release (the user's call), so only listed accounts can
+    sign in — and Google expires every account's sign-in after 7 days, so the
+    weekly symptom is a Drive error until you sign out and back in.
+
+  If the preview is still on the dev user, go to `/api/auth/google` directly.
+  The same account also works on the live Railway site (production database,
+  separate user).
 - The auth cookie doesn't survive a server restart; click dev login again.
 - `npm start` doesn't auto-reload — restart after server edits.
 - Rows seeded directly into the DB only appear after a browser reload.
