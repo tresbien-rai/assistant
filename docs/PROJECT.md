@@ -344,7 +344,7 @@ server log and against Drive, not just from the model's reply:
   and ~~**prefill on Claude 4.6+**~~ — resolved: the detail view hides them
   (and the thinking budget on 4.7+) with a note in their place, and neither
   the client nor the server sends a prefill to 4.6+. The client's rule
-  (`js/util/claude-models.js`) mirrors `providers/anthropic.js`;
+  (`js/util/model-rules.js`) mirrors `providers/anthropic.js`;
   `test-modelparams.js` fails if the two disagree.
 
 ### Small open items

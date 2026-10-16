@@ -241,7 +241,7 @@ check('prefill dropped on Claude 4.6 and current models', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. The model view's copy of the rule (js/util/claude-models.js) must agree
+// 7. The model view's copy of the rule (js/util/model-rules.js) must agree
 // with the server's. It's a browser ES module with no imports, so it loads
 // here from a data: URL — that works on any Node version, whatever the
 // package's module type.
@@ -255,7 +255,7 @@ const IDS = ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude
   console.log('\n7. The model view agrees with the server on every id...');
   const fs = require('node:fs');
   const path = require('node:path');
-  const src = fs.readFileSync(path.resolve(__dirname, '../../../js/util/claude-models.js'), 'utf8');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../../js/util/model-rules.js'), 'utf8');
   const client = await import(`data:text/javascript,${encodeURIComponent(src)}`);
 
   check('isCurrentGenerationModel: client === server', () => {

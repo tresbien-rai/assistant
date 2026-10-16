@@ -26,7 +26,7 @@ import { state } from './state.js';
 import { elements } from './dom.js';
 import { getDefaultModelConfig } from './config.js';
 import { FilePanel } from './file-panel/index.js';
-import { isCurrentGenerationModel, acceptsPrefill } from './util/claude-models.js';
+import { isCurrentGenerationModel, acceptsPrefill } from './util/model-rules.js';
 
 /**
  * Get the ACTIVE MODEL LAYER (WR-12) — the provider/model/params every send
