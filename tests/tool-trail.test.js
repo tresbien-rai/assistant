@@ -42,6 +42,12 @@ check('names, targets, destination and failure in call order', () => {
         + 'read_file plan.md (failed) · write_scratchpad</tool_trail>');
 });
 
+check('a successful move is a file card and still shows its destination', () => {
+    assert.strictEqual(
+        formatToolTrail([{ type: 'created_file', tool: 'move_file', fileName: 'tt.md', destination: 'project', url: 'u' }]),
+        '<tool_trail>move_file tt.md → project</tool_trail>');
+});
+
 check('no tools → no trail, content unchanged', () => {
     assert.strictEqual(formatToolTrail(undefined), '');
     assert.strictEqual(formatToolTrail([]), '');
