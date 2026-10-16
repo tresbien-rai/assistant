@@ -29,6 +29,7 @@ import { UiPrefs } from '../ui-prefs.js';
 import { renderMarkdown, messageActionsHTML } from '../util/markdown.js';
 import { FilePanel } from '../file-panel/index.js';
 import { ImageStore } from '../util/image-store.js';
+import { withToolTrail } from '../util/tool-trail.js';
 import { showToast } from '../components/toast.js';
 import { displayError } from '../components/errors.js';
 import {
@@ -404,9 +405,12 @@ export function buildChatRequest() {
     // case the user switches models while the response streams.
     state.lastRequestModel = modelConfig.model;
 
+    // TT-02: a past reply carries a one-line trail of the tools it ran, built
+    // from its saved attachments, so the model has a record behind its own
+    // "Created… moved…" (docs/design/TOOL_TRAIL_DESIGN.md).
     const messages = conversationMessages.map(msg => ({
         role: msg.role,
-        content: msg.content,
+        content: msg.role === 'assistant' ? withToolTrail(msg.content, msg.attachments) : msg.content,
     }));
 
     return {

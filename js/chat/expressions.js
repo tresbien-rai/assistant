@@ -16,6 +16,7 @@ import { CONFIG } from '../config.js';
 import { getActivePersona } from '../state.js';
 import { updateFloatingAvatar } from '../avatar.js';
 import { updateStatusBar } from '../status-bar.js';
+import { stripToolTrail } from '../util/tool-trail.js';
 
 // ===== Expression Detection =====
 /**
@@ -61,8 +62,13 @@ export function settleGeneratingExpression() {
     }
 }
 
+/**
+ * Clean a reply's control tokens out of the text that is shown and saved:
+ * expression tags, and a leading `<tool_trail>` the model copied from its own
+ * history (TT-02) — saved, it would read as evidence on the next turn.
+ */
 export function stripExpressionTag(text) {
-    return text.replace(/\[expression:\s*\w+\]\s*/gi, '').trim();
+    return stripToolTrail(text.replace(/\[expression:\s*\w+\]\s*/gi, '').trim());
 }
 
 /**
