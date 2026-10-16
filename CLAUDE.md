@@ -98,7 +98,8 @@ exists because skipping it cost us something before.
 
 ### 4. Verify
 - `cd server && npm test` passes. Run `node tests/persona-sections.test.js` if
-  persona assembly is touched.
+  persona assembly is touched, and `node tests/tool-trail.test.js` if the
+  history sent with a request is.
 - **UI changes:** check in the `server` preview with dev login (see
   `docs/PROJECT.md` §9): console clean, the change works, phone width works.
   Run the in-browser smoke harness for anything touching shared frontend code.
@@ -189,7 +190,7 @@ The data model, server layout and prompt assembly are described in
 | `server/src/tools/` | Model tools | file + scratchpad tools; `storeWriter.js` is the one write path |
 | `server/src/middleware/` | Express middleware | authenticate, errorHandler, rateLimiter |
 | `server/src/utils/` | Utilities | context gathering, provenance, Drive, logger, encryption, AppError |
-| `tests/` | Frontend tests | `frontend-smoke.js` (run in the browser), `persona-sections.test.js` (node) |
+| `tests/` | Frontend tests | `frontend-smoke.js` (run in the browser), `persona-sections.test.js`, `tool-trail.test.js` (node) |
 | `docs/` | Documentation | `PROJECT.md` (master), `design/` (one decision record per feature), `UI_POLISH.md`, `DEPLOY_RAILWAY.md`, `archive/` |
 
 ## Error Handling

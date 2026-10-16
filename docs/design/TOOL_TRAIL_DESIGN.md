@@ -1,6 +1,6 @@
 # Tool Trail in History — Design
 
-> **Status (2026-10-15):** Designed, not built — a one-line record of each past reply's tool calls, so models stop thinking they made them up.
+> **Status (2026-10-15):** In progress — TT-01 (#215) and TT-02 (#216) shipped; TT-03 live pass owed.
 
 Arising from: the 2026-10-15 live run (`docs/PROJECT.md` §8, *Found in the
 2026-10-15 live run*). Revisits one exclusion in

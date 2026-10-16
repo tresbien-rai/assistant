@@ -260,7 +260,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona sections + six-field editor | ✅ | PS-01, PS-02, #201–#203 | `PROFILE_DESIGN.md` §9 |
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
-| Tool trail in history | 📐 | TT-01…03 | `TOOL_TRAIL_DESIGN.md` |
+| Tool trail in history | 🟡 | TT-01, TT-02, #214–#216 | `TOOL_TRAIL_DESIGN.md` |
 | UI polish backlog | 📐 | UIP-01, UIP-02 | `../UI_POLISH.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -269,10 +269,10 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 ## 7. Current focus and next targets
 
 **Next up (unless the user redirects):**
-1. **TT-01…03 — tool trail in history.** Each past reply gets a one-line
-   `<tool_trail>` naming the tools it ran (no results), plus one base-prompt
-   sentence, so current Claude models stop thinking they made up their own
-   tool results. Design: `docs/design/TOOL_TRAIL_DESIGN.md`.
+1. **TT-03 — tool trail live pass.** TT-01/02 shipped: each past reply goes
+   out with a one-line `<tool_trail>` of the tools it ran, plus one base-prompt
+   sentence. Owed: re-run the 2026-10-15 scenario on Haiku 5.5 and Flash (§8).
+   Design: `docs/design/TOOL_TRAIL_DESIGN.md`.
 2. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
@@ -310,6 +310,7 @@ server log and against Drive, not just from the model's reply:
 - [x] **`move_file`** (FC-05): both models promoted their chat file into the project; content intact.
 - [x] **Scratchpad adoption**: unprompted, both models wrote a plan to the pad, then made a targeted `edit_scratchpad` on a follow-up.
 - [x] **Context toggles**: auto and pin inject a chat file, mute keeps it out (still in `list_files`, readable); a knowledge file switched off for the chat leaves the content and stays named in `<available_files>`, and Haiku read it from there.
+- [ ] **Tool trail** (TT-03): on `claude-haiku-5-5` and `gemini-3.8-flash`, a tool-using turn then two follow-ups. Pass = no "results I hadn't seen" apology, no needless re-runs, no `<tool_trail>` copied into a reply. If Haiku still doubts itself, tune the base-prompt sentence first.
 - [ ] **Advanced presets visual pass**: the prompt inspector, the block editor at narrow widths, the composer's preset pill. Only verified through the DOM so far.
 
 ### Deferred on purpose
