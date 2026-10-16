@@ -23,8 +23,7 @@ import { elements, scrollToBottom, scrollToBottomIfPinned, isPinnedToBottom } fr
 import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
 import { getActivePersona, getActiveConversation } from '../state.js';
-import { getActiveModelConfig, updateSendButtonState } from '../model-layer.js';
-import { acceptsPrefill } from '../util/claude-models.js';
+import { getActiveModelConfig, updateSendButtonState, unavailableParams } from '../model-layer.js';
 import { createConversation, renderConversation, maybeAutoTitle } from '../views/chats.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { renderMarkdown, messageActionsHTML } from '../util/markdown.js';
@@ -392,9 +391,9 @@ export function buildChatRequest() {
     // Prefill is an engine param: it rides on the model profile, not the persona.
     // Claude 4.6+ reject it (the server drops it, the model view hides it), so
     // it isn't sent — nor stripped from a reply that happens to start the same.
-    const prefillText = (modelConfig.provider !== 'anthropic' || acceptsPrefill(modelConfig.model))
-        ? (modelConfig.modelParams?.prefill?.trim() || '')
-        : '';
+    const prefillRejected = unavailableParams(modelConfig.provider, modelConfig.model)
+        .some(u => u.paths.includes('prefill'));
+    const prefillText = prefillRejected ? '' : (modelConfig.modelParams?.prefill?.trim() || '');
 
     // The model echoes back the prefill — track it so appendStreamChunk and
     // the non-streaming branch can strip it from displayed/persisted output.
