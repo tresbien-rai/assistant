@@ -1,6 +1,6 @@
 # Tool Trail in History — Design
 
-> **Status (2026-10-15):** In progress — TT-01 (#215) and TT-02 (#216) shipped; TT-03 live pass owed.
+> **Status (2026-10-15):** Complete — TT-01 (#215), TT-02 (#216) and the TT-03 live pass are done, plus a move-destination fix (#218).
 
 Arising from: the 2026-10-15 live run (`docs/PROJECT.md` §8, *Found in the
 2026-10-15 live run*). Revisits one exclusion in
@@ -151,3 +151,11 @@ on `claude-haiku-5-5` and `gemini-3.8-flash`: tool-using turn, then two
 follow-ups. Pass = no "results I hadn't seen" apology, no needless re-runs, no
 copied `<tool_trail>` in output. If Haiku still doubts itself, tune the D4
 wording before anything bigger.
+
+*Result (2026-10-15): passed on both models.* Over four turns each (create +
+move, recall, edit, title) there was no apology, no re-run and no copied trail.
+It also showed that TT-01 missed one case: a *successful* move returns a
+download url, so it is saved as a file card, and that branch dropped the
+destination. Fixed in #218. Haiku showed one unrelated doubt (reference files
+showing current content at the start of the chat), recorded in
+`docs/PROJECT.md` §8.
