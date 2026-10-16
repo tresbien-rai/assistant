@@ -343,9 +343,14 @@ server log and against Drive, not just from the model's reply:
 - ~~**The model view still offers temperature / top-p / top-k for Claude 4.7+**~~
   and ~~**prefill on Claude 4.6+**~~ — resolved: the detail view hides them
   (and the thinking budget on 4.7+) with a note in their place, and neither
-  the client nor the server sends a prefill to 4.6+. The client's rule
-  (`js/util/model-rules.js`) mirrors `providers/anthropic.js`;
-  `test-modelparams.js` fails if the two disagree.
+  the client nor the server sends a prefill to 4.6+. **Gemini 3.5+ got the
+  same treatment** (sampling ignored, prefill a 400, budget deprecated): no
+  sampling, prefill or budget sent; the thinking control offers "Model default"
+  and "Level". Help text follows the model (`modelParamRules` in
+  `js/model-layer.js`). The client's rules (`js/util/model-rules.js`) mirror
+  `providers/anthropic.js` and `gemini.js`; `test-modelparams.js` fails if
+  they disagree. Left alone by choice: the `minimal` thinking level, which
+  Gemini 3.8 Flash and 4 Argon reject with a clear 400.
 
 ### Small open items
 - File rows whose Drive file was deleted outside the app still list, then fail
@@ -405,6 +410,11 @@ Things that cost real time. Most were silent — nothing errored.
   routes those models to a body with neither, and maps the thinking toggle to
   `{type: "adaptive"}` (#212). New model ids parse automatically; ids that
   don't parse are sent the old way.
+- **Gemini 3.5 and later ignore `temperature`/`topP`/`topK`** (Google says a
+  future generation will 400), **400 on prefill**, and deprecate
+  `thinkingBudget` for `thinkingLevel`. `isCurrentGenerationModel` in
+  `providers/gemini.js` sends them none of the three. Ignored params return
+  200, so nothing would have shown the difference.
 - Google terminates SSE lines with CRLF.
 
 ### Frontend

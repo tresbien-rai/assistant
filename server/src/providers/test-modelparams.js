@@ -221,6 +221,47 @@ check('gemini sends temperature AND topP together', () => {
 });
 
 // ---------------------------------------------------------------------------
+console.log('\n5b. Gemini 3.5+: no sampling params, prefill or thinking budget...');
+
+// Google (Gemini 3.6 / 4 docs): temperature/top_p/top_k are ignored and will be
+// a 400 in future generations; a trailing model turn is a 400 now;
+// thinking_budget is deprecated for thinking_level.
+const gem = (model, extra = {}) => gemini.buildRequestBody({
+  model, messages: [{ role: 'user', content: 'hi' }], modelParams: STOCK, ...extra,
+});
+const BUDGET = { ...STOCK, google: { thinkingApi: 'budget', thinkingBudget: 2048 } };
+const LEVEL = { ...STOCK, google: { thinkingApi: 'level', thinkingLevel: 'high' } };
+
+check('generation detection: 3.5+ current, 3.1 and older not', () => {
+  const yes = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-4-argon'];
+  const no = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash',
+    'gemini-flash-latest', 'claude-opus-5-5', '', undefined];
+  for (const id of yes) assert.ok(gemini.isCurrentGenerationModel(id), `${id} should be current`);
+  for (const id of no) assert.ok(!gemini.isCurrentGenerationModel(id), `${id} should be older`);
+});
+
+check('current Gemini: no temperature, topP or topK; stop sequences kept', () => {
+  const { generationConfig: gc } = gem('gemini-3.8-flash', { modelParams: { ...STOCK, stopSequences: ['END'] } });
+  for (const k of ['temperature', 'topP', 'topK']) assert.ok(!(k in gc), `${k} must be absent`);
+  assert.deepStrictEqual(gc.stopSequences, ['END']);
+  assert.strictEqual(gc.maxOutputTokens, 8192);
+});
+
+check('current Gemini: prefill dropped; older Gemini keeps it', () => {
+  const last = (b) => b.contents[b.contents.length - 1].role;
+  assert.strictEqual(last(gem('gemini-4-argon', { prefill: 'Sure,' })), 'user');
+  assert.strictEqual(last(gem('gemini-2.5-flash', { prefill: 'Sure,' })), 'model');
+});
+
+check('current Gemini: a stored budget is dropped, a level is sent', () => {
+  assert.ok(!('thinkingConfig' in gem('gemini-3.8-flash', { modelParams: BUDGET }).generationConfig));
+  assert.deepStrictEqual(gem('gemini-3.8-flash', { modelParams: LEVEL }).generationConfig.thinkingConfig,
+    { thinkingLevel: 'high' });
+  assert.deepStrictEqual(gem('gemini-2.5-flash', { modelParams: BUDGET }).generationConfig.thinkingConfig,
+    { thinkingBudget: 2048 });
+});
+
+// ---------------------------------------------------------------------------
 console.log('\n6. Anthropic: prefill is dropped for Claude 4.6+...');
 
 // Claude 4.6 and later return a 400 for a trailing assistant message. The
@@ -249,7 +290,9 @@ const IDS = ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude
   'claude-opus-5', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-fable-5-1', 'claude-sonnet-4-6',
   'claude-opus-4-6', 'claude-sonnet-4-5', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514',
   'claude-opus-4-1-20250805', 'claude-3-5-sonnet-20241022', 'claude-3-7-sonnet-latest',
-  'gemini-2.5-flash', 'my-custom-model', '', undefined];
+  'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite',
+  'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash',
+  'gemini-4-argon', 'gemini-flash-latest', 'my-custom-model', '', undefined];
 
 (async () => {
   console.log('\n7. The model view agrees with the server on every id...');
@@ -258,14 +301,19 @@ const IDS = ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude
   const src = fs.readFileSync(path.resolve(__dirname, '../../../js/util/model-rules.js'), 'utf8');
   const client = await import(`data:text/javascript,${encodeURIComponent(src)}`);
 
-  check('isCurrentGenerationModel: client === server', () => {
+  check('Claude current generation: client === server', () => {
     for (const id of IDS) {
-      assert.strictEqual(client.isCurrentGenerationModel(id), anthropic.isCurrentGenerationModel(id), String(id));
+      assert.strictEqual(client.isCurrentClaude(id), anthropic.isCurrentGenerationModel(id), String(id));
     }
   });
-  check('acceptsPrefill: client === server', () => {
+  check('Claude prefill: client === server', () => {
     for (const id of IDS) {
-      assert.strictEqual(client.acceptsPrefill(id), anthropic.acceptsPrefill(id), String(id));
+      assert.strictEqual(client.claudeAcceptsPrefill(id), anthropic.acceptsPrefill(id), String(id));
+    }
+  });
+  check('Gemini current generation: client === server', () => {
+    for (const id of IDS) {
+      assert.strictEqual(client.isCurrentGemini(id), gemini.isCurrentGenerationModel(id), String(id));
     }
   });
 
