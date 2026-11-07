@@ -19,6 +19,7 @@ import assert from 'node:assert';
 import {
     PERSONA_SECTIONS,
     PERSONA_SECTION_IDS,
+    AUTHORED_SECTION_IDS,
     assemblePersonaPrompt,
     filledSectionCount,
     sectionText,
@@ -92,17 +93,17 @@ check('order is the vocabulary order, not object key order', () => {
     assert.strictEqual(assemblePersonaPrompt(reversed), assemblePersonaPrompt(FULL));
 });
 
-check('backstory comes after the behaviour sections', () => {
+check('background comes after the behaviour sections', () => {
     // Deliberate: lore is reliably the longest thing anyone writes, and a long
     // history should not bury a two-line voice instruction.
     const out = assemblePersonaPrompt(FULL);
-    assert.ok(out.indexOf('## Voice') < out.indexOf('## Backstory'));
-    assert.ok(out.indexOf('## Personality') < out.indexOf('## Backstory'));
+    assert.ok(out.indexOf('## Voice') < out.indexOf('## Background'));
+    assert.ok(out.indexOf('## Personality') < out.indexOf('## Background'));
 });
 
 check('general guidance comes last', () => {
     const out = assemblePersonaPrompt(FULL);
-    assert.ok(out.lastIndexOf('## General guidance') > out.indexOf('## Backstory'));
+    assert.ok(out.lastIndexOf('## General guidance') > out.indexOf('## Background'));
 });
 
 check('an unfilled section leaves no trace', () => {
@@ -138,6 +139,14 @@ check('every section has the fields the editor needs', () => {
 
 check('ids are unique', () => {
     assert.strictEqual(new Set(PERSONA_SECTION_IDS).size, PERSONA_SECTION_IDS.length);
+});
+
+check('Background is still stored under the backstory id', () => {
+    // PT-01 renamed the label only. Text written before the rename lives under
+    // `backstory`; changing the id would silently drop it from the prompt.
+    const out = assemblePersonaPrompt({ sections: { backstory: 'Set type by hand.' } });
+    assert.strictEqual(out, '## Background\nSet type by hand.');
+    assert.ok(AUTHORED_SECTION_IDS.includes('backstory'));
 });
 
 check('filledSectionCount counts what is written', () => {

@@ -35,8 +35,8 @@
 /**
  * The sections, in assembly order.
  *
- * Order is deliberate: the behaviour-shaping parts come first and `backstory`
- * sits late, because lore is reliably the longest thing anyone writes and a
+ * Order is deliberate: the behaviour-shaping parts come first and Background
+ * (`backstory`) sits late, because lore is reliably the longest thing anyone writes and a
  * three-hundred-word history should not bury a two-line voice instruction.
  *
  * `general` is last and is NOT a leftovers bin — it is the escape hatch that
@@ -80,10 +80,14 @@ export const PERSONA_SECTIONS = [
         placeholder: 'Treats me as a collaborator, not a client. Pushes back when I am wrong instead of hedging. Does not flatter.',
     },
     {
+        // The id stays `backstory` while the label reads "Background" (PT-01),
+        // for the same reason as `speech` above: the id is stored data.
+        // "Background" because not every assistant has a story — a profession,
+        // a setting or a plain role belongs here too.
         id: 'backstory',
-        label: 'Backstory',
-        heading: 'Backstory',
-        help: 'Where they came from, if it matters. Optional, and often the longest part.',
+        label: 'Background',
+        heading: 'Background',
+        help: 'Who they are and where they come from — a profession, a setting, a history. Optional, and often the longest part.',
         placeholder: 'Spent fifteen years setting type by hand before any of this was digital, and has never quite forgiven the industry for it.',
     },
     {
