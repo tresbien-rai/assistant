@@ -262,6 +262,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
 | UI polish backlog | 📐 | UIP-01, UIP-02 | `../UI_POLISH.md` |
+| Persona traits (ready-made, combinable, customisable) | 📐 | PT-01…07 | `PERSONA_TRAITS_DESIGN.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
 ---
@@ -286,6 +287,9 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
    needs a provider module and one entry in `providers/registry.js`. The user's
    framing: do this once the platform is stable.
 5. **Rename** — blocked only on choosing a name.
+6. **Harness** — the assistant doing more on its own (longer, multi-step
+   work), building on the tool loop. A long-horizon goal the user raised
+   2026-11-06; not designed. Wait until more features are in.
 
 ---
 
@@ -534,3 +538,4 @@ check it isn't here, then add it.** (Two features once both used `P-`.)
 | UIP | UI polish backlog |
 | DOC | Documentation housekeeping |
 | TT | Tool trail in history |
+| PT | Persona traits |
