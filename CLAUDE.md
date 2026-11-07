@@ -43,6 +43,9 @@ These are standing rules learned over many sessions. They apply every session.
   it.** Build for that: there are no other users' data or deployments to stay
   compatible with, so prefer the simpler design. Security basics (auth,
   per-user scoping, encrypted keys) still hold, because release is the plan.
+- **Prototype new UI before building it.** When a feature's UI shape is
+  open, build two or three throwaway prototypes for the user to pick from
+  before writing the real thing.
 
 ### Model tiering / sub-agents
 

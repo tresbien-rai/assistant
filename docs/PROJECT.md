@@ -19,6 +19,8 @@ How we work (branches, verification, merging, wrap-up) lives in
 > repo private, Railway deploy confirmed; failed API-key saves no longer show as saved;
 > Claude 4.7+ requests fixed (#212); five owed live checks passed, two findings recorded (§8);
 > tool trail designed (`TOOL_TRAIL_DESIGN.md`).
+> 2026-11-07: persona traits designed (`PERSONA_TRAITS_DESIGN.md`, #220) and made the next target;
+> harness idea noted under §7 *Later*.
 
 ---
 
@@ -270,24 +272,31 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 ## 7. Current focus and next targets
 
 **Next up (unless the user redirects):**
-1. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
+1. **PT — persona traits** (`docs/design/PERSONA_TRAITS_DESIGN.md`). The
+   user's current direction (2026-11-06) is design and UX. Start with PT-01
+   (Backstory → Background rename), then PT-02, a brainstorm session with the
+   user on the trait library "based on different personality axes", then
+   PT-03, picker prototypes for the user to choose from. The user also feels
+   the system-prompt wording and overall UI design could be refined; that
+   joins the polish pass below.
+2. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
    the aux model" target. Design: `docs/design/PROFILE_DESIGN.md`.
-2. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
+3. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
    (`--font-mono` names Fira Code, which is never loaded) plus the agreed
    font-picker extension; UIP-02, a whole-UI wording pass with persona
    placeholders as the highest-leverage copy. The user deliberately deferred
    wording until the feature set is complete.
 
 **Later:**
-3. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
+4. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
    then model-written summaries, then aux model; store provenance from day one.
-4. **More providers — OpenAI first.** Key storage and validation exist; it
+5. **More providers — OpenAI first.** Key storage and validation exist; it
    needs a provider module and one entry in `providers/registry.js`. The user's
    framing: do this once the platform is stable.
-5. **Rename** — blocked only on choosing a name.
-6. **Harness** — the assistant doing more on its own (longer, multi-step
+6. **Rename** — blocked only on choosing a name.
+7. **Harness** — the assistant doing more on its own (longer, multi-step
    work), building on the tool loop. A long-horizon goal the user raised
    2026-11-06; not designed. Wait until more features are in.
 
