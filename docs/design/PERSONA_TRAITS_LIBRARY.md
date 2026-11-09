@@ -1,6 +1,6 @@
 # Persona Traits — Library
 
-> **Status (2026-11-09):** Complete (PT-02). The agreed trait library: 153 traits after two passes. PT-04 turns it into code; wording can still improve later (D2).
+> **Status (2026-11-09):** Complete (PT-02). The agreed trait library: 153 traits after two passes. Since PT-04 the library lives in `js/persona-traits.js`, which is now the source of truth; this doc is the record of why each trait is there. Wording changes go in the code (D2).
 
 Companion to `PERSONA_TRAITS_DESIGN.md`. Wording is rough on purpose: the
 library's text can be improved at any time without touching personas (D2).
