@@ -1,6 +1,6 @@
-# Persona Traits — Library (draft)
+# Persona Traits — Library
 
-> **Status (2026-11-09):** Draft, second pass (PT-02). Trimmed after an independent overlap review and the user's notes; awaiting a final read before PT-04 turns it into code.
+> **Status (2026-11-09):** Complete (PT-02). The agreed trait library: 153 traits after two passes. PT-04 turns it into code; wording can still improve later (D2).
 
 Companion to `PERSONA_TRAITS_DESIGN.md`. Wording is rough on purpose: the
 library's text can be improved at any time without touching personas (D2).
