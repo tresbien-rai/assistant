@@ -41,6 +41,13 @@ CREATE TABLE IF NOT EXISTS personas (
     -- has always accepted arbitrary `system_prompt` text.
     -- Added to existing databases by migration 015.
     sections        TEXT DEFAULT '{}',
+    -- The ready-made traits picked per section (PT-04), JSON:
+    -- { "<section id>": [{ "id": "calm" }, { "id": "doting", "text": "…" }] }.
+    -- No `text` = follows the trait library (js/persona-traits.js); with `text`
+    -- = customised. Order is pick order. Like `sections`, the client owns the
+    -- vocabulary and assembly; the server only checks shape and size.
+    -- Added to existing databases by migration 016.
+    traits          TEXT DEFAULT '{}',
     prefill         TEXT DEFAULT '',
     avatar_filename TEXT DEFAULT '',
     expressions     TEXT DEFAULT '{}',   -- JSON: { "happy": { "emoji": "😊", "imageKey": "..." }, ... }

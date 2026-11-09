@@ -32,6 +32,8 @@
  * which is the opposite of what a block about embodiment wants.
  */
 
+import { traitSentences } from './persona-traits.js';
+
 /**
  * The sections, in assembly order.
  *
@@ -133,11 +135,30 @@ export function sectionText(persona, id) {
 }
 
 /**
+ * The body of one section as it goes into the prompt (PT-04): the sentences of
+ * its picked traits as one paragraph, in pick order, then the section's own
+ * free text as a paragraph of its own. Either may be absent.
+ *
+ * One paragraph rather than a bullet list because a list of traits reads as a
+ * rule sheet, and these describe a character (PERSONA_TRAITS_DESIGN.md §4).
+ *
+ * @param {Object} persona
+ * @param {string} id - a PERSONA_SECTION_IDS entry
+ * @returns {string} '' when the section has neither
+ */
+export function sectionBody(persona, id) {
+    const traits = traitSentences(persona, id).join(' ');
+    const own = sectionText(persona, id).trim();
+    return [traits, own].filter(Boolean).join('\n\n');
+}
+
+/**
  * Assemble a persona's sections into the prompt text sent as `systemPrompt`.
  *
  * Empty sections are never emitted — no heading, no blank line. A persona that
  * uses one box produces one heading and its text; a persona that uses all six
- * produces six.
+ * produces six. A section counts as filled when it has picked traits, its own
+ * text, or both (see `sectionBody`).
  *
  * Headings are always emitted, including for a lone section. The alternative
  * considered was emitting bare prose until a second section appears, which
@@ -152,7 +173,7 @@ export function sectionText(persona, id) {
 export function assemblePersonaPrompt(persona) {
     const parts = [];
     for (const section of PERSONA_SECTIONS) {
-        const text = sectionText(persona, section.id).trim();
+        const text = sectionBody(persona, section.id);
         if (!text) continue;
         parts.push(`## ${section.heading}\n${text}`);
     }
@@ -160,11 +181,11 @@ export function assemblePersonaPrompt(persona) {
 }
 
 /**
- * How many sections a persona has actually written.
+ * How many sections a persona has actually filled, with traits or text.
  * Used by the editor to decide whether to show the scaffolding expanded.
  * @param {Object} persona
  * @returns {number}
  */
 export function filledSectionCount(persona) {
-    return PERSONA_SECTIONS.filter((s) => sectionText(persona, s.id).trim()).length;
+    return PERSONA_SECTIONS.filter((s) => sectionBody(persona, s.id)).length;
 }

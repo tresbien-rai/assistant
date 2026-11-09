@@ -21,7 +21,13 @@ const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
-const { validateBundle } = require('../utils/personaBundle');
+const {
+  validateBundle,
+  MAX_TRAIT_PICKS: TRAIT_MAX_PICKS,
+  TRAIT_ID_PATTERN,
+  MAX_TRAIT_TEXT: TRAIT_TEXT_MAX,
+  MAX_TRAIT_TEXT_TOTAL: TRAIT_TEXT_TOTAL_MAX,
+} = require('../utils/personaBundle');
 const {
   AVATARS_DIR,
   avatarFilename,
@@ -46,6 +52,11 @@ const SECTION_MAX_KEYS = 12;
 const SECTION_KEY_MAX = 40;
 const SECTION_VALUE_MAX = 8000;
 const SECTION_TOTAL_MAX = 24000;
+
+// Persona trait caps (PT-04) come from utils/personaBundle.js, shared with
+// import. Same reasoning as above: a customised trait's text is sent on every
+// message. The largest library section has ~30 traits, so 64 picks per
+// section is a bound, not a limit anyone meets.
 
 // All routes require authentication
 router.use(authenticate);
@@ -107,6 +118,76 @@ function validatePersonaSections(sections) {
 }
 
 /**
+ * Validate the persona `traits` object (PT-04) and return it normalized.
+ *
+ * Shape only, like `sections`: the trait library (js/persona-traits.js) is
+ * client code, and the server never assembles a persona prompt, so it does not
+ * check that an id exists or which section it belongs to — the assembly drops
+ * anything it doesn't know. What it does enforce is the shape the client
+ * relies on and the size, since customised text is sent on every message.
+ *
+ * Normalizing drops any field other than `id` and `text` from each entry, and
+ * a repeated id in one section keeps its first entry instead of failing: the
+ * client auto-saves every field of every persona, so rejecting here would
+ * silently lose the user's other edits over a duplicate the assembly already
+ * ignores (js/persona-traits.js resolveTraits).
+ *
+ * @param {unknown} traits - { sectionId: [{ id, text? }] }
+ * @returns {Object} the object to store
+ */
+function validatePersonaTraits(traits) {
+  if (typeof traits !== 'object' || Array.isArray(traits) || traits === null) {
+    throw AppError.validation('traits must be an object');
+  }
+  const keys = Object.keys(traits);
+  if (keys.length > SECTION_MAX_KEYS) {
+    throw AppError.validation(`A persona may have traits in at most ${SECTION_MAX_KEYS} sections`);
+  }
+  const out = {};
+  let total = 0;
+  for (const key of keys) {
+    if (key.length > SECTION_KEY_MAX || key === '__proto__') {
+      throw AppError.validation('Invalid section name');
+    }
+    const picks = traits[key];
+    if (!Array.isArray(picks)) {
+      throw AppError.validation('Each section\'s traits must be a list');
+    }
+    if (picks.length > TRAIT_MAX_PICKS) {
+      throw AppError.validation(`A section may have at most ${TRAIT_MAX_PICKS} traits`);
+    }
+    const seen = new Set();
+    out[key] = [];
+    for (const pick of picks) {
+      if (!pick || typeof pick !== 'object' || Array.isArray(pick)) {
+        throw AppError.validation('Each trait must be an object');
+      }
+      if (typeof pick.id !== 'string' || !TRAIT_ID_PATTERN.test(pick.id)) {
+        throw AppError.validation('Each trait needs a valid id');
+      }
+      if (seen.has(pick.id)) continue;
+      seen.add(pick.id);
+      if (pick.text === undefined) {
+        out[key].push({ id: pick.id });
+        continue;
+      }
+      if (typeof pick.text !== 'string') {
+        throw AppError.validation('A customised trait\'s text must be a string');
+      }
+      if (pick.text.length > TRAIT_TEXT_MAX) {
+        throw AppError.validation(`A customised trait must be ${TRAIT_TEXT_MAX} characters or fewer`);
+      }
+      total += pick.text.length;
+      out[key].push({ id: pick.id, text: pick.text });
+    }
+  }
+  if (total > TRAIT_TEXT_TOTAL_MAX) {
+    throw AppError.validation(`The customised traits are too long (limit ${TRAIT_TEXT_TOTAL_MAX} characters)`);
+  }
+  return out;
+}
+
+/**
  * Format a persona record for API response
  * Converts snake_case DB fields to camelCase
  * @param {Object} persona - Persona record from DAL (with parsed JSON fields)
@@ -121,6 +202,7 @@ function formatPersona(persona) {
     roleLabel: persona.role_label || '',
     systemPrompt: persona.system_prompt,
     sections: persona.sections || {},
+    traits: persona.traits || {},
     prefill: persona.prefill,
     avatarFilename: persona.avatar_filename,
     expressions: persona.expressions,
@@ -177,7 +259,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
  * Creates a persona linked to the authenticated user.
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, tagline, roleLabel, systemPrompt, sections, prefill, expressions, modelConfig } = req.body;
+  const { name, tagline, roleLabel, systemPrompt, sections, traits, prefill, expressions, modelConfig } = req.body;
 
   if (!name || typeof name !== 'string' || name.trim() === '') {
     throw AppError.validation('Name is required');
@@ -187,6 +269,7 @@ router.post('/', asyncHandler(async (req, res) => {
     throw AppError.validation('systemPrompt must be a string');
   }
   if (sections !== undefined) validatePersonaSections(sections);
+  const cleanTraits = traits === undefined ? undefined : validatePersonaTraits(traits);
   if (prefill !== undefined && typeof prefill !== 'string') {
     throw AppError.validation('prefill must be a string');
   }
@@ -203,6 +286,7 @@ router.post('/', asyncHandler(async (req, res) => {
     roleLabel: roleLabel === undefined ? '' : normalizeDisplayField(roleLabel, 'roleLabel', ROLE_LABEL_MAX),
     systemPrompt,
     sections,
+    traits: cleanTraits,
     prefill,
     expressions,
     modelConfig,
@@ -235,6 +319,7 @@ router.post('/import', express.json({ limit: '32mb' }), asyncHandler(async (req,
     roleLabel: incoming.roleLabel,
     systemPrompt: incoming.systemPrompt,
     sections: incoming.sections,
+    traits: incoming.traits,
     prefill: '',
     expressions: incoming.expressions,
     modelConfig: {}, // shared mode; never inherit a pin or toolsEnabled
@@ -289,7 +374,7 @@ router.post('/import', express.json({ limit: '32mb' }), asyncHandler(async (req,
  * Updates persona (only if owned by user) and bumps updatedAt.
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const { name, tagline, roleLabel, systemPrompt, sections, prefill, avatarFilename, expressions, modelConfig } = req.body;
+  const { name, tagline, roleLabel, systemPrompt, sections, traits, prefill, avatarFilename, expressions, modelConfig } = req.body;
   const updateData = {};
 
   if (name !== undefined) {
@@ -312,6 +397,9 @@ router.put('/:id', asyncHandler(async (req, res) => {
   }
   if (sections !== undefined) {
     updateData.sections = validatePersonaSections(sections);
+  }
+  if (traits !== undefined) {
+    updateData.traits = validatePersonaTraits(traits);
   }
   if (prefill !== undefined) {
     if (typeof prefill !== 'string') {
@@ -391,3 +479,5 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 }));
 
 module.exports = router;
+// For server/src/routes/test-persona-traits.js.
+module.exports.validatePersonaTraits = validatePersonaTraits;

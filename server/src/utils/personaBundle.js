@@ -64,6 +64,13 @@ const MAX_SECTION_KEYS = 12;
 const MAX_SECTION_KEY = 40;
 const MAX_SECTION_VALUE = 8000;
 const MAX_SECTION_TOTAL = 24_000;
+// Persona traits (PT-04). Shared with the write route (routes/personas.js), so
+// an import can never store picks that the next save would reject. The id
+// pattern also matches js/persona-traits.js's library ids (tested there).
+const MAX_TRAIT_PICKS = 64;
+const TRAIT_ID_PATTERN = /^[a-z0-9_]{1,64}$/;
+const MAX_TRAIT_TEXT = 2000;
+const MAX_TRAIT_TEXT_TOTAL = 24_000;
 const MAX_EXPRESSIONS = 24;
 const MAX_EMOJI = 8;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // matches the avatar upload limit
@@ -144,7 +151,7 @@ function decodeImage(image, where) {
  *
  * @param {unknown} bundle - Parsed bundle JSON
  * @returns {{
- *   persona: { name: string, tagline: string, roleLabel: string, systemPrompt: string, sections: Object, expressions: Object },
+ *   persona: { name: string, tagline: string, roleLabel: string, systemPrompt: string, sections: Object, traits: Object, expressions: Object },
  *   avatar: { buffer: Buffer, mimeType: string, ext: string }|null,
  *   expressionImages: Array<{ name: string, buffer: Buffer, mimeType: string, ext: string }>
  * }}
@@ -177,6 +184,47 @@ function sanitizeSections(raw) {
     if (total + value.length > MAX_SECTION_TOTAL) break;
     total += value.length;
     out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Sanitize the trait picks of an imported bundle (PT-04).
+ *
+ * Tolerant for the same reasons as sections: a bundle from before PT-04 has
+ * none, and one from a newer Tessera may pick traits this build doesn't know.
+ * Unknown ids are kept (the assembly skips them, D8), so a round-trip through
+ * an older build doesn't lose them. Malformed entries are dropped one by one
+ * rather than failing the import; a customised trait keeps its own text.
+ *
+ * @param {unknown} raw
+ * @returns {Object} section id -> [{ id, text? }]
+ */
+function sanitizeTraits(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  let total = 0;
+  for (const key of Object.keys(raw)) {
+    if (Object.keys(out).length >= MAX_SECTION_KEYS) break;
+    if (key === '__proto__' || key.length > MAX_SECTION_KEY || !Array.isArray(raw[key])) continue;
+    const picks = [];
+    const seen = new Set();
+    for (const pick of raw[key]) {
+      if (picks.length >= MAX_TRAIT_PICKS) break;
+      if (!pick || typeof pick !== 'object' || typeof pick.id !== 'string') continue;
+      if (!TRAIT_ID_PATTERN.test(pick.id) || seen.has(pick.id)) continue;
+      seen.add(pick.id);
+      const text = str(pick.text, MAX_TRAIT_TEXT);
+      // Over the text budget, a customised trait keeps its pick and falls back
+      // to the library's wording rather than vanishing.
+      if (text && total + text.length <= MAX_TRAIT_TEXT_TOTAL) {
+        total += text.length;
+        picks.push({ id: pick.id, text });
+      } else {
+        picks.push({ id: pick.id });
+      }
+    }
+    if (picks.length) out[key] = picks;
   }
   return out;
 }
@@ -233,6 +281,7 @@ function validateBundle(bundle) {
       roleLabel: str(src.roleLabel, MAX_ROLE_LABEL),
       systemPrompt: str(src.systemPrompt, MAX_SYSTEM_PROMPT),
       sections: sanitizeSections(src.sections),
+      traits: sanitizeTraits(src.traits),
       expressions,
     },
     avatar,
@@ -248,4 +297,8 @@ module.exports = {
   BUNDLE_KIND_PERSONA,
   IMAGE_TYPES,
   MAX_IMAGE_BYTES,
+  MAX_TRAIT_PICKS,
+  TRAIT_ID_PATTERN,
+  MAX_TRAIT_TEXT,
+  MAX_TRAIT_TEXT_TOTAL,
 };

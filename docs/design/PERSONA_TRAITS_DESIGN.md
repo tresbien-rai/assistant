@@ -1,6 +1,6 @@
 # Persona Traits — Design
 
-> **Status (2026-11-09):** In progress. PT-01…03 done: Background rename (#222), the trait library (`PERSONA_TRAITS_LIBRARY.md`, #223) and the picker design (D9). Next: PT-04, data and assembly.
+> **Status (2026-11-09):** In progress. PT-01…04 done: Background rename, the trait library, the picker design (D9), and data + assembly (`js/persona-traits.js`). Next: PT-05, the picker in the persona editor.
 
 Arising from: the 2026-11-06 design/UX conversation. Builds on persona
 sections (PS-01/PS-02, `PROFILE_DESIGN.md` §9, `js/persona-sections.js`).
@@ -175,10 +175,19 @@ caller goes through. For each section, in the existing order:
 Both go under the section's existing `## Heading`. A section with neither still
 emits nothing.
 
-**Provisional:** trait sentences joined into one paragraph (reads as a
-character description) rather than a bullet list (reads as a rule sheet). Check
-it in `POST /api/chat/preview` while building PT-04 and change it there if it
-reads badly.
+**Built (PT-04):** trait sentences joined into one paragraph (reads as a
+character description) rather than a bullet list (reads as a rule sheet). The
+assembled text read naturally when checked in the running app; revisit only if
+a live chat suggests otherwise.
+
+**Stored data is read tolerantly** (`resolveTraits` in `js/persona-traits.js`),
+because a persona that fails to assemble is worse than one missing a trait:
+malformed entries are skipped, a repeated id keeps its first entry, two picks
+from one pick-one scale keep the later one (what the picker would do), blank
+customised text falls back to the library, and an id stored under a section it
+doesn't belong to counts as unknown there. The server checks shape and size
+only, as it does for `sections`: strictly on the write route, tolerantly on
+`.tessera` import, where unknown ids are kept for a newer build to use.
 
 **Caching:** a change to library wording changes the persona prompt, so the
 next message misses the cache once. That's the expected cost and needs nothing
@@ -252,7 +261,7 @@ current placeholders.
 | PT-01 ✅ #222 | Rename Backstory → Background | Label, heading, help, placeholder; id stays `backstory`. Tiny, ships alone. Changes the prompt heading for existing personas, which is fine. |
 | PT-02 ✅ #223 | Brainstorm the trait library | A session with the user, axis by axis per section. Output: the library file's contents (ids, labels, groups, text). Text stays rough (wording last). |
 | PT-03 ✅ | Prototype the picker | Two or three layouts (e.g. dropdown with chips, compact summary row) as a throwaway page using the real trait list; the user picks one. Decides how customise and reset look. |
-| PT-04 | Data + assembly | Migration for `personas.traits`, DAL/route/store, bundle export/import, library module, `assemblePersonaPrompt` changes. Tests in `tests/persona-sections.test.js` (library text, customised text, retired/unknown ids, pick-one validity). |
+| PT-04 ✅ | Data + assembly | Migration for `personas.traits`, DAL/route/store, bundle export/import, library module, `assemblePersonaPrompt` changes. Tests in `tests/persona-sections.test.js` (library text, customised text, retired/unknown ids, pick-one validity). |
 | PT-05 | Build the picker in the persona editor | The design in D9: tags, the picker sheet, Prompt text with edit-in-place customise / reset, the Custom box. Phone width checked. |
 | PT-06 | Bundles | Later; see §5. |
 | PT-07 | User-saved traits | Later; see §5. |

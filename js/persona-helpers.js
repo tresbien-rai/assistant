@@ -43,6 +43,7 @@ export async function createPersona(name = CONFIG.defaults.assistantName) {
         roleLabel: created.roleLabel || '',
         systemPrompt: created.systemPrompt || '',
         sections: (created.sections && typeof created.sections === 'object') ? created.sections : {},
+        traits: (created.traits && typeof created.traits === 'object') ? created.traits : {},
         prefill: created.prefill || '',
         avatarFilename: created.avatarFilename || '',
         expressions: (created.expressions && typeof created.expressions === 'object')
@@ -118,6 +119,9 @@ export function hydratePersonas(personas) {
             // PS-01: the authored persona parts. `systemPrompt` remains the
             // general-guidance section, which is why nothing migrates.
             sections: (p.sections && typeof p.sections === 'object') ? p.sections : {},
+            // PT-04: the ready-made traits picked per section, assembled
+            // ahead of each section's own text (js/persona-traits.js).
+            traits: (p.traits && typeof p.traits === 'object') ? p.traits : {},
             prefill: p.prefill || '',
             avatarFilename: p.avatarFilename || '',
             expressions,

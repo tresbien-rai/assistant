@@ -62,6 +62,7 @@ export function savePersonas() {
             roleLabel: p.roleLabel || '',
             systemPrompt: p.systemPrompt,
             sections: p.sections || {},
+            traits: p.traits || {},
             prefill: p.prefill,
             // avatarFilename is INTENTIONALLY omitted. It's owned by the avatar
             // endpoints (POST/DELETE /api/personas/:id/avatar) — including it

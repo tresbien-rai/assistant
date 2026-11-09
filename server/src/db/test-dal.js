@@ -47,6 +47,23 @@ try {
   });
   console.log(`   ✓ Updated persona name to: ${updatedPersona.name}`);
 
+  // PT-04: traits round-trip as an object, and a partial update that doesn't
+  // mention them leaves them alone (the client's auto-save sends every field,
+  // but the avatar and import paths update one field at a time).
+  const picks = { personality: [{ id: 'calm' }, { id: 'doting', text: 'Fusses.' }] };
+  dal.updatePersona(persona.id, user.id, { traits: picks });
+  dal.updatePersona(persona.id, user.id, { name: 'Updated Assistant' });
+  const withTraits = dal.getPersonaById(persona.id, user.id);
+  if (JSON.stringify(withTraits.traits) !== JSON.stringify(picks)) {
+    throw new Error(`traits did not round-trip: ${JSON.stringify(withTraits.traits)}`);
+  }
+  const fresh = dal.createPersona(user.id, { name: 'No picks' });
+  dal.deletePersona(fresh.id, user.id); // later steps count this user's personas
+  if (JSON.stringify(fresh.traits) !== '{}') {
+    throw new Error('a new persona should start with no traits');
+  }
+  console.log('   ✓ Persona traits round-trip and survive a partial update');
+
   // Test conversation creation
   console.log('\n4. Testing conversation operations...');
   const conversation = dal.createConversation(user.id, {
