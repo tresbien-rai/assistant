@@ -62,6 +62,13 @@ try {
       content TEXT DEFAULT '', attachments TEXT DEFAULT '[]',
       created_at INTEGER NOT NULL
     );
+    -- Legacy personas shape (before 008/015/016: no tagline, sections or
+    -- traits) so the persona column migrations are exercised too.
+    CREATE TABLE personas (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+      system_prompt TEXT DEFAULT '',
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
   `);
 
   // --- Seed legacy data -----------------------------------------------------
@@ -89,6 +96,10 @@ try {
   insConv.run(cP2, userA, p2, 'In P2', t, t);
   insConv.run(cUnfiledA, userA, null, 'Unfiled A', t, t);
   insConv.run(cUnfiledB, userB, null, 'Unfiled B', t, t);
+
+  const legacyPersona = uuid();
+  db.prepare('INSERT INTO personas (id, user_id, name, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(legacyPersona, userA, 'Legacy', 'You are helpful.', t, t);
 
   // --- Run migrations -------------------------------------------------------
   console.log('\n1. Running migrations...');
@@ -133,6 +144,13 @@ try {
   check('004_conversation_tools applied', applied.includes('004_conversation_tools'));
   const convCols = db.prepare('PRAGMA table_info(conversations)').all().map(c => c.name);
   check('conversations.tools_enabled column added', convCols.includes('tools_enabled'));
+
+  // 016: persona traits (PT-04). An existing persona arrives with nothing
+  // picked and its own text untouched, so it assembles exactly as before.
+  check('016_persona_traits applied', applied.includes('016_persona_traits'));
+  const legacyRow = db.prepare('SELECT * FROM personas WHERE id = ?').get(legacyPersona);
+  check('personas.traits column added, defaulting to {}', legacyRow.traits === '{}');
+  check('an existing persona keeps its prompt and sections', legacyRow.system_prompt === 'You are helpful.' && legacyRow.sections === '{}');
   check('existing chats default to NULL (inherit)',
     db.prepare('SELECT tools_enabled FROM conversations WHERE id = ?').get(cP1).tools_enabled === null);
 
