@@ -175,7 +175,7 @@ The data model, server layout and prompt assembly are described in
 | `js/settings-store.js` | Persistence | Settings, personas, catalog and API keys; the debounced auto-save |
 | `js/persona-sections.js` | Persona prompt assembly | The six-section vocabulary; composes the persona prompt client-side |
 | `js/persona-traits.js` | Persona trait library | The ready-made traits per section (the source of truth since PT-04) and how a persona's picks resolve. Ids are permanent: retire, never delete |
-| `js/views/` | Main-area views | `chats`, `models`, `personas`, `profile`, `settings`, `workspaces`, `usage-panel` |
+| `js/views/` | Main-area views | `chats`, `models`, `personas` (+ `persona-traits-editor`, the trait tags, picker and Prompt text), `profile`, `settings`, `workspaces`, `usage-panel` |
 | `js/persona-helpers.js` | Shared persona ops | create/hydrate personas, avatar markup, apply a persona's model settings |
 | `js/avatar.js` | Floating avatar | Size/corner presets, free-drag positioning, the image or emoji it shows |
 | `js/status-bar.js` | Status bar | Billed-token usage and its breakdown |
