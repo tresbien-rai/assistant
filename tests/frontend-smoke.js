@@ -457,6 +457,32 @@ const CHECKS = [
     },
 
     {
+        id: 'persona-traits-survive-autosave',
+        what: 'a persona\'s trait picks reach the server through the debounced auto-save',
+        // PT-05. The auto-save sends every persona field; dropping `traits`
+        // from it would wipe every persona's picks on the next keystroke.
+        // Restores the active persona's own picks afterwards.
+        async run() {
+            const { state, API } = app();
+            const { autoSaveSettings } = await import('../js/settings-store.js');
+            const persona = state.personas[state.activePersonaId];
+            const original = persona.traits || {};
+            const probe = { personality: [{ id: 'calm' }, { id: 'curious', text: '[smoke-harness] probe' }] };
+            try {
+                persona.traits = probe;
+                autoSaveSettings();
+                await sleep(800);                   // past the 300 ms debounce
+                const stored = await API.personas.get(persona.id);
+                assertEqual(JSON.stringify(stored.traits), JSON.stringify(probe), 'stored traits after auto-save');
+            } finally {
+                persona.traits = original;
+                autoSaveSettings();
+                await sleep(800);
+            }
+        },
+    },
+
+    {
         id: 'draft-is-per-conversation',
         what: 'the composer draft and pending attachments do not follow you to another chat',
         // BUG 2. Currently FAILS.
