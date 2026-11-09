@@ -11,6 +11,9 @@
  *   2. Empty sections are never emitted. No stray headings, no blank runs.
  *   3. Order is the fixed vocabulary order, not object key order, so two
  *      personas with the same content always produce the same prompt.
+ *   4. Traits (PT-04): picked traits read as one paragraph ahead of the
+ *      section's own text; library text vs customised text; retired and
+ *      unknown ids; pick-one scales; and the library's own integrity.
  *
  * Run with: node tests/persona-sections.test.js
  */
@@ -23,7 +26,15 @@ import {
     assemblePersonaPrompt,
     filledSectionCount,
     sectionText,
+    sectionBody,
 } from '../js/persona-sections.js';
+import {
+    TRAIT_LIBRARY,
+    TRAIT_SECTION_IDS,
+    findTrait,
+    pickerGroups,
+    resolveTraits,
+} from '../js/persona-traits.js';
 
 let failures = 0;
 function check(label, fn) {
@@ -161,6 +172,125 @@ check('an unknown section in the data is ignored, not emitted', () => {
     // must not appear in the prompt as an unlabelled paragraph.
     const out = assemblePersonaPrompt({ sections: { speech: 'Terse.', quirks: 'Hums.' } });
     assert.ok(!out.includes('Hums.'));
+});
+
+console.log('\n3. traits (PT-04)...');
+
+const lib = (section, id) => findTrait(section, id).trait.text;
+
+check('a picked trait assembles its library text under the section heading', () => {
+    const out = assemblePersonaPrompt({ traits: { personality: [{ id: 'calm' }] } });
+    assert.strictEqual(out, `## Personality\n${lib('personality', 'calm')}`);
+});
+
+check('traits join as one paragraph, in pick order, ahead of the own text', () => {
+    const persona = {
+        sections: { personality: 'Hums while thinking.' },
+        traits: { personality: [{ id: 'curious' }, { id: 'calm' }] },
+    };
+    assert.strictEqual(
+        sectionBody(persona, 'personality'),
+        `${lib('personality', 'curious')} ${lib('personality', 'calm')}\n\nHums while thinking.`,
+    );
+});
+
+check('a customised trait uses its own text, not the library', () => {
+    const out = assemblePersonaPrompt({ traits: { speech: [{ id: 'terse', text: 'Never more than ten words.' }] } });
+    assert.strictEqual(out, '## Voice\nNever more than ten words.');
+});
+
+check('blank customised text falls back to the library', () => {
+    const [t] = resolveTraits({ traits: { speech: [{ id: 'terse', text: '   ' }] } }, 'speech');
+    assert.strictEqual(t.text, lib('speech', 'terse'));
+    assert.strictEqual(t.customised, false);
+});
+
+check('an unknown id is left out of the prompt but reported to the editor', () => {
+    const persona = { traits: { personality: [{ id: 'no_such_trait' }, { id: 'calm' }] } };
+    assert.strictEqual(sectionBody(persona, 'personality'), lib('personality', 'calm'));
+    const unknown = resolveTraits(persona, 'personality').find((t) => t.id === 'no_such_trait');
+    assert.strictEqual(unknown.known, false);
+});
+
+check('an unknown id that was customised keeps working', () => {
+    const out = sectionBody({ traits: { personality: [{ id: 'gone_now', text: 'Whistles.' }] } }, 'personality');
+    assert.strictEqual(out, 'Whistles.');
+});
+
+check('a retired trait leaves the picker but still assembles', () => {
+    const { trait } = findTrait('personality', 'calm');
+    trait.retired = true;
+    try {
+        const offered = pickerGroups('personality').flatMap((g) => g.traits.map((t) => t.id));
+        assert.ok(!offered.includes('calm'));
+        assert.strictEqual(sectionBody({ traits: { personality: [{ id: 'calm' }] } }, 'personality'), trait.text);
+    } finally {
+        delete trait.retired;
+    }
+});
+
+check('two picks from one pick-one scale keep the later one', () => {
+    const persona = { traits: { personality: [{ id: 'calm' }, { id: 'curious' }, { id: 'lively' }] } };
+    assert.deepStrictEqual(resolveTraits(persona, 'personality').map((t) => t.id), ['curious', 'lively']);
+});
+
+check('chips combine freely, contradictions included', () => {
+    const persona = { traits: { personality: [{ id: 'condescending' }, { id: 'earnest' }] } };
+    assert.strictEqual(resolveTraits(persona, 'personality').length, 2);
+});
+
+check('a trait stored under the wrong section is unknown there', () => {
+    assert.strictEqual(sectionBody({ traits: { personality: [{ id: 'terse' }] } }, 'personality'), '');
+});
+
+check('general guidance takes no traits', () => {
+    assert.strictEqual(sectionBody({ traits: { general: [{ id: 'calm' }] } }, 'general'), '');
+});
+
+check('malformed and repeated picks are skipped, not thrown on', () => {
+    const persona = { traits: { personality: [null, 'calm', { id: 5 }, { id: 'curious' }, { id: 'curious' }] } };
+    assert.deepStrictEqual(resolveTraits(persona, 'personality').map((t) => t.id), ['curious']);
+    assert.strictEqual(assemblePersonaPrompt({ traits: 'nonsense' }), '');
+    assert.strictEqual(assemblePersonaPrompt({ traits: { personality: 'calm' } }), '');
+});
+
+check('a section with only traits counts as filled', () => {
+    assert.strictEqual(filledSectionCount({ traits: { speech: [{ id: 'terse' }] } }), 1);
+});
+
+console.log('\n4. the trait library...');
+
+const allTraits = Object.values(TRAIT_LIBRARY).flatMap((groups) => groups.flatMap((g) => g.traits));
+
+check('ids are unique across the whole library', () => {
+    const ids = allTraits.map((t) => t.id);
+    assert.strictEqual(new Set(ids).size, ids.length);
+});
+
+check('ids are lowercase snake_case, which the server also requires', () => {
+    for (const t of allTraits) assert.match(t.id, /^[a-z0-9_]{1,64}$/, t.id);
+});
+
+check('every trait has a label and a sentence', () => {
+    for (const t of allTraits) {
+        assert.ok(t.label && t.label.trim(), `${t.id} has no label`);
+        assert.ok(t.text && t.text.trim(), `${t.id} has no text`);
+    }
+});
+
+check('every scale offers at least two options', () => {
+    for (const groups of Object.values(TRAIT_LIBRARY)) {
+        for (const g of groups) {
+            assert.ok(['scale', 'chip'].includes(g.kind), `${g.name}: unknown kind ${g.kind}`);
+            if (g.kind === 'scale') assert.ok(g.traits.length >= 2, `${g.name} has one option`);
+        }
+    }
+});
+
+check('the library covers exactly the trait sections, and general has none', () => {
+    assert.deepStrictEqual(Object.keys(TRAIT_LIBRARY).sort(), [...TRAIT_SECTION_IDS].sort());
+    assert.ok(TRAIT_SECTION_IDS.every((id) => AUTHORED_SECTION_IDS.includes(id)));
+    assert.ok(!TRAIT_SECTION_IDS.includes('general'));
 });
 
 console.log('\n' + '='.repeat(60));

@@ -382,6 +382,7 @@ async function exportPersona(personaId, opts = {}) {
                 roleLabel: persona.roleLabel || '',
                 systemPrompt: persona.systemPrompt || '',
                 sections: persona.sections || {},
+                traits: persona.traits || {},
                 avatar,
                 expressions,
             },
