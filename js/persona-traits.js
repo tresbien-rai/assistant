@@ -32,9 +32,6 @@
  *   the same clipped style as the section placeholders.
  */
 
-/** The section ids that take traits. `general` has none (D5). */
-export const TRAIT_SECTION_IDS = ['personality', 'speech', 'expertise', 'relationship', 'backstory'];
-
 /**
  * Look up a trait by id within one section.
  * A trait only counts in the section it belongs to; an id stored under another
@@ -375,3 +372,6 @@ export const TRAIT_LIBRARY = {
         ] },
     ],
 };
+
+/** The section ids that take traits: the library's own keys. `general` has none (D5). */
+export const TRAIT_SECTION_IDS = Object.keys(TRAIT_LIBRARY);

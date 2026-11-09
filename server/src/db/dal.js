@@ -300,15 +300,15 @@ function parsePersonaJson(persona) {
     // PS-01. Tolerant: a row written before the column existed, or hand-edited
     // into nonsense, reads as "no sections" rather than throwing inside a
     // persona list request.
-    sections: parsePersonaSections(persona.sections),
+    sections: parsePersonaObjectColumn(persona.sections),
     // PT-04. Same tolerance, same reason: an unreadable traits column reads
     // as "nothing picked", and the persona still assembles from its text.
-    traits: parsePersonaSections(persona.traits),
+    traits: parsePersonaObjectColumn(persona.traits),
   };
 }
 
 /** Parse a persona JSON-object column (sections, traits). Never throws; bad input reads as {}. */
-function parsePersonaSections(raw) {
+function parsePersonaObjectColumn(raw) {
   if (!raw) return {};
   try {
     const v = JSON.parse(raw);

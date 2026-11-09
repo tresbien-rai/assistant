@@ -63,8 +63,9 @@ check('rejects bad ids', () => {
   rejects({ personality: ['calm'] });
 });
 
-check('rejects the same trait picked twice in one section', () => {
-  rejects({ personality: [{ id: 'calm' }, { id: 'calm' }] });
+check('a trait picked twice in one section keeps its first entry, not a 400', () => {
+  const out = validatePersonaTraits({ personality: [{ id: 'calm', text: 'First.' }, { id: 'curious' }, { id: 'calm' }] });
+  assert.deepStrictEqual(out, { personality: [{ id: 'calm', text: 'First.' }, { id: 'curious' }] });
 });
 
 check('rejects customised text that is not a string or is too long', () => {
@@ -82,6 +83,7 @@ check('bounds the number of sections and the length of a section key', () => {
   const many = Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`s${i}`, []]));
   rejects(many);
   rejects({ ['k'.repeat(41)]: [] });
+  rejects(JSON.parse('{"__proto__": [{"id": "calm"}]}'));
 });
 
 console.log('\n2. bundle import (tolerant)...');
@@ -117,6 +119,22 @@ check('malformed entries are dropped without failing the import', () => {
     personality: [{ id: 'calm' }, { id: 'curious' }],
     relationship: [{ id: 'peer' }],
   });
+});
+
+check('a customised trait over the text budget keeps its pick, on library text', () => {
+  const big = 'x'.repeat(2000);
+  const personality = Array.from({ length: 13 }, (_, i) => ({ id: `t${i}`, text: big }));
+  const out = validateBundle(bundle({ traits: { personality } })).persona.traits.personality;
+  assert.strictEqual(out.length, 13);
+  assert.deepStrictEqual(out[12], { id: 't12' });
+  assert.strictEqual(out[11].text, big);
+});
+
+check('a __proto__ section key is ignored on import', () => {
+  const traits = JSON.parse('{"__proto__": [{"id": "calm"}], "speech": [{"id": "terse"}]}');
+  const out = validateBundle(bundle({ traits })).persona.traits;
+  assert.deepStrictEqual(Object.keys(out), ['speech']);
+  assert.strictEqual(Object.getPrototypeOf(out), Object.prototype);
 });
 
 check('nonsense in place of the traits object imports as no traits', () => {

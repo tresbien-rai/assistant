@@ -64,7 +64,9 @@ const MAX_SECTION_KEYS = 12;
 const MAX_SECTION_KEY = 40;
 const MAX_SECTION_VALUE = 8000;
 const MAX_SECTION_TOTAL = 24_000;
-// Persona traits (PT-04), bounded like the write route.
+// Persona traits (PT-04). Shared with the write route (routes/personas.js), so
+// an import can never store picks that the next save would reject. The id
+// pattern also matches js/persona-traits.js's library ids (tested there).
 const MAX_TRAIT_PICKS = 64;
 const TRAIT_ID_PATTERN = /^[a-z0-9_]{1,64}$/;
 const MAX_TRAIT_TEXT = 2000;
@@ -204,7 +206,7 @@ function sanitizeTraits(raw) {
   let total = 0;
   for (const key of Object.keys(raw)) {
     if (Object.keys(out).length >= MAX_SECTION_KEYS) break;
-    if (key.length > MAX_SECTION_KEY || !Array.isArray(raw[key])) continue;
+    if (key === '__proto__' || key.length > MAX_SECTION_KEY || !Array.isArray(raw[key])) continue;
     const picks = [];
     const seen = new Set();
     for (const pick of raw[key]) {
@@ -213,8 +215,9 @@ function sanitizeTraits(raw) {
       if (!TRAIT_ID_PATTERN.test(pick.id) || seen.has(pick.id)) continue;
       seen.add(pick.id);
       const text = str(pick.text, MAX_TRAIT_TEXT);
-      if (text) {
-        if (total + text.length > MAX_TRAIT_TEXT_TOTAL) continue;
+      // Over the text budget, a customised trait keeps its pick and falls back
+      // to the library's wording rather than vanishing.
+      if (text && total + text.length <= MAX_TRAIT_TEXT_TOTAL) {
         total += text.length;
         picks.push({ id: pick.id, text });
       } else {
@@ -294,4 +297,8 @@ module.exports = {
   BUNDLE_KIND_PERSONA,
   IMAGE_TYPES,
   MAX_IMAGE_BYTES,
+  MAX_TRAIT_PICKS,
+  TRAIT_ID_PATTERN,
+  MAX_TRAIT_TEXT,
+  MAX_TRAIT_TEXT_TOTAL,
 };

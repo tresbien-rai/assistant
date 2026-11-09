@@ -21,7 +21,13 @@ const { authenticate } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
-const { validateBundle } = require('../utils/personaBundle');
+const {
+  validateBundle,
+  MAX_TRAIT_PICKS: TRAIT_MAX_PICKS,
+  TRAIT_ID_PATTERN,
+  MAX_TRAIT_TEXT: TRAIT_TEXT_MAX,
+  MAX_TRAIT_TEXT_TOTAL: TRAIT_TEXT_TOTAL_MAX,
+} = require('../utils/personaBundle');
 const {
   AVATARS_DIR,
   avatarFilename,
@@ -47,13 +53,10 @@ const SECTION_KEY_MAX = 40;
 const SECTION_VALUE_MAX = 8000;
 const SECTION_TOTAL_MAX = 24000;
 
-// Persona trait caps (PT-04). Same reasoning: a customised trait's text is
-// sent on every message. The library has ~30 traits in its largest section,
-// so 64 picks per section is a bound, not a limit anyone meets.
-const TRAIT_MAX_PICKS = 64;
-const TRAIT_ID_PATTERN = /^[a-z0-9_]{1,64}$/;
-const TRAIT_TEXT_MAX = 2000;
-const TRAIT_TEXT_TOTAL_MAX = 24000;
+// Persona trait caps (PT-04) come from utils/personaBundle.js, shared with
+// import. Same reasoning as above: a customised trait's text is sent on every
+// message. The largest library section has ~30 traits, so 64 picks per
+// section is a bound, not a limit anyone meets.
 
 // All routes require authentication
 router.use(authenticate);
@@ -123,7 +126,11 @@ function validatePersonaSections(sections) {
  * anything it doesn't know. What it does enforce is the shape the client
  * relies on and the size, since customised text is sent on every message.
  *
- * Normalizing drops any field other than `id` and `text` from each entry.
+ * Normalizing drops any field other than `id` and `text` from each entry, and
+ * a repeated id in one section keeps its first entry instead of failing: the
+ * client auto-saves every field of every persona, so rejecting here would
+ * silently lose the user's other edits over a duplicate the assembly already
+ * ignores (js/persona-traits.js resolveTraits).
  *
  * @param {unknown} traits - { sectionId: [{ id, text? }] }
  * @returns {Object} the object to store
@@ -139,8 +146,8 @@ function validatePersonaTraits(traits) {
   const out = {};
   let total = 0;
   for (const key of keys) {
-    if (key.length > SECTION_KEY_MAX) {
-      throw AppError.validation('A section name is too long');
+    if (key.length > SECTION_KEY_MAX || key === '__proto__') {
+      throw AppError.validation('Invalid section name');
     }
     const picks = traits[key];
     if (!Array.isArray(picks)) {
@@ -150,18 +157,20 @@ function validatePersonaTraits(traits) {
       throw AppError.validation(`A section may have at most ${TRAIT_MAX_PICKS} traits`);
     }
     const seen = new Set();
-    out[key] = picks.map((pick) => {
+    out[key] = [];
+    for (const pick of picks) {
       if (!pick || typeof pick !== 'object' || Array.isArray(pick)) {
         throw AppError.validation('Each trait must be an object');
       }
       if (typeof pick.id !== 'string' || !TRAIT_ID_PATTERN.test(pick.id)) {
         throw AppError.validation('Each trait needs a valid id');
       }
-      if (seen.has(pick.id)) {
-        throw AppError.validation('A trait may only be picked once per section');
-      }
+      if (seen.has(pick.id)) continue;
       seen.add(pick.id);
-      if (pick.text === undefined) return { id: pick.id };
+      if (pick.text === undefined) {
+        out[key].push({ id: pick.id });
+        continue;
+      }
       if (typeof pick.text !== 'string') {
         throw AppError.validation('A customised trait\'s text must be a string');
       }
@@ -169,8 +178,8 @@ function validatePersonaTraits(traits) {
         throw AppError.validation(`A customised trait must be ${TRAIT_TEXT_MAX} characters or fewer`);
       }
       total += pick.text.length;
-      return { id: pick.id, text: pick.text };
-    });
+      out[key].push({ id: pick.id, text: pick.text });
+    }
   }
   if (total > TRAIT_TEXT_TOTAL_MAX) {
     throw AppError.validation(`The customised traits are too long (limit ${TRAIT_TEXT_TOTAL_MAX} characters)`);
