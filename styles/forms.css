@@ -1516,12 +1516,254 @@
     margin-bottom: 14px;
 }
 
-/* Tighter than the default gap under a textarea: each field's help text sits
-   directly beneath it, and the next label needs the visual break instead. */
-#personaSectionFields .textarea-resizable {
+/* Each section (PT-05): label, help, trait tags, then one panel holding the
+   Prompt text and the section's own textarea. The break between sections
+   comes from the section block, not the fields inside it. */
+.persona-section {
+    margin-bottom: 22px;
+}
+
+.persona-section > .help-text {
+    margin: 2px 0 8px;
+}
+
+#personaSectionFields .trait-panel .textarea-resizable {
+    margin-bottom: 0;
+}
+
+/* ===== Persona traits (PT-05) =====
+   Tags for what is picked, the Prompt text panel (trait sentences as
+   assembled, click to edit) and the picker sheet. Design:
+   docs/design/PERSONA_TRAITS_DESIGN.md D9. */
+
+.trait-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.trait-tag {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    border: 1px solid var(--accent);
+    background: var(--accent-subtle);
+    border-radius: var(--radius-full);
+    font-size: var(--text-xs);
+}
+
+.trait-tag.is-customised { border-color: var(--warning); }
+.trait-tag.is-unknown { border-color: var(--border-color); background: none; color: var(--text-muted); }
+.trait-tag.is-linked { box-shadow: 0 0 0 2px var(--accent-light); }
+
+.trait-tag-label,
+.trait-tag-remove {
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.trait-tag-label { padding: 3px 4px 3px 11px; overflow-wrap: anywhere; text-align: left; }
+.trait-tag-label:disabled { cursor: default; }
+.trait-tag-remove { padding: 3px 9px 3px 4px; opacity: 0.7; font-size: 0.9rem; line-height: 1; }
+.trait-tag-remove:hover { opacity: 1; }
+
+.trait-add {
+    border: 1px dashed var(--text-muted);
+    background: none;
+    color: var(--text-secondary);
+    border-radius: var(--radius-full);
+    padding: 3px 11px;
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: pointer;
+}
+
+.trait-add:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+
+.trait-panel {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 10px 12px 12px;
+}
+
+.trait-panel-cap {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
     margin-bottom: 4px;
 }
 
-#personaSectionFields .help-text {
-    margin-bottom: 16px;
+.trait-text { margin-bottom: 8px; }
+
+.trait-paragraph {
+    margin: 0 0 6px;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.trait-sentence {
+    border-radius: 3px;
+    cursor: text;
+    transition: background-color 0.1s;
+}
+
+.trait-sentence:hover,
+.trait-sentence:focus-visible,
+.trait-sentence.is-linked { background: var(--accent-subtle); outline: none; }
+
+.trait-sentence.is-customised {
+    text-decoration: underline dotted var(--warning);
+    text-underline-offset: 3px;
+}
+
+.trait-text-empty {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.trait-edit { margin: 4px 0 8px; }
+.trait-edit-field { width: 100%; resize: vertical; }
+
+.trait-edit-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    margin-top: 4px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.trait-edit-state { flex: 1; min-width: 10em; }
+.trait-edit-state .is-customised,
+.trait-tag.is-customised .trait-tag-label span { color: var(--warning); }
+
+.trait-link-btn {
+    background: none;
+    border: none;
+    padding: 2px 0;
+    color: var(--accent-light);
+    font: inherit;
+    cursor: pointer;
+}
+
+.trait-link-btn:hover { text-decoration: underline; }
+
+/* The picker: a centred sheet, a bottom sheet on a phone. Not a .modal-overlay
+   (it is created on open and removed on close, so there is no visibility
+   transition to get wrong), but it stacks the same way. */
+.trait-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 260;
+}
+
+.trait-sheet {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 480px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.trait-sheet-head {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.trait-sheet-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.trait-sheet-title-row h3 { margin: 0; font-size: var(--text-base); }
+
+.trait-sheet-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+
+.trait-sheet-search { width: 100%; }
+
+/* `contain` stops a scroll that reaches the end from moving the page behind. */
+.trait-sheet-list { overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px; flex: 1; }
+
+.trait-group { margin-bottom: 12px; }
+
+.trait-group-name {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.trait-group-kind { text-transform: none; letter-spacing: 0; color: var(--text-muted); }
+
+.trait-option {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 6px 8px;
+    color: var(--text-primary);
+    font: inherit;
+    cursor: pointer;
+}
+
+.trait-option:hover { background: var(--bg-tertiary); }
+
+.trait-option-check {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    border: 1px solid var(--text-muted);
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    font-size: 0.7rem;
+}
+
+.trait-option.is-radio .trait-option-check { border-radius: 50%; }
+.trait-option.is-on .trait-option-check { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+.trait-option-body { min-width: 0; }
+.trait-option-label { display: block; font-size: var(--text-sm); font-weight: 600; }
+.trait-option-text { display: block; font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
+
+.trait-sheet-foot {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+}
+
+@media (max-width: 600px) {
+    .trait-sheet-backdrop { align-items: flex-end; padding: 0; }
+    .trait-sheet { max-width: none; max-height: 85vh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
 }

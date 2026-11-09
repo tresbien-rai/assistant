@@ -1,6 +1,6 @@
 # Persona Traits — Design
 
-> **Status (2026-11-09):** In progress. PT-01…04 done: Background rename, the trait library, the picker design (D9), and data + assembly (`js/persona-traits.js`). Next: PT-05, the picker in the persona editor.
+> **Status (2026-11-09):** Complete. PT-01…05 shipped: persona sections take ready-made traits through a tag-and-picker editor with editable prompt text. Bundles (PT-06) and user-saved traits (PT-07) are recorded for later, not designed.
 
 Arising from: the 2026-11-06 design/UX conversation. Builds on persona
 sections (PS-01/PS-02, `PROFILE_DESIGN.md` §9, `js/persona-sections.js`).
@@ -262,7 +262,7 @@ current placeholders.
 | PT-02 ✅ #223 | Brainstorm the trait library | A session with the user, axis by axis per section. Output: the library file's contents (ids, labels, groups, text). Text stays rough (wording last). |
 | PT-03 ✅ | Prototype the picker | Two or three layouts (e.g. dropdown with chips, compact summary row) as a throwaway page using the real trait list; the user picks one. Decides how customise and reset look. |
 | PT-04 ✅ | Data + assembly | Migration for `personas.traits`, DAL/route/store, bundle export/import, library module, `assemblePersonaPrompt` changes. Tests in `tests/persona-sections.test.js` (library text, customised text, retired/unknown ids, pick-one validity). |
-| PT-05 | Build the picker in the persona editor | The design in D9: tags, the picker sheet, Prompt text with edit-in-place customise / reset, the Custom box. Phone width checked. |
+| PT-05 ✅ | Build the picker in the persona editor | The design in D9: tags, the picker sheet, Prompt text with edit-in-place customise / reset, the Custom box. Phone width checked. |
 | PT-06 | Bundles | Later; see §5. |
 | PT-07 | User-saved traits | Later; see §5. |
 

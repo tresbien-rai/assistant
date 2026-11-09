@@ -457,6 +457,34 @@ const CHECKS = [
     },
 
     {
+        id: 'persona-traits-survive-autosave',
+        what: 'a persona\'s trait picks reach the server through the debounced auto-save',
+        // PT-05. The auto-save sends every persona field; dropping `traits`
+        // from it would wipe every persona's picks on the next keystroke.
+        // Works on a throwaway persona, made active only for the save and
+        // deleted afterwards, so no real persona is ever written to.
+        async run() {
+            const { state, API } = app();
+            const { autoSaveSettings } = await import('../js/settings-store.js');
+            const probe = { personality: [{ id: 'calm' }, { id: 'curious', text: '[smoke-harness] probe' }] };
+            const scratch = await API.personas.create({ name: SCRATCH_TITLE });
+            const savedActive = state.activePersonaId;
+            try {
+                state.personas[scratch.id] = { ...scratch, traits: probe };
+                state.activePersonaId = scratch.id;
+                autoSaveSettings();
+                await sleep(800);                   // past the 300 ms debounce
+                const stored = await API.personas.get(scratch.id);
+                assertEqual(JSON.stringify(stored.traits), JSON.stringify(probe), 'stored traits after auto-save');
+            } finally {
+                state.activePersonaId = savedActive;
+                delete state.personas[scratch.id];
+                await API.personas.delete(scratch.id);
+            }
+        },
+    },
+
+    {
         id: 'draft-is-per-conversation',
         what: 'the composer draft and pending attachments do not follow you to another chat',
         // BUG 2. Currently FAILS.

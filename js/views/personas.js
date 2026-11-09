@@ -20,6 +20,7 @@ import {
 } from '../persona-helpers.js';
 import { savePersonas, autoSaveSettings } from '../settings-store.js';
 import { PERSONA_SECTIONS, AUTHORED_SECTION_IDS, sectionText } from '../persona-sections.js';
+import { wireTraitEditor, syncTraitEditors } from './persona-traits-editor.js';
 import { renderConversationList, renderConversation } from './chats.js';
 import { setActiveConversation, forgetConversationDraft } from '../active-conversation.js';
 import { UiPrefs } from '../ui-prefs.js';
@@ -495,17 +496,30 @@ function sectionField(id) {
 function buildPersonaSectionFields() {
     const host = elements.personaSectionFields;
     if (!host) return;
+    // Each section (PT-05): its picked traits as tags, then one panel holding
+    // the section's Prompt text — the trait sentences as assembled — with the
+    // section's own textarea underneath as its next paragraph. The tags and
+    // sentences are rendered by views/persona-traits-editor.js into the two
+    // `data-trait-*` containers; the textarea stays here, untouched by it.
     host.innerHTML = AUTHORED_SECTION_IDS.map((id) => {
         const section = PERSONA_SECTIONS.find((s) => s.id === id);
+        const sid = escapeHtml(id);
         return `
-            <label for="personaSection_${escapeHtml(id)}">${escapeHtml(section.label)}</label>
-            <div class="textarea-resizable">
-                <textarea id="personaSection_${escapeHtml(id)}" class="persona-section-field"
-                          data-section-id="${escapeHtml(id)}" rows="3"
-                          placeholder="${escapeHtml(section.placeholder)}"></textarea>
-                <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
-            </div>
-            <p class="help-text">${escapeHtml(section.help)}</p>`;
+            <div class="persona-section">
+                <label for="personaSection_${sid}">${escapeHtml(section.label)}</label>
+                <p class="help-text">${escapeHtml(section.help)}</p>
+                <div class="trait-tags" data-trait-tags="${sid}"></div>
+                <div class="trait-panel">
+                    <div class="trait-panel-cap">Prompt text</div>
+                    <div class="trait-text" data-trait-text="${sid}"></div>
+                    <div class="textarea-resizable">
+                        <textarea id="personaSection_${sid}" class="persona-section-field"
+                                  data-section-id="${sid}" rows="2"
+                                  placeholder="${escapeHtml(section.placeholder)}"></textarea>
+                        <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
+                    </div>
+                </div>
+            </div>`;
     }).join('');
 
     // One delegated listener rather than five: the fields never change identity,
@@ -513,6 +527,7 @@ function buildPersonaSectionFields() {
     host.addEventListener('input', (e) => {
         if (e.target.dataset.sectionId) autoSaveSettings();
     });
+    wireTraitEditor(host);
     // The handles this just rendered are inert until wired. Built once, so
     // wired once; the call is idempotent regardless.
     setupTextareaResizers();
@@ -537,4 +552,5 @@ export function syncPersonaSectionFields(persona) {
         if (!field || field === document.activeElement) continue;
         field.value = persona ? sectionText(persona, id) : '';
     }
+    syncTraitEditors(persona);
 }
