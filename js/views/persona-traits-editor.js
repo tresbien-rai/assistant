@@ -26,6 +26,7 @@
  * has focus skips that section, the same insurance the section textareas get.
  */
 
+import { state } from '../state.js';
 import { escapeHtml } from '../util/format.js';
 import { autoSaveSettings } from '../settings-store.js';
 import { PERSONA_SECTIONS } from '../persona-sections.js';
@@ -39,6 +40,26 @@ let editing = null;
 let sheet = null;
 /** The editor's host element, once wired. */
 let host = null;
+/** True between a pointer press and its release, anywhere on the page. */
+let pointerDown = false;
+
+/**
+ * Follow the persona to the object `state` holds now. Re-hydrating personas
+ * replaces their objects, and an edit made to the old one would never be saved.
+ */
+function refreshPersona() {
+    if (persona && state.personas[persona.id]) persona = state.personas[persona.id];
+}
+
+/**
+ * Run `fn` once the pointer press in progress (if any) has produced its click.
+ * Repainting between a press and its release replaces the node under the
+ * pointer, and the browser then sends the click nowhere.
+ */
+function afterPointer(fn) {
+    if (!pointerDown) return fn();
+    document.addEventListener('pointerup', () => setTimeout(fn, 0), { once: true, capture: true });
+}
 
 const keyOf = (sec, id) => `${sec}:${id}`;
 const sectionLabel = (sec) => (PERSONA_SECTIONS.find((s) => s.id === sec) || {}).label || sec;
@@ -88,7 +109,7 @@ function resetText(sec, id) {
  * to the library's wording, or emptied, follows the library again. An unknown
  * trait has no library wording, so emptying it removes the pick.
  */
-function finishEdit() {
+function finishEdit({ render = true } = {}) {
     if (!editing) return;
     const { sec, id } = editing;
     editing = null;
@@ -105,7 +126,7 @@ function finishEdit() {
         else pick.text = text;
         autoSaveSettings();
     }
-    renderSection(sec);
+    if (render) renderSection(sec);
 }
 
 // ===== Rendering =====
@@ -223,25 +244,25 @@ function openSheet(sec, opener) {
             </div>
         </div>`;
     document.body.appendChild(el);
-    sheet = { sec, el, opener, query: '' };
+    sheet = { sec, el, opener, query: '', onKey: sheetKeydown };
+    // On the document, not the sheet: focus can be outside it (Safari does
+    // not focus a clicked button), and Escape and the Tab trap must still work.
+    document.addEventListener('keydown', sheetKeydown, true);
 
     el.addEventListener('click', (e) => {
         if (e.target === el) return closeSheet();
         const btn = e.target.closest('[data-trait-action]');
         if (!btn) return;
         if (btn.dataset.traitAction === 'close') closeSheet();
-        else if (btn.dataset.traitAction === 'toggle') toggle(btn.dataset.sec, btn.dataset.id);
+        else if (btn.dataset.traitAction === 'toggle') {
+            refreshPersona();
+            toggle(btn.dataset.sec, btn.dataset.id);
+        }
     });
     el.addEventListener('input', (e) => {
         if (!e.target.classList.contains('trait-sheet-search')) return;
         sheet.query = e.target.value;
         renderSheetList();
-    });
-    el.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            e.stopPropagation();
-            closeSheet();
-        }
     });
     renderSheetList();
     el.querySelector('.trait-sheet-search').focus();
@@ -275,10 +296,34 @@ function renderSheetList() {
     list.scrollTop = top;
 }
 
+/** Escape closes the picker; Tab cycles within it, as a modal dialog should. */
+function sheetKeydown(e) {
+    if (!sheet) return;
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeSheet();
+        return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusable = [...sheet.el.querySelectorAll('button, input')];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const inside = sheet.el.contains(document.activeElement);
+    if (!inside || (e.shiftKey && document.activeElement === first)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+    }
+}
+
 function closeSheet({ restoreFocus = true } = {}) {
     if (!sheet) return;
-    const { el, sec, opener } = sheet;
+    const { el, sec, opener, onKey } = sheet;
     sheet = null;
+    document.removeEventListener('keydown', onKey, true);
     el.remove();
     if (restoreFocus) {
         // The opener was repainted while the picker was open; focus its successor.
@@ -301,19 +346,24 @@ export function wireTraitEditor(el) {
     host.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-trait-action]');
         if (!btn || !persona) return;
+        refreshPersona();
         const { sec, id } = btn.dataset;
+        // A click outside the open sentence closes it first. The focusout below
+        // does the same, but a quick click can arrive before it runs.
+        const inEditor = !!btn.closest('.trait-edit');
+        const prev = editing && !inEditor ? { ...editing } : null;
+        if (prev) finishEdit({ render: false });
         switch (btn.dataset.traitAction) {
             case 'add': openSheet(sec, btn); break;
             case 'remove': toggle(sec, id); break;
             case 'reset': editing = null; resetText(sec, id); break;
             case 'done': finishEdit(); break;
-            case 'edit': {
-                const same = editing && editing.sec === sec && editing.id === id;
-                finishEdit();
-                if (!same) startEdit(sec, id);
+            case 'edit':
+                // Clicking the open sentence's own tag just closes it.
+                if (!prev || prev.sec !== sec || prev.id !== id) startEdit(sec, id);
                 break;
-            }
         }
+        if (prev && !(editing && editing.sec === prev.sec)) renderSection(prev.sec);
     });
 
     // The bar's buttons must not take focus from the textarea: losing it would
@@ -327,6 +377,7 @@ export function wireTraitEditor(el) {
     host.addEventListener('input', (e) => {
         if (!e.target.classList.contains('trait-edit-field')) return;
         const { sec, id } = e.target.dataset;
+        refreshPersona();
         const pick = ((persona.traits || {})[sec] || []).find((p) => p.id === id);
         if (!pick) return;
         pick.text = e.target.value;
@@ -352,13 +403,27 @@ export function wireTraitEditor(el) {
         // After the focus has landed: still inside the editor means a bar button.
         setTimeout(() => {
             const box = host.querySelector('.trait-edit');
-            if (editing && !(box && box.contains(document.activeElement))) finishEdit();
+            if (!editing || (box && box.contains(document.activeElement))) return;
+            // Close it now, but repaint only after any click that caused this
+            // has landed, so clicking a tag's × or another sentence works first
+            // time. A click that acts repaints by itself; this covers the rest.
+            const { sec } = editing;
+            finishEdit({ render: false });
+            afterPointer(() => { if (!editing || editing.sec !== sec) renderSection(sec); });
         }, 0);
     });
 
+    document.addEventListener('pointerdown', () => { pointerDown = true; }, true);
+    for (const type of ['pointerup', 'pointercancel']) {
+        document.addEventListener(type, () => { pointerDown = false; }, true);
+    }
+
     // Hovering a tag lights up its sentence, and the other way round.
+    let hovered = null;
     host.addEventListener('mouseover', (e) => {
         const key = e.target.closest('[data-trait-key]')?.dataset.traitKey || null;
+        if (key === hovered) return;
+        hovered = key;
         host.querySelectorAll('.is-linked').forEach((n) => n.classList.remove('is-linked'));
         if (key) host.querySelectorAll(`[data-trait-key="${CSS.escape(key)}"]`).forEach((n) => n.classList.add('is-linked'));
     });

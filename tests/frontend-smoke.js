@@ -461,23 +461,25 @@ const CHECKS = [
         what: 'a persona\'s trait picks reach the server through the debounced auto-save',
         // PT-05. The auto-save sends every persona field; dropping `traits`
         // from it would wipe every persona's picks on the next keystroke.
-        // Restores the active persona's own picks afterwards.
+        // Works on a throwaway persona, made active only for the save and
+        // deleted afterwards, so no real persona is ever written to.
         async run() {
             const { state, API } = app();
             const { autoSaveSettings } = await import('../js/settings-store.js');
-            const persona = state.personas[state.activePersonaId];
-            const original = persona.traits || {};
             const probe = { personality: [{ id: 'calm' }, { id: 'curious', text: '[smoke-harness] probe' }] };
+            const scratch = await API.personas.create({ name: SCRATCH_TITLE });
+            const savedActive = state.activePersonaId;
             try {
-                persona.traits = probe;
+                state.personas[scratch.id] = { ...scratch, traits: probe };
+                state.activePersonaId = scratch.id;
                 autoSaveSettings();
                 await sleep(800);                   // past the 300 ms debounce
-                const stored = await API.personas.get(persona.id);
+                const stored = await API.personas.get(scratch.id);
                 assertEqual(JSON.stringify(stored.traits), JSON.stringify(probe), 'stored traits after auto-save');
             } finally {
-                persona.traits = original;
-                autoSaveSettings();
-                await sleep(800);
+                state.activePersonaId = savedActive;
+                delete state.personas[scratch.id];
+                await API.personas.delete(scratch.id);
             }
         },
     },
