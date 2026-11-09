@@ -1,6 +1,6 @@
 # Persona Traits — Design
 
-> **Status (2026-11-07):** Designed, not built. Ready-made, combinable traits for each persona section, with a per-persona "customise" option. The picker UI gets prototyped before it is built.
+> **Status (2026-11-09):** In progress. PT-01…03 done: Background rename (#222), the trait library (`PERSONA_TRAITS_LIBRARY.md`, #223) and the picker design (D9). Next: PT-04, data and assembly.
 
 Arising from: the 2026-11-06 design/UX conversation. Builds on persona
 sections (PS-01/PS-02, `PROFILE_DESIGN.md` §9, `js/persona-sections.js`).
@@ -58,6 +58,14 @@ own words.
 *Why (the user's idea):* the library's version suits most people, and the tick
 is how you take control of the one trait that doesn't.
 
+**Amended in PT-03 (2026-11-09): no tick. Editing the sentence is what
+customises it.** The picker shows each trait's sentence (D9), so clicking it
+and typing is the obvious way in; a separate tick would be one more control
+for the same thing, and one you could flip by accident. The rest stands: an
+edited trait is marked as customised and offers **Reset to default**. Editing
+it back to the library wording, or clearing it, also returns it to following
+the library.
+
 ### D4. Rename Backstory → Background
 Label and heading become **Background**. Not every assistant character has a
 *story*; "background" also covers a profession, a setting or a plain role. The
@@ -104,6 +112,29 @@ The user's leaning: no wall of chips, since they take space and look cluttered.
 Instead, something like a dropdown per section that opens to selectable chips,
 with the picks shown compactly when it is closed. The exact shape is decided by
 prototyping several options (PT-03), not here.
+
+**Decided in PT-03 (2026-11-09).** Of three prototypes (drawers per section;
+tags plus a picker; a tabbed builder showing each pick's sentence) the user
+chose the tags-plus-picker layout combined with the builder's live text. Per
+section:
+
+- **Tags** for what is picked (customised ones marked ✎), each with ×, and
+  **+ Add trait**.
+- **+ Add trait** opens a searchable picker (a bottom sheet on a phone),
+  options grouped as in the library with each one's sentence underneath.
+  Scales behave as radio buttons, chips as checkboxes.
+- **Prompt text**: below the tags, the section's trait sentences as one
+  paragraph, exactly as assembled. Click a sentence (or its tag) to edit it in
+  place (D3). Hovering a tag highlights its sentence.
+- **The Custom box** sits inside the same panel, underneath, since it is the
+  section's next paragraph.
+
+*Why:* the editor stays short, which was the worry about a wall of chips;
+search carries a library of 150-odd traits; and showing the real text makes
+the step from picks to prompt visible, so customising is just editing what
+you can already see. Reference prototype:
+`docs/design/prototypes/persona-trait-picker.html` (open the file in a
+browser; throwaway code, not for reuse).
 
 ## 3. Data
 
@@ -167,6 +198,8 @@ special.
 
 ## 6. Example traits (a starting point for the PT-02 brainstorm)
 
+*Superseded by the agreed library, `PERSONA_TRAITS_LIBRARY.md` (PT-02). Kept as the brainstorm's starting point.*
+
 These are examples to react to, not the final library. The real list gets
 brainstormed axis by axis in PT-02. Text is in the same clipped style as the
 current placeholders.
@@ -216,11 +249,11 @@ current placeholders.
 
 | ID | What | Notes |
 |---|---|---|
-| PT-01 | Rename Backstory → Background | Label, heading, help, placeholder; id stays `backstory`. Tiny, ships alone. Changes the prompt heading for existing personas, which is fine. |
-| PT-02 | Brainstorm the trait library | A session with the user, axis by axis per section. Output: the library file's contents (ids, labels, groups, text). Text stays rough (wording last). |
-| PT-03 | Prototype the picker | Two or three layouts (e.g. dropdown with chips, compact summary row) as a throwaway page using the real trait list; the user picks one. Decides how customise and reset look. |
+| PT-01 ✅ #222 | Rename Backstory → Background | Label, heading, help, placeholder; id stays `backstory`. Tiny, ships alone. Changes the prompt heading for existing personas, which is fine. |
+| PT-02 ✅ #223 | Brainstorm the trait library | A session with the user, axis by axis per section. Output: the library file's contents (ids, labels, groups, text). Text stays rough (wording last). |
+| PT-03 ✅ | Prototype the picker | Two or three layouts (e.g. dropdown with chips, compact summary row) as a throwaway page using the real trait list; the user picks one. Decides how customise and reset look. |
 | PT-04 | Data + assembly | Migration for `personas.traits`, DAL/route/store, bundle export/import, library module, `assemblePersonaPrompt` changes. Tests in `tests/persona-sections.test.js` (library text, customised text, retired/unknown ids, pick-one validity). |
-| PT-05 | Build the picker in the persona editor | The chosen prototype, with customise / reset and the Custom box. Phone width checked. |
+| PT-05 | Build the picker in the persona editor | The design in D9: tags, the picker sheet, Prompt text with edit-in-place customise / reset, the Custom box. Phone width checked. |
 | PT-06 | Bundles | Later; see §5. |
 | PT-07 | User-saved traits | Later; see §5. |
 
