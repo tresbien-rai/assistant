@@ -21,6 +21,9 @@ How we work (branches, verification, merging, wrap-up) lives in
 > tool trail designed (`TOOL_TRAIL_DESIGN.md`).
 > 2026-11-07: persona traits designed (`PERSONA_TRAITS_DESIGN.md`, #220) and made the next target;
 > harness idea noted under §7 *Later*.
+> 2026-11-09: persona traits shipped (PT-01…05, #222–#226): Background rename, the
+> 153-trait library, the picker design, storage + assembly, and the editor picker; one
+> live check owed (§8); cloud-session gotchas added (§9).
 
 ---
 
@@ -130,7 +133,7 @@ The schema is `server/src/db/schema.sql` plus numbered migrations in
   `node src/.../test-*.js`). Known exception: `routes/test-apiKeys-http.js`
   needs a live server on `:3000` and fails on clean `main` — not in `npm test`,
   don't chase it.
-- **Frontend unit:** `node tests/persona-sections.test.js`.
+- **Frontend unit:** `node tests/persona-sections.test.js` (sections, traits and the trait library).
 - **Frontend smoke:** `tests/frontend-smoke.js` **must be run inside the live
   app** — `node tests/frontend-smoke.js` exits 0 without running anything. After
   dev-login, in the browser console:
@@ -203,7 +206,10 @@ the persona prompt instead of complementing it. Don't rebuild it.
 4. `scratchpad` — scratchpad instructions
 5. `persona` — position marker for the persona's own prompt, which the
    **client** assembles from six sections (`js/persona-sections.js`:
-   Personality, Voice, Expertise, Relationship, Backstory, General guidance)
+   Personality, Voice, Expertise, Relationship, Background, General guidance).
+   Each of the first five is its picked traits' sentences as one paragraph
+   (`js/persona-traits.js`, the library; customised picks use their own
+   text), then the section's own text as the next paragraph.
 
 A **preset** can reword or reorder these blocks but can never enable a
 capability. Preset resolution: chat → persona → account default → built-in
@@ -264,7 +270,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
 | UI polish backlog | 📐 | UIP-01, UIP-02 | `../UI_POLISH.md` |
-| Persona traits (ready-made, combinable, customisable) | 📐 | PT-01…07 | `PERSONA_TRAITS_DESIGN.md` |
+| Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
 ---
@@ -272,13 +278,12 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 ## 7. Current focus and next targets
 
 **Next up (unless the user redirects):**
-1. **PT — persona traits** (`docs/design/PERSONA_TRAITS_DESIGN.md`). The
-   user's current direction (2026-11-06) is design and UX. Start with PT-01
-   (Backstory → Background rename), then PT-02, a brainstorm session with the
-   user on the trait library "based on different personality axes", then
-   PT-03, picker prototypes for the user to choose from. The user also feels
-   the system-prompt wording and overall UI design could be refined; that
-   joins the polish pass below.
+1. **Live with persona traits** (PT-01…05 shipped 2026-11-07…09). Build a few
+   personas with the trait picker, on a phone too, and note what reads badly
+   in the editor or in replies. Trait wording lives in `js/persona-traits.js`
+   and can be improved any time (ids stay). PT-06 (bundles: an archetype in
+   one pick) and PT-07 (saving your own traits) are recorded, not designed;
+   pick them up only if living with traits asks for them.
 2. **UP-05 / UP-06 — persona notes.** A per-persona store distilled from that
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
@@ -287,7 +292,10 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
    (`--font-mono` names Fira Code, which is never loaded) plus the agreed
    font-picker extension; UIP-02, a whole-UI wording pass with persona
    placeholders as the highest-leverage copy. The user deliberately deferred
-   wording until the feature set is complete.
+   wording until the feature set is complete. It now also covers the trait
+   editor's labels ("Prompt text", "+ Add trait", the persona intro line that
+   still speaks of "boxes") and the system-prompt wording the user felt could
+   be refined (2026-11-06).
 
 **Later:**
 4. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
@@ -321,6 +329,10 @@ server log and against Drive, not just from the model's reply:
 - [x] **Context toggles**: auto and pin inject a chat file, mute keeps it out (still in `list_files`, readable); a knowledge file switched off for the chat leaves the content and stays named in `<available_files>`, and Haiku read it from there.
 - [x] **Tool trail** (TT-03), 2026-10-15, test account, four turns each on `claude-haiku-5-5` and `gemini-3.8-flash` (create + move, recall, edit, title): no "results I hadn't seen" apology, no tool re-runs, no `<tool_trail>` copied; both edits confirmed on Drive. It also showed a successful move saving no destination (a move is a file card), fixed in #218. One new doubt on Haiku, below.
 - [ ] **Advanced presets visual pass**: the prompt inspector, the block editor at narrow widths, the composer's preset pill. Only verified through the DOM so far.
+- [ ] **Persona traits on a real phone** (PT-05, #226): build a persona with the
+  trait picker on the phone (bottom-sheet picker, editing a sentence, Reset)
+  and chat with it once; check the reply reflects the picks. Verified only in
+  automated desktop/phone-width runs so far.
 - [ ] **Gemini 3.5+ trimmed body** (#217): one real send on `gemini-3.8-flash` (and `gemini-4-argon` if keyed) with tools off and thinking on Model default, then on Level; expect a normal reply. The body only lost fields, so low risk.
 
 ### Deferred on purpose
@@ -513,6 +525,23 @@ Setting up another computer (e.g. the laptop) to work exactly like the PC:
   copy-button toasts never appear in automated runs. That is not a bug.
 - A browser-pane eval can time out while the page keeps executing; split long
   test chains into small evals.
+
+### Cloud sessions (started from the mobile app)
+- **cdnjs is blocked**, so `marked` and `highlight.js` never load and the app
+  stops at "marked is not defined". For a headless Playwright check, fetch the
+  real files from npm (`npm pack marked@12.0.0 @highlightjs/cdn-assets@11.9.0`,
+  which the sandbox allows) and serve them with `page.route(/cdnjs/, …)`. A
+  hand-written stub breaks the smoke harness's markdown check.
+- **The session's git rules refuse remote branch deletes and force-pushes.**
+  Merged session branches pile up on origin until the user deletes them. To
+  reuse the session branch after a squash-merge, recreate it from
+  `origin/main` and *merge* the old remote branch in (its content is already
+  on `main`, so the PR diff stays clean) instead of force-pushing.
+- **`server/src/db/test-dal.js` writes to the dev database**
+  (`server/data/assistant.db`) and applies pending migrations there, so a
+  dev server started afterwards logs "No pending migrations" even for a new
+  one. Not a bug, but it makes "did my migration run?" misleading: check
+  `schema_migrations` directly.
 - Screenshots have been unreliable here; verify visuals with computed styles too.
 
 ---
