@@ -1,6 +1,6 @@
 # CLAUDE.md - Project Instructions for Claude Code
 
-This file says **how we work** on Tessera. For **what exists and where it
+This file says **how we work** on Solier. For **what exists and where it
 stands** (architecture, design principles, feature status, owed items,
 gotchas), read [`docs/PROJECT.md`](docs/PROJECT.md) at the start of every
 session. It is the master document.

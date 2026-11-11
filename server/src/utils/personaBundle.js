@@ -40,6 +40,7 @@
  *   Drive, never the exporter's. Imports are always tools-off.
  */
 
+const config = require('../config');
 const { sanitizeExpressionNames } = require('../prompts/tessera');
 const AppError = require('./AppError');
 
@@ -231,17 +232,17 @@ function sanitizeTraits(raw) {
 
 function validateBundle(bundle) {
   if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
-    throw AppError.validation('Not a valid Tessera bundle');
+    throw AppError.validation(`Not a valid ${config.brand} bundle`);
   }
   if (bundle.format !== BUNDLE_FORMAT) {
-    throw AppError.validation('Not a Tessera bundle file');
+    throw AppError.validation(`Not a ${config.brand} bundle file`);
   }
   if (bundle.kind !== BUNDLE_KIND_PERSONA) {
     throw AppError.validation(`This bundle contains "${bundle.kind}", not a persona`);
   }
   // Forward-compat: refuse newer formats rather than guessing at them.
   if (typeof bundle.version !== 'number' || bundle.version > BUNDLE_VERSION) {
-    throw AppError.validation('This bundle was made by a newer version of Tessera');
+    throw AppError.validation(`This bundle was made by a newer version of ${config.brand}`);
   }
 
   const src = bundle.persona;

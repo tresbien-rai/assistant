@@ -1,6 +1,6 @@
 ---
 name: wrap
-description: Wrap up a Tessera work session — make sure work is merged and cleaned up, then bring docs/PROJECT.md, the touched design docs, and the working rules in CLAUDE.md up to date and report to the user. Use when the user types /wrap, or says the session is done ("let's wrap up", "that's it for today", "close out").
+description: Wrap up a Solier work session — make sure work is merged and cleaned up, then bring docs/PROJECT.md, the touched design docs, and the working rules in CLAUDE.md up to date and report to the user. Use when the user types /wrap, or says the session is done ("let's wrap up", "that's it for today", "close out").
 ---
 
 # Wrap up a session

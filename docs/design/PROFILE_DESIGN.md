@@ -1,6 +1,6 @@
 # User Profile & Persona Notes — Design
 
-> **Status (2026-09-25):** In progress — BR-01, UP-01…03, PS-01/02 shipped (#194–#203); UP-04 reverted on purpose (#200); UP-05/06 (persona notes) designed, not built. Current status of everything: `docs/PROJECT.md`.
+> **Status (2026-11-10):** In progress — BR-01/02, UP-01…03, PS-01/02 shipped (#194–#203, #228); UP-04 reverted on purpose (#200); UP-05/06 (persona notes) designed, not built. Current status of everything: `docs/PROJECT.md`.
 
 Designed 2026-09-08.
 Arising from: `project_next_targets` item 3 — "a user profile the user can customise"
@@ -179,6 +179,7 @@ Everything new is a preset block. Nothing new is invented to support it.
 | id | slice | notes |
 |---|---|---|
 | BR-01 | `BRAND` constant, server + client; user-visible strings read from it | §8 — lands first so all later work uses it |
+| BR-02 | Rename product display name from `Tessera` to `Solier` | §8 — flips `BRAND` defaults + static `index.html` fallback + `prompts/tessera.js` `<tool_trail>` line |
 | UP-01 | `user_profile` schema + DAL + routes + api-client | includes `preferred_name` |
 | UP-02 | Profile view (new rail surface) — sections, add/remove, placeholders | top-level, not buried in Settings |
 | UP-03 | `profile` system block; `{{user}}` rewired to `preferred_name`; per-persona switch (D6) | the slice that makes it reach the model |
@@ -200,9 +201,9 @@ live-confirmed**. UP-04 was withdrawn (D3). UP-05/UP-06 are tier 2.
   trimming. Not a v1 problem, but the scratchpad's "replace, don't append"
   principle is the likely answer.
 
-## 8. The rename — decided approach, undecided name
+## 8. The rename — Solier (BR-01, BR-02)
 
-Separate from this feature, but the reason it surfaced now: the user wants a name
+Separate from this feature, but the reason it surfaced now: the user wanted a name
 evoking a personal *study*.
 
 **Decided 2026-09-09: a `BRAND` constant lands first (BR-01), and all new work
@@ -217,7 +218,7 @@ brand-templated:
   since Drive **folder ids** are what we store, so renaming the display folder
   orphans nothing;
 - the `.tessera` persona bundle format, with a magic-string validator
-  (`server/src/utils/personaBundle.js:143`) — needs a compat reader for bundles
+  (`server/src/utils/personaBundle.js:51`) — needs a compat reader for bundles
   already exported;
 - `window.__tessera`, the smoke-harness seam (`js/main.js`).
 
@@ -226,9 +227,12 @@ storage identifiers rename independently. `BUNDLE_FORMAT` in particular stays th
 literal `'tessera.bundle'` forever unless a compat reader ships with the change —
 a renamed magic string silently rejects every bundle already exported.
 
-Candidates raised: **Solar** (the private upper room of a medieval house),
-**Carrel** (a library study nook), Scriptorium, Alcove, Marginalia, Escritoire,
-Athenaeum. Undecided.
+**Decided 2026-11-10 (BR-02): the app is named Solier** (`솔리에` / `ソリエ`) — Old
+French for a *solar*, the private sunlit upper room of a medieval house used for
+quiet reading, writing, and conversation, also echoing *atelier* and *sommelier*.
+Picked over earlier candidates (Loggia, Cahier, Ridotto, Torier, Mirier) for its
+warm study metaphor, clean transliteration across English, Korean, and Japanese,
+and distinctive identity.
 
 ## 9. Open — segmenting the persona
 

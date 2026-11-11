@@ -1,6 +1,6 @@
 ---
 name: start
-description: Start a Tessera work session — sync with origin, read docs/PROJECT.md, and brief the user on where things stand and what's next. Use when the user types /start or asks where the project stands at the beginning of a session.
+description: Start a Solier work session — sync with origin, read docs/PROJECT.md, and brief the user on where things stand and what's next. Use when the user types /start or asks where the project stands at the beginning of a session.
 ---
 
 # Start a session

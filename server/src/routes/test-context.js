@@ -69,7 +69,7 @@ const reqFor = (userId, body) => ({ user: { userId }, body });
     // is the Tessera base layer followed by the persona prompt, and crucially
     // still carries no knowledge-base text.
     const assembled = assembleProviderInput(pCtx, 'PERSONA_PROMPT', [{ role: 'user', content: 'HELLO_TURN' }]);
-    check('system = Tessera base layer + persona prompt', assembled.system.startsWith('# Tessera') && assembled.system.endsWith('PERSONA_PROMPT'));
+    check('system = Solier base layer + persona prompt', assembled.system.startsWith('# Solier') && assembled.system.endsWith('PERSONA_PROMPT'));
     check('KB text is not in system', !assembled.system.includes('<project_context>') && !assembled.system.includes('<workspace_context>'));
     check('KB is the leading synthetic user turn',
       assembled.messages[0].role === 'user'

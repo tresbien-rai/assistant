@@ -56,7 +56,10 @@ font do we impose" into "which font do you want", and gives `--font-main` and
 `--font-mono` somewhere legitimate to come from.
 
 Scope it deliberately: a handful of well-chosen faces that are actually loaded,
-not a free-text field.
+not a free-text field. During the BR-02 rename (2026-11-10), the user noted they
+especially liked how the **Solier** wordmark looked in an **Editorial Serif** face
+(`Newsreader` / `Instrument Serif`) — worth considering either as one of the
+font-picker choices or specifically for the brand wordmark / login title.
 
 ---
 
