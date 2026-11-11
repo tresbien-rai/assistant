@@ -137,7 +137,7 @@ check('an override replaces only its own block', () => {
   preset.blocks.orientation.text = 'CUSTOM ORIENTATION';
   const out = buildSystemPrompt(PERSONA, EXPRESSIONS, { preset });
   assert.ok(out.startsWith('CUSTOM ORIENTATION'), 'override applied');
-  assert.ok(!out.includes('# Tessera'), 'built-in orientation gone');
+  assert.ok(!out.includes('# Solier'), 'built-in orientation gone');
   assert.ok(out.includes('## Expression'), 'untouched block still built-in');
   assert.ok(out.endsWith(PERSONA), 'persona still last');
 });
@@ -149,14 +149,14 @@ check('reordering moves blocks, persona included', () => {
   assert.ok(out.startsWith(PERSONA), 'persona leads');
   // Nothing above it to separate it from, so no rule.
   assert.ok(!out.includes('---'), 'separator dropped when the persona leads');
-  assert.ok(out.includes('# Tessera'), 'orientation follows');
+  assert.ok(out.includes('# Solier'), 'orientation follows');
 });
 
 check('a disabled block is omitted', () => {
   const preset = defaultBlocks();
   preset.blocks.orientation.enabled = false;
   const out = buildSystemPrompt(PERSONA, EXPRESSIONS, { preset });
-  assert.ok(!out.includes('# Tessera'), 'orientation gone');
+  assert.ok(!out.includes('# Solier'), 'orientation gone');
   assert.ok(out.includes('## Expression'), 'the rest survives');
 });
 

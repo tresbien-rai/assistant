@@ -1,4 +1,4 @@
-# Tessera
+# Solier
 
 A personal, server-backed AI chat app. Sign in with Google, bring your own
 Anthropic or Gemini API key, and talk through customisable personas that have

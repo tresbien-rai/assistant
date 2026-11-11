@@ -21,7 +21,7 @@ require('dotenv').config();
  * follows the brand (below) because Drive folders are addressed by id, not by
  * name, so renaming the display folder orphans nothing.
  */
-const BRAND = process.env.BRAND_NAME || 'Tessera';
+const BRAND = process.env.BRAND_NAME || 'Solier';
 
 const config = {
   // The product display name. See BRAND above before using it anywhere.

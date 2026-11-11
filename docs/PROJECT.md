@@ -1,6 +1,6 @@
-# Tessera — Project Master Document
+# Solier — Project Master Document
 
-**This is the one document to read before starting work.** It says what Tessera
+**This is the one document to read before starting work.** It says what Solier
 is, how it is put together, what state every feature is in, what is owed, and
 what bit us before. Everything in `docs/design/` is a *decision record* for one
 feature — read it when you touch that feature, not before.
@@ -24,12 +24,15 @@ How we work (branches, verification, merging, wrap-up) lives in
 > 2026-11-09: persona traits shipped (PT-01…05, #222–#226): Background rename, the
 > 153-trait library, the picker design, storage + assembly, and the editor picker; one
 > live check owed (§8); cloud-session gotchas added (§9).
+> 2026-11-10: renamed app from Tessera to **Solier** (BR-02), fixed hardcoded brand
+> strings in `prompts/tessera.js` and `utils/personaBundle.js`, and recorded the
+> Editorial Serif wordmark note in `docs/UI_POLISH.md`.
 
 ---
 
 ## Contents
 
-1. [What Tessera is](#1-what-tessera-is)
+1. [What Solier is](#1-what-solier-is)
 2. [Where knowledge lives](#2-where-knowledge-lives)
 3. [Architecture at a glance](#3-architecture-at-a-glance)
 4. [Design principles](#4-design-principles)
@@ -42,7 +45,7 @@ How we work (branches, verification, merging, wrap-up) lives in
 
 ---
 
-## 1. What Tessera is
+## 1. What Solier is
 
 A personal, server-backed AI chat app. Users sign in with Google (which also
 connects their Google Drive), store their own provider API keys server-side
@@ -58,11 +61,14 @@ sides edit; every file keeps a revision history.
   provider module yet.
 - **Deployed on:** Railway (Hobby), one Express service serving API + frontend.
   See [`docs/DEPLOY_RAILWAY.md`](DEPLOY_RAILWAY.md).
-- **Name:** "Tessera" — a single tile in a mosaic. The name sits behind a
-  `BRAND` constant in `server/src/config.js` (BR-01) because a rename toward
-  something evoking a personal *study* is still being considered.
-  `docs/design/PROFILE_DESIGN.md` §8 lists the places where "Tessera" is data, not
-  branding (e.g. the Drive root folder).
+- **Name:** "**Solier**" (`솔리에` / `ソリエ`, formerly *Tessera*) — Old French for
+  a *solar*, the private sunlit upper room of a medieval house used for quiet
+  reading, writing, and conversation (also echoing *atelier* and *sommelier*).
+  The display name lives behind the `BRAND` constant in `server/src/config.js`
+  (BR-01, BR-02). `docs/design/PROFILE_DESIGN.md` §8 lists the places where
+  `"tessera"` remains stored data or a test seam rather than branding
+  (`.tessera` / `.tesserapreset` bundle format `'tessera.bundle'`, and
+  `window.__tessera`).
 - **Collaboration model:** the user is a novice developer who sets vision and
   direction; Claude is the architect and implementer. Explain trade-offs in
   plain language. Working rules: `CLAUDE.md`, *Working with the user*.
@@ -200,7 +206,7 @@ the persona prompt instead of complementing it. Don't rebuild it.
 
 **System layer** (server-side, `prompts/presets.js`), default order:
 
-1. `orientation` — Tessera's base framing (`prompts/tessera.js`)
+1. `orientation` — Solier's base framing (`prompts/tessera.js`)
 2. `profile` — the user's profile, if present and not switched off for this persona
 3. `expressions` — the expression protocol, generated from the persona's real set
 4. `scratchpad` — scratchpad instructions
@@ -262,7 +268,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Usage measurement | ✅ | U-01…05, #175–#179 | `USAGE_MEASUREMENT_DESIGN.md` |
 | Prompt caching | ✅ live-verified (92% hit) | PC-01, PC-02, #180–#182 | `PROMPT_CACHING_DESIGN.md` |
 | Aux model + auto chat titles | ✅ | AX-01, AX-02, #185, #186, #190 | — |
-| Brand constant | ✅ | BR-01, #194 | `PROFILE_DESIGN.md` §8 |
+| Brand constant + rename to Solier | ✅ | BR-01, BR-02, #194 | `PROFILE_DESIGN.md` §8 |
 | User profile (tier 1) | ✅ live-confirmed | UP-01…03, #195–#198 | `PROFILE_DESIGN.md` |
 | Answer preferences | ❌ reverted on purpose | UP-04, #199 → #200 | `PROFILE_DESIGN.md` (D3 withdrawn) |
 | Persona sections + six-field editor | ✅ | PS-01, PS-02, #201–#203 | `PROFILE_DESIGN.md` §9 |
@@ -290,7 +296,8 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
    the aux model" target. Design: `docs/design/PROFILE_DESIGN.md`.
 3. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
    (`--font-mono` names Fira Code, which is never loaded) plus the agreed
-   font-picker extension; UIP-02, a whole-UI wording pass with persona
+   font-picker extension (including Editorial Serif for the **Solier** wordmark);
+   UIP-02, a whole-UI wording pass with persona
    placeholders as the highest-leverage copy. The user deliberately deferred
    wording until the feature set is complete. It now also covers the trait
    editor's labels ("Prompt text", "+ Add trait", the persona intro line that
@@ -303,8 +310,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 5. **More providers — OpenAI first.** Key storage and validation exist; it
    needs a provider module and one entry in `providers/registry.js`. The user's
    framing: do this once the platform is stable.
-6. **Rename** — blocked only on choosing a name.
-7. **Harness** — the assistant doing more on its own (longer, multi-step
+6. **Harness** — the assistant doing more on its own (longer, multi-step
    work), building on the tool loop. A long-horizon goal the user raised
    2026-11-06; not designed. Wait until more features are in.
 

@@ -18,7 +18,7 @@ export const CONFIG = {
     //
     // Use it for anything the USER reads. Do NOT use it for the `.tessera`
     // bundle extension or its format string — those are data, not branding.
-    brand: 'Tessera',
+    brand: 'Solier',
     defaults: {
         provider: 'anthropic',
         model: 'claude-sonnet-4-20250514',
