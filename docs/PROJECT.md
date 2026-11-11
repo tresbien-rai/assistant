@@ -268,7 +268,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Usage measurement | ✅ | U-01…05, #175–#179 | `USAGE_MEASUREMENT_DESIGN.md` |
 | Prompt caching | ✅ live-verified (92% hit) | PC-01, PC-02, #180–#182 | `PROMPT_CACHING_DESIGN.md` |
 | Aux model + auto chat titles | ✅ | AX-01, AX-02, #185, #186, #190 | — |
-| Brand constant + rename to Solier | ✅ | BR-01, BR-02, #194 | `PROFILE_DESIGN.md` §8 |
+| Brand constant + rename to Solier | ✅ | BR-01, BR-02, #194, #228 | `PROFILE_DESIGN.md` §8 |
 | User profile (tier 1) | ✅ live-confirmed | UP-01…03, #195–#198 | `PROFILE_DESIGN.md` |
 | Answer preferences | ❌ reverted on purpose | UP-04, #199 → #200 | `PROFILE_DESIGN.md` (D3 withdrawn) |
 | Persona sections + six-field editor | ✅ | PS-01, PS-02, #201–#203 | `PROFILE_DESIGN.md` §9 |

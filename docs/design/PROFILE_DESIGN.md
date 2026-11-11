@@ -1,6 +1,6 @@
 # User Profile & Persona Notes — Design
 
-> **Status (2026-11-10):** In progress — BR-01/02, UP-01…03, PS-01/02 shipped (#194–#203, BR-02); UP-04 reverted on purpose (#200); UP-05/06 (persona notes) designed, not built. Current status of everything: `docs/PROJECT.md`.
+> **Status (2026-11-10):** In progress — BR-01/02, UP-01…03, PS-01/02 shipped (#194–#203, #228); UP-04 reverted on purpose (#200); UP-05/06 (persona notes) designed, not built. Current status of everything: `docs/PROJECT.md`.
 
 Designed 2026-09-08.
 Arising from: `project_next_targets` item 3 — "a user profile the user can customise"
