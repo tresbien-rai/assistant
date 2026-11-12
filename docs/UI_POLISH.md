@@ -105,7 +105,7 @@ compared: A *Stacked* (solid New chat button, sections, then Recent), B
 showing a chat's home were compared: hidden, a second line, grouped, and a
 tree. The user picked C with Grouped; Grouped looked more organised and
 instantly recognisable than Second line, its close rival. A design critique
-of the result produced the changes in D7–D10.
+of the result produced the changes in D6–D9; the user spotted the scrollbar (D10).
 
 ### Decisions
 
