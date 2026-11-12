@@ -546,6 +546,7 @@
 }
 
 .message-content {
+    font-family: var(--font-chat);
     word-break: break-word;
     line-height: 1.6;
 }
@@ -823,7 +824,7 @@
     border: 1px solid var(--accent);
     border-radius: var(--radius-md);
     color: var(--text-primary);
-    font-family: var(--font-main);
+    font-family: var(--font-chat);
     font-size: inherit;
     line-height: 1.6;
     resize: vertical;

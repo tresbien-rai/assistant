@@ -22,8 +22,11 @@
 }
 
 .login-title {
-    font-size: 32px;
-    font-weight: 600;
+    font-family: var(--font-brand);
+    font-style: italic;
+    font-size: 38px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
     color: var(--accent);
     margin-bottom: 12px;
 }

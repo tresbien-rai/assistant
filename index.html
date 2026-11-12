@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solier</title>
-    <!-- Inter UI font -->
+    <!-- UI, prose, code, and brand wordmark fonts (UIP-01) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400..600&display=swap">
     <!-- S-01: styles.css (5,957 lines) split into styles/. THE ORDER OF THESE
          LINKS IS THE CASCADE — it is exactly the order the sections appeared in
          the original file, and concatenating them reproduces it byte for byte.
@@ -67,6 +67,10 @@
                  router between top-level sections. Lists + detail live in the
                  main area, not here. -->
             <nav class="rail" aria-label="Sections">
+                <div class="rail-header">
+                    <span class="rail-brand">Solier</span>
+                    <button class="close-sidebar" id="closeSidebar" type="button" aria-label="Close menu">×</button>
+                </div>
                 <button class="rail-item active" data-section="chats" type="button">
                     <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                     <span>Chats</span>
@@ -88,10 +92,9 @@
                     <span>Models</span>
                 </button>
                 <button class="rail-item" data-section="settings" type="button">
-                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                     <span>Settings</span>
                 </button>
-                <button class="close-sidebar" id="closeSidebar" type="button" aria-label="Close menu">×</button>
             </nav>
 
             <!-- Settings: this modal shell is a CARRIER, not a modal. On load,
@@ -133,6 +136,24 @@
                         <label for="paletteTint" class="palette-tint-label">Background tint</label>
                         <input type="range" id="paletteTint" min="0" max="100" step="5" value="50" aria-label="Background tint strength">
                     </div>
+
+                    <label>Font</label>
+                    <div class="appearance-options" id="fontFamilyOptions">
+                        <button type="button" data-font-family="inter">Inter</button>
+                        <button type="button" data-font-family="jakarta">Jakarta Sans</button>
+                        <button type="button" data-font-family="newsreader">Newsreader</button>
+                        <button type="button" data-font-family="source-serif">Source Serif</button>
+                        <button type="button" data-font-family="atkinson">Atkinson</button>
+                        <button type="button" data-font-family="jetbrains-mono">JetBrains Mono</button>
+                        <button type="button" data-font-family="system">System</button>
+                    </div>
+
+                    <label>Font Scope</label>
+                    <div class="appearance-options" id="fontScopeOptions">
+                        <button type="button" data-font-scope="all">Whole app</button>
+                        <button type="button" data-font-scope="chat">Chat &amp; prose only</button>
+                    </div>
+                    <p class="section-note">Choose whether your selected font applies across the entire interface or only to chat messages and documents.</p>
 
                     <label>Chat Width</label>
                     <div class="appearance-options" id="chatWidthOptions">

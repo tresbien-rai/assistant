@@ -217,6 +217,10 @@ body {
    so these are the defaults everything else refines. Width is deliberately
    absent — `.param-row-inline` wants 150px and `.key-popover-input` wants
    `flex: 1`, so full-width stays a context decision. */
+:where(button) {
+    font-family: var(--font-main);
+}
+
 input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])),
 select,
 textarea {
@@ -493,6 +497,24 @@ input:where([type="range"])::-moz-range-thumb {
     gap: 2px;
 }
 
+.rail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px 12px;
+}
+
+.rail-brand {
+    font-family: var(--font-brand);
+    font-style: italic;
+    font-size: 24px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    line-height: 1.1;
+    color: var(--text-primary);
+    user-select: none;
+}
+
 .rail-item {
     display: flex;
     align-items: center;
@@ -527,6 +549,19 @@ input:where([type="range"])::-moz-range-thumb {
 }
 
 .rail .close-sidebar {
-    align-self: flex-end;
-    margin-top: 8px;
+    margin-left: auto;
 }
+
+/* Font buttons preview their own typeface in Appearance settings (UIP-01). */
+#fontFamilyOptions button {
+    min-width: fit-content;
+    white-space: nowrap;
+}
+#fontFamilyOptions button[data-font-family="inter"]          { font-family: 'Inter', sans-serif; }
+#fontFamilyOptions button[data-font-family="jakarta"]        { font-family: 'Plus Jakarta Sans', sans-serif; }
+#fontFamilyOptions button[data-font-family="newsreader"]     { font-family: 'Newsreader', Georgia, serif; font-size: 13px; }
+#fontFamilyOptions button[data-font-family="source-serif"]   { font-family: 'Source Serif 4', Georgia, serif; font-size: 13px; }
+#fontFamilyOptions button[data-font-family="atkinson"]       { font-family: 'Atkinson Hyperlegible', sans-serif; }
+#fontFamilyOptions button[data-font-family="jetbrains-mono"] { font-family: 'JetBrains Mono', monospace; }
+#fontFamilyOptions button[data-font-family="system"]         { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; }
+

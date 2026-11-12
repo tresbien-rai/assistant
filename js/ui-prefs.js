@@ -34,6 +34,9 @@ export const UiPrefs = {
         // Device-local on purpose: a phone keyboard and a desktop keyboard want
         // different answers, so syncing this to the account would fight the user.
         enterToSend: false,
+        // UIP-01: device-local base font and scope ('all' | 'chat').
+        fontFamily: 'inter',
+        fontScope: 'all',
     },
     _data: null,
     load() {
@@ -74,10 +77,11 @@ export const UiPrefs = {
         }
         applyTheme(d.theme);
         applyChatWidth(d.chatWidth);
+        applyFont(d.fontFamily, d.fontScope);
     },
 };
 
-// ===== Appearance: themes, accent color, chat width (device-local) =====
+// ===== Appearance: themes, accent color, font, chat width (device-local) =====
 // Each theme ships its own default accent (shown in the picker when no custom
 // accent is set). Palette values live in styles.css; this map only mirrors the
 // accents so the UI can display them.
@@ -93,6 +97,16 @@ const THEME_ACCENTS = {
 const THEMES = [...Object.keys(THEME_ACCENTS), 'custom'];
 const LIGHT_THEMES = new Set(['light', 'parchment', 'rose']);
 const CHAT_WIDTHS = { narrow: 620, comfortable: 780, wide: 1040 };
+const FONTS = {
+    inter: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
+    jakarta: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    newsreader: "'Newsreader', Georgia, 'Times New Roman', serif",
+    'source-serif': "'Source Serif 4', Georgia, 'Times New Roman', serif",
+    atkinson: "'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    'jetbrains-mono': "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+    system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
+};
+const FONT_SCOPES = new Set(['all', 'chat']);
 
 function hexToRgb(hex) {
     const h = String(hex || '').replace('#', '');
@@ -296,13 +310,34 @@ export function applyChatWidth(name) {
     document.documentElement.style.setProperty('--chat-max-width', `${px}px`);
 }
 
+export function applyFont(name = UiPrefs.get('fontFamily'), scope = UiPrefs.get('fontScope')) {
+    const stack = FONTS[name] || FONTS.inter;
+    const resolvedScope = FONT_SCOPES.has(scope) ? scope : 'all';
+    const root = document.documentElement;
+    if (resolvedScope === 'chat') {
+        root.style.removeProperty('--font-main');
+        root.style.setProperty('--font-chat', stack);
+    } else {
+        root.style.setProperty('--font-main', stack);
+        root.style.removeProperty('--font-chat');
+    }
+}
+
 // Reflect current appearance prefs into the settings-modal controls.
 export function syncAppearanceControls() {
     const d = UiPrefs.load();
     const theme = THEMES.includes(d.theme) ? d.theme : 'midnight';
     const width = CHAT_WIDTHS[d.chatWidth] ? d.chatWidth : 'comfortable';
+    const fontFamily = FONTS[d.fontFamily] ? d.fontFamily : 'inter';
+    const fontScope = FONT_SCOPES.has(d.fontScope) ? d.fontScope : 'all';
     document.querySelectorAll('#themeOptions button').forEach(b => {
         b.classList.toggle('active', b.dataset.themeName === theme);
+    });
+    document.querySelectorAll('#fontFamilyOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.fontFamily === fontFamily);
+    });
+    document.querySelectorAll('#fontScopeOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.fontScope === fontScope);
     });
     document.querySelectorAll('#chatWidthOptions button').forEach(b => {
         b.classList.toggle('active', b.dataset.chatWidth === width);
