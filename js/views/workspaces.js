@@ -105,7 +105,7 @@ async function startNewProjectIn(workspaceId) {
     const name = await promptName({
         title: 'New project',
         label: 'Project name',
-        placeholder: 'e.g., Q3 launch',
+        placeholder: 'e.g., Autumn Issue',
     });
     if (!name) return;
 
@@ -191,7 +191,7 @@ export async function startNewWorkspace() {
     const name = await promptName({
         title: 'New workspace',
         label: 'Workspace name',
-        placeholder: 'e.g., Vibe Coding',
+        placeholder: 'e.g., Studio & Clients',
     });
     if (!name) return;
 
@@ -404,7 +404,7 @@ export function renderWorkspacesListMain() {
     const workspaces = Object.values(state.workspaces).sort(byUpdatedDesc);
     const list = workspaces.length
         ? `<div class="drill-list">${workspaces.map(workspaceRowHTML).join('')}</div>`
-        : `<p class="empty-state small">No workspaces yet. Create one to group projects and share instructions + files.</p>`;
+        : `<p class="empty-state small">No workspaces yet. Create one to group related projects and share instructions and reference files across every chat inside.</p>`;
     c.innerHTML = `
         <div class="section-view">
             <div class="section-head">
@@ -460,11 +460,11 @@ export function renderContainerPage(kind, id) {
         : `<span class="cp-crumb" data-nav="workspace">‹ ${escapeHtml(workspace ? (workspace.name || 'Workspace') : 'Workspace')}</span>`;
 
     const instrPlaceholder = isWs
-        ? 'Shared context injected into every chat in this workspace and its projects (optional).'
-        : 'Context injected into every chat in this project — on top of its workspace (optional).';
+        ? 'Shared background, goals, or conventions included in every chat in this workspace and its projects (optional).'
+        : 'Background, goals, or conventions for chats in this project — added alongside the workspace instructions (optional).';
 
     const inheritNote = (!isWs && workspace)
-        ? `<p class="cp-inherit-note">Inherits <strong>${escapeHtml(workspace.name || 'workspace')}</strong> context (its instructions + files apply here too).</p>`
+        ? `<p class="cp-inherit-note">Inherits instructions and files from <strong>${escapeHtml(workspace.name || 'workspace')}</strong>.</p>`
         : '';
 
     const listsHTML = isWs
@@ -507,7 +507,7 @@ export function renderContainerPage(kind, id) {
                 ${sectionBodyHTML(filesKey, `
                     <div class="project-file-list" id="cpFileList"></div>
                     <p class="empty-state small" id="cpNoFiles" hidden>No files yet.</p>
-                    <p class="help-text">Text, code, and PDF files up to 10MB each.</p>
+                    <p class="help-text">Upload reference material — text, code, Markdown, or PDF up to 10 MB each — to include in chats here.</p>
                     <p class="help-text" id="cpFilesToggleHint" hidden>Unchecked files stay here but aren't loaded into chats. The assistant can still open one on request when file tools are on.</p>
                 `)}
             </div>

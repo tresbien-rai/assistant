@@ -68,15 +68,15 @@ function emptyProfile() {
 const SUGGESTED_SECTIONS = [
   {
     title: 'About me',
-    placeholder: 'Who you are — pronouns, where you are, what you do, anything you want carried into every conversation.',
+    placeholder: 'Who you are, what you do, where you are based, or how you like to work and be spoken to.',
   },
   {
     title: 'What I am working on',
-    placeholder: 'The projects, subjects or problems currently occupying you.',
+    placeholder: 'Current projects, questions, or studies you return to often — enough context that you can jump straight in.',
   },
   {
     title: 'Things I care about',
-    placeholder: 'Interests, tastes, commitments — what makes a conversation with you specifically yours.',
+    placeholder: 'Tastes, convictions, background knowledge, or reference points that shape what a good answer looks like to you.',
   },
 ];
 

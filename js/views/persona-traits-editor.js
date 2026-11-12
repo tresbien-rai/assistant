@@ -137,7 +137,7 @@ function tagsHTML(sec, traits) {
         const cls = ['trait-tag', t.customised && 'is-customised', unknown && 'is-unknown'].filter(Boolean).join(' ');
         const label = unknown ? `${t.label} (no longer available)` : t.label;
         const title = unknown ? 'This trait was removed from the library. It is left out of the prompt.'
-            : `${t.customised ? 'Customised. ' : ''}Edit its sentence`;
+            : `${t.customised ? 'Customised · ' : ''}Click to edit wording`;
         return `<span class="${cls}" data-trait-key="${escapeHtml(keyOf(sec, t.id))}">`
             + `<button type="button" class="trait-tag-label" data-trait-action="edit" data-sec="${sec}" data-id="${escapeHtml(t.id)}"`
             + ` title="${escapeHtml(title)}"${unknown ? ' disabled' : ''}>${escapeHtml(label)}${t.customised ? ' <span aria-hidden="true">✎</span>' : ''}</button>`
@@ -173,7 +173,7 @@ function textHTML(sec, traits) {
             + ` title="${escapeHtml(t.label)}${t.customised ? ' (customised)' : ''}: click to edit">${escapeHtml(t.text)}</span>`);
     }
     flush();
-    return chunks.join('') || '<p class="trait-text-empty">No traits picked. Add some, write your own below, or both.</p>';
+    return chunks.join('') || '<p class="trait-text-empty">No traits chosen yet — pick from the library above, or write in your own words below.</p>';
 }
 
 /** The status line under an open sentence: library text or customised, plus Reset and Done. */
@@ -292,7 +292,7 @@ function renderSheetList() {
             }).join('') + '</div>';
     }
     const top = list.scrollTop;
-    list.innerHTML = html || '<p class="trait-text-empty">No trait matches. Write it in your own words instead.</p>';
+    list.innerHTML = html || '<p class="trait-text-empty">No matching traits — you can write this in your own words in the section below.</p>';
     list.scrollTop = top;
 }
 

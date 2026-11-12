@@ -41,10 +41,9 @@
     <div class="login-screen" id="loginScreen" hidden>
         <div class="login-card">
             <h1 class="login-title">Solier</h1>
-            <p class="login-subtitle">Your personal AI chat interface.</p>
+            <p class="login-subtitle">A personal study for ongoing conversations and writing.</p>
             <p class="login-description">
-                Sign in with Google to access your conversations across devices.
-                Your Google account also connects to Drive for workspace file storage.
+                Sign in with Google to sync your personas, workspaces, and conversations across devices, with files backed by your Google Drive.
             </p>
             <button class="google-signin-btn" id="googleSignInBtn" type="button">
                 <svg class="google-icon" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
@@ -123,7 +122,7 @@
                         <button type="button" data-theme-name="custom">Custom</button>
                     </div>
 
-                    <label for="paletteBase">Custom Palette</label>
+                    <label for="paletteBase">Custom palette</label>
                     <div class="palette-row">
                         <input type="color" id="paletteBase" value="#6c63ff" aria-label="Base color">
                         <div class="appearance-options" id="paletteModeOptions">
@@ -148,26 +147,26 @@
                         <button type="button" data-font-family="system">System</button>
                     </div>
 
-                    <label>Font Scope</label>
+                    <label>Font scope</label>
                     <div class="appearance-options" id="fontScopeOptions">
                         <button type="button" data-font-scope="all">Whole app</button>
                         <button type="button" data-font-scope="chat">Chat &amp; prose only</button>
                     </div>
                     <p class="section-note">Choose whether your selected font applies across the entire interface or only to chat messages and documents.</p>
 
-                    <label>Chat Width</label>
+                    <label>Chat width</label>
                     <div class="appearance-options" id="chatWidthOptions">
                         <button type="button" data-chat-width="narrow">Narrow</button>
                         <button type="button" data-chat-width="comfortable">Comfortable</button>
                         <button type="button" data-chat-width="wide">Wide</button>
                     </div>
 
-                    <label>File Panel</label>
+                    <label>File panel</label>
                     <div class="appearance-options" id="filePanelModeOptions">
                         <button type="button" data-file-panel-mode="auto">Auto-open</button>
                         <button type="button" data-file-panel-mode="click">Manual</button>
                     </div>
-                    <p class="section-note">Auto-open shows files the AI creates beside the chat as they happen. Manual only alerts you with an edge tab. On small screens the panel never auto-opens.</p>
+                    <p class="section-note">Auto-open opens the file panel whenever the assistant creates or updates a file. Manual simply lights a dot on the Files button in the top bar. On small screens the panel never auto-opens.</p>
 
                     <label class="checkbox-row" for="devModeToggle">
                         <input type="checkbox" id="devModeToggle">
@@ -191,7 +190,7 @@
 
                 <!-- Files in context (server-backed, synced across devices) -->
                 <div class="settings-section" data-settings-tab="files">
-                    <h3>Files in Context</h3>
+                    <h3>Files in context</h3>
                     <p class="section-note">Synced to your account.</p>
 
                     <label for="activeFileTurns">Keep an edited file in context for</label>
@@ -217,8 +216,8 @@
                 <div class="settings-section" id="personaProfileSection">
                     <h3>Profile</h3>
 
-                    <label for="assistantName">Assistant Name</label>
-                    <input type="text" id="assistantName" placeholder="Assistant" value="Assistant">
+                    <label for="assistantName">Name</label>
+                    <input type="text" id="assistantName" placeholder="e.g., Clara, The Editor, Assistant" value="Assistant">
 
                     <!-- Card display fields. Neither is sent to the model —
                          they're how the persona introduces itself in the grid. -->
@@ -244,25 +243,21 @@
                          repurposed it rather than migrating), which keeps every
                          existing cache, listener and save path valid. -->
                     <p class="help-text persona-sections-intro">
-                        Fill in what is useful — every box is optional, and empty ones are skipped
-                        entirely. A persona written only in <em>General guidance</em> works exactly
-                        as it always has.
+                        Shape the character section by section — pick traits, write in your own words, or mix both. Every section is optional, and empty ones are left out of the prompt.
                     </p>
                     <div id="personaSectionFields"></div>
 
                     <label for="systemPrompt">General guidance</label>
                     <div class="textarea-resizable">
-                        <textarea id="systemPrompt" rows="8" placeholder="You are a helpful assistant...">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.
-
-When responding, you may optionally include an expression tag like [expression: happy] at the start of your message to indicate your current mood. Available expressions: neutral, happy, sad, thinking, excited, confused.</textarea>
+                        <textarea id="systemPrompt" rows="8" placeholder="Keep replies under three paragraphs unless asked for depth. When reviewing drafts, quote the exact line before suggesting a cut.">You are a helpful, friendly assistant. You provide clear and concise answers while being warm and personable.</textarea>
                         <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
                     </div>
-                    <p class="help-text">Anything that does not fit the boxes above. A persona written entirely here is perfectly valid.</p>
+                    <p class="help-text">Anything that doesn't fit the sections above — habits, boundaries, formatting rules — or the entire persona if you prefer writing in one place.</p>
 
                     <!-- Model-settings mode (WR-12, reshaped by model profiles):
                          shared = persona never touches the active model;
                          fixed = it pins a model, whose own profile loads. -->
-                    <label>Model Settings</label>
+                    <label>Model</label>
                     <div class="appearance-options" id="personaModelModeOptions">
                         <button type="button" data-model-mode="shared">Shared</button>
                         <button type="button" data-model-mode="fixed">Fixed</button>
@@ -309,31 +304,31 @@ When responding, you may optionally include an expression tag like [expression: 
                         <div class="avatar-preview-info">
                             <span class="persona-tile-name" id="avatarPreviewName">Assistant</span>
                             <span class="persona-tile-tagline" id="avatarPreviewTagline"></span>
-                            <span class="avatar-preview-status" id="avatarPreviewStatus">Default Avatar</span>
+                            <span class="avatar-preview-status" id="avatarPreviewStatus">Default avatar</span>
                         </div>
                     </div>
 
-                    <label>Default Avatar Image</label>
+                    <label>Portrait image</label>
                     <div class="file-upload-wrapper">
                         <input type="file" id="avatarFileInput" accept="image/*" class="file-input-hidden">
                         <button type="button" class="file-upload-btn" id="avatarUploadBtn">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                             </svg>
-                            Choose Image
+                            Choose image
                         </button>
                         <button type="button" class="file-clear-btn" id="avatarClearBtn" title="Remove image">
                             ✕
                         </button>
                     </div>
-                    <p class="help-text">Upload an image from your device. Stored locally in your browser.</p>
+                    <p class="help-text">PNG, JPG, GIF, or WebP up to 5 MB. Synced with this persona across your devices.</p>
                 </div>
 
                 <!-- Avatar display prefs (user-level settings; stays in Settings) -->
                 <div class="settings-section" data-settings-tab="appearance">
-                    <h3>Avatar Display</h3>
+                    <h3>Avatar display</h3>
 
-                    <label>Avatar Size</label>
+                    <label>Avatar size</label>
                     <div class="size-preset-buttons">
                         <button type="button" class="size-preset-btn" data-size="small">S</button>
                         <button type="button" class="size-preset-btn active" data-size="medium">M</button>
@@ -342,12 +337,12 @@ When responding, you may optionally include an expression tag like [expression: 
                     </div>
                     <div class="param-group avatar-size-control">
                         <label for="avatarSizeSlider">
-                            Custom Size <span class="param-value" id="avatarSizeValue">120px</span>
+                            Custom size <span class="param-value" id="avatarSizeValue">120px</span>
                         </label>
                         <input type="range" id="avatarSizeSlider" min="32" max="480" step="4" value="120">
                     </div>
 
-                    <label>Avatar Position</label>
+                    <label>Avatar position</label>
                     <div class="position-preset-buttons">
                         <button type="button" class="position-preset-btn" data-position="top-left" aria-label="Position top left">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -386,13 +381,13 @@ When responding, you may optionally include an expression tag like [expression: 
                 <!-- Expressions (re-parented into #personaEditView on load — WR-08) -->
                 <div class="settings-section" id="personaExpressionsSection">
                     <h3>Expressions</h3>
-                    <p class="help-text">Configure avatar expressions. The assistant can change expressions based on mood.</p>
+                    <p class="help-text">Each expression gives the persona a mood it can adopt at the start of a reply — with its own portrait art or emoji badge.</p>
 
                     <div class="expression-list" id="expressionList">
                         <!-- Expressions will be populated by JavaScript -->
                     </div>
 
-                    <button class="add-expression-btn" id="addExpressionBtn">+ Add Expression</button>
+                    <button class="add-expression-btn" id="addExpressionBtn">+ Add expression</button>
                 </div>
 
                 <!-- Advanced: the platform prompt layer (AP-02, docs/design/ADVANCED_PROMPTS_PLAN.md).
@@ -527,8 +522,8 @@ When responding, you may optionally include an expression tag like [expression: 
                 <div class="drag-overlay" id="dragOverlay">Drop files to attach</div>
                 <div class="messages-container" id="messagesContainer">
                     <div class="welcome-message">
-                        <h1>Welcome!</h1>
-                        <p>Configure your API key in the sidebar to get started.</p>
+                        <h1>Welcome to Solier</h1>
+                        <p>Add an API key in <strong>Models</strong> to start a conversation.</p>
                     </div>
                 </div>
 
@@ -586,7 +581,7 @@ When responding, you may optionally include an expression tag like [expression: 
                 <div class="composer-field">
                     <textarea
                         id="messageInput"
-                        placeholder="Type your message... (Shift+Enter to send)"
+                        placeholder="Write a message…"
                         rows="1"
                     ></textarea>
                     <div class="composer-controls">
@@ -678,18 +673,18 @@ When responding, you may optionally include an expression tag like [expression: 
     <div class="modal-overlay" id="expressionModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="expressionModalTitle">Edit Expression</h3>
+                <h3 id="expressionModalTitle">Edit expression</h3>
                 <button class="modal-close" id="closeExpressionModal">×</button>
             </div>
             <div class="modal-body">
-                <label for="expressionName">Expression Name</label>
+                <label for="expressionName">Expression name</label>
                 <input type="text" id="expressionName" placeholder="e.g., happy">
                 <p class="help-text">This is the name the model declares, so make it a word it would reach for — <em>smug</em>, <em>delighted</em>, <em>wary</em>.</p>
 
                 <label for="expressionEmoji">Emoji (fallback)</label>
                 <input type="text" id="expressionEmoji" placeholder="e.g., 😊" maxlength="4">
 
-                <label>Expression Image (optional)</label>
+                <label>Expression image (optional)</label>
                 <div class="expression-image-preview" id="expressionImagePreview">
                     <span class="preview-placeholder">No image</span>
                 </div>
@@ -699,13 +694,13 @@ When responding, you may optionally include an expression tag like [expression: 
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                         </svg>
-                        Choose Image
+                        Choose image
                     </button>
                     <button type="button" class="file-clear-btn" id="expressionClearBtn" title="Remove image">
                         ✕
                     </button>
                 </div>
-                <p class="help-text">Upload an image for this expression, or use emoji as fallback.</p>
+                <p class="help-text">Optional portrait for this mood (up to 2 MB). Without one, the persona's default avatar is shown with the emoji as a badge.</p>
             </div>
             <!-- .split: Delete is destructive, so it's held away from Save
                  rather than sitting next to it. -->
@@ -746,7 +741,7 @@ When responding, you may optionally include an expression tag like [expression: 
                          takes the slot instead of a dead disabled Fetch. -->
                     <div class="fetch-models-section">
                         <button type="button" class="fetch-models-btn" id="fetchModelsBtn">
-                            Fetch Available Models
+                            Fetch available models
                         </button>
                         <button type="button" class="fetch-models-btn" id="modalKeyBtn" hidden>Add API key</button>
                         <p class="help-text" id="fetchModelsHelp"></p>
@@ -766,10 +761,10 @@ When responding, you may optionally include an expression tag like [expression: 
                         <label for="newModelId">Model ID</label>
                         <input type="text" id="newModelId" placeholder="e.g., claude-sonnet-4-20250514">
 
-                        <label for="newModelName">Display Name</label>
+                        <label for="newModelName">Display name</label>
                         <input type="text" id="newModelName" placeholder="e.g., Claude Sonnet 4">
 
-                        <button type="button" class="add-model-btn" id="addModelBtn">Add Model</button>
+                        <button type="button" class="add-model-btn" id="addModelBtn">Add model</button>
                     </div>
                 </div>
             </div>

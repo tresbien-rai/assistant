@@ -160,7 +160,7 @@ export function flushProfileSave() {
 function sectionMarkup(section, index, limits) {
     const enabled = section.enabled !== false;
     const placeholder = (meta.sections[index] && meta.sections[index].placeholder)
-        || 'Anything you want your personas to know.';
+        || 'Context, preferences, or background you want carried into your conversations…';
     return `
         <div class="profile-section${enabled ? '' : ' disabled'}" data-section-id="${escapeHtml(section.id)}">
             <div class="profile-section-head">
@@ -199,8 +199,8 @@ function build() {
             <div class="settings-section">
                 <p class="section-note">Synced to your account.</p>
                 <p class="help-text profile-intro">
-                    This is you, the way a persona is a character: whatever you write here is
-                    what every persona knows about the person it is talking to.
+                    Who you are, in your own words — the counterpart to a persona. Anything enabled here
+                    is shared with your personas as background, so you don't have to introduce yourself in every chat.
                 </p>
 
                 <label for="profilePreferredName">
@@ -338,7 +338,7 @@ function wire() {
             const label = section.title ? `"${section.title}"` : 'this section';
             const ok = await confirmDialog({
                 title: 'Delete section',
-                body: `Delete ${label}? Anything written in it is lost.`,
+                body: `Delete ${label} and everything written in it? This can't be undone.`,
                 confirmLabel: 'Delete',
                 danger: true,
             });

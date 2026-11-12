@@ -239,8 +239,8 @@ export function renderChatThread() {
         const hasApiKey = !!state.apiKeyStatus[provider]?.hasKey;
         elements.messagesContainer.innerHTML = `
             <div class="welcome-message">
-                <h1>Welcome!</h1>
-                <p>${hasApiKey ? 'Start chatting with ' + assistantName + '!' : 'Add your API key in the Models tab (☰) to get started.'}</p>
+                <h1>${hasApiKey ? escapeHtml(assistantName) : `Welcome to ${escapeHtml(CONFIG.brand)}`}</h1>
+                <p>${hasApiKey ? `Start a conversation with ${escapeHtml(assistantName)}.` : 'Add an API key in <strong>Models</strong> to start a conversation.'}</p>
             </div>
         `;
         return;

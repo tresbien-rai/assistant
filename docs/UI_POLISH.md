@@ -59,28 +59,24 @@ Either load the font or stop naming it.
 
 ## UIP-02 — A wording pass over the whole UI
 
-**Status:** open, expected. Raised 2026-09-16.
+**Status:** done (2026-11-11). Raised 2026-09-16.
 
 Copy has accumulated slice by slice, each written in the moment. Labels, help
 text, placeholders and empty states have never been read end to end as one
 voice, and several were written before the feature around them settled.
 
-Known specifics so far:
+### Resolution (shipped 2026-11-11)
 
-- The persona section placeholders (`js/persona-sections.js`) are first-pass and
-  are the highest-leverage copy in the app: for a segmented persona editor, the
-  example in the box teaches far more than the label above it.
-- `Speech` was renamed to `Voice` during PS-02 for exactly this reason — the
-  label should say what the user is being asked for, not what the field is
-  technically about.
-- Fix stale or factually false strings found in the 2026-11-11 audit:
-  - `index.html` welcome empty state (`"Configure your API key in the sidebar to get started"` → API keys live in `Models`).
-  - `index.html` persona avatar upload note (`"Stored locally in your browser"` → avatars are stored on the server).
-  - `index.html` and `js/persona-sections.js` references to `"boxes"` (`"every box is optional"`, `"Anything that does not fit the boxes above"`) that predate the PT-05 trait picker + prompt text drawers.
-  - `index.html` `<title>` and login title initial `"Tessera"` text before `/api/auth/config` resolves.
-
-Do this as one deliberate pass rather than incrementally, so the result reads as
-one voice.
+- **Persona section teaching placeholders & help text (`js/persona-sections.js`, `index.html`):** Rewrote the six section help lines and placeholders (`Personality`, `Voice`, `Expertise`, `Relationship`, `Background`, `General guidance`) so each example models concrete, drift-resistant character direction, and updated the section intro and `General guidance` help text to reflect the `PT-05` trait picker + prompt text drawers instead of referring to `"boxes"`.
+- **Stale & inaccurate strings fixed (`index.html`, `js/chat/thread.js`):**
+  - Updated the welcome empty states in `index.html` and `js/chat/thread.js` to point to **Models** (without the obsolete sidebar/hamburger reference) and escaped `assistantName`.
+  - Updated the persona avatar upload note from `"Stored locally in your browser"` to `"PNG, JPG, GIF, or WebP up to 5 MB. Synced with this persona across your devices."`
+  - Updated the File panel mode note in Settings → Appearance to reference the top-bar **Files** activity dot rather than the retired right-edge tab.
+  - Removed the legacy hardcoded `[expression: happy]` paragraph from `#systemPrompt` in `index.html` and simplified `#messageInput`'s placeholder to `"Write a message…"`.
+- **Profile, Trait Editor, Workspaces & Models copy (`js/views/profile.js`, `server/src/utils/userProfile.js`, `js/views/persona-traits-editor.js`, `js/views/workspaces.js`, `js/views/models.js`, `js/main.js`):**
+  - Refined `SUGGESTED_SECTIONS` placeholders and Profile intro/delete confirmation.
+  - Polished trait editor empty states, tooltips, workspace/project instruction placeholders (replacing `"injected into"` jargon), and toast/validation messages.
+  - Unified form labels, headings, and modal controls to sentence case across Settings, Persona Editor, Expression Modal, and Add Model Modal.
 
 ---
 
