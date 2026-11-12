@@ -82,26 +82,113 @@ voice, and several were written before the feature around them settled.
 
 ## UIP-03 — Enriched navigation rail & active/recent chat context
 
-**Status:** open, agreed 2026-11-11.
+**Status:** designed 2026-11-12, not built. Decisions below are locked; the
+quill icon's drawing and colour are still open (see *Open*).
 
 Since WR-07 moved all lists into the main area, `<aside class="sidebar">` holds
 only 6 rail buttons (~248px tall) inside a `240px`–`640px` drag-resizable column
-(~80% empty vertical space), has no **Solier** header, and offers no direct way
-back to an open conversation after visiting `Models`, `Personas`, `Profile`, or
-`Settings` (clicking `Chats` opens the unfiled list instead, and a chat filed
-inside a Workspace or Project does not appear in `Chats` at all).
+(~80% empty vertical space), and offers no direct way back to an open
+conversation after visiting `Models`, `Personas`, `Profile`, or `Settings`
+(clicking `Chats` opens the unfiled list instead, and a chat filed inside a
+Workspace or Project does not appear in `Chats` at all). The **Solier**
+wordmark at the top of the rail already shipped in UIP-01.
 
-Agreed changes:
-- Add the **Solier** Editorial Serif wordmark and a primary `+ New chat` action
-  at the top of the navigation rail.
-- Keep the 6 section navigation items (`Chats`, `Workspaces`, `Profile`,
-  `Personas`, `Models`, `Settings`).
-- Use the lower rail space for an **Active / Recent Chats** quick-jump section
-  (highlighting the currently active conversation regardless of whether it is
-  unfiled or inside a Workspace/Project, so the user is always one click away
-  from returning to their open chat).
-- Lock the rail to a clean fixed width (~`200px–220px` on desktop) and remove
-  the obsolete `#sidebarResizeHandle` drag-resizer.
+Scope: the side rail only. The top bar is UIP-04; the Chats page is UIP-08.
+
+### How it was decided
+
+Prototyped 2026-11-12 as a throwaway page with switchable variants
+([Solier Rail Prototypes](https://claude.ai/artifact/QxjjBqj1rAUuhajGqjLmRQ),
+private to the user; it now shows only the locked design). Three layouts were
+compared: A *Stacked* (solid New chat button, sections, then Recent), B
+*Recents first* (sections moved to the bottom), and C *Compact*. Four ways of
+showing a chat's home were compared: hidden, a second line, grouped, and a
+tree. The user picked C with Grouped; Grouped looked more organised and
+instantly recognisable than Second line, its close rival. A design critique
+of the result produced the changes in D7–D10.
+
+### Decisions
+
+- **D1 — Layout (variant C, Compact).** Top to bottom: the wordmark with a
+  New chat icon button on its right; the six sections (`Chats`, `Workspaces`,
+  `Profile`, `Personas`, `Models`, `Settings`) as a compact list; a divider;
+  then **Recent**, filling the rest of the rail and scrolling inside itself.
+  Chosen by the user over A (recommended, closest to today) because it leaves
+  the most room for recent chats and matches where current apps are heading.
+- **D2 — Width: resizable, not fixed.** Default **220px**, drag-resizable
+  between **200px** and **360px**; double-clicking the edge resets to 220.
+  200px is the narrowest at which every section label still fits. The width
+  stays device-local (`UiPrefs.sidebarWidth`, as today). This **reverses**
+  the original "lock to a fixed width and remove the resizer": the user wants
+  to keep the ability to size things to their liking. An icons-only collapse
+  at narrow widths was considered and dropped by the user.
+- **D3 — Recent shows chats from every home.** The 8 most recently active
+  chats, whether unfiled or in a Workspace or Project. All conversations are
+  already in `state.conversations`, so no server change is needed.
+- **D4 — Recent is grouped by Workspace.** One header per Workspace, with the
+  folder icon and the Workspace name. Under it, chats filed directly in the
+  Workspace come first; then each Project appears as a muted **› Project
+  name** label followed by its chats (no tree, no extra indent). Unfiled chats
+  get their own **Unfiled** header with the chat-bubble icon, the same icon as
+  the `Chats` section, which lists exactly those chats. Groups are ordered by
+  their newest chat. Accepted trade-off: inside a Workspace, its direct chats
+  come before its Projects' chats even when a Project chat is newer. The user
+  proposed grouping a Workspace's Project chats under the Workspace header
+  rather than giving each Project its own header.
+- **D5 — Each row: persona avatar and title.** The full home shows as a
+  tooltip. Long titles are cut off with an ellipsis.
+- **D6 — The open chat** is marked with a 2px accent bar placed directly under
+  the centre of its group's header icon (rows are indented to make room for
+  it), plus a faint accent tint behind the row: about 10% accent on dark
+  themes, 7% on light ones. Hover keeps the plain `--bg-tertiary` background,
+  so a hovered row never looks like a second open chat (critique point,
+  user asked for the tint to stay subtle). It stays marked while the user is
+  on any section page, which is the point of the feature.
+- **D7 — No "All chats" link.** It would have led to the Chats page, which
+  lists only unfiled chats, so the label promised more than it gave; and the
+  `Chats` section is right above it. Making the Chats page hold every chat is
+  UIP-08.
+- **D8 — Bigger targets.** On desktop, section rows are 36px tall and chat
+  rows 34px. In the phone drawer, every tappable item (sections, chats, New
+  chat, close) is 44px. The user asked for the desktop sizes after the
+  critique raised phone targets: they mis-tap easily.
+- **D9 — No Recent block when there are no chats.** The divider and Recent
+  block show only while at least one chat exists. They disappear when the
+  last chat is deleted and return with the next new chat.
+- **D10 — The rail's scrollbar** is slim (8px), with no arrows, a track in the
+  rail's own colour, and the themed `--scrollbar-thumb`, shown when the
+  pointer is over the list. The app-wide 14px scrollbar (`styles/forms.css`)
+  sits on `--bg-tertiary`, which read as a near-black strip in the narrow
+  rail. The override is scoped to the Recent list.
+- **D11 — Icons.**
+  - **Profile and Personas swap icons.** Profile takes the single person;
+    Personas takes a group. The old two-person drawing looked off-centre, and
+    a first symmetric three-person drawing looked crowded, so Personas gets a
+    redrawn, lighter, symmetric icon: one figure in front and two half-figures
+    behind, drawn as open curves.
+  - **Folder and chat bubble rebalanced.** The folder is bigger and fuller (a
+    taller body, a wider tab and a line across the front); the bubble is about
+    20% shorter, so it no longer looks larger than the folder. The same
+    drawings are used in the section list and the Recent headers.
+  - **New chat is a quill**, borderless and in the accent colour, to echo the
+    handwritten feel of the wordmark. The user suggested a pen or quill
+    instead of `+`.
+- **D12 — Phone.** The drawer shows the same rail, Recent included. Tapping a
+  chat opens it and closes the drawer.
+
+### Open
+
+- **The quill still looks "tacked on"** (user, 2026-11-12), possibly because
+  of the accent colour. Build with the current drawing and revisit it once it
+  can be seen in the real app; the user's reference for the feel was the
+  "quill pen" icon on svgrepo (id 347320). Draw our own rather than copy it.
+
+### Build notes
+
+One slice, one PR. Keep the drag-resize in `js/sidebar.js` and change its
+limits and default (today 240–640px, default 320px). The Recent list gets its
+own module rather than growing `main.js`, and re-renders whenever the
+conversation list or the active conversation changes.
 
 ---
 
@@ -196,3 +283,26 @@ and `js/ui-prefs.js`:
   - Hardcoded `#fff` / `white` on accent buttons → replace with
     `var(--on-accent)`.
 
+
+---
+
+## UIP-08 — The Chats page holds every chat
+
+**Status:** open, agreed 2026-11-12. Not designed; prototype before building.
+
+Found while designing UIP-03: a rail link to "All chats" would have led to the
+Chats page, which lists only unfiled chats, grouped by persona. The user's
+idea: give the Chats page the same treatment as the rail's Recent list, so it
+becomes the place where every chat lives, organised by Workspace and Project.
+New chats can be started there when the user doesn't need the Workspace or
+Project pages.
+
+This reverses the Workspace Restructure rule that the Chats tab shows only
+unfiled chats (`docs/design/WORKSPACE_RESTRUCTURE.md`, Issue 1). That rule
+exists because a Workspace chat opened from the Chats tab used to show the
+wrong location in the UI. The new page is a *view* of every chat, and nothing
+moves between homes, so it is allowed, provided that opening a chat from it
+still sets the active Workspace and Project from the chat itself, as the rail
+does. Open questions for the design: whether persona grouping survives (for
+example, inside each group), how a long list stays scannable, and where New
+chat sits.
