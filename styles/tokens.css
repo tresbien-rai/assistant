@@ -22,7 +22,9 @@
     --info: #4dabf7;
 
     --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-    --font-mono: 'Fira Code', 'Consolas', monospace;
+    --font-chat: var(--font-main);
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    --font-brand: 'Newsreader', Georgia, serif;
 
     /* Type scale (modular ~1.25; rem-based) */
     --text-xs: 0.75rem;    /* 12px — timestamps, badges, help text */

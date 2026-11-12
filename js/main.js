@@ -32,7 +32,7 @@ import { state, getActivePersona, getActiveConversation } from './state.js';
 import { setActiveConversation } from './active-conversation.js';
 import { elements } from './dom.js';
 import {
-    UiPrefs, applyTheme, withThemeTransition, applyChatWidth, syncAppearanceControls,
+    UiPrefs, applyTheme, withThemeTransition, applyChatWidth, applyFont, syncAppearanceControls,
 } from './ui-prefs.js';
 import { createSidebarOverlay, openSidebar, closeSidebar, setupSidebarResize } from './sidebar.js';
 import {
@@ -1279,11 +1279,25 @@ function setupEventListeners() {
             showPersonaPopover(elements.personaButton);
         });
     }
-    // Appearance: theme / accent / chat width (device-local, applied live)
+    // Appearance: theme / accent / font / chat width (device-local, applied live)
     document.querySelectorAll('#themeOptions button').forEach(btn => {
         btn.addEventListener('click', () => {
             UiPrefs.set('theme', btn.dataset.themeName);
             withThemeTransition(() => applyTheme(btn.dataset.themeName));
+            syncAppearanceControls();
+        });
+    });
+    document.querySelectorAll('#fontFamilyOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('fontFamily', btn.dataset.fontFamily);
+            applyFont(btn.dataset.fontFamily, UiPrefs.get('fontScope'));
+            syncAppearanceControls();
+        });
+    });
+    document.querySelectorAll('#fontScopeOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('fontScope', btn.dataset.fontScope);
+            applyFont(UiPrefs.get('fontFamily'), btn.dataset.fontScope);
             syncAppearanceControls();
         });
     });
@@ -1932,9 +1946,10 @@ function consumeAuthCallbackParams() {
  * Apply the product display name the server reported (BR-01).
  *
  * `CONFIG.brand` is the value every other module reads, so it is set first and
- * the DOM follows. Only the two places the name is baked into static HTML need
- * touching here — the tab title and the login heading; everything else builds
- * its copy from `CONFIG.brand` at render time, which happens after this runs.
+ * the DOM follows. Only the places the name is baked into static HTML need
+ * touching here — the tab title, login heading, and rail wordmark; everything
+ * else builds its copy from `CONFIG.brand` at render time, which happens after
+ * this runs.
  *
  * @param {string} brand - the display name from GET /api/auth/config
  */
@@ -1943,6 +1958,8 @@ function applyBrand(brand) {
     document.title = brand;
     const loginTitle = document.querySelector('.login-title');
     if (loginTitle) loginTitle.textContent = brand;
+    const railBrand = document.querySelector('.rail-brand');
+    if (railBrand) railBrand.textContent = brand;
 }
 
 /**

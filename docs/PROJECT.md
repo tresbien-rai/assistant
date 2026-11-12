@@ -275,7 +275,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | 📐 | UIP-01, UIP-02 | `../UI_POLISH.md` |
+| UI polish backlog | 🚧 (UIP-01 ✅, UIP-02…07 📐) | UIP-01…07 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -294,15 +294,30 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
    the aux model" target. Design: `docs/design/PROFILE_DESIGN.md`.
-3. **UI polish pass** (`docs/UI_POLISH.md`): UIP-01, the preset-editor font jump
-   (`--font-mono` names Fira Code, which is never loaded) plus the agreed
-   font-picker extension (including Editorial Serif for the **Solier** wordmark);
-   UIP-02, a whole-UI wording pass with persona
-   placeholders as the highest-leverage copy. The user deliberately deferred
-   wording until the feature set is complete. It now also covers the trait
-   editor's labels ("Prompt text", "+ Add trait", the persona intro line that
-   still speaks of "boxes") and the system-prompt wording the user felt could
-   be refined (2026-11-06).
+3. **UI polish pass** (`docs/UI_POLISH.md`, active target 2026-11-11):
+   - ~~**UIP-01**~~ *(shipped 2026-11-11)* — preset-editor font jump fix
+     (`.preset-block-text` uses `--font-main` at `14px`; `JetBrains Mono` loaded
+     for `--font-mono`), Appearance **Font** picker + **Font Scope** toggle
+     (`Whole app` vs `Chat & prose only` in `UiPrefs`), and `Newsreader` Italic
+     brand wordmark for **Solier** on the login card and section rail.
+   - **UIP-02** — whole-UI wording pass, persona section placeholders, trait
+     editor labels, stale copy fixes, and system-prompt refinement.
+   - **UIP-03** — enriched navigation rail (**Solier** wordmark, `+ New chat`,
+     fixed rail width without drag-resizer, and Active / Recent Chats quick-jump
+     list so open chats are never lost).
+   - **UIP-04** — contextual top status bar (chat-focused header with Chat
+     Title, Active Persona chip, Workspace breadcrumb, and distinct Avatar PIP
+     icon; clean non-chat section headers).
+   - **UIP-05** — Persona Editor sub-tabs (`Identity & Prompt` |
+     `Avatar & Expressions` | `Defaults & Capabilities`), live Persona Card
+     preview beside identity fields, and inline model picker for `Fixed` mode.
+   - **UIP-06** — Workspace/Project auto-save, visible `Chat`/`Edit` actions on
+     Persona tiles, onboarding empty-state action button, unified button
+     primitives, `var(--border-color)` fix, removal of `transition: all`, and
+     keyboard accessibility.
+   - **UIP-07** — evaluation and refinement of the 8 colour themes (`Midnight`,
+     `Slate`, `Forest`, `Ocean`, `Light`, `Parchment`, `Rosé`, `Custom`) and
+     light-theme contrast fixes for diffs and Markdown tables.
 
 **Later:**
 4. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
