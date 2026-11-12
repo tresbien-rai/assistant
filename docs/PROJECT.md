@@ -275,7 +275,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | 🚧 (UIP-01…02 ✅, UIP-03…07 📐) | UIP-01…07, #230 | `../UI_POLISH.md` |
+| UI polish backlog | 🚧 (UIP-01…02 ✅, UIP-03…07 📐) | UIP-01…07, #230, #231 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -300,7 +300,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
      for `--font-mono`), Appearance **Font** picker + **Font Scope** toggle
      (`Whole app` vs `Chat & prose only` in `UiPrefs`), and `Newsreader` Italic
      brand wordmark for **Solier** on the login card and section rail.
-   - ~~**UIP-02**~~ *(shipped 2026-11-11)* — whole-UI wording pass: teaching
+   - ~~**UIP-02**~~ *(shipped 2026-11-11, #231)* — whole-UI wording pass: teaching
      placeholders and help text across `PERSONA_SECTIONS` and `SUGGESTED_SECTIONS`,
      trait editor and workspace copy polish, sentence-case unification, and
      fixes for stale strings (welcome empty state, server-synced avatar note,
