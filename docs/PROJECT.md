@@ -275,7 +275,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | 🚧 (UIP-01 ✅, UIP-02…07 📐) | UIP-01…07 | `../UI_POLISH.md` |
+| UI polish backlog | 🚧 (UIP-01…02 ✅, UIP-03…07 📐) | UIP-01…07, #230, #231 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -295,13 +295,16 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
    model, visible and editable by the user. This also covers the "more uses for
    the aux model" target. Design: `docs/design/PROFILE_DESIGN.md`.
 3. **UI polish pass** (`docs/UI_POLISH.md`, active target 2026-11-11):
-   - ~~**UIP-01**~~ *(shipped 2026-11-11)* — preset-editor font jump fix
+   - ~~**UIP-01**~~ *(shipped 2026-11-11, #230)* — preset-editor font jump fix
      (`.preset-block-text` uses `--font-main` at `14px`; `JetBrains Mono` loaded
      for `--font-mono`), Appearance **Font** picker + **Font Scope** toggle
      (`Whole app` vs `Chat & prose only` in `UiPrefs`), and `Newsreader` Italic
      brand wordmark for **Solier** on the login card and section rail.
-   - **UIP-02** — whole-UI wording pass, persona section placeholders, trait
-     editor labels, stale copy fixes, and system-prompt refinement.
+   - ~~**UIP-02**~~ *(shipped 2026-11-11, #231)* — whole-UI wording pass: teaching
+     placeholders and help text across `PERSONA_SECTIONS` and `SUGGESTED_SECTIONS`,
+     trait editor and workspace copy polish, sentence-case unification, and
+     fixes for stale strings (welcome empty state, server-synced avatar note,
+     file panel mode note, and composer placeholder).
    - **UIP-03** — enriched navigation rail (**Solier** wordmark, `+ New chat`,
      fixed rail width without drag-resizer, and Active / Recent Chats quick-jump
      list so open chats are never lost).

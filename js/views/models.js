@@ -305,7 +305,7 @@ export function renderModelModalProviders() {
         const active = id === modelModalProvider;
         const trailing = soon
             ? '<span class="chip-soon">soon</span>'
-            : `<span class="chip-dot${hasKey ? ' has-key' : ''}" title="${hasKey ? 'API key saved' : 'no API key'}"></span>`;
+            : `<span class="chip-dot${hasKey ? ' has-key' : ''}" title="${hasKey ? 'API key saved' : 'No API key'}"></span>`;
         html += `<button class="provider-chip${active ? ' active' : ''}${soon ? ' soon' : ''}" data-modal-provider="${id}"
                 type="button" role="radio" aria-checked="${active}"${soon ? ' disabled' : ''}>
                 ${providerIconHtml(id)}<span class="chip-label">${escapeHtml(meta.label)}</span>${trailing}
@@ -417,7 +417,7 @@ export function renderProviderChips() {
         const active = !isAll && selected.includes(id);
         const trailing = soon
             ? '<span class="chip-soon">soon</span>'
-            : `<span class="chip-dot${hasKey ? ' has-key' : ''}" title="${hasKey ? 'API key saved' : 'no API key'}"></span>`;
+            : `<span class="chip-dot${hasKey ? ' has-key' : ''}" title="${hasKey ? 'API key saved' : 'No API key'}"></span>`;
         html += `<button class="provider-chip${active ? ' active' : ''}${soon ? ' soon' : ''}" data-chip="${id}" type="button"${soon ? ' disabled' : ''}>
                 ${providerIconHtml(id)}<span class="chip-label">${escapeHtml(meta.label)}</span>${trailing}
             </button>`;
@@ -556,7 +556,7 @@ export function renderModelsCatalog() {
             <div class="model-group-head">
                 <span class="model-group-name">${providerIconHtml(provider)}${label}</span>
                 <span class="model-group-right">
-                    <span class="model-key-badge${hasKey ? ' has-key' : ''}">${hasKey ? 'API key saved' : 'no API key'}</span>
+                    <span class="model-key-badge${hasKey ? ' has-key' : ''}">${hasKey ? 'API key saved' : 'No API key'}</span>
                     ${keyBtn}
                     ${addBtn}
                 </span>
@@ -812,7 +812,7 @@ export function renderAvailableModelsGrid(models, provider) {
     grid.style.display = 'grid';
 
     if (models.length === 0) {
-        grid.innerHTML = '<p class="help-text">No models available</p>';
+        grid.innerHTML = '<p class="help-text">No models returned by this provider.</p>';
         return;
     }
 
@@ -868,7 +868,7 @@ export async function handleFetchModels() {
 
     try {
         btn.disabled = true;
-        btn.textContent = 'Fetching...';
+        btn.textContent = 'Fetching…';
 
         const models = await fetchAvailableModels(provider);
         if (provider !== modelModalProvider) return; // switched away mid-flight
@@ -890,12 +890,12 @@ export function handleAddModelManually() {
     const name = elements.newModelName.value.trim();
 
     if (!id) {
-        showToast('Please enter a model ID', { type: 'warning' });
+        showToast('Enter a model ID.', { type: 'warning' });
         return;
     }
 
     if (!name) {
-        showToast('Please enter a display name', { type: 'warning' });
+        showToast('Enter a display name.', { type: 'warning' });
         return;
     }
 
@@ -917,7 +917,7 @@ export function handleAddModelManually() {
             }
         }
     } else {
-        showToast('Model already exists', { type: 'warning' });
+        showToast('That model is already in your catalog.', { type: 'warning' });
     }
 }
 

@@ -716,10 +716,10 @@ function updateAvatarPreview() {
         // Cache-bust on updatedAt so re-uploads are immediately visible.
         const url = `${API.avatars.getUrl(persona.id)}?v=${persona.updatedAt || 0}`;
         preview.innerHTML = `<img src="${url}" alt="Avatar">`;
-        status.textContent = 'Custom Avatar';
+        status.textContent = 'Custom avatar';
     } else {
         preview.textContent = '🤖';
-        status.textContent = 'Default Avatar';
+        status.textContent = 'Default avatar';
     }
 }
 
@@ -816,7 +816,7 @@ async function openExpressionModal(name = null) {
 
     if (name && expressions[name]) {
         const expr = expressions[name];
-        elements.expressionModalTitle.textContent = 'Edit Expression';
+        elements.expressionModalTitle.textContent = 'Edit expression';
         elements.expressionName.value = name;
         elements.expressionEmoji.value = expr.emoji;
         // The generating slot is the UI's own state, not a declarable mood —
@@ -833,7 +833,7 @@ async function openExpressionModal(name = null) {
             elements.expressionImagePreview.innerHTML = '<span class="preview-placeholder">No image</span>';
         }
     } else {
-        elements.expressionModalTitle.textContent = 'Add Expression';
+        elements.expressionModalTitle.textContent = 'Add expression';
         elements.expressionName.value = '';
         elements.expressionEmoji.value = '';
         elements.deleteExpressionBtn.style.display = 'none';
@@ -861,7 +861,7 @@ async function saveExpression() {
     const emoji = elements.expressionEmoji.value.trim() || '😊';
 
     if (!name) {
-        showToast('Please enter an expression name', { type: 'warning' });
+        showToast('Enter an expression name.', { type: 'warning' });
         return;
     }
     // The name is interpolated into the model's expression protocol AND used as
@@ -869,11 +869,11 @@ async function saveExpression() {
     // charset. No spaces: the image endpoints reject them, which would leave the
     // expression permanently unable to hold art.
     if (!/^[a-z0-9][a-z0-9_-]{0,30}$/.test(name)) {
-        showToast('Use letters, numbers, - or _ (no spaces, max 31 characters)', { type: 'warning' });
+        showToast('Use letters, numbers, hyphens, or underscores (no spaces, up to 31 characters).', { type: 'warning' });
         return;
     }
     if (name === CONFIG.generatingExpression && editingExpression !== CONFIG.generatingExpression) {
-        showToast(`"${CONFIG.generatingExpression}" is reserved for the working-on-it state`, { type: 'warning' });
+        showToast(`"${CONFIG.generatingExpression}" is reserved for the live response state.`, { type: 'warning' });
         return;
     }
 
@@ -947,7 +947,7 @@ async function deleteExpression() {
     if (!persona) return;
 
     if (Object.keys(persona.expressions).length <= 1) {
-        showToast('You must have at least one expression', { type: 'warning' });
+        showToast('A persona needs at least one expression.', { type: 'warning' });
         return;
     }
 
@@ -1731,7 +1731,7 @@ async function handleAvatarUpload(file) {
         // Expression slots without art of their own render the default avatar
         // plus a mood badge, so they're stale the moment the avatar changes.
         await renderExpressionList();
-        showNotification('Avatar uploaded!', 'success');
+        showNotification('Avatar updated.', 'success');
     } catch (error) {
         console.error('Failed to upload avatar:', error);
         displayError(error, { action: 'upload image' });
