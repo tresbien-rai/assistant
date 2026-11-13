@@ -532,6 +532,346 @@
     padding-right: 0;
 }
 
+/* ===== Persona Editor tabs, separate WYSIWYG card & Phone Strip A (UIP-05) ===== */
+#personaEditView .settings-tabs {
+    margin-bottom: 18px;
+}
+
+.persona-hero-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 20px;
+    align-items: stretch;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.persona-hero-row[hidden] {
+    display: none;
+}
+
+.main-view-panel .settings-modal-body .persona-hero-row > .settings-section {
+    padding: 0;
+    border-bottom: none;
+    margin: 0;
+}
+
+.main-view-panel .settings-modal-body #personaModelSection {
+    padding-top: 0;
+}
+
+.persona-live-aside {
+    display: flex;
+    flex-direction: column;
+}
+
+.persona-live-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 12px 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+}
+
+.persona-live-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.persona-live-card .persona-tile-portrait {
+    width: 100%;
+}
+
+/* Show full tagline in the live editor card while typing it. */
+.persona-live-card .persona-tile-tagline {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+}
+
+.persona-live-card-btn {
+    margin-top: auto;
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.persona-live-card-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+/* Phone Strip A: hidden on desktop, shown above the 3-tab strip on narrow screens */
+.persona-strip {
+    display: none;
+}
+
+.persona-strip[hidden] {
+    display: none;
+}
+
+@media (max-width: 767px) {
+    .persona-strip {
+        display: flex;
+        align-items: stretch;
+        gap: 14px;
+        max-width: var(--section-max-width);
+        margin: 0 auto 14px;
+        padding: 12px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+    }
+
+    .persona-strip-port-col {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 94px;
+        flex-shrink: 0;
+    }
+
+    .persona-strip-port {
+        position: relative;
+        width: 94px;
+        height: 94px;
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--accent-subtle) 100%);
+        border: 1px solid var(--border-color);
+        font-size: 46px;
+    }
+
+    .persona-strip-port img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .persona-strip-edit-btn {
+        width: 100%;
+        padding: 4px 6px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: center;
+        transition: border-color 0.15s, color 0.15s;
+    }
+
+    .persona-strip-edit-btn:hover {
+        border-color: var(--accent);
+        color: var(--text-primary);
+    }
+
+    .persona-strip-info-col {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 5px;
+    }
+
+    .persona-strip-eyebrow {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+    }
+
+    .persona-strip-title-row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        flex-wrap: wrap;
+    }
+
+    .persona-strip-name {
+        font-size: var(--text-base);
+        font-weight: 600;
+        color: var(--text-primary);
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+
+    .persona-strip-model-foot {
+        margin-top: 2px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--text-muted);
+    }
+
+    .persona-strip-model-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: var(--radius-full);
+        background: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .persona-strip-model-foot.is-fixed .persona-strip-model-dot {
+        background: var(--accent);
+    }
+
+    .persona-hero-row {
+        display: block;
+    }
+
+    .persona-live-aside {
+        display: none;
+    }
+
+    #personaEditView .settings-tabs {
+        gap: 2px;
+    }
+
+    #personaEditView .settings-tab {
+        flex: 1 1 auto;
+        padding: 8px 3px;
+        font-size: 11.5px;
+        text-align: center;
+        white-space: nowrap;
+    }
+}
+
+/* Inline Fixed-model picker inside Defaults & Capabilities → Model */
+.persona-fixed-picker {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.persona-fixed-picker[hidden] {
+    display: none;
+}
+
+.persona-fixed-picker .help-text {
+    margin: 0;
+}
+
+.persona-fixed-picker-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.persona-fixed-picker-title {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.persona-fixed-models-link {
+    border: none;
+    background: none;
+    padding: 0;
+    font-family: inherit;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--accent-light, var(--accent));
+    cursor: pointer;
+}
+
+.persona-fixed-models-link:hover {
+    text-decoration: underline;
+}
+
+.persona-fixed-model-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s;
+}
+
+.persona-fixed-model-btn:hover {
+    border-color: var(--accent);
+}
+
+.persona-fixed-model-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+}
+
+.persona-fixed-provider-badge {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: var(--radius-full);
+    background: var(--accent-subtle);
+    color: var(--accent-light, var(--accent));
+    flex-shrink: 0;
+}
+
+.persona-fixed-model-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.persona-fixed-chevron {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
 /* ===== Prompt preset list (AP-02) ===== */
 .preset-list {
     display: flex;

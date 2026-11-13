@@ -234,9 +234,9 @@
                      edited per-model in the descriptor-driven detail view
                      (renderModelDetail), reached from a catalog card's ⋯ menu. -->
 
-                <!-- Persona profile (re-parented into #personaEditView on load — WR-08) -->
-                <div class="settings-section" id="personaProfileSection">
-                    <h3>Profile</h3>
+                <!-- Persona identity (re-parented into #personaEditView on load — UIP-05) -->
+                <div class="settings-section" id="personaIdentitySection" data-persona-tab="identity">
+                    <h3>Identity</h3>
 
                     <label for="assistantName">Name</label>
                     <input type="text" id="assistantName" placeholder="e.g., Clara, The Editor, Assistant" value="Assistant">
@@ -254,6 +254,11 @@
                     </label>
                     <input type="text" id="personaRoleLabel" maxlength="24" placeholder="Researcher">
                     <p class="help-text">Optional short label shown as a chip on the card.</p>
+                </div>
+
+                <!-- Persona prompt sections + general guidance (re-parented into #personaEditView on load) -->
+                <div class="settings-section" id="personaPromptSection" data-persona-tab="identity">
+                    <h3>Character &amp; prompt</h3>
 
                     <!-- Persona sections (PS-02). The five named fields are
                          rendered from the vocabulary in js/persona-sections.js
@@ -275,20 +280,55 @@
                         <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
                     </div>
                     <p class="help-text">Anything that doesn't fit the sections above — habits, boundaries, formatting rules — or the entire persona if you prefer writing in one place.</p>
+                </div>
 
+                <!-- Persona model-settings mode & inline Fixed model picker (re-parented into #personaEditView on load) -->
+                <div class="settings-section" id="personaModelSection" data-persona-tab="defaults">
+                    <h3>Model</h3>
                     <!-- Model-settings mode (WR-12, reshaped by model profiles):
                          shared = persona never touches the active model;
                          fixed = it pins a model, whose own profile loads. -->
-                    <label>Model</label>
                     <div class="appearance-options" id="personaModelModeOptions">
                         <button type="button" data-model-mode="shared">Shared</button>
                         <button type="button" data-model-mode="fixed">Fixed</button>
                     </div>
                     <p class="help-text" id="personaModelModeHint">Shared: this persona uses whatever model (and its saved parameters) is currently active.</p>
 
+                    <div class="persona-fixed-picker" id="personaFixedModelBox" hidden>
+                        <div class="persona-fixed-picker-top">
+                            <span class="persona-fixed-picker-title">Pinned model</span>
+                            <button type="button" class="persona-fixed-models-link" id="personaEditModelsLink">Edit model profile in Models →</button>
+                        </div>
+                        <button type="button" class="persona-fixed-model-btn" id="personaFixedModelBtn" aria-haspopup="menu" aria-expanded="false">
+                            <span class="persona-fixed-model-left">
+                                <span class="persona-fixed-provider-badge" id="personaFixedProviderBadge">Provider</span>
+                                <span class="persona-fixed-model-name" id="personaFixedModelName">Select a model</span>
+                                <span class="model-menu-nokey" id="personaFixedModelNoKey" hidden>no key</span>
+                            </span>
+                            <svg class="persona-fixed-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <p class="help-text">Temperature, thinking, and streaming always come from the pinned model's own profile.</p>
+                    </div>
+                </div>
+
+                <!-- Persona's default prompt preset (AP-04). Lives with the
+                     persona's other model-side defaults; a chat can still
+                     override it from the composer. -->
+                <div class="settings-section" id="personaPresetSection" data-persona-tab="defaults">
+                    <h3>Prompt preset</h3>
+                    <label for="personaPresetSelect">Default for this persona's chats</label>
+                    <select id="personaPresetSelect"></select>
+                    <p class="section-note">Which platform prompt this persona's chats start from. "Inherit" follows your account default; an individual chat can still override it from the composer.</p>
+                </div>
+
+                <!-- Persona capabilities & privacy (re-parented into #personaEditView on load) -->
+                <div class="settings-section" id="personaCapabilitiesSection" data-persona-tab="defaults">
+                    <h3>Capabilities &amp; privacy</h3>
                     <!-- File-tools base default (Track A, P2-05b). Per-chat
                          override lives on the composer toggle. -->
-                    <label class="checkbox-row" for="personaToolsBase" style="margin-top: 12px;">
+                    <label class="checkbox-row" for="personaToolsBase">
                         <input type="checkbox" id="personaToolsBase">
                         <span>Enable file tools by default</span>
                     </label>
@@ -306,29 +346,8 @@
                 </div>
 
                 <!-- Persona avatar image (re-parented into #personaEditView on load — WR-08) -->
-                <!-- Persona's default prompt preset (AP-04). Lives with the
-                     persona's other model-side defaults; a chat can still
-                     override it from the composer. -->
-                <div class="settings-section" id="personaPresetSection">
-                    <h3>Prompt preset</h3>
-                    <label for="personaPresetSelect">Default for this persona's chats</label>
-                    <select id="personaPresetSelect"></select>
-                    <p class="section-note">Which platform prompt this persona's chats start from. "Inherit" follows your account default; an individual chat can still override it from the composer.</p>
-                </div>
-
-                <div class="settings-section" id="personaAvatarSection">
+                <div class="settings-section" id="personaAvatarSection" data-persona-tab="avatar">
                     <h3>Avatar</h3>
-
-                    <!-- WYSIWYG card preview: same frame + caption the persona
-                         grid renders, so what you see here is the tile. -->
-                    <div class="avatar-settings-preview">
-                        <div class="persona-tile-portrait" id="avatarPreview">🤖</div>
-                        <div class="avatar-preview-info">
-                            <span class="persona-tile-name" id="avatarPreviewName">Assistant</span>
-                            <span class="persona-tile-tagline" id="avatarPreviewTagline"></span>
-                            <span class="avatar-preview-status" id="avatarPreviewStatus">Default avatar</span>
-                        </div>
-                    </div>
 
                     <label>Portrait image</label>
                     <div class="file-upload-wrapper">
@@ -401,7 +420,7 @@
                 </div>
 
                 <!-- Expressions (re-parented into #personaEditView on load — WR-08) -->
-                <div class="settings-section" id="personaExpressionsSection">
+                <div class="settings-section" id="personaExpressionsSection" data-persona-tab="avatar">
                     <h3>Expressions</h3>
                     <p class="help-text">Each expression gives the persona a mood it can adopt at the start of a reply — with its own portrait art or emoji badge.</p>
 

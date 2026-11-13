@@ -32,7 +32,7 @@ import { getActivePersona, getActiveConversation } from './state.js';
 import { currentSection, navigate, renderChatThread, registerShell } from './shell.js';
 import { renderChatsListMain } from './views/chats.js';
 import { renderWorkspacesListMain, renderBreadcrumb, renderContainerPage } from './views/workspaces.js';
-import { renderPersonasListMain } from './views/personas.js';
+import { renderPersonasListMain, syncPersonaEditorPreview, closePersonaFixedModelMenu } from './views/personas.js';
 import { renderModelsView } from './views/models.js';
 import { renderProfileView, flushProfileSave } from './views/profile.js';
 import { FilePanel } from './file-panel/index.js';
@@ -176,6 +176,7 @@ export function renderMainView() {
     // debounce. Clicking the rail is faster than 300ms, and a lost sentence is
     // the worst thing that page could do to you.
     if (!isProfile) flushProfileSave();
+    if (!isPersonaEdit) closePersonaFixedModelMenu();
     if (isProfile) {
         renderProfileView();
         return;
@@ -186,9 +187,10 @@ export function renderMainView() {
     }
     if (isPersonaEdit) {
         // The editor's inputs always edit the *active* persona (editPersona
-        // activates before navigating); the title just needs to match it.
+        // activates before navigating); the title & live card just need to match it.
         if (!getActivePersona()) return navigate({ type: 'personas' });
         syncPersonaEditTitle();
+        syncPersonaEditorPreview();
         return;
     }
     if (isSettings) return;

@@ -99,7 +99,7 @@ export function showSettingsTab(tabId) {
     const known = SETTINGS_TABS.some(t => t.id === tabId);
     activeTab = known ? tabId : DEFAULT_TAB;
 
-    document.querySelectorAll('.settings-tab').forEach(btn => {
+    document.querySelectorAll('#settingsView .settings-tab').forEach(btn => {
         const on = btn.dataset.tab === activeTab;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-selected', String(on));
