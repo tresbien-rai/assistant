@@ -39,7 +39,7 @@ These are standing rules learned over many sessions. They apply every session.
 - **Live checks with real keys are recorded as owed, not nagged about.** The
   user runs them, often in a later session. A test Google account for live
   checks is being set up; see `docs/PROJECT.md` §9.
-- **Tessera is private and single-user until the user decides to release
+- **Solier is private and single-user until the user decides to release
   it.** Build for that: there are no other users' data or deployments to stay
   compatible with, so prefer the simpler design. Security basics (auth,
   per-user scoping, encrypted keys) still hold, because release is the plan.
@@ -178,10 +178,11 @@ The data model, server layout and prompt assembly are described in
 | `js/views/` | Main-area views | `chats`, `models`, `personas` (+ `persona-traits-editor`, the trait tags, picker and Prompt text), `profile`, `settings`, `workspaces`, `usage-panel` |
 | `js/persona-helpers.js` | Shared persona ops | create/hydrate personas, avatar markup, apply a persona's model settings |
 | `js/avatar.js` | Floating avatar | Size/corner presets, free-drag positioning, the image or emoji it shows |
-| `js/status-bar.js` | Status bar | Billed-token usage and its breakdown |
+| `js/status-bar.js` | Composer usage counter | `Usage: <count>` billed-token counter beneath the composer and its breakdown trigger |
 | `js/chat/` | Chat | `expressions.js` (tag protocol), `thread.js` (rendering), `send.js` (send/stream/re-run), `composer.js` (drafts, attachments) |
 | `js/ui-prefs.js` | Device-local prefs | `UiPrefs` (localStorage), themes, OKLCH palette engine |
-| `js/sidebar.js` | Sidebar drawer | open/close/overlay/resize |
+| `js/sidebar.js` | Sidebar drawer | open/close/overlay/resize (200–360px, default 220px) |
+| `js/rail-recent.js` | Recent chats rail | Top 8 recent chats across homes, grouped by workspace/project or flat |
 | `js/file-panel/` | The file panel | viewer, editor, browser, revision history, context toggles |
 | `js/util/` | Dependency-free helpers | `markdown.js`, `format.js`, `diff.js`, `image-store.js`, … |
 | `js/components/` | Reusable UI primitives | `dialogs.js` (`confirmDialog`/`promptName`), `toast.js`, `errors.js` (`displayError`), `menus.js` (popover positioning), `textarea-resize.js`, `collapsible.js` |
