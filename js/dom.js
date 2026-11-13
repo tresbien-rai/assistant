@@ -96,15 +96,17 @@ export const elements = {
     // to the per-model detail view (renderModelDetail, Slice 5) — rendered from
     // PROVIDERS descriptors, so no static element refs here.
 
-    // Avatar settings
+    // Avatar & Fixed-model settings
     avatarFileInput: document.getElementById('avatarFileInput'),
     avatarUploadBtn: document.getElementById('avatarUploadBtn'),
     avatarClearBtn: document.getElementById('avatarClearBtn'),
     avatarMoodBadge: document.getElementById('avatarMoodBadge'),
-    avatarPreview: document.getElementById('avatarPreview'),
-    avatarPreviewName: document.getElementById('avatarPreviewName'),
-    avatarPreviewTagline: document.getElementById('avatarPreviewTagline'),
-    avatarPreviewStatus: document.getElementById('avatarPreviewStatus'),
+    personaFixedModelBox: document.getElementById('personaFixedModelBox'),
+    personaFixedModelBtn: document.getElementById('personaFixedModelBtn'),
+    personaFixedProviderBadge: document.getElementById('personaFixedProviderBadge'),
+    personaFixedModelName: document.getElementById('personaFixedModelName'),
+    personaFixedModelNoKey: document.getElementById('personaFixedModelNoKey'),
+    personaEditModelsLink: document.getElementById('personaEditModelsLink'),
     showAvatar: document.getElementById('showAvatar'),
     activeFileTurns: document.getElementById('activeFileTurns'),
     autoTitleToggle: document.getElementById('autoTitleToggle'),

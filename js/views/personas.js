@@ -16,6 +16,9 @@ import { CONFIG } from '../config.js';
 import { navigate, updateUI, mobileMenuButtonHTML, registerShell } from '../shell.js';
 import { getActivePersona } from '../state.js';
 import {
+    PROVIDERS, providerIconHtml, personaModelMode, getActiveModelConfig, getCatalogEntry,
+} from '../model-layer.js';
+import {
     personaAvatarHTML, createPersona, applyPersonaModelSettings, hydratePersonas,
 } from '../persona-helpers.js';
 import { savePersonas, autoSaveSettings } from '../settings-store.js';
@@ -72,6 +75,7 @@ export function editPersona(personaId) {
     savePersonas();
     updateUI();
     navigate({ type: 'persona-edit' });
+    showPersonaEditorTab('identity');
 }
 
 /**
@@ -556,6 +560,479 @@ export function syncPersonaSectionFields(persona) {
         field.value = persona ? sectionText(persona, id) : '';
     }
     syncTraitEditors(persona);
+}
+
+// ===== Persona editor layout: 3-tab strip, live WYSIWYG card & fixed-model picker (UIP-05) =====
+
+const PERSONA_TABS = [
+    { id: 'identity', label: 'Identity & Prompt' },
+    { id: 'avatar', label: 'Avatar & Expressions' },
+    { id: 'defaults', label: 'Defaults & Capabilities' },
+];
+
+const DEFAULT_PERSONA_TAB = 'identity';
+let activePersonaTab = DEFAULT_PERSONA_TAB;
+let personaEditorBuilt = false;
+
+function resolveModelDisplayName(provider, modelId) {
+    if (!modelId) return '';
+    const list = (provider && state.settings.customModels[provider]) || [];
+    const entry = list.find((m) => m.id === modelId);
+    return entry ? entry.name : modelId;
+}
+
+function liveCardMarkup({ withAvatarAction = false } = {}) {
+    return `
+        <div class="persona-live-card">
+            <div class="persona-live-card-head">
+                <span>Live card preview</span>
+                <span class="persona-live-art-type">Emoji</span>
+            </div>
+            <div class="persona-tile-portrait"></div>
+            <div class="persona-tile-caption">
+                <span class="persona-tile-name"></span>
+                <span class="persona-tile-role" hidden></span>
+                <span class="persona-tile-tagline"></span>
+            </div>
+            ${withAvatarAction ? '<button type="button" class="persona-live-card-btn" data-jump-avatar="1">Change portrait →</button>' : ''}
+        </div>`;
+}
+
+/**
+ * Re-parent the persona sections into `#personaEditView` under the UIP-05
+ * 3-tab layout (`Identity & Prompt` | `Avatar & Expressions` | `Defaults & Capabilities`),
+ * with a separate sibling WYSIWYG card beside Identity & Avatar on desktop and
+ * Strip A above the tabs on phone.
+ */
+export function setupPersonaEditor() {
+    const view = elements.personaEditView;
+    if (!view || personaEditorBuilt) return;
+
+    const identitySection = document.getElementById('personaIdentitySection');
+    const promptSection = document.getElementById('personaPromptSection');
+    const avatarSection = document.getElementById('personaAvatarSection');
+    const expressionsSection = document.getElementById('personaExpressionsSection');
+    const modelSection = document.getElementById('personaModelSection');
+    const presetSection = document.getElementById('personaPresetSection');
+    const capabilitiesSection = document.getElementById('personaCapabilitiesSection');
+
+    view.innerHTML = `
+        <div class="settings-view-crumb">${mobileMenuButtonHTML()}<span class="cp-crumb" id="personaEditBack">‹ Personas</span></div>
+        <h1 class="settings-view-title" id="personaEditTitle">Persona</h1>
+        <div class="persona-strip" id="personaPhoneStrip">
+            <div class="persona-strip-port-col">
+                <div class="persona-strip-port" id="personaStripPortrait"></div>
+                <button type="button" class="persona-strip-edit-btn" id="personaStripActionBtn">Edit art →</button>
+            </div>
+            <div class="persona-strip-info-col">
+                <div class="persona-strip-eyebrow">
+                    <span>Live preview</span>
+                    <span id="personaStripArtType">Emoji</span>
+                </div>
+                <div class="persona-strip-title-row">
+                    <span class="persona-strip-name" id="personaStripName"></span>
+                    <span class="persona-tile-role" id="personaStripRole" hidden></span>
+                </div>
+                <span class="persona-tile-tagline" id="personaStripTagline"></span>
+                <div class="persona-strip-model-foot" id="personaStripModelFoot">
+                    <span class="persona-strip-model-dot"></span>
+                    <span id="personaStripModelLabel">Shared model</span>
+                </div>
+            </div>
+        </div>
+        <div class="settings-tabs" id="personaEditTabs" role="tablist">
+            ${PERSONA_TABS.map((t) => `
+                <button type="button" class="settings-tab" role="tab" data-tab="${t.id}"
+                        aria-selected="false">${escapeHtml(t.label)}</button>`).join('')}
+        </div>`;
+
+    const editorBody = document.createElement('div');
+    editorBody.className = 'settings-modal-body';
+
+    // Tab 1 hero: Identity section on left, standalone WYSIWYG Persona Card on right.
+    const identityHero = document.createElement('div');
+    identityHero.className = 'persona-hero-row';
+    identityHero.dataset.personaTab = 'identity';
+    if (identitySection) identityHero.appendChild(identitySection);
+    const identityAside = document.createElement('aside');
+    identityAside.className = 'persona-live-aside';
+    identityAside.id = 'personaIdentityAside';
+    identityAside.innerHTML = liveCardMarkup({ withAvatarAction: true });
+    identityHero.appendChild(identityAside);
+    editorBody.appendChild(identityHero);
+
+    if (promptSection) editorBody.appendChild(promptSection);
+
+    // Tab 2 hero: Avatar upload on left, standalone WYSIWYG Persona Card on right.
+    const avatarHero = document.createElement('div');
+    avatarHero.className = 'persona-hero-row';
+    avatarHero.dataset.personaTab = 'avatar';
+    if (avatarSection) avatarHero.appendChild(avatarSection);
+    const avatarAside = document.createElement('aside');
+    avatarAside.className = 'persona-live-aside';
+    avatarAside.id = 'personaAvatarAside';
+    avatarAside.innerHTML = liveCardMarkup({ withAvatarAction: false });
+    avatarHero.appendChild(avatarAside);
+    editorBody.appendChild(avatarHero);
+
+    if (expressionsSection) editorBody.appendChild(expressionsSection);
+    if (modelSection) editorBody.appendChild(modelSection);
+    if (presetSection) editorBody.appendChild(presetSection);
+    if (capabilitiesSection) editorBody.appendChild(capabilitiesSection);
+
+    view.appendChild(editorBody);
+
+    document.getElementById('personaEditBack')
+        ?.addEventListener('click', () => navigate({ type: 'personas' }));
+    const tabList = document.getElementById('personaEditTabs');
+    tabList?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.settings-tab');
+        if (btn) showPersonaEditorTab(btn.dataset.tab);
+    });
+    tabList?.addEventListener('keydown', (e) => {
+        const tabs = [...tabList.querySelectorAll('.settings-tab')];
+        const idx = tabs.indexOf(e.target.closest('.settings-tab'));
+        if (idx === -1) return;
+        let next = -1;
+        if (e.key === 'ArrowRight') next = (idx + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft') next = (idx - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = tabs.length - 1;
+        if (next === -1) return;
+        e.preventDefault();
+        tabs[next].focus();
+        showPersonaEditorTab(tabs[next].dataset.tab);
+    });
+    document.getElementById('personaStripActionBtn')
+        ?.addEventListener('click', () => {
+            showPersonaEditorTab(activePersonaTab === 'avatar' ? 'identity' : 'avatar');
+        });
+    identityAside.querySelector('[data-jump-avatar]')
+        ?.addEventListener('click', () => showPersonaEditorTab('avatar'));
+
+    if (elements.personaFixedModelBtn) {
+        elements.personaFixedModelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showPersonaFixedModelMenu(elements.personaFixedModelBtn);
+        });
+    }
+    if (elements.personaEditModelsLink) {
+        elements.personaEditModelsLink.addEventListener('click', () => {
+            const persona = getActivePersona();
+            const pin = persona?.modelConfig || {};
+            const hasEntry = pin.provider && pin.model && getCatalogEntry(pin.provider, pin.model);
+            navigate(hasEntry
+                ? { type: 'models', detail: { provider: pin.provider, model: pin.model } }
+                : { type: 'models' });
+        });
+    }
+
+    personaEditorBuilt = true;
+    showPersonaEditorTab(activePersonaTab);
+    syncPersonaEditorPreview();
+}
+
+/** Switch the active tab inside `#personaEditView`. */
+export function showPersonaEditorTab(tabId) {
+    const known = PERSONA_TABS.some((t) => t.id === tabId);
+    activePersonaTab = known ? tabId : DEFAULT_PERSONA_TAB;
+
+    document.querySelectorAll('#personaEditTabs .settings-tab').forEach((btn) => {
+        const on = btn.dataset.tab === activePersonaTab;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', String(on));
+        btn.tabIndex = on ? 0 : -1;
+    });
+
+    const body = elements.personaEditView?.querySelector('.settings-modal-body');
+    if (body) {
+        for (const child of body.children) {
+            const tab = child.dataset.personaTab;
+            if (tab) child.hidden = tab !== activePersonaTab;
+        }
+    }
+
+    const actionBtn = document.getElementById('personaStripActionBtn');
+    if (actionBtn) {
+        actionBtn.textContent = activePersonaTab === 'avatar' ? 'Identity →' : 'Edit art →';
+    }
+
+    closePersonaFixedModelMenu();
+}
+
+/**
+ * Sync both desktop sibling WYSIWYG cards and the Phone Strip A banner
+ * with the active persona's live identity, portrait, and model-mode state.
+ * @param {Object} [opts]
+ * @param {boolean} [opts.fromInputs=false] - read live form inputs while typing
+ */
+export function syncPersonaEditorPreview({ fromInputs = false } = {}) {
+    if (!personaEditorBuilt) return;
+    const persona = getActivePersona();
+    const rawName = fromInputs && elements.assistantName
+        ? elements.assistantName.value
+        : (persona ? persona.name : CONFIG.defaults.assistantName);
+    const name = rawName || CONFIG.defaults.assistantName;
+    const tagline = (fromInputs && elements.personaTagline
+        ? elements.personaTagline.value
+        : (persona?.tagline || '')).trim();
+    const role = (fromInputs && elements.personaRoleLabel
+        ? elements.personaRoleLabel.value
+        : (persona?.roleLabel || '')).trim();
+
+    const isActive = !!(persona && persona.id === state.activePersonaId);
+    const hasCustom = !!(persona && persona.avatarFilename);
+    const artTypeLabel = hasCustom ? 'Custom' : 'Emoji';
+    const firstEmoji = Object.values(persona?.expressions || {})[0]?.emoji || '';
+    const avatarKey = persona
+        ? `${persona.id}|${persona.avatarFilename || ''}|${persona.updatedAt || 0}|${firstEmoji}|${isActive ? 1 : 0}`
+        : 'none';
+    const portraitInner = `${personaAvatarHTML(persona)}${isActive ? '<span class="persona-tile-active">Active</span>' : ''}`;
+
+    document.querySelectorAll('#personaEditView .persona-live-card').forEach((card) => {
+        const typeEl = card.querySelector('.persona-live-art-type');
+        if (typeEl) typeEl.textContent = artTypeLabel;
+
+        const portraitEl = card.querySelector('.persona-tile-portrait');
+        if (portraitEl && portraitEl.dataset.avatarKey !== avatarKey) {
+            portraitEl.dataset.avatarKey = avatarKey;
+            portraitEl.innerHTML = portraitInner;
+        }
+
+        const nameEl = card.querySelector('.persona-tile-name');
+        if (nameEl) nameEl.textContent = name;
+
+        const roleEl = card.querySelector('.persona-tile-role');
+        if (roleEl) {
+            roleEl.textContent = role;
+            roleEl.hidden = !role;
+        }
+
+        const tagEl = card.querySelector('.persona-tile-tagline');
+        if (tagEl) {
+            tagEl.textContent = tagline || 'Add a tagline';
+            tagEl.classList.toggle('empty', !tagline);
+        }
+    });
+
+    const stripPort = document.getElementById('personaStripPortrait');
+    if (stripPort && stripPort.dataset.avatarKey !== avatarKey) {
+        stripPort.dataset.avatarKey = avatarKey;
+        stripPort.innerHTML = portraitInner;
+    }
+    const stripType = document.getElementById('personaStripArtType');
+    if (stripType) stripType.textContent = artTypeLabel;
+    const stripName = document.getElementById('personaStripName');
+    if (stripName) stripName.textContent = name;
+    const stripRole = document.getElementById('personaStripRole');
+    if (stripRole) {
+        stripRole.textContent = role;
+        stripRole.hidden = !role;
+    }
+    const stripTag = document.getElementById('personaStripTagline');
+    if (stripTag) {
+        stripTag.textContent = tagline || 'Add a tagline';
+        stripTag.classList.toggle('empty', !tagline);
+    }
+
+    const mode = personaModelMode(persona);
+    const stripModelFoot = document.getElementById('personaStripModelFoot');
+    const stripModelLabel = document.getElementById('personaStripModelLabel');
+    if (stripModelFoot) stripModelFoot.classList.toggle('is-fixed', mode === 'fixed');
+    if (stripModelLabel) {
+        if (mode === 'fixed') {
+            const pin = persona?.modelConfig || {};
+            const label = resolveModelDisplayName(pin.provider || getActiveModelConfig().provider, pin.model);
+            stripModelLabel.textContent = label ? `Fixed · ${label}` : 'Fixed model';
+        } else {
+            stripModelLabel.textContent = 'Shared model';
+        }
+    }
+}
+
+let fixedMenuCleanup = null;
+
+/** Close any open Fixed-model menu popover and detach its global listeners. */
+export function closePersonaFixedModelMenu() {
+    if (fixedMenuCleanup) {
+        const fn = fixedMenuCleanup;
+        fixedMenuCleanup = null;
+        fn();
+    }
+    const openMenu = document.querySelector('.context-menu[data-fixed-model-menu]');
+    if (openMenu) openMenu.remove();
+    if (elements.personaFixedModelBtn) {
+        elements.personaFixedModelBtn.setAttribute('aria-expanded', 'false');
+    }
+}
+
+/** Sync the inline Fixed-model picker inside `Defaults & Capabilities → Model`. */
+export function syncPersonaFixedModelPicker() {
+    const box = elements.personaFixedModelBox;
+    if (!box) return;
+    const persona = getActivePersona();
+    const mode = personaModelMode(persona);
+    box.hidden = mode !== 'fixed';
+    if (mode !== 'fixed') {
+        closePersonaFixedModelMenu();
+        return;
+    }
+
+    const fallbackLayer = getActiveModelConfig();
+    const provider = persona?.modelConfig?.provider || fallbackLayer.provider;
+    const modelId = persona?.modelConfig?.model || fallbackLayer.model;
+
+    if (elements.personaFixedProviderBadge) {
+        elements.personaFixedProviderBadge.textContent = PROVIDERS[provider]?.label || provider || 'Model';
+    }
+    if (elements.personaFixedModelName) {
+        elements.personaFixedModelName.textContent = modelId
+            ? resolveModelDisplayName(provider, modelId)
+            : 'Select a model';
+    }
+    if (elements.personaFixedModelNoKey) {
+        const hasKey = !!(provider && state.apiKeyStatus[provider]?.hasKey);
+        elements.personaFixedModelNoKey.hidden = !provider || hasKey;
+    }
+}
+
+function setPersonaPinnedModel(provider, modelId) {
+    const persona = getActivePersona();
+    if (!persona || !provider || !modelId) return;
+    persona.modelConfig = {
+        ...(persona.modelConfig || {}),
+        mode: 'fixed',
+        provider,
+        model: modelId,
+    };
+    persona.updatedAt = Date.now();
+    // Apply immediately so the active model layer matches the chosen pin
+    // (otherwise updateFixedPersonaPin on the next keystroke would overwrite it).
+    applyPersonaModelSettings(persona);
+    savePersonas();
+    updateUI();
+}
+
+/**
+ * Grouped model picker popover for Fixed mode inside the Persona Editor.
+ * Mirrors the header/composer model menu without nesting row action menus.
+ */
+export function showPersonaFixedModelMenu(anchorEl, { showAll = false, toggle = true } = {}) {
+    const existing = document.querySelector('.context-menu');
+    const wasOwn = existing && existing.hasAttribute('data-fixed-model-menu');
+    closePersonaFixedModelMenu();
+    if (existing && !wasOwn) existing.remove();
+    if (toggle && wasOwn) {
+        return;
+    }
+
+    const persona = getActivePersona();
+    const fallbackLayer = getActiveModelConfig();
+    const pinnedProvider = persona?.modelConfig?.provider || fallbackLayer.provider;
+    const pinnedModel = persona?.modelConfig?.model || fallbackLayer.model;
+
+    const selected = state.settings.catalogProviders;
+    const noFilter = showAll || !Array.isArray(selected) || selected.length === 0;
+    const stocked = Object.keys(PROVIDERS)
+        .filter((p) => (state.settings.customModels[p] || []).length > 0);
+    const visible = stocked.filter((p) => noFilter || selected.includes(p) || p === pinnedProvider);
+    const hiddenCount = stocked.length - visible.length;
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu context-menu-wide model-menu';
+    menu.setAttribute('data-fixed-model-menu', '1');
+    menu.setAttribute('role', 'menu');
+
+    let groups = '';
+    for (const provider of visible) {
+        const { label } = PROVIDERS[provider];
+        const hasKey = !!state.apiKeyStatus[provider]?.hasKey;
+        groups += `<div class="context-menu-label">
+            ${providerIconHtml(provider)}<span class="model-menu-provider">${escapeHtml(label)}</span>
+            ${hasKey ? '' : '<span class="model-menu-nokey">no key</span>'}
+        </div>`;
+        for (const m of state.settings.customModels[provider]) {
+            const active = provider === pinnedProvider && m.id === pinnedModel;
+            groups += `<button type="button" class="context-menu-item${active ? ' active' : ''}" role="menuitemradio" aria-checked="${active}" data-model-id="${escapeHtml(m.id)}" data-provider="${escapeHtml(provider)}">
+                <span class="model-menu-name">${escapeHtml(m.name)}</span>
+            </button>`;
+        }
+    }
+
+    let html = visible.length > 0
+        ? `<div class="model-menu-scroll">${groups}</div>`
+        : `<div class="context-menu-empty">No models configured</div>`;
+    html += `<div class="context-menu-separator"></div>`;
+    if (hiddenCount > 0) {
+        html += `<button type="button" class="context-menu-item model-menu-more" role="menuitem" data-action="showall">Show all providers (${hiddenCount} more)</button>`;
+    }
+    html += `<button type="button" class="context-menu-item" role="menuitem" data-action="manage">Manage models…</button>`;
+    menu.innerHTML = html;
+
+    positionPopover(menu, anchorEl, 'left');
+    anchorEl.setAttribute('aria-expanded', 'true');
+
+    const onOutsideClick = (e) => {
+        if (!menu.contains(e.target) && !anchorEl.contains(e.target)) {
+            closePersonaFixedModelMenu();
+        }
+    };
+    const onKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closePersonaFixedModelMenu();
+            anchorEl.focus();
+            return;
+        }
+        const items = [...menu.querySelectorAll('.context-menu-item')];
+        if (items.length === 0) return;
+        const idx = items.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            items[(idx + 1) % items.length].focus();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            items[(idx <= 0 ? items.length : idx) - 1].focus();
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            items[0].focus();
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            items[items.length - 1].focus();
+        }
+    };
+
+    const timerId = setTimeout(() => {
+        document.addEventListener('click', onOutsideClick);
+    }, 0);
+    document.addEventListener('keydown', onKeyDown);
+    fixedMenuCleanup = () => {
+        clearTimeout(timerId);
+        document.removeEventListener('click', onOutsideClick);
+        document.removeEventListener('keydown', onKeyDown);
+    };
+
+    menu.querySelectorAll('.context-menu-item').forEach((item) => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closePersonaFixedModelMenu();
+            if (item.dataset.action === 'showall') {
+                showPersonaFixedModelMenu(anchorEl, { showAll: true, toggle: false });
+                return;
+            }
+            if (item.dataset.action === 'manage') {
+                navigate({ type: 'models' });
+                return;
+            }
+            if (item.dataset.modelId && item.dataset.provider) {
+                setPersonaPinnedModel(item.dataset.provider, item.dataset.modelId);
+                anchorEl.focus();
+            }
+        });
+    });
+
+    const initialFocus = menu.querySelector('.context-menu-item.active') || menu.querySelector('.context-menu-item');
+    if (initialFocus) initialFocus.focus({ preventScroll: true });
 }
 
 registerShell({ showPersonaPopover });

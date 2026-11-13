@@ -216,22 +216,15 @@ Locked decisions (signed off from `uip04_topbar_mockup_v2.html`):
 
 ## UIP-05 — Persona editor sub-tabs, live card preview & fixed-model picker
 
-**Status:** open, agreed 2026-11-11.
+**Status:** shipped (2026-11-13; decisions locked from `uip05_persona_editor_mockup_v3.html`). Raised 2026-11-11.
 
-`#personaEditView` stacks four re-parented sections (`Profile`, `Prompt preset`,
-`Avatar`, `Expressions`) into one long vertical scroll, putting the live
-WYSIWYG Persona Card preview at the bottom where it cannot be seen while editing
-`Name` and `Tagline` at the top. In addition, selecting `Fixed` under Model
-Settings pins whatever global model happens to be active with no inline picker
-to choose which model to pin.
+`#personaEditView` previously stacked every section into one long vertical scroll, leaving the live WYSIWYG Persona Card preview buried inside `#personaAvatarSection` where it could not be seen while editing `Name`, `Tagline`, or `Role`, and selecting `Fixed` under Model pinned whatever global model happened to be active with no inline picker.
 
-Agreed changes:
-- Organise `#personaEditView` into a 3-tab strip (`Identity & Prompt` |
-  `Avatar & Expressions` | `Defaults & Capabilities`) matching `Settings`.
-- Keep the live WYSIWYG Persona Card preview visible alongside `Name`,
-  `Tagline`, and `Avatar` so identity edits preview in real time.
-- Add an inline model picker when `Fixed` model mode is selected so the pinned
-  model can be chosen directly inside the Persona Editor.
+Locked decisions & implementation (`feat/uip-05-persona-editor`):
+- **D1 — 3-Tab Strip (`#personaEditTabs.settings-tabs`):** `Identity & Prompt` (`identity`) | `Avatar & Expressions` (`avatar`) | `Defaults & Capabilities` (`defaults`). Opening a persona via `editPersona()` resets to `Identity & Prompt`; background `updateUI()` calls keep the current tab open. `showSettingsTab()` in `js/views/settings.js` is scoped to `#settingsView .settings-tab` so both tab strips stay independent.
+- **D2 — Separate desktop WYSIWYG card preview (`>= 768px`):** Standalone `.persona-live-aside` / `.persona-live-card` positioned as a sibling beside `#personaIdentitySection` (Tab 1, with `Change portrait →` button) and beside `#personaAvatarSection` (Tab 2) — not nested inside `.settings-section` — while `Character & prompt` and `Expressions` span full editor width underneath. Keystrokes in `Name`, `Tagline`, and `Role` sync in real time without resetting `<img>` via `dataset.avatarKey`.
+- **D3 — Phone Strip A (`< 768px`):** Compact `#personaPhoneStrip` pinned above `#personaEditTabs` featuring a `94×94px` portrait with `Edit art →` / `Identity →` tucked directly beneath it, live name + role chip + 2-line clamped tagline + art-type label, and `Shared model` / `Fixed · <Model>` indicator. Desktop `.persona-live-aside` cards hide on phone to avoid duplicate previews, and mobile tab spacing fits `390px` viewports cleanly (scrolling inside the tab strip on narrower widths with zero page overflow).
+- **D4 — Inline Fixed-model picker (`Defaults & Capabilities → Model`):** Selecting `Fixed` reveals `#personaFixedModelBox` with `#personaFixedModelBtn` (provider badge + model display name + optional `no key` pill) opening a grouped popover menu (`showPersonaFixedModelMenu`, supporting `catalogProviders` filtering + `Show all providers` + `Manage models…`), plus `Edit model profile in Models →` (`#personaEditModelsLink`) navigating straight to `{ type: 'models', detail: { provider, model } }`. Choosing a model updates `persona.modelConfig` and calls `applyPersonaModelSettings()` immediately so keystroke autosaves never revert the pick.
 
 ---
 

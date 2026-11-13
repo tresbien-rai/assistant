@@ -77,7 +77,9 @@ import {
     switchConversation, startNewConversation, renderConversation,
     renderConversationList, conversationActivityAt, renameConversationPrompt, } from './views/chats.js';
 import {
-    showPersonaPopover, syncPersonaSectionFields, } from './views/personas.js';
+    showPersonaPopover, syncPersonaSectionFields,
+    setupPersonaEditor, syncPersonaEditorPreview, syncPersonaFixedModelPicker,
+} from './views/personas.js';
 import {
     updateWorkspaceUI,
 } from './views/workspaces.js';
@@ -211,13 +213,21 @@ function syncPersonaModelModeControls() {
     const hint = document.getElementById('personaModelModeHint');
     if (hint) {
         if (mode === 'fixed') {
-            const pinnedModel = persona?.modelConfig?.model || '';
-            const label = pinnedModel ? getModelDisplayName(pinnedModel) : 'its pinned model';
+            const pin = persona?.modelConfig || {};
+            const pinnedModel = pin.model || '';
+            const pinnedEntry = pinnedModel && pin.provider
+                ? (state.settings.customModels[pin.provider] || []).find(m => m.id === pinnedModel)
+                : null;
+            const label = pinnedEntry
+                ? pinnedEntry.name
+                : (pinnedModel ? getModelDisplayName(pinnedModel) : 'its pinned model');
             hint.textContent = `Fixed: activating this persona always loads ${label} and that model's saved parameters.`;
         } else {
             hint.textContent = 'Shared: this persona uses whatever model (and its saved parameters) is currently active.';
         }
     }
+    syncPersonaFixedModelPicker();
+    syncPersonaEditorPreview();
 }
 
 /**
@@ -231,9 +241,15 @@ function setPersonaModelMode(mode) {
     if (!persona || personaModelMode(persona) === mode) return;
     if (mode === 'fixed') {
         const layer = getActiveModelConfig();
-        persona.modelConfig = { mode: 'fixed', provider: layer.provider, model: layer.model };
+        persona.modelConfig = {
+            ...(persona.modelConfig || {}),
+            mode: 'fixed',
+            provider: layer.provider,
+            model: layer.model,
+        };
     } else {
-        persona.modelConfig = {};
+        const { mode: _m, provider: _p, model: _id, ...rest } = persona.modelConfig || {};
+        persona.modelConfig = rest;
     }
     persona.updatedAt = Date.now();
     savePersonas();
@@ -703,24 +719,7 @@ async function updateUI() {
 // in js/views/models.js — renderModelDetail.)
 
 function updateAvatarPreview() {
-    const preview = elements.avatarPreview;
-    const name = elements.avatarPreviewName;
-    const tagline = elements.avatarPreviewTagline;
-    const status = elements.avatarPreviewStatus;
-    const persona = getActivePersona();
-
-    name.textContent = persona ? persona.name : CONFIG.defaults.assistantName;
-    tagline.textContent = persona ? (persona.tagline || '') : '';
-
-    if (persona && persona.avatarFilename) {
-        // Cache-bust on updatedAt so re-uploads are immediately visible.
-        const url = `${API.avatars.getUrl(persona.id)}?v=${persona.updatedAt || 0}`;
-        preview.innerHTML = `<img src="${url}" alt="Avatar">`;
-        status.textContent = 'Custom avatar';
-    } else {
-        preview.textContent = '🤖';
-        status.textContent = 'Default avatar';
-    }
+    syncPersonaEditorPreview();
 }
 
 /**
@@ -937,6 +936,7 @@ async function saveExpression() {
     await renderExpressionList();
     closeExpressionModal();
     await updateFloatingAvatar();
+    updateAvatarPreview();
     renderRail();
     updateSystemPromptExpressions();
 }
@@ -992,6 +992,7 @@ async function deleteExpression() {
     await renderExpressionList();
     closeExpressionModal();
     await updateFloatingAvatar();
+    updateAvatarPreview();
     renderRail();
 }
 
@@ -1237,24 +1238,10 @@ function setupEventListeners() {
         if (elements.settingsModal) elements.settingsModal.remove(); // discard the empty modal shell
     }
 
-    // Persona editor (WR-08): pull the persona-identity sections (profile /
-    // avatar image / expressions) out of the settings form into their own
-    // main-area panel, reached from the Personas section. Same re-parenting
-    // trick as above — inputs stay cached by id, listeners survive the move.
-    if (elements.personaEditView) {
-        elements.personaEditView.innerHTML = `
-            <div class="settings-view-crumb">${mobileMenuButtonHTML()}<span class="cp-crumb" id="personaEditBack">‹ Personas</span></div>
-            <h1 class="settings-view-title" id="personaEditTitle">Persona</h1>`;
-        const editorBody = document.createElement('div');
-        editorBody.className = 'settings-modal-body';
-        ['personaProfileSection', 'personaPresetSection', 'personaAvatarSection', 'personaExpressionsSection'].forEach(id => {
-            const section = document.getElementById(id);
-            if (section) editorBody.appendChild(section);
-        });
-        elements.personaEditView.appendChild(editorBody);
-        document.getElementById('personaEditBack')
-            .addEventListener('click', () => navigate({ type: 'personas' }));
-    }
+    // Persona editor (WR-08, UIP-05): re-parent persona sections into
+    // `#personaEditView` under its 3-tab strip, separate desktop card preview,
+    // phone Strip A, and inline Fixed-model picker.
+    setupPersonaEditor();
 
     // Settings tabs (AP-02). After BOTH re-parentings above, so the strip is
     // built over the sections that actually stayed in #settingsView.
@@ -1708,22 +1695,24 @@ function setupEventListeners() {
         }
     });
     
-    // Assistant name preview (avatar card + persona-editor page title)
+    // Assistant name, tagline, and role live-update the WYSIWYG card preview,
+    // phone strip, page title, and character counters while typing. The values
+    // themselves are persisted by autoSaveSettings (wired above).
     elements.assistantName.addEventListener('input', () => {
         const name = elements.assistantName.value || 'Assistant';
-        elements.avatarPreviewName.textContent = name;
         const editTitle = document.getElementById('personaEditTitle');
         if (editTitle) editTitle.textContent = name;
+        syncPersonaEditorPreview({ fromInputs: true });
     });
 
-    // Tagline / role live-update the card preview + their counters. The values
-    // themselves are persisted by autoSaveSettings (wired above with the rest
-    // of the persona fields).
     elements.personaTagline.addEventListener('input', () => {
-        elements.avatarPreviewTagline.textContent = elements.personaTagline.value.trim();
         syncPersonaFieldCounters();
+        syncPersonaEditorPreview({ fromInputs: true });
     });
-    elements.personaRoleLabel.addEventListener('input', syncPersonaFieldCounters);
+    elements.personaRoleLabel.addEventListener('input', () => {
+        syncPersonaFieldCounters();
+        syncPersonaEditorPreview({ fromInputs: true });
+    });
 }
 
 // ===== File Upload Handlers =====
