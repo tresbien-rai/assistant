@@ -386,9 +386,14 @@ input:where([type="range"])::-moz-range-thumb {
 }
 
 @media (min-width: 768px) {
+    .sidebar {
+        border-right: none;
+    }
+
     .sidebar-resize-handle {
         display: block;
-        flex: 0 0 6px;
+        flex: 0 0 5px;
+        margin-left: -2px;
         align-self: stretch;
         cursor: col-resize;
         position: relative;
@@ -401,17 +406,17 @@ input:where([type="range"])::-moz-range-thumb {
         position: absolute;
         top: 0;
         bottom: 0;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 2px;
+        left: 2px;
+        width: 1px;
         background: var(--border-color);
-        transition: background 0.2s ease, width 0.2s ease;
+        transition: background-color 0.15s ease, width 0.15s ease, left 0.15s ease;
     }
 
     .sidebar-resize-handle:hover::before,
     .sidebar-resize-handle.dragging::before {
         background: var(--accent);
-        width: 4px;
+        width: 3px;
+        left: 1px;
     }
 }
 
@@ -489,19 +494,27 @@ input:where([type="range"])::-moz-range-thumb {
     margin-left: 4px;
 }
 
-/* ===== Section rail (WR-07) — the sidebar is now a thin section switcher ===== */
+/* ===== Section rail (WR-07, enriched UIP-03) ===== */
 .rail {
     display: flex;
     flex-direction: column;
-    padding: 12px 8px;
-    gap: 2px;
+    flex: 1;
+    min-height: 0;
+    user-select: none;
+}
+
+.rail-top {
+    padding: 10px 8px 6px;
+    flex: 0 0 auto;
 }
 
 .rail-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 12px 12px;
+    padding: 4px 4px 4px 10px;
+    gap: 6px;
+    min-height: 42px;
 }
 
 .rail-brand {
@@ -515,41 +528,338 @@ input:where([type="range"])::-moz-range-thumb {
     user-select: none;
 }
 
-.rail-item {
+.rail-header-actions {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: 2px;
+}
+
+.rail-icon-btn {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    padding: 0;
     border: none;
-    border-radius: var(--radius-md);
+    border-radius: 9px;
     background: none;
-    color: var(--text-secondary);
-    font-family: var(--font-main);
-    font-size: var(--text-sm);
-    font-weight: 500;
     cursor: pointer;
-    text-align: left;
+    color: var(--text-secondary);
     transition: background-color 0.15s, color 0.15s;
 }
 
+.rail-new-btn {
+    color: var(--accent);
+}
+
+.rail-new-btn:hover {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+}
+
+.rail-new-btn svg {
+    width: 25px;
+    height: 25px;
+    display: block;
+}
+
+.rail-header .close-sidebar {
+    font-size: 19px;
+    line-height: 1;
+    margin-left: 0;
+    padding: 0;
+}
+
+.rail-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 0 8px;
+    flex: 0 0 auto;
+}
+
+.rail-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    height: 36px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 9px;
+    background: none;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.rail-item span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .rail-item:hover {
-    background: var(--bg-tertiary);
+    background-color: var(--bg-tertiary);
     color: var(--text-primary);
 }
 
 .rail-item.active {
-    background: var(--accent-subtle);
+    background-color: var(--accent-subtle);
     color: var(--accent);
 }
 
 .rail-icon {
     width: 18px;
     height: 18px;
+    flex: 0 0 18px;
+}
+
+/* Recent chats block */
+.rail-recent {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 8px;
+}
+
+.rail-recent[hidden] {
+    display: none;
+}
+
+.rail-recent-title {
+    padding: 2px 18px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
     flex: 0 0 auto;
 }
 
-.rail .close-sidebar {
-    margin-left: auto;
+.rail-recent-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 3px 8px 8px;
+}
+
+.rail-recent-scroll::-webkit-scrollbar {
+    width: 8px;
+}
+
+.rail-recent-scroll::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+.rail-recent-scroll::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+    border: 2px solid var(--bg-secondary);
+    min-height: 24px;
+}
+
+.rail-recent-scroll:hover::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+}
+
+.rail-recent-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+.rail-recent-scroll::-webkit-scrollbar-button,
+.rail-recent-scroll::-webkit-scrollbar-button:single-button:vertical:decrement,
+.rail-recent-scroll::-webkit-scrollbar-button:single-button:vertical:increment {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.rail-recent-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px 3px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.rail-recent-group-icon {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    color: var(--text-muted);
+}
+
+.rail-recent-group-head span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rail-recent-project-sub {
+    padding: 5px 10px 2px 28px;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rail-chat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 34px;
+    padding: 5px 10px 5px 28px;
+    border: none;
+    border-radius: 8px;
+    background: none;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    text-align: left;
+    cursor: pointer;
+    position: relative;
+    transition: background-color 0.12s, color 0.12s;
+}
+
+[data-recent-style="flat"] .rail-chat-row {
+    padding: 6px 10px 6px 14px;
+    align-items: flex-start;
+}
+
+.rail-chat-row:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.rail-chat-row.open {
+    background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--text-primary);
+}
+
+[data-theme="light"] .rail-chat-row.open,
+[data-theme="parchment"] .rail-chat-row.open,
+[data-theme="rose"] .rail-chat-row.open {
+    background-color: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.rail-chat-row.open:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.rail-chat-row.open::before {
+    content: '';
+    position: absolute;
+    left: 16px;
+    top: 7px;
+    bottom: 7px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+}
+
+[data-recent-style="flat"] .rail-chat-row.open::before {
+    left: 4px;
+}
+
+.rail-chat-ava {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    flex: 0 0 18px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background-color: var(--bg-tertiary);
+}
+
+[data-recent-style="flat"] .rail-chat-ava {
+    margin-top: 1px;
+}
+
+.rail-chat-ava img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.rail-chat-ava .avatar-emoji {
+    font-size: 12px;
+    line-height: 1;
+    display: block;
+}
+
+.rail-chat-body {
+    min-width: 0;
+    flex: 1;
+    display: block;
+}
+
+.rail-chat-title {
+    display: block;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+}
+
+.rail-chat-ctx {
+    display: none;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+
+[data-recent-style="flat"] .rail-chat-ctx {
+    display: block;
+}
+
+/* Bottom footer (Profile + Settings) */
+.rail-footer {
+    margin-top: auto;
+    flex: 0 0 auto;
+    border-top: 1px solid var(--border-color);
+    padding: 6px 8px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+/* Phone drawer touch targets & comfortable drawer width */
+@media (max-width: 767px) {
+    .sidebar {
+        width: min(max(var(--sidebar-width), 260px), 85vw);
+        left: calc(-1 * min(max(var(--sidebar-width), 260px), 85vw));
+    }
+
+    .rail-icon-btn {
+        width: 44px;
+        height: 44px;
+    }
+
+    .rail-item {
+        height: 44px;
+    }
+
+    .rail-chat-row {
+        min-height: 44px;
+    }
 }
 
 /* Font buttons preview their own typeface in Appearance settings (UIP-01). */

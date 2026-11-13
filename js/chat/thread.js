@@ -21,7 +21,7 @@ import { elements, scrollToBottom } from '../dom.js';
 import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
 import { getActivePersona, getActiveConversation } from '../state.js';
-import { registerShell } from '../shell.js';
+import { renderRail, registerShell } from '../shell.js';
 import { getActiveModelConfig } from '../model-layer.js';
 import { saveConversations, createConversation } from '../views/chats.js';
 import { updateStatusBar } from '../status-bar.js';
@@ -416,6 +416,7 @@ export async function appendMessage(role, content, save = true, explicitIndex = 
             // What the chat list shows and sorts on — kept in step with the
             // server's derived value without waiting for a reload.
             activeConvo.lastMessageAt = Date.now();
+            renderRail();
 
             // Persist the message and AWAIT the result so msg.id is
             // populated before control returns. Edit/delete handlers depend

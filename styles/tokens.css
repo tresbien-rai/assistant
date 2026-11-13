@@ -42,7 +42,7 @@
     --space-5: 24px;
     --space-6: 32px;
 
-    --sidebar-width: 240px;
+    --sidebar-width: 220px;
     --status-bar-height: 56px;
     --input-height: 80px;
     --chat-max-width: 780px; /* shared by the message column and the composer */

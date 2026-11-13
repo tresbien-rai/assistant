@@ -39,14 +39,14 @@ export function setupSidebarResize() {
     const handle = document.getElementById('sidebarResizeHandle');
     if (!handle) return;
 
-    const MIN_W = 240;
-    const maxW = () => Math.min(640, Math.round(window.innerWidth * 0.5));
+    const MIN_W = 200;
+    const maxW = () => Math.min(360, Math.round(window.innerWidth * 0.5));
     const clamp = (w) => Math.max(MIN_W, Math.min(maxW(), Math.round(w)));
 
     let dragging = false;
     let startX = 0;
     let startW = 0;
-    let currentW = UiPrefs.get('sidebarWidth') || 320;
+    let currentW = clamp(UiPrefs.get('sidebarWidth') || UiPrefs.defaults.sidebarWidth);
 
     const applyLive = (w) => {
         currentW = clamp(w);

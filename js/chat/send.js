@@ -25,6 +25,7 @@ import { CONFIG } from '../config.js';
 import { getActivePersona, getActiveConversation } from '../state.js';
 import { getActiveModelConfig, updateSendButtonState, paramSupported } from '../model-layer.js';
 import { createConversation, renderConversation, maybeAutoTitle } from '../views/chats.js';
+import { renderRail } from '../shell.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { renderMarkdown, messageActionsHTML } from '../util/markdown.js';
 import { FilePanel } from '../file-panel/index.js';
@@ -757,6 +758,7 @@ export async function finalizeStreamingMessage(fullText, generatedImages = [], t
         if (bubble) bubble.dataset.msgIndex = targetConvo.messages.length - 1;
         targetConvo.updatedAt = Date.now();
         targetConvo.lastMessageAt = Date.now();
+        renderRail();
         try {
             const saved = await persistMessage(targetConvo.id, msg);
             if (saved && saved.id) msg.id = saved.id;
