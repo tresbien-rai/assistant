@@ -266,8 +266,9 @@ export function getModelDisplayName(modelId) {
  * forbids. Same accident, same fix, as getActiveConversation.
  */
 export function setModelIndicator(name) {
-    if (elements.modelIndicator) elements.modelIndicator.textContent = name;
     if (elements.composerModelName) elements.composerModelName.textContent = name;
+    const chatsModelName = document.getElementById('chatsModelName');
+    if (chatsModelName) chatsModelName.textContent = name;
 }
 
 /**

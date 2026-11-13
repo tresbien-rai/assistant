@@ -139,9 +139,9 @@ export function showUsagePanel() {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay usage-overlay';
     overlay.innerHTML = `
-        <div class="modal-content usage-modal" role="dialog" aria-modal="true" aria-label="Token usage">
+        <div class="modal-content usage-modal" role="dialog" aria-modal="true" aria-label="Token Usage (This chat)">
             <div class="modal-header">
-                <h2>Token usage</h2>
+                <h2>Token Usage (This chat)</h2>
                 <button class="modal-close" type="button" aria-label="Close">×</button>
             </div>
             <div class="modal-body">

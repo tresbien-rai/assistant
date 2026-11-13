@@ -9,7 +9,7 @@
 import { state } from '../state.js';
 import { elements } from '../dom.js';
 import { API } from '../api-client.js';
-import { navigate, renderMainView, renderShell, registerShell } from '../shell.js';
+import { navigate, renderMainView, renderShell, mobileMenuButtonHTML, registerShell } from '../shell.js';
 import {
     escapeHtml, formatFileSize, formatTimeAgo, getFileTypeLabel,
 } from '../util/format.js';
@@ -291,7 +291,7 @@ async function deleteWorkspacePrompt(workspaceId) {
     }
 }
 
-const BREADCRUMB_FOLDER_SVG = '<svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>';
+const BREADCRUMB_FOLDER_SVG = '<svg class="breadcrumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V6.15C4 5.84 4.07 5.53 4.21 5.25L5.05 3.6H11.2L12.4 6H21C21.5523 6 22 6.44772 22 7V9V18C22 19.1046 21.1046 20 20 20H18"></path><path d="M17.2362 9H2.30925C1.64988 9 1.17099 9.62698 1.34449 10.2631L3.59806 18.5262C3.83537 19.3964 4.62569 20 5.52759 20H19.6908C20.3501 20 20.829 19.373 20.6555 18.7369L18.201 9.73688C18.0823 9.30182 17.6872 9 17.2362 9Z"></path></svg>';
 
 /** Shell-only refresh (rail highlight + contextual top bar + breadcrumb). */
 export function updateWorkspaceUI() {
@@ -299,7 +299,7 @@ export function updateWorkspaceUI() {
 }
 
 /**
- * Render the top-bar breadcrumb for the OPEN CHAT's container: "Chats" (unfiled)
+ * Render the top-bar breadcrumb for the OPEN CHAT's container: "Chats (unfiled)"
  * / "<Workspace>" / "<Workspace> › <Project>". Shown only while a chat is open
  * (renderTopBar toggles visibility); segments navigate the main-area router.
  */
@@ -311,12 +311,13 @@ export function renderBreadcrumb() {
     const convo = v.type === 'chat' ? state.conversations[v.id] : null;
     if (!convo) { el.innerHTML = ''; el.classList.remove('active'); return; }
 
-    const workspace = convo.workspaceId ? state.workspaces[convo.workspaceId] : null;
     const project = convo.projectId ? state.projects[convo.projectId] : null;
+    const workspaceId = convo.workspaceId || project?.workspaceId || null;
+    const workspace = workspaceId ? state.workspaces[workspaceId] : null;
 
     let html = '';
     if (!workspace && !project) {
-        html = `<span class="breadcrumb-seg" data-nav="chats">${BREADCRUMB_FOLDER_SVG}<span>Chats</span></span>`;
+        html = `<span class="breadcrumb-seg breadcrumb-unfiled" data-nav="chats"><span>Chats (unfiled)</span></span>`;
     } else {
         html = `<span class="breadcrumb-seg" data-nav="workspace">${BREADCRUMB_FOLDER_SVG}<span>${escapeHtml(workspace ? (workspace.name || 'Untitled workspace') : 'Workspace')}</span></span>`;
         if (project) {
@@ -408,7 +409,10 @@ export function renderWorkspacesListMain() {
     c.innerHTML = `
         <div class="section-view">
             <div class="section-head">
-                <h1 class="section-title">Workspaces</h1>
+                <div class="section-head-left">
+                    ${mobileMenuButtonHTML()}
+                    <h1 class="section-title">Workspaces</h1>
+                </div>
                 <button class="section-new-btn" id="wsNewBtn" type="button">+ New workspace</button>
             </div>
             ${list}
@@ -474,7 +478,7 @@ export function renderContainerPage(kind, id) {
 
     elements.messagesContainer.innerHTML = `
         <div class="container-page" data-kind="${kind}" data-id="${escapeHtml(id)}">
-            <div class="cp-breadcrumb">${crumbs}</div>
+            <div class="cp-breadcrumb">${mobileMenuButtonHTML()}${crumbs}</div>
 
             <div class="cp-head">
                 ${CONTAINER_FOLDER_SVG}

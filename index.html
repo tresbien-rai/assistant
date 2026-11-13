@@ -472,61 +472,62 @@
 
         <!-- Main chat area -->
         <main class="chat-container">
-            <!-- Status Bar -->
-            <header class="status-bar">
+            <!-- Status Bar (chat-only on desktop and mobile; UIP-04) -->
+            <header class="status-bar" id="statusBar">
                 <div class="status-left">
-                    <button class="menu-button" id="openSidebar" aria-label="Open menu">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <button class="menu-button" id="openSidebar" type="button" aria-label="Open menu">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <line x1="3" y1="12" x2="21" y2="12"></line>
                             <line x1="3" y1="6" x2="21" y2="6"></line>
                             <line x1="3" y1="18" x2="21" y2="18"></line>
                         </svg>
                     </button>
-                    <button class="persona-button" id="personaButton" aria-haspopup="true" title="Persona options" aria-label="Persona options">
-                        <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
-                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </button>
-                    <div class="workspace-breadcrumb" id="workspaceBreadcrumb" title="Current workspace / project — click a segment to open it">
-                        <!-- Breadcrumb segments rendered dynamically (renderBreadcrumb) -->
+                    <div class="chat-head-stack" id="chatTopIdentity">
+                        <button class="chat-head-ava" id="chatPersonaAvatarBtn" type="button" aria-haspopup="true" title="Persona options" aria-label="Persona options"></button>
+                        <div class="chat-top-lines">
+                            <div class="chat-top-title-row">
+                                <button class="chat-title-btn" id="chatTitleBtn" type="button" title="Rename chat">
+                                    <span class="chat-title-text" id="chatTitleDisplay">New Chat</span>
+                                    <svg class="chat-title-edit-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M12 20h9"></path>
+                                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="chat-top-meta">
+                                <button class="chat-top-persona-btn" id="chatPersonaBtn" type="button" aria-haspopup="true" title="Persona options" aria-label="Persona options">
+                                    <span class="assistant-name-display" id="headerAssistantName">Assistant</span>
+                                </button>
+                                <span class="chat-top-dot" aria-hidden="true">·</span>
+                                <div class="workspace-breadcrumb" id="workspaceBreadcrumb" title="Current workspace / project — click a segment to open it">
+                                    <!-- Breadcrumb segments rendered dynamically (renderBreadcrumb) -->
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                
-                <!-- Slimmed (WR-10): Mood/Messages/Session removed — mood is the
-                     avatar itself; tokens is the one number that informs cost. -->
-                <div class="status-center">
-                    <button class="status-item status-item-button" id="statusTokensBtn"
-                            type="button">
-                        <span class="status-label">Tokens</span>
-                        <span class="status-value" id="statusTokens">~0</span>
-                    </button>
-                </div>
-                
+
                 <div class="status-right">
-                    <button class="model-button" id="modelButton" aria-haspopup="true" title="Switch model" aria-label="Switch model">
-                        <span class="model-badge" id="modelIndicator">Claude Sonnet 4</span>
-                        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </button>
-                    <button class="avatar-toggle-btn" id="viewRequestBtn" title="View request (developer)" aria-label="View request" hidden>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <button class="avatar-toggle-btn" id="viewRequestBtn" type="button" title="View request (developer)" aria-label="View request" hidden>
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <polyline points="16 18 22 12 16 6"></polyline>
                             <polyline points="8 6 2 12 8 18"></polyline>
                         </svg>
                     </button>
-                    <!-- WR-10: opens the avatar options popover (show/hide, size,
-                         position). The old top-bar gear is gone — general Settings
-                         lives on the section rail. -->
-                    <button class="avatar-toggle-btn" id="avatarToggleBtn" title="Avatar options" aria-label="Avatar options" aria-haspopup="true">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="12" cy="7" r="4"></circle>
+                    <button class="avatar-toggle-btn" id="avatarToggleBtn" type="button" title="Avatar PIP options" aria-label="Avatar PIP options" aria-haspopup="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M13.5 3.2H6.7A3.5 3.5 0 0 0 3.2 6.7v10.6a3.5 3.5 0 0 0 3.5 3.5h10.6a3.5 3.5 0 0 0 3.5-3.5V10.5"></path>
+                            <circle cx="12" cy="10.2" r="2.7"></circle>
+                            <path d="M7.3 18.2c.9-2.1 2.5-3.1 4.7-3.1s3.8 1 4.7 3.1"></path>
+                            <path d="M19.2 1.8v4.6M16.9 4.1h4.6" stroke-width="1.85"></path>
                         </svg>
                     </button>
                     <!-- Files explorer (CF-01b): the single entry point to the
                          chat's files. Opens the file panel to its browser (list)
                          view; carries the unseen-activity dot that used to live
                          on the panel's right-edge tab. Shown only in a chat. -->
-                    <button class="avatar-toggle-btn files-explorer-btn" id="filesExplorerBtn" title="Files in this chat" aria-label="Files in this chat" hidden>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <button class="avatar-toggle-btn files-explorer-btn" id="filesExplorerBtn" type="button" title="Files in this chat" aria-label="Files in this chat" hidden>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
                         </svg>
                         <span class="files-explorer-dot" id="filesExplorerDot" hidden></span>
@@ -643,6 +644,13 @@
                             </svg>
                         </button>
                     </div>
+                </div>
+                <div class="composer-footer">
+                    <span class="composer-hint" id="composerKeyHint">Shift+Enter to send · Enter for new line</span>
+                    <button class="composer-usage-btn" id="statusTokensBtn" type="button">
+                        <span>Usage:</span>
+                        <span class="composer-usage-value" id="statusTokens">~0</span>
+                    </button>
                 </div>
             </div>
         </main>

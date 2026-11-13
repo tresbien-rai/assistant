@@ -1,26 +1,39 @@
 /* ===== Main-area section views (Chats / Workspaces lists) ===== */
 /* width: 100% matters: these are flex items of the centered .messages-container,
-   which would otherwise shrink-wrap them to their content width. */
+   which would otherwise shrink-wrap them to their content width.
+   Top/side padding adds to .messages-container's padding so section headings
+   land at the exact same offset as .main-view-panel (Settings, Models, Profile). */
 .section-view {
     width: 100%;
-    max-width: var(--section-max-width);
+    max-width: calc(var(--section-max-width) + 8px);
     margin: 0 auto;
-    padding: 28px 24px 60px;
+    padding: 8px 4px 40px;
     display: flex;
     flex-direction: column;
 }
 
 .section-head {
+    width: 100%;
+    max-width: var(--section-max-width);
+    min-height: 36px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 16px;
+    margin: 0 auto 16px;
     gap: 12px;
+}
+
+.section-head-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
 }
 
 .section-title {
     font-size: var(--text-xl);
     font-weight: 600;
+    line-height: 1.25;
     color: var(--text-primary);
     margin: 0;
 }
@@ -41,10 +54,120 @@
     background: var(--accent-hover);
 }
 
+.section-new-chat-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.section-new-quill-icon {
+    width: 17px;
+    height: 17px;
+    display: block;
+    flex: 0 0 auto;
+}
+
 .section-head-actions {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* Chats "Next chat starts with" defaults strip (UIP-04) */
+.chats-next-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+}
+
+.chats-next-label {
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.chats-next-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.chats-next-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 11px;
+    max-width: 220px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.chats-next-pill:hover {
+    border-color: var(--accent);
+    background: var(--bg-tertiary);
+}
+
+.chats-next-pill.model {
+    background: var(--accent-subtle);
+    border-color: transparent;
+    color: var(--accent);
+}
+
+.chats-next-pill.model:hover {
+    border-color: var(--accent);
+}
+
+.chats-next-ava {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    flex: 0 0 18px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+}
+
+.chats-next-ava img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.chats-next-ava .avatar-emoji {
+    font-size: 12px;
+    line-height: 1;
+}
+
+.chats-next-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chats-next-pill .chevron {
+    width: 13px;
+    height: 13px;
+    opacity: 0.7;
+    flex: 0 0 auto;
 }
 
 /* Quieter sibling of .section-new-btn for secondary actions (Import). */
@@ -528,14 +651,15 @@
 }
 
 /* ===== Top-bar breadcrumb (workspace / project indicator) ===== */
-/* Replaces the old switcher chip: shows where you are; segments navigate. */
+/* Lives inside .chat-top-meta alongside persona name; segments navigate. */
 .workspace-breadcrumb {
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    max-width: 280px;
+    min-width: 0;
+    flex: 1 1 auto;
     font-family: var(--font-main);
-    font-size: var(--text-xs);
+    font-size: inherit;
     color: var(--text-secondary);
     overflow: hidden;
 }
@@ -543,13 +667,18 @@
 .breadcrumb-seg {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    max-width: 150px;
-    padding: 3px 8px;
-    border-radius: var(--radius-full);
+    gap: 4px;
+    max-width: 165px;
+    min-width: 0;
+    padding: 1px 5px;
+    border-radius: 5px;
     cursor: pointer;
     white-space: nowrap;
     transition: background-color 0.15s, color 0.15s;
+}
+
+.breadcrumb-seg.breadcrumb-unfiled {
+    color: var(--text-muted);
 }
 
 .breadcrumb-seg span {
@@ -569,14 +698,24 @@
 }
 
 .breadcrumb-icon {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     flex: 0 0 auto;
 }
 
 .breadcrumb-sep {
     color: var(--text-muted);
     flex: 0 0 auto;
+}
+
+@media (max-width: 767px) {
+    .breadcrumb-seg {
+        max-width: 96px;
+    }
+
+    .chats-next-pill {
+        max-width: 170px;
+    }
 }
 
 /* ===== Workspaces tab — two-level drill-in panel ===== */

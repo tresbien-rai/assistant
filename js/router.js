@@ -41,6 +41,9 @@ import { FilePanel } from './file-panel/index.js';
 import { autoResizeTextarea } from './chat/composer.js';
 import { syncPresetPill } from './views/settings.js';
 import { renderRailRecent } from './rail-recent.js';
+import { CONFIG } from './config.js';
+import { UiPrefs } from './ui-prefs.js';
+import { personaAvatarHTML } from './persona-helpers.js';
 
 /**
  * The persona's base file-tools setting (its default for new chats). Stored in
@@ -228,23 +231,40 @@ export function renderRail() {
 }
 
 /**
- * Contextual top bar (WR-07, amended by P2-05a): in a chat show only the
- * workspace breadcrumb — the model chip lives in the composer's control row.
- * While browsing (composer hidden) show the persona selector (who the next
- * chat will be) plus the model button, since there's no composer to host it.
+ * Contextual top bar (UIP-04): shown ONLY while viewing a chat. Left side renders
+ * the Stacked Title + Meta header (persona avatar, chat title, persona name, and
+ * workspace/project breadcrumb); right side keeps only chat-scoped tools
+ * (`View request` when devMode is on, Avatar PIP, and Files).
+ *
+ * Non-chat sections render clean headers directly (no redundant top bar on
+ * desktop, and an inline drawer button next to each page heading on mobile).
  */
 export function renderTopBar() {
-    const inChat = (state.ui.mainView || {}).type === 'chat';
-    if (elements.personaButton) elements.personaButton.hidden = inChat;
+    const v = state.ui.mainView || {};
+    const inChat = v.type === 'chat';
+    if (elements.statusBar) elements.statusBar.hidden = !inChat;
     if (elements.workspaceBreadcrumb) elements.workspaceBreadcrumb.hidden = !inChat;
-    if (elements.modelButton) elements.modelButton.hidden = inChat;
     // Files explorer (CF-01b): per-conversation, so only in a chat.
     if (elements.filesExplorerBtn) elements.filesExplorerBtn.hidden = !inChat;
-    // The token count is PER-CONVERSATION (state.usage is one chat's usage), so
-    // outside a chat it has no subject. Left visible it kept showing whichever
-    // chat was open last — a number attached to nothing on screen, and one that
-    // read as a total for the list you were looking at.
-    if (elements.statusTokensBtn) elements.statusTokensBtn.hidden = !inChat;
+    // View request (developer): only relevant inside a chat when devMode is on.
+    if (elements.viewRequestBtn) elements.viewRequestBtn.hidden = !inChat || !UiPrefs.get('devMode');
+
+    if (!inChat) return;
+
+    const convo = state.conversations[v.id];
+    const title = (convo && convo.title) || 'New Chat';
+    if (elements.chatTitleDisplay) elements.chatTitleDisplay.textContent = title;
+    if (elements.chatTitleBtn) elements.chatTitleBtn.title = `${title} — click to rename`;
+
+    const persona = (convo && convo.personaId && state.personas[convo.personaId]) || getActivePersona();
+    if (elements.headerAssistantName) {
+        elements.headerAssistantName.textContent = persona
+            ? (persona.name || CONFIG.defaults.assistantName)
+            : CONFIG.defaults.assistantName;
+    }
+    if (elements.chatPersonaAvatarBtn) {
+        elements.chatPersonaAvatarBtn.innerHTML = personaAvatarHTML(persona);
+    }
 }
 
 // `setModelIndicator` used to live here — another passenger like

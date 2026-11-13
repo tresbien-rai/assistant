@@ -9,7 +9,7 @@
     overflow-x: hidden;
 }
 
-/* ===== Status Bar ===== */
+/* ===== Status Bar (chat-only; UIP-04) ===== */
 .status-bar {
     height: var(--status-bar-height);
     background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
@@ -17,14 +17,21 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     padding: 0 20px;
     flex-shrink: 0;
+}
+
+.status-bar[hidden] {
+    display: none;
 }
 
 .status-left {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 10px;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .menu-button {
@@ -35,7 +42,8 @@
     cursor: pointer;
     padding: 8px;
     border-radius: var(--radius-sm);
-    transition: background-color 0.2s;
+    flex: 0 0 auto;
+    transition: background-color 0.2s, color 0.15s;
 }
 
 .menu-button:hover {
@@ -46,38 +54,162 @@
     display: block;
 }
 
-.assistant-name-display {
-    font-weight: 600;
-    font-size: var(--text-base);
+.inline-menu-button {
+    color: var(--text-secondary);
 }
 
-/* Top-bar persona button (wraps the assistant name + chevron) */
-.persona-button {
+.inline-menu-button:hover {
+    color: var(--text-primary);
+}
+
+/* Stacked Title + Meta chat header */
+.chat-head-stack {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.chat-head-ava {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    flex: 0 0 30px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--accent-subtle) 100%);
+    border: 1px solid var(--border-color);
+    padding: 0;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.12s;
+}
+
+.chat-head-ava:hover {
+    border-color: var(--accent);
+    transform: scale(1.04);
+}
+
+.chat-head-ava img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.chat-head-ava .avatar-emoji {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.chat-top-lines {
+    min-width: 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.chat-top-title-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.chat-title-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
+    max-width: 100%;
+    padding: 1px 5px;
+    margin-left: -5px;
+    border: none;
+    border-radius: var(--radius-sm);
     background: none;
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
     color: var(--text-primary);
-    padding: 4px 8px;
+    font-family: var(--font-main);
+    font-size: 14.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    text-align: left;
     cursor: pointer;
-    max-width: 220px;
-    transition: background-color 0.15s, border-color 0.15s;
+    transition: background-color 0.15s;
 }
 
-.persona-button:hover {
-    background-color: var(--bg-tertiary);
-    border-color: var(--border-color);
-}
-
-.persona-button .assistant-name-display {
+.chat-title-text {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.persona-button .chevron,
+.chat-title-edit-icon {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.chat-title-btn:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.chat-title-btn:hover .chat-title-edit-icon,
+.chat-title-btn:focus-visible .chat-title-edit-icon {
+    opacity: 1;
+}
+
+.chat-top-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 11.5px;
+    line-height: 1.25;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.chat-top-persona-btn {
+    display: inline-flex;
+    align-items: center;
+    max-width: 180px;
+    padding: 1px 4px;
+    margin-left: -4px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    font-size: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.chat-top-persona-btn .assistant-name-display {
+    font-size: inherit;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-top-persona-btn:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.chat-top-dot {
+    color: var(--text-muted);
+    flex: 0 0 auto;
+}
+
 .model-button .chevron {
     width: 14px;
     height: 14px;
@@ -85,34 +217,11 @@
     flex: 0 0 auto;
 }
 
-.status-center {
-    display: flex;
-    gap: 24px;
-}
-
-.status-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-}
-
-.status-label {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-}
-
-.status-value {
-    font-size: var(--text-xs);
-    color: var(--text-primary);
-}
-
 .status-right {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    flex: 0 0 auto;
 }
 
 .model-badge {
@@ -124,7 +233,7 @@
     font-weight: 500;
 }
 
-/* Top-bar model button: the accent pill is now the clickable button, with the
+/* Composer model button: the accent pill is the clickable button, with the
    inner badge reduced to plain text and a chevron alongside it. */
 .model-button {
     display: inline-flex;
@@ -156,14 +265,23 @@
 }
 
 .avatar-toggle-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    padding: 8px 12px;
     border-radius: var(--radius-md);
     font-size: var(--text-base);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.avatar-toggle-btn[hidden] {
+    display: none;
 }
 
 .avatar-toggle-btn:hover {
@@ -220,15 +338,18 @@
    instructions + files inline and lists the container's projects/chats. */
 .container-page {
     width: 100%; /* flex item of the centered .messages-container — see .section-view */
-    max-width: var(--section-max-width);
+    max-width: calc(var(--section-max-width) + 8px);
     margin: 0 auto;
-    padding: 28px 24px 60px;
+    padding: 8px 4px 40px;
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
 .cp-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin-bottom: 4px;
 }
 
@@ -1498,21 +1619,56 @@
 }
 
 
-/* The token count is a button since U-04 — it opens the usage breakdown.
-   Styled to stay visually identical to the static status item it replaced. */
-.status-item-button {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
+@media (max-width: 767px) {
+    .status-bar {
+        height: 52px;
+        padding: 0 10px 0 6px;
+        gap: 6px;
+    }
+
+    .status-left {
+        gap: 4px;
+    }
+
+    #openSidebar.menu-button {
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: -2px;
+    }
+
+    .status-right {
+        gap: 6px;
+    }
+
+    .chat-head-stack {
+        gap: 8px;
+    }
+
+    .chat-head-ava {
+        width: 26px;
+        height: 26px;
+        flex: 0 0 26px;
+        border-radius: 7px;
+    }
+
+    .chat-head-ava .avatar-emoji {
+        font-size: 14px;
+    }
+
+    .chat-title-btn {
+        font-size: var(--text-sm);
+    }
+
+    .chat-top-persona-btn {
+        max-width: 96px;
+    }
+
+    .messages-container {
+        padding: 12px;
+    }
 }
 
-.status-item-button:hover .status-value { color: var(--accent); }
-
-.status-item-button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 4px;
-}

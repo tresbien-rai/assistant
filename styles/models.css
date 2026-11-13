@@ -1,7 +1,9 @@
 /* ===== Models & Providers section (WR-13) ===== */
 .models-head {
+    width: 100%;
     max-width: var(--section-max-width);
-    margin: 0 auto;
+    min-height: 36px;
+    margin: 0 auto 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -66,7 +68,7 @@
 /* Provider chips (Layout B): the "daily drivers" filter above the catalog */
 .provider-chips {
     max-width: var(--section-max-width);
-    margin: 14px auto 0;
+    margin: 4px auto 0;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;

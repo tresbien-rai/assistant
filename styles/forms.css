@@ -140,6 +140,55 @@
     display: block;
 }
 
+/* Composer footer row (UIP-04): Enter hint left, clickable Usage counter right */
+.composer-footer {
+    max-width: var(--chat-max-width);
+    margin: 6px auto 0;
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.composer-hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.composer-usage-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    margin-right: -6px;
+    padding: 2px 6px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: inherit;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: color 0.15s, background-color 0.15s;
+}
+
+.composer-usage-btn:hover {
+    color: var(--accent);
+    background-color: var(--bg-tertiary);
+}
+
+.composer-usage-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
 /* ===== Modal ===== */
 .modal-overlay {
     position: fixed;
@@ -1160,11 +1209,36 @@
     }
 }
 
-@media (max-width: 768px) {
-    .status-center {
-        display: none;
+@media (max-width: 767px) {
+    .inline-menu-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        margin-left: -8px;
     }
 
+    .main-view-panel {
+        padding: 20px 16px 48px;
+    }
+
+    .input-container {
+        padding: 10px 12px 8px;
+    }
+
+    .composer-footer {
+        margin-top: 4px;
+        padding: 0 2px;
+    }
+
+    .composer-hint {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
     .message {
         padding-left: 16px;
         padding-right: 16px;
@@ -1188,12 +1262,6 @@
 }
 
 @media (max-width: 480px) {
-    /* Top-bar model button only — the composer model chip stays (truncated)
-       so small phones keep a model control in chat (they had none before). */
-    .status-bar .model-button {
-        display: none;
-    }
-
     .composer-controls .model-badge {
         max-width: 110px;
     }
