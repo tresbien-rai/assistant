@@ -18,10 +18,11 @@ import { elements } from './dom.js';
 export const UiPrefs = {
     KEY: 'ai_assistant_ui_prefs',
     defaults: {
-        sidebarWidth: 320,        // px; desktop sidebar column width
+        sidebarWidth: 220,        // px; desktop sidebar column width (200-360px)
         theme: 'midnight',        // any key of THEME_ACCENTS, or 'custom' (palette derived from customPalette)
         customPalette: { base: '#6c63ff', mode: 'dark', tint: 50 }, // the Custom theme: one base color + light/dark + bg tint strength
         chatWidth: 'comfortable', // narrow | comfortable | wide
+        recentStyle: 'grouped',   // grouped | flat (UIP-03 rail Recent layout)
         activeProject: null,      // id of the entered workspace, or null (home)
         devMode: false,           // show developer tools (e.g. request inspector)
         textareaHeights: {},      // dragged heights by textarea id, px
@@ -50,6 +51,9 @@ export const UiPrefs = {
         // Own copy of the nested palette (never mutate `defaults`); tolerates
         // old/partial saved shapes.
         this._data.customPalette = { ...this.defaults.customPalette, ...(saved.customPalette || {}) };
+        // Clamp persisted sidebarWidth into the UIP-03 200-360px range.
+        const sw = Number(this._data.sidebarWidth);
+        this._data.sidebarWidth = Number.isFinite(sw) ? Math.max(200, Math.min(360, Math.round(sw))) : this.defaults.sidebarWidth;
         // Migration: the retired per-theme 'accent' override becomes the
         // Custom palette's base color (closest match to the old intent).
         if (saved.accent) {
@@ -77,6 +81,7 @@ export const UiPrefs = {
         }
         applyTheme(d.theme);
         applyChatWidth(d.chatWidth);
+        applyRecentStyle(d.recentStyle);
         applyFont(d.fontFamily, d.fontScope);
     },
 };
@@ -310,6 +315,10 @@ export function applyChatWidth(name) {
     document.documentElement.style.setProperty('--chat-max-width', `${px}px`);
 }
 
+export function applyRecentStyle(style) {
+    document.documentElement.dataset.recentStyle = style === 'flat' ? 'flat' : 'grouped';
+}
+
 export function applyFont(name = UiPrefs.get('fontFamily'), scope = UiPrefs.get('fontScope')) {
     const stack = FONTS[name] || FONTS.inter;
     const resolvedScope = FONT_SCOPES.has(scope) ? scope : 'all';
@@ -330,6 +339,7 @@ export function syncAppearanceControls() {
     const width = CHAT_WIDTHS[d.chatWidth] ? d.chatWidth : 'comfortable';
     const fontFamily = FONTS[d.fontFamily] ? d.fontFamily : 'inter';
     const fontScope = FONT_SCOPES.has(d.fontScope) ? d.fontScope : 'all';
+    const recentStyle = d.recentStyle === 'flat' ? 'flat' : 'grouped';
     document.querySelectorAll('#themeOptions button').forEach(b => {
         b.classList.toggle('active', b.dataset.themeName === theme);
     });
@@ -341,6 +351,9 @@ export function syncAppearanceControls() {
     });
     document.querySelectorAll('#chatWidthOptions button').forEach(b => {
         b.classList.toggle('active', b.dataset.chatWidth === width);
+    });
+    document.querySelectorAll('#recentStyleOptions button').forEach(b => {
+        b.classList.toggle('active', b.dataset.recentStyle === recentStyle);
     });
     const panelMode = d.filePanelMode === 'click' ? 'click' : 'auto';
     document.querySelectorAll('#filePanelModeOptions button').forEach(b => {

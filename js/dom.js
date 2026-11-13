@@ -16,6 +16,9 @@ export const elements = {
     sidebar: document.getElementById('sidebar'),
     openSidebar: document.getElementById('openSidebar'),
     closeSidebar: document.getElementById('closeSidebar'),
+    railNewChatBtn: document.getElementById('railNewChatBtn'),
+    railRecent: document.getElementById('railRecent'),
+    railRecentList: document.getElementById('railRecentList'),
 
     // (The sidebar tabs are gone entirely. `chatsTab` and `projectsTab` stayed
     // here after the markup was removed, resolving to null on every load — a

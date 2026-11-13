@@ -32,7 +32,7 @@ import { state, getActivePersona, getActiveConversation } from './state.js';
 import { setActiveConversation } from './active-conversation.js';
 import { elements } from './dom.js';
 import {
-    UiPrefs, applyTheme, withThemeTransition, applyChatWidth, applyFont, syncAppearanceControls,
+    UiPrefs, applyTheme, withThemeTransition, applyChatWidth, applyRecentStyle, applyFont, syncAppearanceControls,
 } from './ui-prefs.js';
 import { createSidebarOverlay, openSidebar, closeSidebar, setupSidebarResize } from './sidebar.js';
 import {
@@ -74,7 +74,7 @@ import {
     applyPersonaModelSettings, hydratePersonas, } from './persona-helpers.js';
 import {
     restoreConversationModel, loadConversationMessages,
-    switchConversation, renderConversation,
+    switchConversation, startNewConversation, renderConversation,
     renderConversationList, conversationActivityAt, } from './views/chats.js';
 import {
     showPersonaPopover, syncPersonaSectionFields, } from './views/personas.js';
@@ -86,7 +86,7 @@ import {
     autoSaveSettings, savePersonas, hydrateApiKeyStatus,
 } from './settings-store.js';
 import { openModelModal, setupModelsEvents } from './views/models.js';
-import { navigate, registerShell, renderModelsCatalog } from './shell.js';
+import { navigate, registerShell, renderRail, renderModelsCatalog } from './shell.js';
 import {
     getModelDisplayName, getActiveModelConfig, personaModelMode,
     mirrorLayerToModelProfile, mergeModelConfig, updateSendButtonState,
@@ -937,6 +937,7 @@ async function saveExpression() {
     await renderExpressionList();
     closeExpressionModal();
     await updateFloatingAvatar();
+    renderRail();
     updateSystemPromptExpressions();
 }
 
@@ -990,6 +991,8 @@ async function deleteExpression() {
 
     await renderExpressionList();
     closeExpressionModal();
+    await updateFloatingAvatar();
+    renderRail();
 }
 
 function updateSystemPromptExpressions() {
@@ -1182,9 +1185,10 @@ function setupEventListeners() {
         elements.criticalBannerDismiss.addEventListener('click', hideCriticalBanner);
     }
 
-    // Section rail → main-area router (Chats/Workspaces). Personas + Settings are
-    // interim: they open the existing popover/modal until WR-07b/c make them
-    // full main-area sections.
+    // Section rail → main-area router (Chats/Workspaces).
+    if (elements.railNewChatBtn) {
+        elements.railNewChatBtn.addEventListener('click', startNewConversation);
+    }
     document.querySelectorAll('.rail-item[data-section]').forEach(item => {
         item.addEventListener('click', (e) => {
             const section = item.dataset.section;
@@ -1306,6 +1310,14 @@ function setupEventListeners() {
             UiPrefs.set('chatWidth', btn.dataset.chatWidth);
             applyChatWidth(btn.dataset.chatWidth);
             syncAppearanceControls();
+        });
+    });
+    document.querySelectorAll('#recentStyleOptions button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            UiPrefs.set('recentStyle', btn.dataset.recentStyle);
+            applyRecentStyle(btn.dataset.recentStyle);
+            syncAppearanceControls();
+            renderRail();
         });
     });
     document.querySelectorAll('#filePanelModeOptions button').forEach(btn => {
@@ -1731,6 +1743,7 @@ async function handleAvatarUpload(file) {
         // Expression slots without art of their own render the default avatar
         // plus a mood badge, so they're stale the moment the avatar changes.
         await renderExpressionList();
+        renderRail();
         showNotification('Avatar updated.', 'success');
     } catch (error) {
         console.error('Failed to upload avatar:', error);
@@ -1761,6 +1774,7 @@ async function clearAvatarImage() {
     await updateFloatingAvatar();
     // Slots falling back to the avatar revert to a bare emoji — repaint them.
     await renderExpressionList();
+    renderRail();
 }
 
 /**

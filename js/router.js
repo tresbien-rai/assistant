@@ -40,6 +40,7 @@ import { FilePanel } from './file-panel/index.js';
 // resize that only becomes measurable at the moment it is shown.
 import { autoResizeTextarea } from './chat/composer.js';
 import { syncPresetPill } from './views/settings.js';
+import { renderRailRecent } from './rail-recent.js';
 
 /**
  * The persona's base file-tools setting (its default for new chats). Stored in
@@ -218,11 +219,12 @@ export function renderMainView() {
     renderChatsListMain();
 }
 
-/** Highlight the rail item for the section the current view belongs to. */
+/** Highlight the rail item for the section the current view belongs to, and refresh Recent chats. */
 export function renderRail() {
     const section = currentSection();
     document.querySelectorAll('.rail-item[data-section]').forEach(b =>
         b.classList.toggle('active', b.dataset.section === section));
+    renderRailRecent();
 }
 
 /**
@@ -253,4 +255,4 @@ export function renderTopBar() {
 
 // The shell implementations this module owns. main.js registered these while
 // they lived there; they belong with the router now.
-registerShell({ renderShell, renderMainView });
+registerShell({ renderShell, renderMainView, renderRail });

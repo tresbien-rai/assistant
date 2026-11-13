@@ -62,39 +62,54 @@
     <div class="app-container" id="appContainer" hidden>
         <!-- Sidebar with tabs -->
         <aside class="sidebar" id="sidebar">
-            <!-- Section rail (WR-07): a thin nav rail that switches the main-area
-                 router between top-level sections. Lists + detail live in the
-                 main area, not here. -->
-            <nav class="rail" aria-label="Sections">
-                <div class="rail-header">
-                    <span class="rail-brand">Solier</span>
-                    <button class="close-sidebar" id="closeSidebar" type="button" aria-label="Close menu">×</button>
+            <!-- Section rail (WR-07, enriched UIP-03): header with brand +
+                 quill New chat button, 4 top sections, Recent chats across
+                 every home, and a separated Profile + Settings footer. -->
+            <div class="rail">
+                <div class="rail-top">
+                    <div class="rail-header">
+                        <span class="rail-brand">Solier</span>
+                        <div class="rail-header-actions">
+                            <button class="rail-icon-btn rail-new-btn" id="railNewChatBtn" type="button" title="New chat" aria-label="New chat">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.006,21.89c0.51,-4.56 1.691,-9.552 4.252,-13.349c2.568,-3.806 6.804,-6.556 12.924,-6.741l2.014,-0.061l-1.181,1.639c-1.632,2.264 -2.375,4.606 -4.107,7.427l1.549,1.327l-0.731,0.754c-1.848,1.908 -4.436,3.155 -7.577,3.602c-1.105,0.177 -1.996,0.51 -2.85,1.072c-0.426,0.28 -0.769,0.569 -1.12,0.951c-0.237,0.258 -0.627,0.832 -0.858,1.18c-0.131,0.804 -0.239,1.613 -0.328,2.419zM5.136,19.976c0,0 0,0.001 0,0.001c0,0 0,0 0,-0.001zM6.139,15.931c0.021,-0.014 0.041,-0.028 0.062,-0.041c1.047,-0.688 2.347,-1.153 3.635,-1.376c2.85,-0.355 4.244,-1.029 5.682,-2.267l-1.245,-1.067l0.495,-0.734c1.94,-2.876 2.408,-4.471 3.573,-6.545c-4.48,0.483 -7.067,2.265 -9.424,5.759c-1.255,1.861 -2.146,4.005 -2.778,6.271zM12.79 20.62L13.12 20.11L13.75 21.06L14 21.35L14.27 21.59L14.57 21.79L14.86 21.91L15.19 21.99L15.51 21.99L15.82 21.94L16.09 21.84L16.34 21.69L16.61 21.49L16.83 21.26L17.03 21.01L17.62 20.11L18.25 21.06L18.48 21.33L18.74 21.57L19.04 21.77L19.36 21.91L19.66 21.98L19.98 21.99L20.32 21.94L20.65 21.81L20.96 21.61L21.24 21.37L21.58 20.96L21.89 20.45L21.99 20.17L22 19.93L21.96 19.73L21.91 19.6L21.82 19.43L21.69 19.28L21.54 19.16L21.41 19.09L21.22 19.02L21.03 19L20.83 19.01L20.69 19.05L20.51 19.13L20.39 19.21L20.21 19.38L19.88 19.89L19.28 18.98L19.05 18.7L18.82 18.47L18.54 18.27L18.25 18.12L17.97 18.04L17.65 18L17.33 18.03L17.04 18.11L16.73 18.26L16.45 18.46L16.2 18.7L15.97 18.98L15.38 19.89L14.75 18.94L14.52 18.67L14.26 18.43L13.96 18.23L13.64 18.09L13.34 18.02L13.02 18.01L12.71 18.06L12.41 18.16L12.11 18.34L11.83 18.56L11.52 18.91L11.23 19.34L11.07 19.64L11 19.93L11 20.07L11.04 20.27L11.09 20.4L11.18 20.57L11.31 20.72L11.42 20.82L11.59 20.91L11.73 20.96L11.88 20.99L12.07 21L12.27 20.96L12.4 20.91L12.57 20.82L12.69 20.72Z"/></svg>
+                            </button>
+                            <button class="rail-icon-btn close-sidebar" id="closeSidebar" type="button" aria-label="Close menu">×</button>
+                        </div>
+                    </div>
                 </div>
-                <button class="rail-item active" data-section="chats" type="button">
-                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                    <span>Chats</span>
-                </button>
-                <button class="rail-item" data-section="workspaces" type="button">
-                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
-                    <span>Workspaces</span>
-                </button>
-                <button class="rail-item" data-section="profile" type="button">
-                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-3-3.87"></path><path d="M13 3.13a4 4 0 0 1 0 7.75"></path><circle cx="8" cy="7" r="4"></circle><path d="M15 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path></svg>
-                    <span>Profile</span>
-                </button>
-                <button class="rail-item" data-section="personas" type="button">
-                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                    <span>Personas</span>
-                </button>
-                <button class="rail-item" data-section="models" type="button">
-                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
-                    <span>Models</span>
-                </button>
-                <button class="rail-item" data-section="settings" type="button">
-                    <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                    <span>Settings</span>
-                </button>
-            </nav>
+                <nav class="rail-nav" aria-label="Sections">
+                    <button class="rail-item active" data-section="chats" type="button">
+                        <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 14a2 2 0 0 1-2 2H8l-4 3.5V6a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"></path></svg>
+                        <span>Chats</span>
+                    </button>
+                    <button class="rail-item" data-section="workspaces" type="button">
+                        <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V6.15C4 5.84 4.07 5.53 4.21 5.25L5.05 3.6H11.2L12.4 6H21C21.5523 6 22 6.44772 22 7V9V18C22 19.1046 21.1046 20 20 20H18"></path><path d="M17.2362 9H2.30925C1.64988 9 1.17099 9.62698 1.34449 10.2631L3.59806 18.5262C3.83537 19.3964 4.62569 20 5.52759 20H19.6908C20.3501 20 20.829 19.373 20.6555 18.7369L18.201 9.73688C18.0823 9.30182 17.6872 9 17.2362 9Z"></path></svg>
+                        <span>Workspaces</span>
+                    </button>
+                    <button class="rail-item" data-section="personas" type="button">
+                        <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="3.5" width="13" height="17" rx="2.3"></rect><circle cx="12" cy="9.1" r="2.3"></circle><path d="M8.3 17a3.9 3.9 0 0 1 7.4 0"></path><path d="M2.4 6.8v10.4"></path><path d="M21.6 6.8v10.4"></path></svg>
+                        <span>Personas</span>
+                    </button>
+                    <button class="rail-item" data-section="models" type="button">
+                        <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+                        <span>Models</span>
+                    </button>
+                </nav>
+                <div class="rail-recent" id="railRecent" hidden>
+                    <div class="rail-recent-title">Recent</div>
+                    <div class="rail-recent-scroll" id="railRecentList" role="region" aria-label="Recent chats"></div>
+                </div>
+                <div class="rail-footer">
+                    <button class="rail-item" data-section="profile" type="button">
+                        <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7.5" r="3.8"></circle><path d="M5 20.5a7 7 0 0 1 14 0"></path></svg>
+                        <span>Profile</span>
+                    </button>
+                    <button class="rail-item" data-section="settings" type="button">
+                        <svg class="rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        <span>Settings</span>
+                    </button>
+                </div>
+            </div>
 
             <!-- Settings: this modal shell is a CARRIER, not a modal. On load,
                  setupEventListeners() re-parents .settings-modal-body into the
@@ -160,6 +175,13 @@
                         <button type="button" data-chat-width="comfortable">Comfortable</button>
                         <button type="button" data-chat-width="wide">Wide</button>
                     </div>
+
+                    <label>Recent chats</label>
+                    <div class="appearance-options" id="recentStyleOptions">
+                        <button type="button" data-recent-style="grouped">Grouped by workspace</button>
+                        <button type="button" data-recent-style="flat">Flat list</button>
+                    </div>
+                    <p class="section-note">Choose whether recent chats in the sidebar are grouped under their workspace or shown newest-first with their location.</p>
 
                     <label>File panel</label>
                     <div class="appearance-options" id="filePanelModeOptions">
@@ -446,7 +468,7 @@
         </aside>
 
         <!-- Sidebar resize handle (desktop only; drag to resize, double-click to reset) -->
-        <div class="sidebar-resize-handle" id="sidebarResizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar (drag, double-click to reset)" title="Drag to resize · double-click to reset"></div>
+        <div class="sidebar-resize-handle" id="sidebarResizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar (drag, double-click to reset)" title="Drag to resize (200–360px) · double-click to reset"></div>
 
         <!-- Main chat area -->
         <main class="chat-container">

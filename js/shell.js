@@ -55,6 +55,7 @@ import { closeSidebar } from './sidebar.js';
 const impl = {
     renderShell: null,
     renderMainView: null,
+    renderRail: null,
     updateUI: null,
     updateSettingsUI: null,
     renderModelsCatalog: null,
@@ -113,6 +114,11 @@ export function currentSection() {
 /** Repaint the navigation shell: rail highlight + contextual top bar + chrome. */
 export function renderShell() {
     return call('renderShell', arguments);
+}
+
+/** Repaint only the side rail (section highlight + Recent chats list). */
+export function renderRail() {
+    return call('renderRail', arguments);
 }
 
 /** Render the active main-area view. */
