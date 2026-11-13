@@ -31,7 +31,7 @@ import { elements } from './dom.js';
 import { getActivePersona, getActiveConversation } from './state.js';
 import { currentSection, navigate, renderChatThread, registerShell } from './shell.js';
 import { renderChatsListMain } from './views/chats.js';
-import { renderWorkspacesListMain, renderBreadcrumb, renderContainerPage } from './views/workspaces.js';
+import { renderWorkspacesListMain, renderBreadcrumb, renderContainerPage, flushContainerSave } from './views/workspaces.js';
 import { renderPersonasListMain, syncPersonaEditorPreview, closePersonaFixedModelMenu } from './views/personas.js';
 import { renderModelsView } from './views/models.js';
 import { renderProfileView, flushProfileSave } from './views/profile.js';
@@ -172,10 +172,10 @@ export function renderMainView() {
     if (elements.messagesContainer) {
         elements.messagesContainer.hidden = isSettings || isPersonaEdit || isModels || isProfile;
     }
-    // Leaving the Profile view commits whatever is still sitting in its save
-    // debounce. Clicking the rail is faster than 300ms, and a lost sentence is
-    // the worst thing that page could do to you.
+    // Leaving the Profile or Workspace/Project view commits whatever is still
+    // sitting in its save debounce so a quick navigation never loses edits.
     if (!isProfile) flushProfileSave();
+    flushContainerSave();
     if (!isPersonaEdit) closePersonaFixedModelMenu();
     if (isProfile) {
         renderProfileView();

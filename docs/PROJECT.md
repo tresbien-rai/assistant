@@ -32,7 +32,10 @@ How we work (branches, verification, merging, wrap-up) lives in
 > custom icons), and UIP-04 (#234, contextual chat-only top bar, composer Usage
 > counter, clean section headers, and unified Desktop/Phone alignment).
 > 2026-11-13: shipped UIP-05 (#235, Persona Editor 3-tab layout, separate desktop live
-> card / Phone Strip A preview, and inline Fixed-model picker).
+> card / Phone Strip A preview, and inline Fixed-model picker) and UIP-06 (#237,
+> Workspace/Project auto-save, Persona card Chat/Edit actions, onboarding Go to Models
+> button, button primitives & dead CSS cleanup, var(--border-color) & transition:all fixes,
+> and keyboard accessibility).
 
 ---
 
@@ -281,7 +284,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | 🚧 (UIP-01…05 ✅, UIP-06…08 📐) | UIP-01…08, #230, #231, #233, #234, #235 | `../UI_POLISH.md` |
+| UI polish backlog | 🚧 (UIP-01…06 ✅, UIP-07…08 📐) | UIP-01…08, #230, #231, #233, #234, #235, #237 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -331,11 +334,12 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
      separate desktop sibling live WYSIWYG card preview (`>= 768px`), compact Phone
      Strip A above the tabs (`< 768px`, `94×94` portrait with action button below),
      and inline Fixed-model picker popover with `Edit model profile in Models →`.
-   - **UIP-06** *(next target)* — Workspace/Project auto-save, visible `Chat`/`Edit` actions on
-     Persona tiles, onboarding empty-state action button, unified button
-     primitives, `var(--border-color)` fix, removal of `transition: all`, and
-     keyboard accessibility.
-   - **UIP-07** — evaluation and refinement of the 8 colour themes (`Midnight`,
+   - ~~**UIP-06**~~ *(shipped 2026-11-13, #237)* — Workspace/Project auto-save with
+     `flushContainerSave()`, visible `Chat`/`Edit` actions on Persona tiles
+     (Option A), onboarding `Go to Models` button, `.btn` primitives in
+     `styles/buttons.css` & dead pre-WR-07 CSS cleanup, `var(--border-color)` fix,
+     removal of all 21 `transition: all` declarations, and keyboard accessibility.
+   - **UIP-07** *(next target)* — evaluation and refinement of the 8 colour themes (`Midnight`,
      `Slate`, `Forest`, `Ocean`, `Light`, `Parchment`, `Rosé`, `Custom`) and
      light-theme contrast fixes for diffs and Markdown tables.
    - **UIP-08** — the Chats page holds every chat, organised by Workspace and
@@ -377,7 +381,7 @@ server log and against Drive, not just from the model's reply:
   and chat with it once; check the reply reflects the picks. Verified only in
   automated desktop/phone-width runs so far.
 - [ ] **Gemini 3.5+ trimmed body** (#217): one real send on `gemini-3.8-flash` (and `gemini-4-argon` if keyed) with tools off and thinking on Model default, then on Level; expect a normal reply. The body only lost fields, so low risk.
-- [ ] **UI polish visual pass on a real phone** (UIP-03…05, #233–#235): rail drawer & `Recent` chats list, contextual chat top bar + composer `Usage:` footer, and Persona Editor 3-tab strip + Phone Strip A + Fixed-model picker. Verified in headless Chromium at `1280×820` and `390×844` so far.
+- [ ] **UI polish visual pass on a real phone** (UIP-03…06, #233–#235, #237): rail drawer & `Recent` chats list, contextual chat top bar + composer `Usage:` footer, Persona Editor 3-tab strip + Phone Strip A + Fixed-model picker, and Persona card `Chat`/`Edit` actions + Workspace/Project auto-save. Verified in headless Chromium at `1280×820` and `390×844` so far.
 
 ### Deferred on purpose
 - **CF-02b** — PDFs as working files.

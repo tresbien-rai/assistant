@@ -121,7 +121,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: background-color 0.2s, transform 0.2s, opacity 0.2s;
     flex-shrink: 0;
 }
 
@@ -1319,25 +1319,6 @@
     border-top: 1px solid var(--border-color);
 }
 
-.manage-models-btn {
-    width: 100%;
-    padding: 8px 12px;
-    margin-top: 8px;
-    background-color: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.manage-models-btn:hover {
-    background-color: var(--bg-secondary);
-    border-color: var(--accent);
-    color: var(--text-primary);
-}
-
 .model-section {
     margin-bottom: 20px;
 }
@@ -1388,7 +1369,7 @@
     font-size: var(--text-sm);
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background-color 0.2s, opacity 0.2s;
 }
 
 .fetch-models-btn:hover:not(:disabled) {
@@ -1419,7 +1400,7 @@
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    transition: all 0.2s;
+    transition: border-color 0.2s, opacity 0.2s;
 }
 
 .available-model-card:hover:not(.already-added) {
@@ -1452,7 +1433,7 @@
     color: var(--on-accent);
     font-size: var(--text-xs);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background-color 0.2s, color 0.2s;
 }
 
 .add-available-model-btn:hover:not(:disabled) {
@@ -1500,7 +1481,7 @@
     font-size: var(--text-sm);
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background-color 0.2s, opacity 0.2s;
 }
 
 .add-model-btn:hover {
@@ -1518,12 +1499,13 @@
     z-index: 99;
     opacity: 0;
     visibility: hidden;
-    transition: all 0.3s;
+    transition: opacity 0.3s, visibility 0s linear 0.3s;
 }
 
 .sidebar-overlay.visible {
     opacity: 1;
     visibility: visible;
+    transition: opacity 0.3s, visibility 0s;
 }
 
 /* ===== Responsive ===== */

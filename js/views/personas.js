@@ -24,7 +24,7 @@ import {
 import { savePersonas, autoSaveSettings } from '../settings-store.js';
 import { PERSONA_SECTIONS, AUTHORED_SECTION_IDS, sectionText } from '../persona-sections.js';
 import { wireTraitEditor, syncTraitEditors } from './persona-traits-editor.js';
-import { renderConversationList, renderConversation } from './chats.js';
+import { renderConversationList, renderConversation, startNewConversation } from './chats.js';
 import { setActiveConversation, forgetConversationDraft } from '../active-conversation.js';
 import { UiPrefs } from '../ui-prefs.js';
 import { setupTextareaResizers } from '../components/textarea-resize.js';
@@ -219,12 +219,15 @@ async function startNewPersona() {
 
 /**
  * Main-area "Personas" section: a character-select grid of portrait tiles —
- * large 1:1 avatar, name, optional role chip, and the persona's tagline. Click
- * a tile to make it active (stays here); the ⋯ menu edits (→ persona editor)
- * or deletes. The top-bar persona popover still handles quick-switch.
+ * large 1:1 avatar, name, optional role chip, tagline, and visible Chat / Edit
+ * actions. Click the card body to make a persona active; the ⋯ menu holds
+ * Export and Delete. The top-bar persona popover still handles quick-switch.
  */
 export function renderPersonasListMain() {
     const c = elements.messagesContainer;
+    const prevOpen = c.contains(document.activeElement)
+        ? document.activeElement.closest('[data-persona-open]')?.dataset.personaOpen
+        : null;
     const personas = Object.values(state.personas)
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
@@ -245,7 +248,11 @@ export function renderPersonasListMain() {
                         <span class="persona-tile-tagline${tagline ? '' : ' empty'}">${tagline ? escapeHtml(tagline) : 'Add a tagline'}</span>
                     </div>
                 </div>
-                <button class="project-menu-btn persona-tile-menu" data-persona-menu="${escapeHtml(p.id)}" title="Options">⋯</button>
+                <div class="persona-tile-actions">
+                    <button type="button" class="btn btn-sm btn-pill btn-soft-accent persona-tile-btn" data-persona-chat="${escapeHtml(p.id)}">Chat</button>
+                    <button type="button" class="btn btn-sm btn-pill btn-secondary persona-tile-btn" data-persona-edit="${escapeHtml(p.id)}">Edit</button>
+                </div>
+                <button type="button" class="project-menu-btn persona-tile-menu" data-persona-menu="${escapeHtml(p.id)}" title="Options" aria-label="Persona options">⋯</button>
             </div>`;
     }).join('');
 
@@ -277,8 +284,17 @@ export function renderPersonasListMain() {
             }
         });
     });
+    c.querySelectorAll('[data-persona-chat]').forEach(btn =>
+        btn.addEventListener('click', (e) => { e.stopPropagation(); chatWithPersona(btn.dataset.personaChat); }));
+    c.querySelectorAll('[data-persona-edit]').forEach(btn =>
+        btn.addEventListener('click', (e) => { e.stopPropagation(); editPersona(btn.dataset.personaEdit); }));
     c.querySelectorAll('[data-persona-menu]').forEach(btn =>
         btn.addEventListener('click', (e) => { e.stopPropagation(); showPersonaCardMenu(btn, btn.dataset.personaMenu); }));
+
+    if (prevOpen) {
+        const nextOpen = [...c.querySelectorAll('[data-persona-open]')].find(el => el.dataset.personaOpen === prevOpen);
+        if (nextOpen) nextOpen.focus({ preventScroll: true });
+    }
 }
 
 /** Make a persona active from the Personas section (stays on the section). */
@@ -288,6 +304,15 @@ export function activatePersona(personaId) {
     applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
     savePersonas();
     updateUI(); // refreshes the section (Active badge) + header
+}
+
+/** Activate a persona and immediately start a new unfiled chat with it. */
+export async function chatWithPersona(personaId) {
+    if (!state.personas[personaId]) return;
+    state.activePersonaId = personaId;
+    applyPersonaModelSettings(getActivePersona());
+    savePersonas();
+    await startNewConversation();
 }
 
 const BUNDLE_FORMAT = 'tessera.bundle';
@@ -452,7 +477,6 @@ function showPersonaCardMenu(anchorEl, personaId) {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.innerHTML = `
-        <button class="context-menu-item" data-action="edit">Edit</button>
         <button class="context-menu-item" data-action="export">Export…</button>
         <button class="context-menu-item" data-action="export-full">Export (full quality)</button>
         <button class="context-menu-item danger" data-action="delete">Delete</button>
@@ -463,8 +487,7 @@ function showPersonaCardMenu(anchorEl, personaId) {
         item.addEventListener('click', () => {
             menu.remove();
             const action = item.dataset.action;
-            if (action === 'edit') editPersona(personaId);
-            else if (action === 'export') exportPersona(personaId);
+            if (action === 'export') exportPersona(personaId);
             else if (action === 'export-full') exportPersona(personaId, { fullQuality: true });
             else if (action === 'delete') deletePersonaPrompt(personaId);
         });
@@ -617,7 +640,7 @@ export function setupPersonaEditor() {
     const capabilitiesSection = document.getElementById('personaCapabilitiesSection');
 
     view.innerHTML = `
-        <div class="settings-view-crumb">${mobileMenuButtonHTML()}<span class="cp-crumb" id="personaEditBack">‹ Personas</span></div>
+        <div class="settings-view-crumb">${mobileMenuButtonHTML()}<button type="button" class="cp-crumb" id="personaEditBack">‹ Personas</button></div>
         <h1 class="settings-view-title" id="personaEditTitle">Persona</h1>
         <div class="persona-strip" id="personaPhoneStrip">
             <div class="persona-strip-port-col">

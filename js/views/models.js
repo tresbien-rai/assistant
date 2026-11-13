@@ -534,6 +534,12 @@ function renderModelRoles() {
 export function renderModelsCatalog() {
     const c = document.getElementById('modelsCatalog');
     if (!c) return;
+    const activeCard = c.contains(document.activeElement)
+        ? document.activeElement.closest('[data-model-select]')
+        : null;
+    const prevSelected = activeCard
+        ? { id: activeCard.dataset.modelSelect, provider: activeCard.dataset.provider }
+        : null;
     renderProviderChips(); // chips + catalog always render together, stay in sync
     renderModelRoles();    // and so does the roles panel — both read the same state
     const layer = getActiveModelConfig();
@@ -575,23 +581,31 @@ export function renderModelsCatalog() {
             const badges = roleBadgesHTML(active, aux);
             html += `
                 <div class="model-card${active ? ' active' : ''}">
-                    <div class="model-card-open" data-model-select="${escapeHtml(m.id)}" data-provider="${provider}">
+                    <div class="model-card-open" data-model-select="${escapeHtml(m.id)}" data-provider="${provider}" role="button" tabindex="0">
                         <div class="model-card-info">
                             <span class="model-card-name">${escapeHtml(m.name)}${badges}</span>
                             <span class="model-card-sub">${escapeHtml(m.id)}</span>
                         </div>
                     </div>
-                    <button class="project-menu-btn model-card-menu" data-model-menu="${escapeHtml(m.id)}" data-provider="${provider}" title="Options">⋯</button>
+                    <button type="button" class="project-menu-btn model-card-menu" data-model-menu="${escapeHtml(m.id)}" data-provider="${provider}" title="Options" aria-label="Model options">⋯</button>
                 </div>`;
         });
     }
     c.innerHTML = html;
 
-    c.querySelectorAll('[data-model-select]').forEach(el =>
-        el.addEventListener('click', () => {
+    c.querySelectorAll('[data-model-select]').forEach(el => {
+        const activate = () => {
             selectModel(el.dataset.modelSelect, el.dataset.provider);
             renderModelsCatalog(); // refresh the Active badge
-        }));
+        };
+        el.addEventListener('click', activate);
+        el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                activate();
+            }
+        });
+    });
     c.querySelectorAll('[data-model-menu]').forEach(btn =>
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -607,6 +621,13 @@ export function renderModelsCatalog() {
             e.stopPropagation();
             openModelModal(btn.dataset.addProvider);
         }));
+
+    if (prevSelected) {
+        const nextCard = [...c.querySelectorAll('[data-model-select]')].find(
+            el => el.dataset.modelSelect === prevSelected.id && el.dataset.provider === prevSelected.provider
+        );
+        if (nextCard) nextCard.focus({ preventScroll: true });
+    }
 }
 
 /**

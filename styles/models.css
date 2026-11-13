@@ -802,7 +802,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0 12px;
-    transition: all 0.2s;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
 }
 
 .toggle-visibility:hover {
@@ -850,7 +850,7 @@
     color: var(--text-secondary);
     font-size: var(--text-sm);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: border-color 0.2s, color 0.2s, background-color 0.2s, opacity 0.2s;
     text-align: center;
 }
 
@@ -896,7 +896,7 @@
     color: var(--text-secondary);
     font-size: var(--text-sm);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: border-color 0.2s, color 0.2s, background-color 0.2s;
 }
 
 .file-clear-btn:hover {
@@ -976,7 +976,7 @@
     color: var(--text-secondary);
     font-size: var(--text-sm);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
 }
 
 .size-preset-btn:hover,
@@ -1159,7 +1159,7 @@
     color: var(--text-secondary);
     font-size: var(--text-sm);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: border-color 0.2s, color 0.2s, background-color 0.2s;
 }
 
 .add-expression-btn:hover {
@@ -1167,22 +1167,3 @@
     color: var(--accent);
 }
 
-/* Action Buttons */
-.clear-chat {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    margin-bottom: 8px;
-    background-color: transparent;
-    color: var(--text-secondary);
-}
-
-.clear-chat:hover {
-    border-color: var(--error);
-    color: var(--error);
-}

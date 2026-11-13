@@ -190,11 +190,11 @@ export function conversationRowHTML(convo, showPersonaAvatar) {
     return `
         <div class="conversation-item ${active}" data-conversation-id="${convo.id}">
             ${avatar}
-            <div class="conversation-info" data-conversation-id="${convo.id}">
+            <div class="conversation-info" data-conversation-id="${convo.id}" role="button" tabindex="0">
                 <span class="conversation-title">${escapeHtml(convo.title || 'New Chat')}</span>
                 <span class="conversation-time">${timeAgo}</span>
             </div>
-            <button class="conversation-menu-btn" data-conversation-id="${convo.id}" title="Options">⋯</button>
+            <button type="button" class="conversation-menu-btn" data-conversation-id="${convo.id}" title="Options" aria-label="Chat options">⋯</button>
         </div>
     `;
 }
@@ -205,7 +205,14 @@ export function conversationRowHTML(convo, showPersonaAvatar) {
  */
 export function wireConversationRows(container) {
     container.querySelectorAll('.conversation-info').forEach(info => {
-        info.addEventListener('click', () => switchConversation(info.dataset.conversationId));
+        const open = () => switchConversation(info.dataset.conversationId);
+        info.addEventListener('click', open);
+        info.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                open();
+            }
+        });
     });
     container.querySelectorAll('.conversation-menu-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
