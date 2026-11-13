@@ -13,7 +13,7 @@ import { state } from '../state.js';
 import { elements } from '../dom.js';
 import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
-import { navigate, updateUI } from '../shell.js';
+import { navigate, updateUI, mobileMenuButtonHTML, registerShell } from '../shell.js';
 import { getActivePersona } from '../state.js';
 import {
     personaAvatarHTML, createPersona, applyPersonaModelSettings, hydratePersonas,
@@ -248,7 +248,10 @@ export function renderPersonasListMain() {
     c.innerHTML = `
         <div class="section-view">
             <div class="section-head">
-                <h1 class="section-title">Personas</h1>
+                <div class="section-head-left">
+                    ${mobileMenuButtonHTML()}
+                    <h1 class="section-title">Personas</h1>
+                </div>
                 <div class="section-head-actions">
                     <button class="section-secondary-btn" id="personaImportBtn" type="button">Import</button>
                     <button class="section-new-btn" id="personaNewBtn" type="button">+ New persona</button>
@@ -554,3 +557,5 @@ export function syncPersonaSectionFields(persona) {
     }
     syncTraitEditors(persona);
 }
+
+registerShell({ showPersonaPopover });

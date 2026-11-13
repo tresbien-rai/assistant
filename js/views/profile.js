@@ -31,6 +31,7 @@ import { confirmDialog } from '../components/dialogs.js';
 import { displayError } from '../components/errors.js';
 import { escapeHtml } from '../util/format.js';
 import { setupTextareaResizers } from '../components/textarea-resize.js';
+import { mobileMenuButtonHTML } from '../shell.js';
 
 /**
  * Server limits + suggested sections, fetched once and cached.
@@ -194,7 +195,12 @@ function build() {
     const accountName = (state.user && state.user.displayName) || '';
 
     elements.profileView.innerHTML = `
-        <h1 class="settings-view-title">Profile</h1>
+        <div class="section-head">
+            <div class="section-head-left">
+                ${mobileMenuButtonHTML()}
+                <h1 class="section-title">Profile</h1>
+            </div>
+        </div>
         <div class="settings-modal-body">
             <div class="settings-section">
                 <p class="section-note">Synced to your account.</p>
@@ -420,7 +426,12 @@ export async function renderProfileView() {
     } catch (err) {
         displayError(err, { action: 'load your profile' });
         elements.profileView.innerHTML =
-            `<h1 class="settings-view-title">Profile</h1>
+            `<div class="section-head">
+                <div class="section-head-left">
+                    ${mobileMenuButtonHTML()}
+                    <h1 class="section-title">Profile</h1>
+                </div>
+             </div>
              <div class="settings-modal-body"><p class="help-text">Could not load your profile.</p></div>`;
         return;
     }

@@ -173,24 +173,44 @@ or persona avatar changes.
 
 ## UIP-04 — Contextual top status bar & section header cleanup
 
-**Status:** open, agreed 2026-11-11.
+**Status:** shipped (2026-11-12; decisions locked from `uip04_topbar_mockup_v2.html`).
 
-`renderTopBar` currently shows the Persona dropdown, Model dropdown, and
+`renderTopBar` previously showed the Persona dropdown, Model dropdown, and
 Floating Avatar toggle **only when not in a chat** (cluttering `Models`,
-`Settings`, `Profile`, `Workspaces`), and hides the Persona indicator when in a
-chat. Meanwhile `#avatarToggleBtn` uses the same user-silhouette icon as the
-`Personas` rail item.
+`Settings`, `Profile`, `Workspaces`), and hid the Persona indicator when in a
+chat. Meanwhile `#avatarToggleBtn` reused the single-person outline icon now
+claimed by `Profile` in the rail footer.
 
-Agreed changes:
-- **In a chat (`mainView.type === 'chat'`):** make the top bar chat-focused —
-  show the Chat Title, Active Persona chip, and Workspace/Project breadcrumb on
-  the left, and chat-scoped tools (`Tokens`, `Avatar PIP` with a distinct
-  portrait-frame icon, and `Files`) on the right.
-- **Outside a chat (browsing section pages):** keep section views (`Models`,
-  `Settings`, `Profile`, `Personas`, `Workspaces`) free of redundant top-bar
-  dropdowns on desktop (retaining only the mobile `☰` menu trigger on narrow
-  screens), and place the "next chat" Persona/Model selector on the `Chats`
-  list header alongside `+ New chat`.
+Locked decisions (signed off from `uip04_topbar_mockup_v2.html`):
+- **D1 — Stacked Title + Meta in chats (`mainView.type === 'chat'`):** `.status-bar`
+  shows only inside chats (`hidden` outside chats). Left side holds the active
+  persona avatar (`30px` / `26px` on mobile, opens Persona popover), **Chat Title**
+  (clickable to rename), and a meta line below (`Persona Name · Workspace › Project`
+  or `Chats (unfiled)`, each segment clickable). Right side holds chat-scoped tools:
+  `View request` (dev mode only), **Avatar PIP**, and **Files** (with activity dot /
+  muted non-loaded count).
+- **D2 — Distinct Avatar PIP icon:** `#avatarToggleBtn` uses a `22px` centered
+  framed-portrait icon with a broken top-right corner gap and 4-point sparkle,
+  clearly distinct from the rail footer `Profile` icon.
+- **D3 — Usage counter moved near the composer:** Remove `.status-center` from the
+  top bar so long chat titles never collide. Place `#statusTokensBtn` in a quiet
+  `.composer-footer` row directly beneath `.composer-field` formatted as
+  `Usage: <count>` (alongside the synced Enter/Shift+Enter hint on desktop, visible
+  on mobile too). Clicking opens the breakdown modal titled **Token Usage (This chat)**.
+- **D4 — Clean non-chat section headers (no duplicate mobile title):** Outside chats,
+  desktop hides `.status-bar` completely (`>= 768px`). On mobile (`< 768px`), each
+  section header (`.section-head`, `.models-head`) and sub-page back row embeds an
+  inline `☰` drawer button directly beside the page `<h1>` / back crumb rather than
+  rendering a separate mobile top bar that duplicates the title.
+- **D5 — `Chats` page "next chat" controls & Quill `New chat` button:** Row 1 holds
+  `Chats` + a primary `New chat` button carrying the `G5 low-notch squiggle` quill
+  icon. Row 2 holds a `.chats-next-strip` utility bar (`Next chat starts with` +
+  Persona & Model selector pills) so mobile never wraps `New chat` below dropdowns.
+- **D6 — Unified section alignment:** Harmonize `#messagesContainer` top padding
+  on `.section-view` / `.container-page` with `.main-view-panel`, and standardize
+  `.section-head` / `.models-head` height and bottom margin so every section title
+  (`Chats`, `Workspaces`, `Personas`, `Models`, `Settings`, `Profile`) lands on the
+  exact same baseline on both Desktop and Phone.
 
 ---
 

@@ -63,8 +63,10 @@ export function updateStatusBar() {
     if (recorded === null) {
         // No usage loaded (or a chat never sent): the old estimate is all we
         // have. The tilde is doing real work here — it says "approximate".
+        const tip = 'Estimated — no provider call recorded for this chat yet.';
         elements.statusTokens.textContent = `~${formatNumber(unrecordedEstimate())}`;
-        elements.statusTokens.title = 'Estimated — no provider call recorded for this chat yet.';
+        elements.statusTokens.title = tip;
+        if (elements.statusTokensBtn) elements.statusTokensBtn.title = tip;
         return;
     }
 
@@ -76,12 +78,14 @@ export function updateStatusBar() {
     // used — and rates differ per model and per class, so it cannot be priced
     // as it stands. The breakdown is where a priceable figure lives.
     const models = state.usage.total.byModel.length;
-    elements.statusTokens.textContent = `${partial ? '≥' : ''}${formatNumber(recorded)}`;
-    elements.statusTokens.title = [
+    const tip = [
         partial
             ? 'At least this many tokens — a stopped turn left one count unsettled.'
             : 'All tokens billed for this chat: input, output and cache combined',
         models > 1 ? `, across ${models} models` : '',
         '. Click for the per-model breakdown.',
     ].join('');
+    elements.statusTokens.textContent = `${partial ? '≥' : ''}${formatNumber(recorded)}`;
+    elements.statusTokens.title = tip;
+    if (elements.statusTokensBtn) elements.statusTokensBtn.title = tip;
 }

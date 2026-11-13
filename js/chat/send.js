@@ -441,7 +441,8 @@ export function buildChatRequest() {
  */
 export function applyDevMode() {
     const on = !!UiPrefs.get('devMode');
-    if (elements.viewRequestBtn) elements.viewRequestBtn.hidden = !on;
+    const inChat = (state.ui.mainView || {}).type === 'chat';
+    if (elements.viewRequestBtn) elements.viewRequestBtn.hidden = !inChat || !on;
     if (elements.devModeToggle) elements.devModeToggle.checked = on;
 }
 

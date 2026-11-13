@@ -370,6 +370,11 @@ export function syncAppearanceControls() {
             ? 'Type your message... (Enter to send)'
             : 'Type your message... (Shift+Enter to send)';
     }
+    if (elements.composerKeyHint) {
+        elements.composerKeyHint.textContent = enterBehaviour === 'enter'
+            ? 'Enter to send · Shift+Enter for new line'
+            : 'Shift+Enter to send · Enter for new line';
+    }
     const cp = d.customPalette;
     if (elements.paletteBase) elements.paletteBase.value = cp.base;
     if (elements.paletteTint) elements.paletteTint.value = cp.tint;

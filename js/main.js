@@ -75,7 +75,7 @@ import {
 import {
     restoreConversationModel, loadConversationMessages,
     switchConversation, startNewConversation, renderConversation,
-    renderConversationList, conversationActivityAt, } from './views/chats.js';
+    renderConversationList, conversationActivityAt, renameConversationPrompt, } from './views/chats.js';
 import {
     showPersonaPopover, syncPersonaSectionFields, } from './views/personas.js';
 import {
@@ -86,7 +86,7 @@ import {
     autoSaveSettings, savePersonas, hydrateApiKeyStatus,
 } from './settings-store.js';
 import { openModelModal, setupModelsEvents } from './views/models.js';
-import { navigate, registerShell, renderRail, renderModelsCatalog } from './shell.js';
+import { navigate, registerShell, renderRail, renderModelsCatalog, mobileMenuButtonHTML } from './shell.js';
 import {
     getModelDisplayName, getActiveModelConfig, personaModelMode,
     mirrorLayerToModelProfile, mergeModelConfig, updateSendButtonState,
@@ -1157,12 +1157,34 @@ function handleFileAttachment(files) {
 
 // ===== Event Listeners =====
 function setupEventListeners() {
-    // Sidebar toggle
-    elements.openSidebar.addEventListener('click', openSidebar);
+    // Sidebar toggle (top-bar trigger in chats + inline triggers in section headers)
+    if (elements.openSidebar) elements.openSidebar.addEventListener('click', openSidebar);
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('[data-open-sidebar]')) openSidebar();
+    });
     elements.closeSidebar.addEventListener('click', closeSidebar);
 
-    // Token count opens the usage breakdown (U-04). Refreshed on open so a
-    // panel left closed through several turns is never stale.
+    // Chat top-bar identity: click title to rename, click persona avatar/name for options
+    if (elements.chatTitleBtn) {
+        elements.chatTitleBtn.addEventListener('click', () => {
+            if (state.activeConversationId) renameConversationPrompt(state.activeConversationId);
+        });
+    }
+    if (elements.chatPersonaAvatarBtn) {
+        elements.chatPersonaAvatarBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showPersonaPopover(elements.chatPersonaAvatarBtn);
+        });
+    }
+    if (elements.chatPersonaBtn) {
+        elements.chatPersonaBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showPersonaPopover(elements.chatPersonaBtn);
+        });
+    }
+
+    // Usage counter opens the breakdown modal ("Token Usage (This chat)").
+    // Refreshed on open so a panel left closed through several turns is never stale.
     if (elements.statusTokensBtn) {
         elements.statusTokensBtn.addEventListener('click', async () => {
             if (state.activeConversationId) await loadUsage(state.activeConversationId);
@@ -1207,10 +1229,10 @@ function setupEventListeners() {
     // settings form is now a router view, not a modal.
     const settingsBody = document.querySelector('#settingsModal .settings-modal-body');
     if (settingsBody && elements.settingsView) {
-        const heading = document.createElement('h1');
-        heading.className = 'settings-view-title';
-        heading.textContent = 'Settings';
-        elements.settingsView.appendChild(heading);
+        const head = document.createElement('div');
+        head.className = 'section-head';
+        head.innerHTML = `<div class="section-head-left">${mobileMenuButtonHTML()}<h1 class="section-title">Settings</h1></div>`;
+        elements.settingsView.appendChild(head);
         elements.settingsView.appendChild(settingsBody);
         if (elements.settingsModal) elements.settingsModal.remove(); // discard the empty modal shell
     }
@@ -1221,7 +1243,7 @@ function setupEventListeners() {
     // trick as above — inputs stay cached by id, listeners survive the move.
     if (elements.personaEditView) {
         elements.personaEditView.innerHTML = `
-            <div class="settings-view-crumb"><span class="cp-crumb" id="personaEditBack">‹ Personas</span></div>
+            <div class="settings-view-crumb">${mobileMenuButtonHTML()}<span class="cp-crumb" id="personaEditBack">‹ Personas</span></div>
             <h1 class="settings-view-title" id="personaEditTitle">Persona</h1>`;
         const editorBody = document.createElement('div');
         editorBody.className = 'settings-modal-body';
@@ -1265,7 +1287,10 @@ function setupEventListeners() {
         elements.modelsView.innerHTML = `
             <div class="models-catalog-panel" id="modelsCatalogPanel">
                 <div class="models-head">
-                    <h1 class="settings-view-title">Models</h1>
+                    <div class="section-head-left">
+                        ${mobileMenuButtonHTML()}
+                        <h1 class="section-title">Models</h1>
+                    </div>
                     <button class="section-new-btn" id="modelsAddBtn" type="button">+ Add model</button>
                 </div>
                 <div class="provider-chips" id="providerChips"></div>
@@ -1276,12 +1301,6 @@ function setupEventListeners() {
         // No argument: the header button is provider-agnostic, so the modal
         // defaults to the active model's provider (a group's "+ Add" passes one).
         document.getElementById('modelsAddBtn').addEventListener('click', () => openModelModal());
-    }
-    if (elements.personaButton) {
-        elements.personaButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showPersonaPopover(elements.personaButton);
-        });
     }
     // Appearance: theme / accent / font / chat width (device-local, applied live)
     document.querySelectorAll('#themeOptions button').forEach(btn => {

@@ -10,14 +10,18 @@
  * Splitting them would need another seam and buys nothing today.
  */
 
-import { state } from '../state.js';
+import { state, getActivePersona } from '../state.js';
 import { elements } from '../dom.js';
 import { API } from '../api-client.js';
-import { navigate, updateUI, renderMainView, renderShell, renderRail, refreshContainerChats } from '../shell.js';
-import { getActivePersona } from '../state.js';
+import { CONFIG } from '../config.js';
+import {
+    navigate, updateUI, renderMainView, renderShell, renderRail,
+    refreshContainerChats, mobileMenuButtonHTML, showPersonaPopover, showModelMenu,
+} from '../shell.js';
 import {
     personaModelMode, findModelProvider, applyModelToLayer,
-    } from '../model-layer.js';
+    getActiveModelConfig, getModelDisplayName,
+} from '../model-layer.js';
 import { persistSettings } from '../settings-store.js';
 import { setActiveConversation, forgetConversationDraft } from '../active-conversation.js';
 import { personaAvatarHTML, applyPersonaModelSettings } from '../persona-helpers.js';
@@ -619,18 +623,48 @@ export function renderConversation() {
     renderMainView();
 }
 
+const NEW_CHAT_QUILL_SVG = '<svg class="section-new-quill-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.006,21.89c0.51,-4.56 1.691,-9.552 4.252,-13.349c2.568,-3.806 6.804,-6.556 12.924,-6.741l2.014,-0.061l-1.181,1.639c-1.632,2.264 -2.375,4.606 -4.107,7.427l1.549,1.327l-0.731,0.754c-1.848,1.908 -4.436,3.155 -7.577,3.602c-1.105,0.177 -1.996,0.51 -2.85,1.072c-0.426,0.28 -0.769,0.569 -1.12,0.951c-0.237,0.258 -0.627,0.832 -0.858,1.18c-0.131,0.804 -0.239,1.613 -0.328,2.419zM5.136,19.976c0,0 0,0.001 0,0.001c0,0 0,0 0,-0.001zM6.139,15.931c0.021,-0.014 0.041,-0.028 0.062,-0.041c1.047,-0.688 2.347,-1.153 3.635,-1.376c2.85,-0.355 4.244,-1.029 5.682,-2.267l-1.245,-1.067l0.495,-0.734c1.94,-2.876 2.408,-4.471 3.573,-6.545c-4.48,0.483 -7.067,2.265 -9.424,5.759c-1.255,1.861 -2.146,4.005 -2.778,6.271zM12.79 20.62L13.12 20.11L13.75 21.06L14 21.35L14.27 21.59L14.57 21.79L14.86 21.91L15.19 21.99L15.51 21.99L15.82 21.94L16.09 21.84L16.34 21.69L16.61 21.49L16.83 21.26L17.03 21.01L17.62 20.11L18.25 21.06L18.48 21.33L18.74 21.57L19.04 21.77L19.36 21.91L19.66 21.98L19.98 21.99L20.32 21.94L20.65 21.81L20.96 21.61L21.24 21.37L21.58 20.96L21.89 20.45L21.99 20.17L22 19.93L21.96 19.73L21.91 19.6L21.82 19.43L21.69 19.28L21.54 19.16L21.41 19.09L21.22 19.02L21.03 19L20.83 19.01L20.69 19.05L20.51 19.13L20.39 19.21L20.21 19.38L19.88 19.89L19.28 18.98L19.05 18.7L18.82 18.47L18.54 18.27L18.25 18.12L17.97 18.04L17.65 18L17.33 18.03L17.04 18.11L16.73 18.26L16.45 18.46L16.2 18.7L15.97 18.98L15.38 19.89L14.75 18.94L14.52 18.67L14.26 18.43L13.96 18.23L13.64 18.09L13.34 18.02L13.02 18.01L12.71 18.06L12.41 18.16L12.11 18.34L11.83 18.56L11.52 18.91L11.23 19.34L11.07 19.64L11 19.93L11 20.07L11.04 20.27L11.09 20.4L11.18 20.57L11.31 20.72L11.42 20.82L11.59 20.91L11.73 20.96L11.88 20.99L12.07 21L12.27 20.96L12.4 20.91L12.57 20.82L12.69 20.72Z"/></svg>';
+const NEXT_CHEVRON_SVG = '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+
 /** Main-area "Chats" section: unfiled chats grouped by persona + a New-chat action. */
 export function renderChatsListMain() {
     const c = elements.messagesContainer;
+    const persona = getActivePersona();
+    const personaName = persona ? (persona.name || CONFIG.defaults.assistantName) : CONFIG.defaults.assistantName;
+    const modelName = getModelDisplayName(getActiveModelConfig().model);
+
     c.innerHTML = `
         <div class="section-view">
             <div class="section-head">
-                <h1 class="section-title">Chats</h1>
-                <button class="section-new-btn" id="chatsNewBtn" type="button">+ New chat</button>
+                <div class="section-head-left">
+                    ${mobileMenuButtonHTML()}
+                    <h1 class="section-title">Chats</h1>
+                </div>
+                <button class="section-new-btn section-new-chat-btn" id="chatsNewBtn" type="button">
+                    ${NEW_CHAT_QUILL_SVG}<span>New chat</span>
+                </button>
+            </div>
+            <div class="chats-next-strip">
+                <span class="chats-next-label">Next chat starts with</span>
+                <div class="chats-next-controls">
+                    <button class="chats-next-pill" id="chatsPersonaBtn" type="button" aria-haspopup="true" title="Persona options" aria-label="Persona for next chat">
+                        <span class="chats-next-ava" aria-hidden="true">${personaAvatarHTML(persona)}</span>
+                        <span class="chats-next-name">${escapeHtml(personaName)}</span>
+                        ${NEXT_CHEVRON_SVG}
+                    </button>
+                    <button class="chats-next-pill model" id="chatsModelBtn" type="button" aria-haspopup="true" title="Switch model" aria-label="Model for next chat">
+                        <span class="chats-next-name" id="chatsModelName">${escapeHtml(modelName)}</span>
+                        ${NEXT_CHEVRON_SVG}
+                    </button>
+                </div>
             </div>
             <div class="section-list" id="chatsListBody"></div>
         </div>`;
     renderGroupedChatList(c.querySelector('#chatsListBody'));
     const nb = c.querySelector('#chatsNewBtn');
     if (nb) nb.addEventListener('click', startNewConversation);
+    const pb = c.querySelector('#chatsPersonaBtn');
+    if (pb) pb.addEventListener('click', (e) => { e.stopPropagation(); showPersonaPopover(pb); });
+    const mb = c.querySelector('#chatsModelBtn');
+    if (mb) mb.addEventListener('click', (e) => { e.stopPropagation(); showModelMenu(mb); });
 }

@@ -161,11 +161,14 @@ export const elements = {
     personaProfileEnabled: document.getElementById('personaProfileEnabled'),
     personaSectionFields: document.getElementById('personaSectionFields'),
     
-    // Status bar
+    // Status bar (chat-only; UIP-04) + composer usage footer
+    statusBar: document.getElementById('statusBar'),
+    chatPersonaAvatarBtn: document.getElementById('chatPersonaAvatarBtn'),
+    chatTitleBtn: document.getElementById('chatTitleBtn'),
+    chatTitleDisplay: document.getElementById('chatTitleDisplay'),
+    chatPersonaBtn: document.getElementById('chatPersonaBtn'),
     headerAssistantName: document.getElementById('headerAssistantName'),
-    modelIndicator: document.getElementById('modelIndicator'),
-    personaButton: document.getElementById('personaButton'),
-    modelButton: document.getElementById('modelButton'),
+    composerKeyHint: document.getElementById('composerKeyHint'),
     statusTokens: document.getElementById('statusTokens'),
     statusTokensBtn: document.getElementById('statusTokensBtn'),
     avatarToggleBtn: document.getElementById('avatarToggleBtn'),

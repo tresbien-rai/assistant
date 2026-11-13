@@ -27,9 +27,10 @@ How we work (branches, verification, merging, wrap-up) lives in
 > 2026-11-10: renamed app from Tessera to **Solier** (BR-02), fixed hardcoded brand
 > strings in `prompts/tessera.js` and `utils/personaBundle.js`, and recorded the
 > Editorial Serif wordmark note in `docs/UI_POLISH.md`.
-> 2026-11-12: shipped UI polish slices UIP-01 (#230), UIP-02 (#231), and UIP-03
-> (enriched navigation rail with Recent chats, drag-resize 200–360px, and locked
-> custom icons).
+> 2026-11-12: shipped UI polish slices UIP-01 (#230), UIP-02 (#231), UIP-03 (#233,
+> enriched navigation rail with Recent chats, drag-resize 200–360px, and locked
+> custom icons), and UIP-04 (#234, contextual chat-only top bar, composer Usage
+> counter, clean section headers, and unified Desktop/Phone alignment).
 
 ---
 
@@ -278,7 +279,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | 🚧 (UIP-01…03 ✅, UIP-04…08 📐) | UIP-01…08, #230, #231 | `../UI_POLISH.md` |
+| UI polish backlog | 🚧 (UIP-01…04 ✅, UIP-05…08 📐) | UIP-01…08, #230, #231, #233, #234 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -308,7 +309,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
      trait editor and workspace copy polish, sentence-case unification, and
      fixes for stale strings (welcome empty state, server-synced avatar note,
      file panel mode note, and composer placeholder).
-   - ~~**UIP-03**~~ *(shipped 2026-11-12)* — enriched navigation rail (`feat/uip-03-nav-rail`):
+   - ~~**UIP-03**~~ *(shipped 2026-11-12, #233)* — enriched navigation rail (`feat/uip-03-nav-rail`):
      header with accent `G5 low-notch squiggle` quill New chat button, top 4 sections,
      Recent chats (top 8 from every home, always keeping the open chat visible,
      Grouped by workspace default or Flat list in Appearance settings, hidden at
@@ -316,10 +317,14 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
      (default 220px, single hairline seam), ≥44px phone drawer targets, and locked
      `Open folder` / `Chats` bubble / `Wider card carousel` Personas / single-person
      Profile icons.
-   - **UIP-04** *(next target)* — contextual top status bar (chat-focused header
-     with Chat Title, Active Persona chip, Workspace breadcrumb, and distinct Avatar
-     PIP icon; clean non-chat section headers).
-   - **UIP-05** — Persona Editor sub-tabs (`Identity & Prompt` |
+   - ~~**UIP-04**~~ *(shipped 2026-11-12, #234)* — contextual top status bar (`feat/uip-04-top-bar`):
+     chat-only `.status-bar` with Stacked Title + Meta (persona avatar, clickable
+     chat title rename, persona name, `Workspace › Project` / muted `Chats (unfiled)`),
+     `22px` distinct Avatar PIP icon, `Usage: <count>` footer beneath composer opening
+     `Token Usage (This chat)`, clean non-chat section headers (hidden on desktop,
+     inline `☰` drawer button on phone), `Chats` header Quill `New chat` + `.chats-next-strip`
+     selectors, and unified `top`/`left` section alignment across Desktop & Phone.
+   - **UIP-05** *(next target)* — Persona Editor sub-tabs (`Identity & Prompt` |
      `Avatar & Expressions` | `Defaults & Capabilities`), live Persona Card
      preview beside identity fields, and inline model picker for `Fixed` mode.
    - **UIP-06** — Workspace/Project auto-save, visible `Chat`/`Edit` actions on

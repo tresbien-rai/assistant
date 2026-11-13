@@ -62,6 +62,8 @@ const impl = {
     refreshAddModelModal: null,
     renderChatThread: null,
     refreshContainerChats: null,
+    showPersonaPopover: null,
+    showModelMenu: null,
 };
 
 /**
@@ -109,6 +111,14 @@ export function currentSection() {
         return (c && (c.workspaceId || c.projectId)) ? 'workspaces' : 'chats';
     }
     return 'chats'; // 'chats' (and any fallback)
+}
+
+/**
+ * Shared inline drawer-open trigger embedded inside non-chat section headings
+ * and sub-page back rows (hidden at >= 768px where the desktop rail is visible).
+ */
+export function mobileMenuButtonHTML() {
+    return `<button class="menu-button inline-menu-button" type="button" data-open-sidebar aria-label="Open menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>`;
 }
 
 /** Repaint the navigation shell: rail highlight + contextual top bar + chrome. */
@@ -174,4 +184,14 @@ export function refreshContainerChats() {
  */
 export function renderChatThread() {
     return call('renderChatThread', arguments);
+}
+
+/** Open the Persona quick-switcher popover anchored to `anchorEl`. */
+export function showPersonaPopover() {
+    return call('showPersonaPopover', arguments);
+}
+
+/** Open the Model quick-switcher popover anchored to `anchorEl`. */
+export function showModelMenu() {
+    return call('showModelMenu', arguments);
 }

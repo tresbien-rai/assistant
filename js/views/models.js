@@ -23,7 +23,7 @@ import {
 import {
     persistSettings, autoSaveSettings, saveCatalogProviders, saveProviderKey,
     clearStoredApiKey, } from '../settings-store.js';
-import { navigate, updateUI, updateSettingsUI, registerShell } from '../shell.js';
+import { navigate, updateUI, updateSettingsUI, mobileMenuButtonHTML, registerShell } from '../shell.js';
 import { loadModelProfileIntoLayer } from '../model-layer.js';
 import { updateFixedPersonaPin } from '../settings-store.js';
 import { escapeHtml } from '../util/format.js';
@@ -127,7 +127,7 @@ export function renderModelDetail(provider, modelId) {
         .map(d => rules.overrides[d.path] ? { ...d, ...rules.overrides[d.path] } : d);
     let html = `
         <div class="model-detail-head">
-            <button class="back-link" id="modelDetailBack" type="button">‹ Models</button>
+            <div class="settings-view-crumb">${mobileMenuButtonHTML()}<button class="back-link" id="modelDetailBack" type="button">‹ Models</button></div>
             <div class="model-detail-title">
                 <span class="model-detail-name">${escapeHtml(entry.name)}</span>
                 ${roleBadgesHTML(isActive, isAuxModel(provider, modelId))}
@@ -1103,18 +1103,18 @@ export function setupModelsEvents() {
         }
     });
 
-    // The model menu opens from either the top-bar button (browsing) or the
-    // composer chip (in chat) — same menu, anchored to whichever was clicked.
-    [elements.modelButton, elements.composerModelButton].forEach((btn) => {
-        if (!btn) return;
-        btn.addEventListener('click', (e) => {
+    // The model menu opens from the composer chip (in chat) or the Chats page
+    // next-chat strip; wire the persistent composer chip here once.
+    if (elements.composerModelButton) {
+        elements.composerModelButton.addEventListener('click', (e) => {
             e.stopPropagation();
-            showModelMenu(btn);
+            showModelMenu(elements.composerModelButton);
         });
-    });
+    }
 }
 
-// Register the two region repaints the settings store reaches through the seam.
+// Register the two region repaints the settings store reaches through the seam,
+// plus showModelMenu for the Chats page's next-chat selector pill.
 // Runs at import time, before main.js's own body — Object.assign merges, so this
 // and main.js's registration coexist.
-registerShell({ renderModelsCatalog, refreshAddModelModal });
+registerShell({ renderModelsCatalog, refreshAddModelModal, showModelMenu });
