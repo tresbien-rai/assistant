@@ -230,13 +230,13 @@ Locked decisions & implementation (`feat/uip-05-persona-editor`):
 
 ## UIP-06 — Component UX, design system hygiene & accessibility
 
-**Status:** shipped (2026-11-13; Persona card actions Option A locked). Raised 2026-11-11.
+**Status:** shipped (2026-11-13, #237; Persona card actions Option A locked). Raised 2026-11-11.
 
 Quick wins and structural CSS/DOM hygiene from the 2026-11-11 audit (`feat/uip-06-polish`):
 - **Workspace & Project auto-save:** replaced `#cpSave` in `js/views/workspaces.js`
   with debounced (300ms) auto-save (`scheduleContainerSave` / `commitContainerSave`)
   and `flushContainerSave()` invoked from `renderMainView()` in `js/router.js`,
-  showing `#cpSaveStatus` (`Saved` / `Saving…` / `Name is required to save`).
+  showing `#cpSaveStatus` (`Saved` / `Saving…` / `Name is required to save` / `Failed to save`).
 - **Persona grid card actions (Option A):** `.persona-tile-open` (portrait +
   caption) activates the persona (`activatePersona`) and stays on the grid,
   while a persistent `.persona-tile-actions` footer holds `Chat` (`chatWithPersona`)

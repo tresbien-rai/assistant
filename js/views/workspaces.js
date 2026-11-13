@@ -33,7 +33,9 @@ const byActivityDesc = (a, b) => conversationActivityAt(b) - conversationActivit
 
 /** Debounce + pending payload for inline container Name/Instructions auto-save. */
 let containerSaveTimeout = null;
-let containerSaving = false;
+const savingCounts = new Map(); // `${kind}:${id}` -> queued + in-flight save count
+const savingQueues = new Map(); // `${kind}:${id}` -> Promise chain serializing writes per container
+const rollbackSnapshots = new Map(); // `${kind}:${id}` -> { name, instructions } of last confirmed state
 let pendingContainerSave = null; // { kind, id, name, instructions }
 
 function bindRowActivate(el, handler) {
@@ -187,6 +189,10 @@ async function deleteProjectPrompt(projectId) {
     }
 
     delete state.projects[projectId];
+    const key = `project:${projectId}`;
+    savingCounts.delete(key);
+    savingQueues.delete(key);
+    rollbackSnapshots.delete(key);
     if (pendingContainerSave && pendingContainerSave.kind === 'project' && pendingContainerSave.id === projectId) {
         if (containerSaveTimeout) { clearTimeout(containerSaveTimeout); containerSaveTimeout = null; }
         pendingContainerSave = null;
@@ -278,8 +284,16 @@ async function deleteWorkspacePrompt(workspaceId) {
 
     // Mirror the server-side cascade locally: projects gone, chats unfiled.
     delete state.workspaces[workspaceId];
+    savingCounts.delete(`workspace:${workspaceId}`);
+    savingQueues.delete(`workspace:${workspaceId}`);
+    rollbackSnapshots.delete(`workspace:${workspaceId}`);
     for (const pid of Object.keys(state.projects)) {
-        if (state.projects[pid].workspaceId === workspaceId) delete state.projects[pid];
+        if (state.projects[pid].workspaceId === workspaceId) {
+            delete state.projects[pid];
+            savingCounts.delete(`project:${pid}`);
+            savingQueues.delete(`project:${pid}`);
+            rollbackSnapshots.delete(`project:${pid}`);
+        }
     }
     if (pendingContainerSave && (
         (pendingContainerSave.kind === 'workspace' && pendingContainerSave.id === workspaceId) ||
@@ -667,19 +681,27 @@ export function refreshContainerChats() {
     }
 }
 
-function syncContainerSaveStatus(kind, id, emptyName = false) {
+function syncContainerSaveStatus(kind, id, { failed = false } = {}) {
     const page = elements.messagesContainer.querySelector('.container-page');
     if (!page || page.dataset.kind !== kind || page.dataset.id !== id) return;
     const statusEl = page.querySelector('#cpSaveStatus');
     if (!statusEl) return;
 
-    const pending = containerSaving || (!!containerSaveTimeout && pendingContainerSave?.kind === kind && pendingContainerSave?.id === id);
+    const nameEl = page.querySelector('#cpName');
+    const emptyName = !(nameEl?.value || '').trim();
+    const key = `${kind}:${id}`;
+    const inFlight = (savingCounts.get(key) || 0) > 0;
+    const debounced = !!containerSaveTimeout && pendingContainerSave?.kind === kind && pendingContainerSave?.id === id;
+    const pending = inFlight || debounced;
+
     statusEl.classList.toggle('pending', !emptyName && pending);
-    statusEl.classList.toggle('warn', emptyName);
+    statusEl.classList.toggle('warn', emptyName || (failed && !pending));
     if (emptyName) {
         statusEl.textContent = 'Name is required to save';
     } else if (pending) {
         statusEl.textContent = 'Saving…';
+    } else if (failed) {
+        statusEl.textContent = 'Failed to save';
     } else {
         statusEl.textContent = 'Saved';
     }
@@ -690,7 +712,7 @@ function scheduleContainerSave(kind, id, nameEl, instrEl) {
     if (!name) {
         if (containerSaveTimeout) { clearTimeout(containerSaveTimeout); containerSaveTimeout = null; }
         pendingContainerSave = null;
-        syncContainerSaveStatus(kind, id, true);
+        syncContainerSaveStatus(kind, id);
         return;
     }
 
@@ -705,7 +727,7 @@ function scheduleContainerSave(kind, id, nameEl, instrEl) {
         containerSaveTimeout = null;
         commitContainerSave();
     }, 300);
-    syncContainerSaveStatus(kind, id, false);
+    syncContainerSaveStatus(kind, id);
 }
 
 /**
@@ -716,43 +738,77 @@ export function flushContainerSave() {
     if (!containerSaveTimeout) return;
     clearTimeout(containerSaveTimeout);
     containerSaveTimeout = null;
-    commitContainerSave();
+    return commitContainerSave();
 }
 
-async function commitContainerSave() {
+function commitContainerSave() {
     const payload = pendingContainerSave;
-    if (!payload) return;
+    if (!payload) return null;
     pendingContainerSave = null;
 
     const { kind, id, name, instructions } = payload;
     const store = kind === 'workspace' ? state.workspaces : state.projects;
-    if (!store[id]) return;
+    const existing = store[id];
+    if (!existing) return null;
 
-    // Optimistic local sync so an immediate navigate/repaint doesn't briefly revert the fields.
-    store[id] = { ...store[id], name, instructions };
-
-    containerSaving = true;
-    syncContainerSaveStatus(kind, id, false);
-    try {
-        if (kind === 'workspace') {
-            const u = await API.workspaces.update(id, { name, instructions });
-            if (state.workspaces[id]) {
-                state.workspaces[id] = { ...state.workspaces[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
-            }
-        } else {
-            const u = await API.projects.update(id, { name, instructions });
-            if (state.projects[id]) {
-                state.projects[id] = { ...state.projects[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
-            }
-        }
-    } catch (err) {
-        console.error('Failed to save container:', err);
-        displayError(err, { action: 'save changes' });
-    } finally {
-        containerSaving = false;
-        syncContainerSaveStatus(kind, id, false);
+    const key = `${kind}:${id}`;
+    if (!rollbackSnapshots.has(key)) {
+        rollbackSnapshots.set(key, { name: existing.name, instructions: existing.instructions });
     }
-    updateWorkspaceUI(); // refresh breadcrumb + sidebar names (leaves the page intact)
+    // Optimistic local sync so an immediate navigate/repaint doesn't briefly revert the fields.
+    store[id] = { ...existing, name, instructions };
+
+    savingCounts.set(key, (savingCounts.get(key) || 0) + 1);
+    syncContainerSaveStatus(kind, id);
+
+    const runSave = async () => {
+        if (!store[id]) return;
+
+        let failed = false;
+        try {
+            if (kind === 'workspace') {
+                const u = await API.workspaces.update(id, { name, instructions });
+                if (store[id]) rollbackSnapshots.set(key, { name: u.name, instructions: u.instructions });
+                // Only write back server response if no newer edit is queued or in flight.
+                if (state.workspaces[id] && (savingCounts.get(key) || 0) === 1 && !(pendingContainerSave?.kind === kind && pendingContainerSave?.id === id)) {
+                    state.workspaces[id] = { ...state.workspaces[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
+                }
+            } else {
+                const u = await API.projects.update(id, { name, instructions });
+                if (store[id]) rollbackSnapshots.set(key, { name: u.name, instructions: u.instructions });
+                if (state.projects[id] && (savingCounts.get(key) || 0) === 1 && !(pendingContainerSave?.kind === kind && pendingContainerSave?.id === id)) {
+                    state.projects[id] = { ...state.projects[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
+                }
+            }
+        } catch (err) {
+            failed = true;
+            console.error('Failed to save container:', err);
+            const fallback = rollbackSnapshots.get(key);
+            if (fallback && store[id] && (savingCounts.get(key) || 0) === 1
+                && store[id].name === name && store[id].instructions === instructions) {
+                store[id] = { ...store[id], ...fallback };
+            }
+            displayError(err, { action: 'save changes' });
+        } finally {
+            const nextCount = Math.max(0, (savingCounts.get(key) || 1) - 1);
+            if (nextCount === 0) {
+                savingCounts.delete(key);
+                rollbackSnapshots.delete(key);
+            } else {
+                savingCounts.set(key, nextCount);
+            }
+            syncContainerSaveStatus(kind, id, { failed });
+        }
+        if (!failed) updateWorkspaceUI(); // refresh breadcrumb + sidebar names (leaves the page intact)
+    };
+
+    const prev = savingQueues.get(key) || Promise.resolve();
+    const next = prev.then(runSave, runSave);
+    savingQueues.set(key, next);
+    next.finally(() => {
+        if (savingQueues.get(key) === next) savingQueues.delete(key);
+    });
+    return next;
 }
 
 export function wireContainerPage(kind, id) {
@@ -781,7 +837,7 @@ export function wireContainerPage(kind, id) {
         });
     }
     if (instrEl) instrEl.addEventListener('input', onEdit);
-    syncContainerSaveStatus(kind, id, !(nameEl?.value || '').trim());
+    syncContainerSaveStatus(kind, id);
 
     // Breadcrumb out of the page (into the main-area router).
     page.querySelectorAll('.cp-crumb[data-nav]').forEach(el => el.addEventListener('click', () => {

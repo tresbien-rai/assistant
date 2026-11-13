@@ -534,6 +534,12 @@ function renderModelRoles() {
 export function renderModelsCatalog() {
     const c = document.getElementById('modelsCatalog');
     if (!c) return;
+    const activeCard = c.contains(document.activeElement)
+        ? document.activeElement.closest('[data-model-select]')
+        : null;
+    const prevSelected = activeCard
+        ? { id: activeCard.dataset.modelSelect, provider: activeCard.dataset.provider }
+        : null;
     renderProviderChips(); // chips + catalog always render together, stay in sync
     renderModelRoles();    // and so does the roles panel — both read the same state
     const layer = getActiveModelConfig();
@@ -615,6 +621,13 @@ export function renderModelsCatalog() {
             e.stopPropagation();
             openModelModal(btn.dataset.addProvider);
         }));
+
+    if (prevSelected) {
+        const nextCard = [...c.querySelectorAll('[data-model-select]')].find(
+            el => el.dataset.modelSelect === prevSelected.id && el.dataset.provider === prevSelected.provider
+        );
+        if (nextCard) nextCard.focus({ preventScroll: true });
+    }
 }
 
 /**

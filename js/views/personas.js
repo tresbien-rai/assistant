@@ -225,6 +225,9 @@ async function startNewPersona() {
  */
 export function renderPersonasListMain() {
     const c = elements.messagesContainer;
+    const prevOpen = c.contains(document.activeElement)
+        ? document.activeElement.closest('[data-persona-open]')?.dataset.personaOpen
+        : null;
     const personas = Object.values(state.personas)
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
@@ -287,6 +290,11 @@ export function renderPersonasListMain() {
         btn.addEventListener('click', (e) => { e.stopPropagation(); editPersona(btn.dataset.personaEdit); }));
     c.querySelectorAll('[data-persona-menu]').forEach(btn =>
         btn.addEventListener('click', (e) => { e.stopPropagation(); showPersonaCardMenu(btn, btn.dataset.personaMenu); }));
+
+    if (prevOpen) {
+        const nextOpen = [...c.querySelectorAll('[data-persona-open]')].find(el => el.dataset.personaOpen === prevOpen);
+        if (nextOpen) nextOpen.focus({ preventScroll: true });
+    }
 }
 
 /** Make a persona active from the Personas section (stays on the section). */
@@ -469,7 +477,6 @@ function showPersonaCardMenu(anchorEl, personaId) {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.innerHTML = `
-        <button class="context-menu-item" data-action="edit">Edit</button>
         <button class="context-menu-item" data-action="export">Export…</button>
         <button class="context-menu-item" data-action="export-full">Export (full quality)</button>
         <button class="context-menu-item danger" data-action="delete">Delete</button>
@@ -480,8 +487,7 @@ function showPersonaCardMenu(anchorEl, personaId) {
         item.addEventListener('click', () => {
             menu.remove();
             const action = item.dataset.action;
-            if (action === 'edit') editPersona(personaId);
-            else if (action === 'export') exportPersona(personaId);
+            if (action === 'export') exportPersona(personaId);
             else if (action === 'export-full') exportPersona(personaId, { fullQuality: true });
             else if (action === 'delete') deletePersonaPrompt(personaId);
         });

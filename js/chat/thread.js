@@ -655,6 +655,7 @@ export function renderMessageAttachments(attachments, containerDiv) {
 
             if (att.type === 'generated') {
                 const downloadBtn = document.createElement('button');
+                downloadBtn.type = 'button';
                 downloadBtn.className = 'download-btn';
                 downloadBtn.innerHTML = '&#8681;'; // Down arrow
                 downloadBtn.title = 'Download image';
