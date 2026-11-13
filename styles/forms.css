@@ -463,6 +463,9 @@
 }
 
 .settings-view-crumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     max-width: var(--section-max-width);
     margin: 0 auto 8px;
 }

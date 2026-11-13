@@ -426,7 +426,12 @@ export async function renderProfileView() {
     } catch (err) {
         displayError(err, { action: 'load your profile' });
         elements.profileView.innerHTML =
-            `<h1 class="settings-view-title">Profile</h1>
+            `<div class="section-head">
+                <div class="section-head-left">
+                    ${mobileMenuButtonHTML()}
+                    <h1 class="section-title">Profile</h1>
+                </div>
+             </div>
              <div class="settings-modal-body"><p class="help-text">Could not load your profile.</p></div>`;
         return;
     }

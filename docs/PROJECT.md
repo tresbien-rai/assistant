@@ -27,9 +27,10 @@ How we work (branches, verification, merging, wrap-up) lives in
 > 2026-11-10: renamed app from Tessera to **Solier** (BR-02), fixed hardcoded brand
 > strings in `prompts/tessera.js` and `utils/personaBundle.js`, and recorded the
 > Editorial Serif wordmark note in `docs/UI_POLISH.md`.
-> 2026-11-12: shipped UI polish slices UIP-01 (#230), UIP-02 (#231), and UIP-03
-> (enriched navigation rail with Recent chats, drag-resize 200–360px, and locked
-> custom icons).
+> 2026-11-12: shipped UI polish slices UIP-01 (#230), UIP-02 (#231), UIP-03 (#233,
+> enriched navigation rail with Recent chats, drag-resize 200–360px, and locked
+> custom icons), and UIP-04 (#234, contextual chat-only top bar, composer Usage
+> counter, clean section headers, and unified Desktop/Phone alignment).
 
 ---
 
@@ -278,7 +279,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | 🚧 (UIP-01…04 ✅, UIP-05…08 📐) | UIP-01…08, #230, #231, #233 | `../UI_POLISH.md` |
+| UI polish backlog | 🚧 (UIP-01…04 ✅, UIP-05…08 📐) | UIP-01…08, #230, #231, #233, #234 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -316,7 +317,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
      (default 220px, single hairline seam), ≥44px phone drawer targets, and locked
      `Open folder` / `Chats` bubble / `Wider card carousel` Personas / single-person
      Profile icons.
-   - ~~**UIP-04**~~ *(shipped 2026-11-12)* — contextual top status bar (`feat/uip-04-top-bar`):
+   - ~~**UIP-04**~~ *(shipped 2026-11-12, #234)* — contextual top status bar (`feat/uip-04-top-bar`):
      chat-only `.status-bar` with Stacked Title + Meta (persona avatar, clickable
      chat title rename, persona name, `Workspace › Project` / muted `Chats (unfiled)`),
      `22px` distinct Avatar PIP icon, `Usage: <count>` footer beneath composer opening

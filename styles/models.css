@@ -10,10 +10,6 @@
     gap: 12px;
 }
 
-.models-head .settings-view-title {
-    margin: 0;
-}
-
 .models-catalog {
     max-width: var(--section-max-width);
     margin: 16px auto 8px;
@@ -289,6 +285,11 @@
     align-items: center;
     gap: 10px;
     margin-bottom: 2px;
+}
+
+.model-detail-head .settings-view-crumb {
+    width: 100%;
+    margin: 0;
 }
 
 .back-link {
