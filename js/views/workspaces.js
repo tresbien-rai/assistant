@@ -31,17 +31,32 @@ const byUpdatedDesc = (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0);
 // conversationActivityAt).
 const byActivityDesc = (a, b) => conversationActivityAt(b) - conversationActivityAt(a);
 
+/** Debounce + pending payload for inline container Name/Instructions auto-save. */
+let containerSaveTimeout = null;
+let containerSaving = false;
+let pendingContainerSave = null; // { kind, id, name, instructions }
+
+function bindRowActivate(el, handler) {
+    el.addEventListener('click', handler);
+    el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handler();
+        }
+    });
+}
+
 function workspaceRowHTML(w) {
     const pc = w.projectCount || 0;
     const fc = w.fileCount || 0;
     const meta = `${pc} project${pc !== 1 ? 's' : ''} · ${fc} file${fc !== 1 ? 's' : ''}`;
     return `
         <div class="project-item" data-workspace-id="${w.id}">
-            <div class="project-info ws-info" data-workspace-id="${w.id}">
+            <div class="project-info ws-info" data-workspace-id="${w.id}" role="button" tabindex="0">
                 <span class="project-name">${escapeHtml(w.name || 'Untitled workspace')}</span>
                 <span class="project-meta">${meta}</span>
             </div>
-            <button class="project-menu-btn ws-menu-btn" data-workspace-id="${w.id}" title="Options">⋯</button>
+            <button type="button" class="project-menu-btn ws-menu-btn" data-workspace-id="${w.id}" title="Options" aria-label="Workspace options">⋯</button>
         </div>
     `;
 }
@@ -51,11 +66,11 @@ function projectRowHTML(p) {
     const meta = `${count} file${count !== 1 ? 's' : ''}`;
     return `
         <div class="project-item" data-project-id="${p.id}">
-            <div class="project-info" data-project-id="${p.id}">
+            <div class="project-info" data-project-id="${p.id}" role="button" tabindex="0">
                 <span class="project-name">${escapeHtml(p.name || 'Untitled project')}</span>
                 <span class="project-meta">${meta}</span>
             </div>
-            <button class="project-menu-btn" data-project-id="${p.id}" title="Options">⋯</button>
+            <button type="button" class="project-menu-btn" data-project-id="${p.id}" title="Options" aria-label="Project options">⋯</button>
         </div>
     `;
 }
@@ -172,6 +187,10 @@ async function deleteProjectPrompt(projectId) {
     }
 
     delete state.projects[projectId];
+    if (pendingContainerSave && pendingContainerSave.kind === 'project' && pendingContainerSave.id === projectId) {
+        if (containerSaveTimeout) { clearTimeout(containerSaveTimeout); containerSaveTimeout = null; }
+        pendingContainerSave = null;
+    }
 
     // If we're viewing the deleted project's page, climb to its workspace.
     const v = state.ui.mainView || {};
@@ -262,6 +281,13 @@ async function deleteWorkspacePrompt(workspaceId) {
     for (const pid of Object.keys(state.projects)) {
         if (state.projects[pid].workspaceId === workspaceId) delete state.projects[pid];
     }
+    if (pendingContainerSave && (
+        (pendingContainerSave.kind === 'workspace' && pendingContainerSave.id === workspaceId) ||
+        (pendingContainerSave.kind === 'project' && !state.projects[pendingContainerSave.id])
+    )) {
+        if (containerSaveTimeout) { clearTimeout(containerSaveTimeout); containerSaveTimeout = null; }
+        pendingContainerSave = null;
+    }
     for (const c of Object.values(state.conversations)) {
         if (c.workspaceId === workspaceId) {
             c.workspaceId = null;
@@ -317,12 +343,12 @@ export function renderBreadcrumb() {
 
     let html = '';
     if (!workspace && !project) {
-        html = `<span class="breadcrumb-seg breadcrumb-unfiled" data-nav="chats"><span>Chats (unfiled)</span></span>`;
+        html = `<button type="button" class="breadcrumb-seg breadcrumb-unfiled" data-nav="chats"><span>Chats (unfiled)</span></button>`;
     } else {
-        html = `<span class="breadcrumb-seg" data-nav="workspace">${BREADCRUMB_FOLDER_SVG}<span>${escapeHtml(workspace ? (workspace.name || 'Untitled workspace') : 'Workspace')}</span></span>`;
+        html = `<button type="button" class="breadcrumb-seg" data-nav="workspace">${BREADCRUMB_FOLDER_SVG}<span>${escapeHtml(workspace ? (workspace.name || 'Untitled workspace') : 'Workspace')}</span></button>`;
         if (project) {
             html += `<span class="breadcrumb-sep" aria-hidden="true">›</span>`;
-            html += `<span class="breadcrumb-seg" data-nav="project"><span>${escapeHtml(project.name || 'Untitled project')}</span></span>`;
+            html += `<button type="button" class="breadcrumb-seg" data-nav="project"><span>${escapeHtml(project.name || 'Untitled project')}</span></button>`;
         }
     }
     el.innerHTML = html;
@@ -420,7 +446,7 @@ export function renderWorkspacesListMain() {
     const nb = c.querySelector('#wsNewBtn');
     if (nb) nb.addEventListener('click', startNewWorkspace);
     c.querySelectorAll('.ws-info[data-workspace-id]').forEach(el =>
-        el.addEventListener('click', () => navigate({ type: 'workspace', id: el.dataset.workspaceId })));
+        bindRowActivate(el, () => navigate({ type: 'workspace', id: el.dataset.workspaceId })));
     c.querySelectorAll('.ws-menu-btn[data-workspace-id]').forEach(btn =>
         btn.addEventListener('click', (e) => { e.stopPropagation(); showWorkspaceContextMenu(btn, btn.dataset.workspaceId); }));
 }
@@ -460,8 +486,8 @@ export function renderContainerPage(kind, id) {
 
     // Breadcrumb row at the top of the page (climbs out of the page).
     const crumbs = isWs
-        ? `<span class="cp-crumb" data-nav="workspaces">‹ Workspaces</span>`
-        : `<span class="cp-crumb" data-nav="workspace">‹ ${escapeHtml(workspace ? (workspace.name || 'Workspace') : 'Workspace')}</span>`;
+        ? `<button type="button" class="cp-crumb" data-nav="workspaces">‹ Workspaces</button>`
+        : `<button type="button" class="cp-crumb" data-nav="workspace">‹ ${escapeHtml(workspace ? (workspace.name || 'Workspace') : 'Workspace')}</button>`;
 
     const instrPlaceholder = isWs
         ? 'Shared background, goals, or conventions included in every chat in this workspace and its projects (optional).'
@@ -492,8 +518,7 @@ export function renderContainerPage(kind, id) {
                 <div class="textarea-resize-handle" aria-hidden="true" title="Drag to resize"></div>
             </div>
             <div class="cp-save-row">
-                <button class="cp-save-btn" id="cpSave" type="button" disabled>Save</button>
-                <span class="cp-save-hint" id="cpSaveHint" aria-live="polite"></span>
+                <span class="cp-save-status" id="cpSaveStatus" aria-live="polite">Saved</span>
             </div>
 
             <div class="cp-section">
@@ -642,6 +667,94 @@ export function refreshContainerChats() {
     }
 }
 
+function syncContainerSaveStatus(kind, id, emptyName = false) {
+    const page = elements.messagesContainer.querySelector('.container-page');
+    if (!page || page.dataset.kind !== kind || page.dataset.id !== id) return;
+    const statusEl = page.querySelector('#cpSaveStatus');
+    if (!statusEl) return;
+
+    const pending = containerSaving || (!!containerSaveTimeout && pendingContainerSave?.kind === kind && pendingContainerSave?.id === id);
+    statusEl.classList.toggle('pending', !emptyName && pending);
+    statusEl.classList.toggle('warn', emptyName);
+    if (emptyName) {
+        statusEl.textContent = 'Name is required to save';
+    } else if (pending) {
+        statusEl.textContent = 'Saving…';
+    } else {
+        statusEl.textContent = 'Saved';
+    }
+}
+
+function scheduleContainerSave(kind, id, nameEl, instrEl) {
+    const name = (nameEl?.value || '').trim();
+    if (!name) {
+        if (containerSaveTimeout) { clearTimeout(containerSaveTimeout); containerSaveTimeout = null; }
+        pendingContainerSave = null;
+        syncContainerSaveStatus(kind, id, true);
+        return;
+    }
+
+    pendingContainerSave = {
+        kind,
+        id,
+        name,
+        instructions: instrEl?.value || '',
+    };
+    if (containerSaveTimeout) clearTimeout(containerSaveTimeout);
+    containerSaveTimeout = setTimeout(() => {
+        containerSaveTimeout = null;
+        commitContainerSave();
+    }, 300);
+    syncContainerSaveStatus(kind, id, false);
+}
+
+/**
+ * Flush any pending container Name/Instructions save immediately.
+ * Called by the router before leaving or re-rendering a container page.
+ */
+export function flushContainerSave() {
+    if (!containerSaveTimeout) return;
+    clearTimeout(containerSaveTimeout);
+    containerSaveTimeout = null;
+    commitContainerSave();
+}
+
+async function commitContainerSave() {
+    const payload = pendingContainerSave;
+    if (!payload) return;
+    pendingContainerSave = null;
+
+    const { kind, id, name, instructions } = payload;
+    const store = kind === 'workspace' ? state.workspaces : state.projects;
+    if (!store[id]) return;
+
+    // Optimistic local sync so an immediate navigate/repaint doesn't briefly revert the fields.
+    store[id] = { ...store[id], name, instructions };
+
+    containerSaving = true;
+    syncContainerSaveStatus(kind, id, false);
+    try {
+        if (kind === 'workspace') {
+            const u = await API.workspaces.update(id, { name, instructions });
+            if (state.workspaces[id]) {
+                state.workspaces[id] = { ...state.workspaces[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
+            }
+        } else {
+            const u = await API.projects.update(id, { name, instructions });
+            if (state.projects[id]) {
+                state.projects[id] = { ...state.projects[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
+            }
+        }
+    } catch (err) {
+        console.error('Failed to save container:', err);
+        displayError(err, { action: 'save changes' });
+    } finally {
+        containerSaving = false;
+        syncContainerSaveStatus(kind, id, false);
+    }
+    updateWorkspaceUI(); // refresh breadcrumb + sidebar names (leaves the page intact)
+}
+
 export function wireContainerPage(kind, id) {
     const page = elements.messagesContainer.querySelector('.container-page');
     if (!page) return;
@@ -651,20 +764,24 @@ export function wireContainerPage(kind, id) {
 
     const nameEl = page.querySelector('#cpName');
     const instrEl = page.querySelector('#cpInstructions');
-    const saveBtn = page.querySelector('#cpSave');
-    const hintEl = page.querySelector('#cpSaveHint');
 
     // Set values via property (avoids HTML-escaping pitfalls in attributes/body).
     if (nameEl) nameEl.value = entity.name || '';
     if (instrEl) instrEl.value = entity.instructions || '';
 
-    const markDirty = () => { if (saveBtn) saveBtn.disabled = false; if (hintEl) hintEl.textContent = ''; };
+    const onEdit = () => scheduleContainerSave(kind, id, nameEl, instrEl);
     if (nameEl) {
-        nameEl.addEventListener('input', markDirty);
-        nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveBtn?.click(); } });
+        nameEl.addEventListener('input', onEdit);
+        nameEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                flushContainerSave();
+                nameEl.blur();
+            }
+        });
     }
-    if (instrEl) instrEl.addEventListener('input', markDirty);
-    if (saveBtn) saveBtn.addEventListener('click', () => saveContainerEdits(kind, id, { saveBtn, nameEl, instrEl, hintEl }));
+    if (instrEl) instrEl.addEventListener('input', onEdit);
+    syncContainerSaveStatus(kind, id, !(nameEl?.value || '').trim());
 
     // Breadcrumb out of the page (into the main-area router).
     page.querySelectorAll('.cp-crumb[data-nav]').forEach(el => el.addEventListener('click', () => {
@@ -686,7 +803,7 @@ export function wireContainerPage(kind, id) {
 
     // Project rows (workspace page): open on the info area, ⋯ menu for edit/delete.
     page.querySelectorAll('.project-info[data-project-id]').forEach(el =>
-        el.addEventListener('click', () => openContainerPage('project', el.dataset.projectId)));
+        bindRowActivate(el, () => openContainerPage('project', el.dataset.projectId)));
     page.querySelectorAll('.project-menu-btn[data-project-id]').forEach(btn =>
         btn.addEventListener('click', (e) => { e.stopPropagation(); showProjectMenu(btn, btn.dataset.projectId); }));
 
@@ -701,47 +818,6 @@ export function wireContainerPage(kind, id) {
     // work — see the note in components/collapsible.js about why this must not
     // re-render the page (the Instructions box holds unsaved text).
     wireSectionToggles(page);
-}
-
-/**
- * Persist the inline name + instructions edits for a container.
- * @param {'workspace'|'project'} kind
- * @param {string} id
- * @param {{saveBtn:HTMLElement, nameEl:HTMLInputElement, instrEl:HTMLTextAreaElement, hintEl:HTMLElement}} els
- */
-async function saveContainerEdits(kind, id, els) {
-    const { saveBtn, nameEl, instrEl, hintEl } = els;
-    const name = (nameEl?.value || '').trim();
-    const instructions = instrEl?.value || '';
-    const label = kind === 'workspace' ? 'Workspace' : 'Project';
-
-    if (!name) {
-        showToast(`${label} name is required.`, { type: 'error' });
-        nameEl?.focus();
-        return;
-    }
-
-    if (saveBtn) saveBtn.disabled = true;
-    try {
-        if (kind === 'workspace') {
-            const u = await API.workspaces.update(id, { name, instructions });
-            state.workspaces[id] = { ...state.workspaces[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
-        } else {
-            const u = await API.projects.update(id, { name, instructions });
-            state.projects[id] = { ...state.projects[id], name: u.name, instructions: u.instructions, updatedAt: u.updatedAt };
-        }
-    } catch (err) {
-        console.error('Failed to save container:', err);
-        displayError(err, { action: 'save changes' });
-        if (saveBtn) saveBtn.disabled = false;
-        return;
-    }
-
-    if (hintEl) {
-        hintEl.textContent = 'Saved';
-        setTimeout(() => { if (hintEl.isConnected) hintEl.textContent = ''; }, 1500);
-    }
-    updateWorkspaceUI(); // refresh breadcrumb + sidebar names (leaves the page intact)
 }
 
 /** The files API namespace for a container kind. */

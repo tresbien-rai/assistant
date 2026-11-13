@@ -21,7 +21,7 @@ import { elements, scrollToBottom } from '../dom.js';
 import { API } from '../api-client.js';
 import { CONFIG } from '../config.js';
 import { getActivePersona, getActiveConversation } from '../state.js';
-import { renderRail, registerShell } from '../shell.js';
+import { navigate, renderRail, registerShell } from '../shell.js';
 import { getActiveModelConfig } from '../model-layer.js';
 import { saveConversations, createConversation } from '../views/chats.js';
 import { updateStatusBar } from '../status-bar.js';
@@ -241,8 +241,11 @@ export function renderChatThread() {
             <div class="welcome-message">
                 <h1>${hasApiKey ? escapeHtml(assistantName) : `Welcome to ${escapeHtml(CONFIG.brand)}`}</h1>
                 <p>${hasApiKey ? `Start a conversation with ${escapeHtml(assistantName)}.` : 'Add an API key in <strong>Models</strong> to start a conversation.'}</p>
+                ${hasApiKey ? '' : '<button type="button" class="btn btn-primary btn-pill welcome-models-btn" id="welcomeModelsBtn">Go to Models</button>'}
             </div>
         `;
+        const modelsBtn = elements.messagesContainer.querySelector('#welcomeModelsBtn');
+        if (modelsBtn) modelsBtn.addEventListener('click', () => navigate({ type: 'models' }));
         return;
     }
 

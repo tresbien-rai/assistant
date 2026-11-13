@@ -230,29 +230,39 @@ Locked decisions & implementation (`feat/uip-05-persona-editor`):
 
 ## UIP-06 — Component UX, design system hygiene & accessibility
 
-**Status:** open, agreed 2026-11-11.
+**Status:** shipped (2026-11-13; Persona card actions Option A locked). Raised 2026-11-11.
 
-Quick wins and structural CSS/DOM hygiene from the 2026-11-11 audit:
-- **Workspace & Project auto-save:** auto-save container Name and Instructions
-  (`#cpName`, `#cpInstructions` in `js/views/workspaces.js`) with debounce and
-  flush-on-navigate, matching `Profile` and every other form in the app so
-  unclicked `Save` edits are never silently lost.
-- **Persona grid card actions:** surface visible `Chat` and `Edit` actions on
-  `.persona-tile` cards (`js/views/personas.js`) instead of hiding both in the
-  hover-only `⋯` menu.
-- **Onboarding empty state:** when no API key is saved, provide a clickable
-  action button that navigates directly to `Models` (`navigate({ type: 'models' })`).
-- **Button system consolidation:** unify the 13+ competing button classes onto
-  consistent token-driven primitives in `styles/buttons.css` and remove dead
-  pre-WR-07 CSS selectors.
+Quick wins and structural CSS/DOM hygiene from the 2026-11-11 audit (`feat/uip-06-polish`):
+- **Workspace & Project auto-save:** replaced `#cpSave` in `js/views/workspaces.js`
+  with debounced (300ms) auto-save (`scheduleContainerSave` / `commitContainerSave`)
+  and `flushContainerSave()` invoked from `renderMainView()` in `js/router.js`,
+  showing `#cpSaveStatus` (`Saved` / `Saving…` / `Name is required to save`).
+- **Persona grid card actions (Option A):** `.persona-tile-open` (portrait +
+  caption) activates the persona (`activatePersona`) and stays on the grid,
+  while a persistent `.persona-tile-actions` footer holds `Chat` (`chatWithPersona`)
+  and `Edit` (`editPersona`), and `.persona-tile-menu` (`⋯`) reveals on hover,
+  `:focus-within`, and `:focus-visible` (always visible on touch/phone).
+- **Onboarding empty state:** rendered clickable `Go to Models` (`#welcomeModelsBtn`)
+  in `.welcome-message` when `!hasApiKey`, calling `navigate({ type: 'models' })`.
+- **Button system consolidation & dead CSS cleanup:** standardized `.btn`,
+  `.btn-pill`, `.btn-sm`, `.btn-primary`, `.btn-soft-accent`, `.btn-secondary`,
+  `.btn-danger`, `.btn-danger-outline`, and `.btn-danger-quiet` in
+  `styles/buttons.css`; fixed `#copyRequestBtn` in `index.html` (`modal-btn primary`
+  with `type="button"`); removed dead pre-WR-07 CSS selectors across `base.css`,
+  `buttons.css`, `forms.css`, `models.css`, and `views.css`.
 - **CSS & accessibility fixes:**
-  - Fix undefined `var(--border)` → `var(--border-color)` on Markdown tables and
+  - Fixed undefined `var(--border)` → `var(--border-color)` on Markdown tables and
     `<hr>` dividers in `styles/chat.css`.
-  - Replace all 21 `transition: all` declarations (including 4 inside
-    `#modelModal` `.modal-overlay`) with explicit property lists.
-  - Make clickable list rows/cards (`.conversation-info`, `.model-card-open`,
-    `.ws-info`, `.project-info`, `.persona-tile`, `.cp-crumb`) keyboard-reachable
-    and reveal hover-only `⋯` menus on `:focus-within` / `:focus-visible`.
+  - Replaced all 21 `transition: all` declarations across `styles/` (including
+    `.sidebar-overlay`, `.floating-avatar`, `.avatar-image`, and `#modelModal`
+    buttons/cards) with explicit property lists.
+  - Added `role="button" tabindex="0"` + `Enter`/`Space` handlers on
+    `.conversation-info`, `.model-card-open`, `.ws-info`, `.project-info`, and
+    `[data-persona-open]`; converted `#personaEditBack`, `#presetEditorBack`,
+    `.cp-crumb`, and `.breadcrumb-seg` to native `<button type="button">` elements;
+    added `aria-label`s to `⋯` row/card menus; and revealed hover-only controls
+    (`.persona-tile-menu`, `.attachment-image-wrapper .download-btn`) on
+    `:focus-within` / `:focus-visible`.
 
 ---
 

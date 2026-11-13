@@ -1502,7 +1502,7 @@ function setupEventListeners() {
 
     // Close any open context menus when clicking elsewhere
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.context-menu') && !e.target.closest('.conversation-menu-btn') && !e.target.closest('.persona-menu-btn') && !e.target.closest('.project-menu-btn')) {
+        if (!e.target.closest('.context-menu') && !e.target.closest('.conversation-menu-btn') && !e.target.closest('.persona-tile-menu') && !e.target.closest('.project-menu-btn')) {
             const existingMenu = document.querySelector('.context-menu');
             if (existingMenu) existingMenu.remove();
         }

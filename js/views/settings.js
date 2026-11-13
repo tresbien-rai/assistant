@@ -484,7 +484,7 @@ export function renderPresetEditor() {
 
     elements.presetEditor.innerHTML = `
         <div class="preset-editor-head">
-            <span class="cp-crumb" id="presetEditorBack">‹ Prompt presets</span>
+            <button type="button" class="cp-crumb" id="presetEditorBack">‹ Prompt presets</button>
             <span class="preset-editor-head-actions">
                 <span class="preset-save-status" id="presetSaveStatus"></span>
                 <button type="button" class="preset-action" id="presetExportBtn">Export</button>
