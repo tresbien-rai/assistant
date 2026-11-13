@@ -31,7 +31,7 @@ How we work (branches, verification, merging, wrap-up) lives in
 > enriched navigation rail with Recent chats, drag-resize 200–360px, and locked
 > custom icons), and UIP-04 (#234, contextual chat-only top bar, composer Usage
 > counter, clean section headers, and unified Desktop/Phone alignment).
-> 2026-11-13: shipped UIP-05 (Persona Editor 3-tab layout, separate desktop live
+> 2026-11-13: shipped UIP-05 (#235, Persona Editor 3-tab layout, separate desktop live
 > card / Phone Strip A preview, and inline Fixed-model picker).
 
 ---
@@ -281,7 +281,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | 🚧 (UIP-01…05 ✅, UIP-06…08 📐) | UIP-01…08, #230, #231, #233, #234 | `../UI_POLISH.md` |
+| UI polish backlog | 🚧 (UIP-01…05 ✅, UIP-06…08 📐) | UIP-01…08, #230, #231, #233, #234, #235 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -326,7 +326,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
      `Token Usage (This chat)`, clean non-chat section headers (hidden on desktop,
      inline `☰` drawer button on phone), `Chats` header Quill `New chat` + `.chats-next-strip`
      selectors, and unified `top`/`left` section alignment across Desktop & Phone.
-   - ~~**UIP-05**~~ *(shipped 2026-11-13)* — Persona Editor (`feat/uip-05-persona-editor`):
+   - ~~**UIP-05**~~ *(shipped 2026-11-13, #235)* — Persona Editor (`feat/uip-05-persona-editor`):
      3-tab strip (`Identity & Prompt` | `Avatar & Expressions` | `Defaults & Capabilities`),
      separate desktop sibling live WYSIWYG card preview (`>= 768px`), compact Phone
      Strip A above the tabs (`< 768px`, `94×94` portrait with action button below),
