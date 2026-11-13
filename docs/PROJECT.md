@@ -377,6 +377,7 @@ server log and against Drive, not just from the model's reply:
   and chat with it once; check the reply reflects the picks. Verified only in
   automated desktop/phone-width runs so far.
 - [ ] **Gemini 3.5+ trimmed body** (#217): one real send on `gemini-3.8-flash` (and `gemini-4-argon` if keyed) with tools off and thinking on Model default, then on Level; expect a normal reply. The body only lost fields, so low risk.
+- [ ] **UI polish visual pass on a real phone** (UIP-03…05, #233–#235): rail drawer & `Recent` chats list, contextual chat top bar + composer `Usage:` footer, and Persona Editor 3-tab strip + Phone Strip A + Fixed-model picker. Verified in headless Chromium at `1280×820` and `390×844` so far.
 
 ### Deferred on purpose
 - **CF-02b** — PDFs as working files.
@@ -519,6 +520,12 @@ Things that cost real time. Most were silent — nothing errored.
   (persona "Speech" was relabelled "Voice", id stays `speech`).
 - `normalizeBlocks` *appends* missing preset blocks on purpose; the user's order wins.
 - `IMPLEMENTED_PROVIDER_IDS` ≠ valid provider ids.
+- **`updateFixedPersonaPin()` (`js/settings-store.js`) runs on every `autoSaveSettings()` tick**
+  and overwrites `persona.modelConfig` from `getActiveModelConfig()` unless the
+  active layer's `provider`/`model` already match. Editor handlers that change a
+  fixed persona's model or mode must preserve sibling keys (`presetId`,
+  `toolsEnabled`, `profileEnabled`) and call `applyPersonaModelSettings()`
+  immediately so background keystrokes don't drop or revert the pick.
 
 ### New machine
 Setting up another computer (e.g. the laptop) to work exactly like the PC:
@@ -573,11 +580,13 @@ Setting up another computer (e.g. the laptop) to work exactly like the PC:
   test chains into small evals.
 
 ### Cloud sessions (started from the mobile app)
-- **cdnjs is blocked**, so `marked` and `highlight.js` never load and the app
-  stops at "marked is not defined". For a headless Playwright check, fetch the
-  real files from npm (`npm pack marked@12.0.0 @highlightjs/cdn-assets@11.9.0`,
-  which the sandbox allows) and serve them with `page.route(/cdnjs/, …)`. A
-  hand-written stub breaks the smoke harness's markdown check.
+- **cdnjs and Google Fonts are blocked**, so `marked` and `highlight.js` never
+  load and the app stops at "marked is not defined". For a headless Playwright
+  check, fetch the real files from npm (`npm pack marked@12.0.0 @highlightjs/cdn-assets@11.9.0`,
+  which the sandbox allows) and serve them with `page.route(/cdnjs/, …)`, and
+  fulfil `fonts.googleapis.com` / `fonts.gstatic.com` with empty `200` CSS so
+  console errors stay at zero. A hand-written stub breaks the smoke harness's
+  markdown check.
 - **The session's git rules refuse remote branch deletes and force-pushes.**
   Merged session branches pile up on origin until the user deletes them. To
   reuse the session branch after a squash-merge, recreate it from
