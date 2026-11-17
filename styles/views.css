@@ -1113,6 +1113,12 @@ input.chats-search:focus {
     gap: 10px;
 }
 
+.context-menu .context-menu-check-item.active::after {
+    float: none;
+    margin-left: 0;
+    flex-shrink: 0;
+}
+
 .context-menu-check-label {
     min-width: 0;
     overflow: hidden;

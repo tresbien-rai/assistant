@@ -536,6 +536,8 @@ export async function run(opts = {}) {
         view: state.ui.mainView,
         draft: elements.messageInput.value,
         provider: t.getActiveModelConfig().provider,
+        chatsSearch: state.ui.chatsSearch,
+        chatsPersonaFilter: state.ui.chatsPersonaFilter,
     };
     const keyStatus = state.apiKeyStatus[saved.provider];
     const savedHasKey = keyStatus ? keyStatus.hasKey : undefined;
@@ -544,6 +546,10 @@ export async function run(opts = {}) {
     const results = [];
 
     try {
+        // Clear any leftover Chats filter so smoke rows are always visible in Chats view.
+        state.ui.chatsSearch = '';
+        state.ui.chatsPersonaFilter = 'all';
+
         // A stubbed provider needs no real key, but sendMessage's guard checks
         // one — force it on for the run.
         if (keyStatus) keyStatus.hasKey = true;
@@ -603,6 +609,8 @@ export async function run(opts = {}) {
         }
 
         state.activeConversationId = saved.conversationId;
+        state.ui.chatsSearch = saved.chatsSearch;
+        state.ui.chatsPersonaFilter = saved.chatsPersonaFilter;
         elements.messageInput.value = saved.draft;
         t.navigate(saved.view);
     }

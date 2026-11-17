@@ -346,8 +346,10 @@ function renderSteppedRowsHTML(convos, limitKey, { indented = false, isFiltering
  * activity, with inline persona identity, search/persona filtering, and
  * stepped top-4 / +10 expansion.
  * @param {HTMLElement} container
+ * @param {Object} [opts]
+ * @param {string[]|null} [opts.focusSelectors]
  */
-export function renderGroupedChatList(container) {
+export function renderGroupedChatList(container, { focusSelectors = null } = {}) {
     const all = Object.values(state.conversations);
     const toolbarEl = document.getElementById('chatsToolbar');
     if (toolbarEl) toolbarEl.hidden = all.length === 0;
@@ -491,7 +493,9 @@ export function renderGroupedChatList(container) {
             const key = btn.dataset.toggleGroup;
             if (state.ui.collapsedChatGroups.has(key)) state.ui.collapsedChatGroups.delete(key);
             else state.ui.collapsedChatGroups.add(key);
-            renderGroupedChatList(container);
+            renderGroupedChatList(container, {
+                focusSelectors: [`[data-toggle-group="${CSS.escape(key)}"]`],
+            });
         });
     });
 
@@ -506,18 +510,35 @@ export function renderGroupedChatList(container) {
             const key = btn.dataset.expandMore;
             const cur = state.ui.expandedChatLimits.get(key) || INITIAL_GROUP_LIMIT;
             state.ui.expandedChatLimits.set(key, cur + EXPAND_STEP);
-            renderGroupedChatList(container);
+            const escaped = CSS.escape(key);
+            renderGroupedChatList(container, {
+                focusSelectors: [`[data-expand-more="${escaped}"]`, `[data-expand-less="${escaped}"]`],
+            });
         });
     });
 
     container.querySelectorAll('[data-expand-less]').forEach(btn => {
         btn.addEventListener('click', () => {
-            state.ui.expandedChatLimits.delete(btn.dataset.expandLess);
-            renderGroupedChatList(container);
+            const key = btn.dataset.expandLess;
+            state.ui.expandedChatLimits.delete(key);
+            const escaped = CSS.escape(key);
+            renderGroupedChatList(container, {
+                focusSelectors: [`[data-expand-more="${escaped}"]`, `[data-toggle-group="${escaped}"]`],
+            });
         });
     });
 
     wireConversationRows(container);
+
+    if (Array.isArray(focusSelectors)) {
+        for (const sel of focusSelectors) {
+            const target = container.querySelector(sel);
+            if (target) {
+                target.focus({ preventScroll: true });
+                break;
+            }
+        }
+    }
 }
 
 /**

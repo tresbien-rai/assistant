@@ -37,7 +37,7 @@ How we work (branches, verification, merging, wrap-up) lives in
 > button, button primitives & dead CSS cleanup, var(--border-color) & transition:all fixes,
 > and keyboard accessibility).
 > 2026-11-16: shipped UIP-07 (#238, curated 4 Light / 4 Dark themes with Parchment default
-> and subtle tactile shadows) and UIP-08 (Chats page holds every chat across Workspaces,
+> and subtle tactile shadows) and UIP-08 (#239, Chats page holds every chat across Workspaces,
 > Projects, and Unfiled with inline Persona identity, live search/persona filters, stepped
 > top-4/+10/`Show less` expansion, `In: <Home>` strip picker, and per-group `+ New` actions).
 
@@ -288,7 +288,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | ✅ (UIP-01…08 ✅) | UIP-01…08, #230, #231, #233, #234, #235, #237, #238 | `../UI_POLISH.md` |
+| UI polish backlog | ✅ (UIP-01…08 ✅) | UIP-01…08, #230, #231, #233, #234, #235, #237, #238, #239 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -349,7 +349,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
      `localStorage` migration, subtle tactile shadows & `.modal-btn` border
      parity, theme-aware diff/table/warning/selection surfaces, and `--on-error`/
      `--on-accent` button contrast fixes.
-   - ~~**UIP-08**~~ *(shipped 2026-11-16)* — the Chats page holds every chat across
+   - ~~**UIP-08**~~ *(shipped 2026-11-16, #239)* — the Chats page holds every chat across
      Workspaces, Projects, and Unfiled (`feat/uip-08-all-chats`), ordered by recent
      activity with inline persona avatars, live search & persona filter pills, stepped
      top-4 / +10 / `Show less` expansion, `In: <Home> ▾` strip picker, and per-group
@@ -391,7 +391,7 @@ server log and against Drive, not just from the model's reply:
   and chat with it once; check the reply reflects the picks. Verified only in
   automated desktop/phone-width runs so far.
 - [ ] **Gemini 3.5+ trimmed body** (#217): one real send on `gemini-3.8-flash` (and `gemini-4-argon` if keyed) with tools off and thinking on Model default, then on Level; expect a normal reply. The body only lost fields, so low risk.
-- [ ] **UI polish visual pass on a real phone** (UIP-03…08, #233–#235, #237, #238): rail drawer & `Recent` chats list, contextual chat top bar + composer `Usage:` footer, Persona Editor 3-tab strip + Phone Strip A + Fixed-model picker, Persona card `Chat`/`Edit` actions + Workspace/Project auto-save, the 8 colour themes (`Parchment` default + tactile shadows), and the all-chats home-grouped Chats page (`In: <Home>`, filter bar, stepped expansion, group `+ New`). Verified in headless Chromium at `1280×820` and `390×844` so far.
+- [ ] **UI polish visual pass on a real phone** (UIP-03…08, #233–#235, #237–#239): rail drawer & `Recent` chats list, contextual chat top bar + composer `Usage:` footer, Persona Editor 3-tab strip + Phone Strip A + Fixed-model picker, Persona card `Chat`/`Edit` actions + Workspace/Project auto-save, the 8 colour themes (`Parchment` default + tactile shadows), and the all-chats home-grouped Chats page (`In: <Home>`, filter bar, stepped expansion, group `+ New`). Verified in headless Chromium at `1280×820` and `390×844` so far.
 
 ### Deferred on purpose
 - **CF-02b** — PDFs as working files.

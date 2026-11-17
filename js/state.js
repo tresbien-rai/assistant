@@ -94,8 +94,6 @@ export const state = {
         //   { type: 'chat', id }              an open conversation
         // Settings/Personas are reached via the rail too (interim: modal/popover).
         mainView: { type: 'chats' },
-        // Legacy persona-group collapse set (kept for switchPersona compatibility).
-        collapsedPersonaGroups: new Set(),
         // Home/project groups collapsed in the Chats view (keys: `ws:<id>`, `proj:<id>`, `__unfiled__`).
         collapsedChatGroups: new Set(),
         // Per-group visible row limit in the Chats view (default 4, expanded in +10 steps).
