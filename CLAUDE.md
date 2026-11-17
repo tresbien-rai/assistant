@@ -180,7 +180,7 @@ The data model, server layout and prompt assembly are described in
 | `js/avatar.js` | Floating avatar | Size/corner presets, free-drag positioning, the image or emoji it shows |
 | `js/status-bar.js` | Composer usage counter | `Usage: <count>` billed-token counter beneath the composer and its breakdown trigger |
 | `js/chat/` | Chat | `expressions.js` (tag protocol), `thread.js` (rendering), `send.js` (send/stream/re-run), `composer.js` (drafts, attachments) |
-| `js/ui-prefs.js` | Device-local prefs | `UiPrefs` (localStorage), themes, OKLCH palette engine |
+| `js/ui-prefs.js` | Device-local prefs | `UiPrefs` (localStorage), curated 4/4 themes, font prefs |
 | `js/sidebar.js` | Sidebar drawer | open/close/overlay/resize (200–360px, default 220px) |
 | `js/rail-recent.js` | Recent chats rail | Top 8 recent chats across homes, grouped by workspace/project or flat |
 | `js/file-panel/` | The file panel | viewer, editor, browser, revision history, context toggles |
