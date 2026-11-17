@@ -1,6 +1,6 @@
 # Workspace Restructure — design + tasks
 
-> **Status (2026-09-25):** Complete — WR-01…09 shipped (#45–#55). Current status of everything: `docs/PROJECT.md`.
+> **Status (2026-11-16):** Complete — WR-01…09 shipped (#45–#55). Note: UIP-08 (#239) later superseded the Issue 1 rule that the Chats page lists only unfiled chats — it now groups every chat by home while preserving per-chat container isolation. Current status of everything: `docs/PROJECT.md`.
 
 Agreed plan (2026-06-28) to rework the workspace model **before Track A (Tool
 Use)**. Supersedes the workspace/sidebar parts of `docs/design/PHASE2_UX_DESIGN.md`

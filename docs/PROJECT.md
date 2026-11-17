@@ -36,10 +36,11 @@ How we work (branches, verification, merging, wrap-up) lives in
 > Workspace/Project auto-save, Persona card Chat/Edit actions, onboarding Go to Models
 > button, button primitives & dead CSS cleanup, var(--border-color) & transition:all fixes,
 > and keyboard accessibility).
-> 2026-11-16: shipped UIP-07 (#238, curated 4 Light / 4 Dark themes with Parchment default
-> and subtle tactile shadows) and UIP-08 (#239, Chats page holds every chat across Workspaces,
-> Projects, and Unfiled with inline Persona identity, live search/persona filters, stepped
-> top-4/+10/`Show less` expansion, `In: <Home>` strip picker, and per-group `+ New` actions).
+> 2026-11-16: shipped UIP-07 (#238, curated 4 Light / 4 Dark themes with Parchment default,
+> subtle tactile shadows, and custom OKLCH palette shelved) and UIP-08 (#239, Chats page holds
+> every chat across Workspaces, Projects, and Unfiled with inline Persona identity, live
+> search/persona filters, stepped top-4/+10/`Show less` expansion, `In: <Home>` strip picker,
+> and per-group `+ New` actions). Completed UI polish pass (UIP-01…08) wrapped and §7–§9 updated.
 
 ---
 
@@ -263,7 +264,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | File tools: create/read/list | 🟡 | P2-01…05, #63–#70 | `PHASE2_TASKS.md` |
 | Model parameter profiles | ✅ | #73 | `MODEL_PROFILES_DESIGN.md` |
 | File panel + `edit_file` + user editing | 🟡 | #76–#78 | (in `FILE_COLLAB_DESIGN.md`) |
-| Themes + OKLCH custom palette | ✅ | #80, #81 | — |
+| Colour themes (4/4 Light & Dark; custom OKLCH shelved) | ✅ | #80, #81, UIP-07 (#238) | `../UI_POLISH.md` |
 | File collaboration (chat files, revisions, live injection, move, re-roll, version viewer) | 🟡 | FC-01…06b, #82–#92 | `FILE_COLLAB_DESIGN.md` |
 | Personas UI, expressions, `.tessera` bundles | ✅ | #94 | — |
 | Orphaned avatar images cleanup | ✅ | OI-01…03, #95 | `ORPHANED_IMAGES_DESIGN.md` |
@@ -307,53 +308,9 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
    persona's own conversations, written *between* conversations by the aux
    model, visible and editable by the user. This also covers the "more uses for
    the aux model" target. Design: `docs/design/PROFILE_DESIGN.md`.
-3. **UI polish pass** (`docs/UI_POLISH.md`, active target 2026-11-11):
-   - ~~**UIP-01**~~ *(shipped 2026-11-11, #230)* — preset-editor font jump fix
-     (`.preset-block-text` uses `--font-main` at `14px`; `JetBrains Mono` loaded
-     for `--font-mono`), Appearance **Font** picker + **Font Scope** toggle
-     (`Whole app` vs `Chat & prose only` in `UiPrefs`), and `Newsreader` Italic
-     brand wordmark for **Solier** on the login card and section rail.
-   - ~~**UIP-02**~~ *(shipped 2026-11-11, #231)* — whole-UI wording pass: teaching
-     placeholders and help text across `PERSONA_SECTIONS` and `SUGGESTED_SECTIONS`,
-     trait editor and workspace copy polish, sentence-case unification, and
-     fixes for stale strings (welcome empty state, server-synced avatar note,
-     file panel mode note, and composer placeholder).
-   - ~~**UIP-03**~~ *(shipped 2026-11-12, #233)* — enriched navigation rail (`feat/uip-03-nav-rail`):
-     header with accent `G5 low-notch squiggle` quill New chat button, top 4 sections,
-     Recent chats (top 8 from every home, always keeping the open chat visible,
-     Grouped by workspace default or Flat list in Appearance settings, hidden at
-     0 chats), separated `Profile` + `Settings` footer, drag-resize 200–360px
-     (default 220px, single hairline seam), ≥44px phone drawer targets, and locked
-     `Open folder` / `Chats` bubble / `Wider card carousel` Personas / single-person
-     Profile icons.
-   - ~~**UIP-04**~~ *(shipped 2026-11-12, #234)* — contextual top status bar (`feat/uip-04-top-bar`):
-     chat-only `.status-bar` with Stacked Title + Meta (persona avatar, clickable
-     chat title rename, persona name, `Workspace › Project` / muted `Chats (unfiled)`),
-     `22px` distinct Avatar PIP icon, `Usage: <count>` footer beneath composer opening
-     `Token Usage (This chat)`, clean non-chat section headers (hidden on desktop,
-     inline `☰` drawer button on phone), `Chats` header Quill `New chat` + `.chats-next-strip`
-     selectors, and unified `top`/`left` section alignment across Desktop & Phone.
-   - ~~**UIP-05**~~ *(shipped 2026-11-13, #235)* — Persona Editor (`feat/uip-05-persona-editor`):
-     3-tab strip (`Identity & Prompt` | `Avatar & Expressions` | `Defaults & Capabilities`),
-     separate desktop sibling live WYSIWYG card preview (`>= 768px`), compact Phone
-     Strip A above the tabs (`< 768px`, `94×94` portrait with action button below),
-     and inline Fixed-model picker popover with `Edit model profile in Models →`.
-   - ~~**UIP-06**~~ *(shipped 2026-11-13, #237)* — Workspace/Project auto-save with
-     `flushContainerSave()`, visible `Chat`/`Edit` actions on Persona tiles
-     (Option A), onboarding `Go to Models` button, `.btn` primitives in
-     `styles/buttons.css` & dead pre-WR-07 CSS cleanup, `var(--border-color)` fix,
-     removal of all 21 `transition: all` declarations, and keyboard accessibility.
-   - ~~**UIP-07**~~ *(shipped 2026-11-16, #238)* — curated 4 Light (`Parchment` `:root` default,
-     `Alabaster`, `Camellia`, `Celadon`) + 4 Dark (`Espresso`, `Nocturne`,
-     `Verdant`, `Abyssal`) themes, shelved `Custom` OKLCH builder with legacy
-     `localStorage` migration, subtle tactile shadows & `.modal-btn` border
-     parity, theme-aware diff/table/warning/selection surfaces, and `--on-error`/
-     `--on-accent` button contrast fixes.
-   - ~~**UIP-08**~~ *(shipped 2026-11-16, #239)* — the Chats page holds every chat across
-     Workspaces, Projects, and Unfiled (`feat/uip-08-all-chats`), ordered by recent
-     activity with inline persona avatars, live search & persona filter pills, stepped
-     top-4 / +10 / `Show less` expansion, `In: <Home> ▾` strip picker, and per-group
-     `+ New chat` / `+ New` actions.
+3. **Live verification of the completed UI polish pass** (`docs/UI_POLISH.md`,
+   UIP-01…08 all shipped 2026-11-11…16, #230–#239): test UIP-03…08 visually on a
+   real phone (checklist in §8) alongside living with persona traits.
 
 **Later:**
 4. **File digests** (`docs/design/SESSION_STATE_DESIGN.md` §7) — deterministic first line,
@@ -403,11 +360,12 @@ server log and against Drive, not just from the model's reply:
   feature*; not a phase of its own.
 - **Lost-update guard for file saves** — cross-tab saves are last-write-wins;
   the upgrade path is If-Match on `drive_file_id` → 409.
-- **`showConversationMenu`** positions its menu inline instead of using
-  `positionPopover`, so it doesn't flip above its anchor.
 - **Custom Profile avatar upload** — allow users to upload their own profile
   icon and replace the single-person `Profile` icon in the rail footer when
   present; deferred until after the UI polish pass (`UIP-03` D11).
+- **Custom OKLCH palette builder** — shelved in UIP-07 (#238) in favour of
+  8 curated Light/Dark themes (`Parchment` default); revisit only if custom
+  user palettes are wanted later.
 
 ### Dropped
 - **FC-06c** two-version compare — the user's call.
@@ -540,6 +498,11 @@ Things that cost real time. Most were silent — nothing errored.
   fixed persona's model or mode must preserve sibling keys (`presetId`,
   `toolsEnabled`, `profileEnabled`) and call `applyPersonaModelSettings()`
   immediately so background keystrokes don't drop or revert the pick.
+- **`.context-menu-item.active::after` (`styles/models.css`) floats a `'✓'` on
+  every active menu button.** Flex menu rows that render their own indicator
+  (`.model-menu-row`, `.context-menu-check-item`) must reset
+  `.context-menu-item.active::after { content: none; }` or they get duplicate
+  checkmarks or layout gaps.
 
 ### New machine
 Setting up another computer (e.g. the laptop) to work exactly like the PC:
