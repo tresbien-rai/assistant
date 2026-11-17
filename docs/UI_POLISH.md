@@ -268,25 +268,15 @@ Quick wins and structural CSS/DOM hygiene from the 2026-11-11 audit (`feat/uip-0
 
 ## UIP-07 — Colour themes & light/dark surface polish
 
-**Status:** open, agreed 2026-11-11.
+**Status:** shipped (2026-11-16; palette & tactile shadow decisions locked from `theme_palette_proposals.html`). Raised 2026-11-11.
 
-Evaluate and refine Solier's 8 colour themes (`Midnight`, `Slate`, `Forest`,
-`Ocean`, `Light`, `Parchment`, `Rosé`, `Custom`) in `styles/tokens.css`
-and `js/ui-prefs.js`:
-- Review the default theme and palette presets so the out-of-the-box visual
-  world feels warm, cohesive, and aligned with Solier's identity.
-- Fix hardcoded dark-mode colours that break `Light`, `Parchment`, and `Rosé`
-  themes:
-  - File revision diff colours (`.fp-diff-add`, `.fp-diff-del`, `.fp-add`,
-    `.fp-del` in `styles/file-panel.css`) which currently use pale dark-mode
-    tints (`#aff5b4`, `#ffdcd7`) that are illegible on light backgrounds.
-  - Markdown table headers/striping and blockquotes (`rgba(0, 0, 0, 0.3)` in
-    `styles/chat.css`) → replace with theme-aware surface tokens.
-  - Hardcoded `#fff` / `white` on accent buttons → replace with
-    `var(--on-accent)`.
-- Audit and refine UI highlight colours across all themes (text selection
-  tint, active/selected row highlights, hover tints, focus rings, and
-  code/syntax-highlighting themes).
+Curated 4 Light + 4 Dark colour system on `feat/uip-07-themes` (`styles/tokens.css`, `styles/base.css`, `styles/buttons.css`, `styles/forms.css`, `styles/chat.css`, `styles/file-panel.css`, `styles/models.css`, `styles/system.css`, `styles/views.css`, `index.html`, `js/ui-prefs.js`, `js/dom.js`, `js/main.js`):
+- **Parchment as `:root` default + 4/4 Light/Dark balance:**
+  - **Light (4):** `Parchment` (`parchment`, default — warm cream `#f4ede0` + terracotta `#9c4a2f`), `Alabaster` (`alabaster` — neutral gallery `#f5f6f8` + cobalt `#3b5bdb`), `Camellia` (`camellia` — soft petal-linen `#f8f1f3` + carmine `#a83258`), `Celadon` (`celadon` — botanical sage-mist `#eef3ef` + deep jade `#2d6a4f`). Default highlight.js stylesheet in `index.html` is `hljsLight`.
+  - **Dark (4):** `Espresso` (`espresso` — roasted umber `#1b1714` + amber `#d98a4b`, dark twin to Parchment), `Nocturne` (`nocturne` — deep ink-slate `#181b24` + periwinkle `#7b84f7`), `Verdant` (`verdant` — deep pine `#161f19` + sage-emerald `#57b889`), `Abyssal` (`abyssal` — sea-slate `#101b24` + seafoam `#3bbbc9`).
+- **Shelved `Custom` OKLCH builder & `localStorage` migration:** removed the custom palette engine and controls from Appearance settings for now; `UiPrefs.load()` and `applyTheme()` migrate legacy theme IDs (`midnight`/`slate` → `nocturne`, `forest` → `verdant`, `ocean` → `abyssal`, `light` → `alabaster`, `rose` → `camellia`, `custom`/`.accent` → `parchment` or `espresso`).
+- **Subtle tactile shadows & button height parity:** added `--shadow-xs`, `--shadow-btn`, and `--shadow-btn-secondary` tokens plus `:active` press feedback on `.btn`, `.modal-btn`, `.section-new-btn`, `.section-secondary-btn`, `.persona-tile`, `.param-card`, and `.model-card`; changed `.modal-btn` from `border: none` to `border: 1px solid transparent` so Primary and Secondary buttons share identical heights and baseline alignment across all themes.
+- **Light/dark surface & contrast fixes:** added theme-aware `--warning`, `--error`, `--on-error`, `--success`, `--info`, `--diff-add`, `--diff-del`, `--surface-tint`, and `--surface-tint-strong` tokens; replaced hardcoded `rgba(0,0,0,...)` in `styles/chat.css`, `#3fb950`/`#f85149` in `styles/file-panel.css`, and `#fff`/`white` on `.stop-button`, `.critical-banner-action`, and `.key-popover-save` with `--on-error`/`--on-accent`; added themed `::selection` styling in `styles/base.css` and updated `.rail-chat-row.open` light-theme selectors for `:root:not([data-theme])`.
 
 ---
 

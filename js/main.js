@@ -1378,25 +1378,6 @@ function setupEventListeners() {
     if (elements.filePanelCancelBtn) {
         elements.filePanelCancelBtn.addEventListener('click', () => FilePanel.cancelEdit());
     }
-    // Custom palette controls: touching any of them activates the Custom theme.
-    const setCustomPalette = (patch) => {
-        UiPrefs.set('customPalette', { ...UiPrefs.get('customPalette'), ...patch });
-        UiPrefs.set('theme', 'custom');
-        withThemeTransition(() => applyTheme('custom'));
-        syncAppearanceControls();
-    };
-    if (elements.paletteBase) {
-        elements.paletteBase.addEventListener('input', () => setCustomPalette({ base: elements.paletteBase.value }));
-    }
-    if (elements.paletteTint) {
-        elements.paletteTint.addEventListener('input', () => setCustomPalette({ tint: Number(elements.paletteTint.value) }));
-    }
-    document.querySelectorAll('#paletteModeOptions button').forEach(btn => {
-        btn.addEventListener('click', () => setCustomPalette({ mode: btn.dataset.paletteMode }));
-    });
-    if (elements.paletteResetBtn) {
-        elements.paletteResetBtn.addEventListener('click', () => setCustomPalette({ ...UiPrefs.defaults.customPalette }));
-    }
 
     // Developer mode + request inspector (P2-U4)
     if (elements.devModeToggle) {

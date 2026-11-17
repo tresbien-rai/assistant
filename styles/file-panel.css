@@ -259,8 +259,8 @@
 }
 .fp-version-sub { justify-content: space-between; color: var(--text-secondary); }
 .fp-version-stat { display: flex; gap: 6px; font-family: var(--font-mono); }
-.fp-add { color: #3fb950; }
-.fp-del { color: #f85149; }
+.fp-add { color: var(--diff-add); }
+.fp-del { color: var(--diff-del); }
 
 .fp-detail {
     flex: 1 1 auto;
@@ -307,10 +307,10 @@
     opacity: 0.8;
 }
 .fp-rctx { color: var(--text-primary); opacity: 0.75; }
-.fp-rdel { border-left-color: #f85149; background: color-mix(in srgb, #f85149 8%, transparent); }
-.fp-radd { border-left-color: #3fb950; background: color-mix(in srgb, #3fb950 8%, transparent); }
-.fp-rdel .fp-tok { background: color-mix(in srgb, #f85149 30%, transparent); border-radius: 2px; }
-.fp-radd .fp-tok { background: color-mix(in srgb, #3fb950 32%, transparent); border-radius: 2px; }
+.fp-rdel { border-left-color: var(--diff-del); background: color-mix(in srgb, var(--diff-del) 10%, transparent); }
+.fp-radd { border-left-color: var(--diff-add); background: color-mix(in srgb, var(--diff-add) 10%, transparent); }
+.fp-rdel .fp-tok { background: color-mix(in srgb, var(--diff-del) 26%, transparent); border-radius: 2px; }
+.fp-radd .fp-tok { background: color-mix(in srgb, var(--diff-add) 26%, transparent); border-radius: 2px; }
 
 /* Container file list: a text file name opens the panel (FC-04) */
 .project-file-name.clickable { cursor: pointer; }

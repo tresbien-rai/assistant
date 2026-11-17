@@ -57,22 +57,14 @@
     background: linear-gradient(135deg, var(--swatch-bg) 50%, var(--swatch-accent) 50%);
 }
 
-#themeOptions button[data-theme-name="midnight"]  { --swatch-bg: #1a1a2e; --swatch-accent: #6c63ff; }
-#themeOptions button[data-theme-name="slate"]     { --swatch-bg: #1e2229; --swatch-accent: #7aa2f7; }
-#themeOptions button[data-theme-name="forest"]    { --swatch-bg: #17211a; --swatch-accent: #52b788; }
-#themeOptions button[data-theme-name="ocean"]     { --swatch-bg: #0f1c26; --swatch-accent: #35c0ce; }
-#themeOptions button[data-theme-name="light"]     { --swatch-bg: #f4f6fb; --swatch-accent: #6c63ff; }
-#themeOptions button[data-theme-name="parchment"] { --swatch-bg: #f3ecdd; --swatch-accent: #9c4a2f; }
-#themeOptions button[data-theme-name="rose"]      { --swatch-bg: #f9f1f3; --swatch-accent: #b02a5b; }
-
-/* Custom palette controls: base color porthole, dark/light mode, tint slider.
-   Interacting with any of them activates the Custom theme. */
-.palette-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-}
+#themeOptions button[data-theme-name="parchment"] { --swatch-bg: #f4ede0; --swatch-accent: #9c4a2f; }
+#themeOptions button[data-theme-name="alabaster"] { --swatch-bg: #f5f6f8; --swatch-accent: #3b5bdb; }
+#themeOptions button[data-theme-name="camellia"]  { --swatch-bg: #f8f1f3; --swatch-accent: #a83258; }
+#themeOptions button[data-theme-name="celadon"]   { --swatch-bg: #eef3ef; --swatch-accent: #2d6a4f; }
+#themeOptions button[data-theme-name="espresso"]  { --swatch-bg: #1b1714; --swatch-accent: #d98a4b; }
+#themeOptions button[data-theme-name="nocturne"]  { --swatch-bg: #181b24; --swatch-accent: #7b84f7; }
+#themeOptions button[data-theme-name="verdant"]   { --swatch-bg: #161f19; --swatch-accent: #57b889; }
+#themeOptions button[data-theme-name="abyssal"]   { --swatch-bg: #101b24; --swatch-accent: #3bbbc9; }
 
 /* Files-in-context: number input + trailing label (FC-03b) */
 .active-file-turns-row {
@@ -85,97 +77,16 @@
     width: 72px;
 }
 
-.palette-row input[type="color"] {
-    width: 48px;
-    height: 36px;
-    padding: 0;
-    border: none; /* no outer box — the swatch itself is the porthole */
-    border-radius: var(--radius-md);
-    background: none;
-    cursor: pointer;
-    flex: 0 0 auto;
-}
-
-/* Round/border the native swatch directly so there's no rounded-outer /
-   square-inner clash (no double packaging). */
-.palette-row input[type="color"]::-webkit-color-swatch-wrapper {
-    padding: 0;
-}
-.palette-row input[type="color"]::-webkit-color-swatch {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-}
-.palette-row input[type="color"]::-moz-color-swatch {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-}
-
-.palette-row .appearance-options {
-    margin-bottom: 0;
-    flex: 1;
-}
-
-.palette-tint-label {
-    flex: 0 0 auto;
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-}
-
-.palette-row input[type="range"] {
-    flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--bg-tertiary);
-    outline: none;
-    -webkit-appearance: none;
-}
-
-.palette-row input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--accent);
-    cursor: pointer;
-    transition: transform 0.1s ease;
-}
-
-.palette-row input[type="range"]::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
-}
-
-.palette-row input[type="range"]::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--accent);
-    cursor: pointer;
-    border: none;
-}
-
-.palette-reset-btn {
-    height: 36px;
-    background: none;
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: 6px 12px;
-    border-radius: var(--radius-md);
-    font-size: var(--text-xs);
-    cursor: pointer;
-    transition: border-color 0.2s, color 0.2s;
-    flex: 0 0 auto;
-}
-
-.palette-reset-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
 /* ===== Reset & Base ===== */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+
+::selection {
+    background: var(--accent-subtle);
+    color: var(--text-primary);
 }
 
 body {
@@ -690,9 +601,10 @@ input:where([type="range"])::-moz-range-thumb {
     color: var(--text-primary);
 }
 
-[data-theme="light"] .rail-chat-row.open,
-[data-theme="parchment"] .rail-chat-row.open,
-[data-theme="rose"] .rail-chat-row.open {
+:where(:root:not([data-theme])) .rail-chat-row.open,
+[data-theme="alabaster"] .rail-chat-row.open,
+[data-theme="camellia"] .rail-chat-row.open,
+[data-theme="celadon"] .rail-chat-row.open {
     background-color: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 

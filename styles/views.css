@@ -47,11 +47,17 @@
     color: var(--on-accent);
     font-size: var(--text-sm);
     cursor: pointer;
-    transition: background-color 0.15s;
+    box-shadow: var(--shadow-btn);
+    transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
 .section-new-btn:hover {
     background: var(--accent-hover);
+}
+
+.section-new-btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+    box-shadow: none;
 }
 
 .section-new-chat-btn {
@@ -179,12 +185,18 @@
     color: var(--text-secondary);
     font-size: var(--text-sm);
     cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
+    box-shadow: var(--shadow-btn-secondary);
+    transition: border-color 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
 .section-secondary-btn:hover {
     border-color: var(--accent);
     color: var(--accent);
+}
+
+.section-secondary-btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+    box-shadow: none;
 }
 
 .section-list {
@@ -211,17 +223,19 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     background: var(--bg-secondary);
-    transition: border-color 0.15s, transform 0.15s;
+    box-shadow: var(--shadow-xs);
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
 .persona-tile:hover {
     border-color: var(--accent-hover);
+    box-shadow: var(--shadow-sm);
     transform: translateY(-2px);
 }
 
 .persona-tile.active {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), var(--shadow-sm);
 }
 
 .persona-tile-open {

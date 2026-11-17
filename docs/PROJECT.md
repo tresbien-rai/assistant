@@ -284,7 +284,7 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
 | Persona notes (tier 2, aux-written) | 📐 | UP-05, UP-06 | `PROFILE_DESIGN.md` |
 | File digests | 📐 | — | `SESSION_STATE_DESIGN.md` §7 |
 | Tool trail in history | ✅ live-verified | TT-01…03, #214–#216, #218 | `TOOL_TRAIL_DESIGN.md` |
-| UI polish backlog | 🚧 (UIP-01…06 ✅, UIP-07…08 📐) | UIP-01…08, #230, #231, #233, #234, #235, #237 | `../UI_POLISH.md` |
+| UI polish backlog | 🚧 (UIP-01…07 ✅, UIP-08 📐) | UIP-01…08, #230, #231, #233, #234, #235, #237, #238 | `../UI_POLISH.md` |
 | Persona traits (ready-made, combinable, customisable) | ✅ (PT-06/07 later) | PT-01…05, #222–#226 | `PERSONA_TRAITS_DESIGN.md`, `PERSONA_TRAITS_LIBRARY.md` |
 | Docs consolidation + session workflow | ✅ | DOC-01…03, #204–#206 | `PROJECT.md`, `CLAUDE.md` |
 
@@ -339,10 +339,13 @@ Status: ✅ shipped · 🟡 shipped, live check owed · 📐 designed, not built
      (Option A), onboarding `Go to Models` button, `.btn` primitives in
      `styles/buttons.css` & dead pre-WR-07 CSS cleanup, `var(--border-color)` fix,
      removal of all 21 `transition: all` declarations, and keyboard accessibility.
-   - **UIP-07** *(next target)* — evaluation and refinement of the 8 colour themes (`Midnight`,
-     `Slate`, `Forest`, `Ocean`, `Light`, `Parchment`, `Rosé`, `Custom`) and
-     light-theme contrast fixes for diffs and Markdown tables.
-   - **UIP-08** — the Chats page holds every chat, organised by Workspace and
+   - ~~**UIP-07**~~ *(shipped 2026-11-16)* — curated 4 Light (`Parchment` `:root` default,
+     `Alabaster`, `Camellia`, `Celadon`) + 4 Dark (`Espresso`, `Nocturne`,
+     `Verdant`, `Abyssal`) themes, shelved `Custom` OKLCH builder with legacy
+     `localStorage` migration, subtle tactile shadows & `.modal-btn` border
+     parity, theme-aware diff/table/warning/selection surfaces, and `--on-error`/
+     `--on-accent` button contrast fixes.
+   - **UIP-08** *(next target)* — the Chats page holds every chat, organised by Workspace and
      Project (found while designing UIP-03). Not designed; prototype first.
 
 **Later:**
@@ -381,7 +384,7 @@ server log and against Drive, not just from the model's reply:
   and chat with it once; check the reply reflects the picks. Verified only in
   automated desktop/phone-width runs so far.
 - [ ] **Gemini 3.5+ trimmed body** (#217): one real send on `gemini-3.8-flash` (and `gemini-4-argon` if keyed) with tools off and thinking on Model default, then on Level; expect a normal reply. The body only lost fields, so low risk.
-- [ ] **UI polish visual pass on a real phone** (UIP-03…06, #233–#235, #237): rail drawer & `Recent` chats list, contextual chat top bar + composer `Usage:` footer, Persona Editor 3-tab strip + Phone Strip A + Fixed-model picker, and Persona card `Chat`/`Edit` actions + Workspace/Project auto-save. Verified in headless Chromium at `1280×820` and `390×844` so far.
+- [ ] **UI polish visual pass on a real phone** (UIP-03…07, #233–#235, #237, #238): rail drawer & `Recent` chats list, contextual chat top bar + composer `Usage:` footer, Persona Editor 3-tab strip + Phone Strip A + Fixed-model picker, Persona card `Chat`/`Edit` actions + Workspace/Project auto-save, and the 8 colour themes (`Parchment` default + tactile shadows). Verified in headless Chromium at `1280×820` and `390×844` so far.
 
 ### Deferred on purpose
 - **CF-02b** — PDFs as working files.

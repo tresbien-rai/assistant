@@ -815,7 +815,7 @@
     margin: 12px 0;
     padding: 8px 16px;
     border-left: 3px solid var(--accent);
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--surface-tint);
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
@@ -849,12 +849,12 @@
 }
 
 .message-content th {
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: var(--surface-tint-strong);
     font-weight: 600;
 }
 
 .message-content tr:nth-child(even) {
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: var(--surface-tint);
 }
 
 /* Horizontal rules */
@@ -1020,7 +1020,7 @@
     border: none;
     border-radius: 50%;
     cursor: pointer;
-    color: white;
+    color: var(--on-error);
     font-size: 1.1rem;
     transition: background-color 0.2s, transform 0.1s;
     flex-shrink: 0;
