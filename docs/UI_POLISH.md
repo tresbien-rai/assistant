@@ -282,21 +282,40 @@ Curated 4 Light + 4 Dark colour system on `feat/uip-07-themes` (`styles/tokens.c
 
 ## UIP-08 — The Chats page holds every chat
 
-**Status:** open, agreed 2026-11-12. Not designed; prototype before building.
+**Status:** shipped (2026-11-16; decisions locked from `uip08_chats_page_mockup.html`). Raised 2026-11-12.
 
 Found while designing UIP-03: a rail link to "All chats" would have led to the
-Chats page, which lists only unfiled chats, grouped by persona. The user's
-idea: give the Chats page the same treatment as the rail's Recent list, so it
-becomes the place where every chat lives, organised by Workspace and Project.
-New chats can be started there when the user doesn't need the Workspace or
-Project pages.
+Chats page, which previously listed only unfiled chats, grouped by persona. The
+user's idea: give the Chats page the same treatment as the rail's Recent list,
+so it becomes the place where every chat lives, organised by Workspace and
+Project. New chats can be started there when the user doesn't need the
+Workspace or Project pages.
 
 This reverses the Workspace Restructure rule that the Chats tab shows only
 unfiled chats (`docs/design/WORKSPACE_RESTRUCTURE.md`, Issue 1). That rule
 exists because a Workspace chat opened from the Chats tab used to show the
 wrong location in the UI. The new page is a *view* of every chat, and nothing
-moves between homes, so it is allowed, provided that opening a chat from it
-still sets the active Workspace and Project from the chat itself, as the rail
-does. Open questions for the design: whether persona grouping survives (for
-example, inside each group), how a long list stays scannable, and where New
-chat sits.
+moves between homes, so it is allowed because `switchConversation` sets
+`state.activeWorkspaceId` and `state.activeProjectId` from the chat itself (just
+as the rail does).
+
+Locked decisions & implementation (`feat/uip-08-all-chats`, `js/state.js`, `js/views/chats.js`, `styles/views.css`):
+- **D1 — Option A (Organised by Home, inline Persona identity):** Lists every
+  chat across Workspaces (direct chats first, then collapsible `› Project`
+  sub-groups) and `Unfiled`, sorted by most-recent activity. Empty Workspaces and
+  Projects are omitted from the list; every row shows its persona avatar +
+  `"<Persona> · <timeAgo>"` metadata and `⋯` menu.
+- **D2 — Top 4 + stepped +10 expansion + `Show less`:** Replaces the fixed-height
+  nested scrollbox with a default cap of 4 rows per container/sub-group,
+  revealing `+10` rows per click (`Show 10 more (N left)…` / `Show N more…`) plus
+  a quiet `Show less` button to return to 4.
+- **D3 — Live search & persona filter pills:** `#chatsToolbar` provides live
+  filtering by chat title, workspace, project, `unfiled`, or persona name while
+  preserving input focus, alongside persona filter pills when `>= 2` personas
+  exist. Active filtering bypasses the 4-row cap and collapsed state.
+- **D4 — Starting new chats (`Strip + Group "+ New"`):** `.chats-next-strip`
+  adds an `In: <Home> ▾` popover listing `Unfiled` and every Workspace/Project
+  (including empty containers so first chats can start from `Chats`) to control
+  where the top-right `New chat` button lands, while each Workspace/`Unfiled`
+  header (`+ New chat`) and `› Project` header (`+ New`) can start a chat
+  directly in that home. The rail `New chat` button stays unfiled.
