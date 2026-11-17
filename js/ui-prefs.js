@@ -51,15 +51,16 @@ export const UiPrefs = {
         const sw = Number(this._data.sidebarWidth);
         this._data.sidebarWidth = Number.isFinite(sw) ? Math.max(200, Math.min(360, Math.round(sw))) : this.defaults.sidebarWidth;
         // Migrate retired pre-UIP-07 theme ids and shelved 'custom' theme cleanly.
-        const rawTheme = this._data.theme;
-        if (rawTheme === 'custom' || saved.accent) {
-            const wasLight = saved.customPalette?.mode === 'light' || rawTheme === 'light' || rawTheme === 'parchment' || rawTheme === 'rose';
-            this._data.theme = wasLight ? 'parchment' : 'espresso';
+        const rawTheme = saved.theme;
+        if (rawTheme === 'custom' || saved.accent || saved.customPalette || LEGACY_THEME_MAP[rawTheme]) {
+            if (rawTheme && rawTheme !== 'custom' && LEGACY_THEME_MAP[rawTheme]) {
+                this._data.theme = LEGACY_THEME_MAP[rawTheme];
+            } else if ((rawTheme === 'custom' || saved.accent) && !THEMES.includes(rawTheme)) {
+                const wasLight = saved.customPalette?.mode === 'light' || rawTheme === 'light' || rawTheme === 'parchment' || rawTheme === 'rose';
+                this._data.theme = wasLight ? 'parchment' : 'espresso';
+            }
             delete this._data.accent;
             delete this._data.customPalette;
-            try { localStorage.setItem(this.KEY, JSON.stringify(this._data)); } catch { /* storage blocked */ }
-        } else if (LEGACY_THEME_MAP[rawTheme]) {
-            this._data.theme = LEGACY_THEME_MAP[rawTheme];
             try { localStorage.setItem(this.KEY, JSON.stringify(this._data)); } catch { /* storage blocked */ }
         }
         return this._data;

@@ -341,7 +341,8 @@
 .message.error details.error-details pre {
     margin: 6px 0 0 0;
     padding: 8px;
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: var(--surface-tint-strong);
+    color: var(--text-primary);
     border-radius: var(--radius-sm);
     white-space: pre-wrap;
     word-break: break-word;

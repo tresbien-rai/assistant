@@ -601,7 +601,7 @@ input:where([type="range"])::-moz-range-thumb {
     color: var(--text-primary);
 }
 
-:root:not([data-theme]) .rail-chat-row.open,
+:where(:root:not([data-theme])) .rail-chat-row.open,
 [data-theme="alabaster"] .rail-chat-row.open,
 [data-theme="camellia"] .rail-chat-row.open,
 [data-theme="celadon"] .rail-chat-row.open {
