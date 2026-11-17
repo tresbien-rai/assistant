@@ -29,9 +29,6 @@ export const elements = {
     settingsModal: document.getElementById('settingsModal'),
 
     // Appearance controls
-    paletteBase: document.getElementById('paletteBase'),
-    paletteTint: document.getElementById('paletteTint'),
-    paletteResetBtn: document.getElementById('paletteResetBtn'),
     devModeToggle: document.getElementById('devModeToggle'),
     enterBehaviourOptions: document.getElementById('enterBehaviourOptions'),
 

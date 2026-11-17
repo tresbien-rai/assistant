@@ -22,7 +22,12 @@
     line-height: 1.2;
     cursor: pointer;
     text-decoration: none;
-    transition: background-color 0.2s, border-color 0.2s, color 0.2s, filter 0.2s, opacity 0.2s;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s, filter 0.2s, opacity 0.2s, box-shadow 0.15s, transform 0.1s;
+}
+
+.btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+    box-shadow: none;
 }
 
 .btn:disabled {
@@ -43,6 +48,7 @@
     background-color: var(--accent);
     border-color: var(--accent);
     color: var(--on-accent);
+    box-shadow: var(--shadow-btn);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -54,6 +60,7 @@
     background-color: var(--accent-subtle);
     border-color: transparent;
     color: var(--accent);
+    box-shadow: var(--shadow-btn-secondary);
 }
 
 .btn-soft-accent:hover:not(:disabled) {
@@ -64,6 +71,7 @@
     background-color: transparent;
     border-color: var(--border-color);
     color: var(--text-secondary);
+    box-shadow: var(--shadow-btn-secondary);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -75,6 +83,7 @@
     background-color: var(--error);
     border-color: var(--error);
     color: var(--on-error);
+    box-shadow: var(--shadow-btn);
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -126,6 +135,7 @@
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
+    box-shadow: var(--shadow-btn-secondary);
 }
 
 .file-upload-btn:hover,

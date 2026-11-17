@@ -312,29 +312,38 @@
 
 .modal-btn {
     padding: 10px 20px;
-    border: none;
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
     font-size: var(--text-sm);
     font-weight: 500;
     cursor: pointer;
     /* Not `all`: that would include the visibility flip inherited from
        .modal-overlay and leave the button unfocusable for a frame on open. */
-    transition: background-color 0.2s, border-color 0.2s, color 0.2s, filter 0.2s;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s, filter 0.2s, box-shadow 0.15s, transform 0.1s;
+}
+
+.modal-btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+    box-shadow: none;
 }
 
 .modal-btn.primary {
     background-color: var(--accent);
+    border-color: var(--accent);
     color: var(--on-accent);
+    box-shadow: var(--shadow-btn);
 }
 
 .modal-btn.primary:hover {
     background-color: var(--accent-hover);
+    border-color: var(--accent-hover);
 }
 
 .modal-btn.secondary {
     background-color: transparent;
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
+    box-shadow: var(--shadow-btn-secondary);
 }
 
 .modal-btn.secondary:hover {
@@ -375,7 +384,9 @@
 
 .modal-btn.danger {
     background-color: var(--error);
+    border-color: var(--error);
     color: var(--on-error);
+    box-shadow: var(--shadow-btn);
 }
 
 .modal-btn.danger:hover {

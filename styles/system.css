@@ -190,7 +190,7 @@
     flex-shrink: 0;
     padding: 6px 14px;
     background-color: var(--error);
-    color: #fff;
+    color: var(--on-error);
     border: none;
     border-radius: var(--radius-md);
     cursor: pointer;

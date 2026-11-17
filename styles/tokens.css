@@ -1,25 +1,38 @@
-/* ===== CSS Variables (Easy theming later) ===== */
+/* ===== CSS Variables (Easy theming; UIP-07) ===== */
+/* Parchment is the default (:root below). Every theme sets a consistent surface
+   hierarchy (--bg-primary canvas, --bg-secondary elevated cards/sidebar,
+   --bg-tertiary controls/inputs), readable text contrast, semantic status/diff
+   tokens, and subtle tactile shadows. */
 :root {
-    --bg-primary: #1a1a2e;
-    --bg-secondary: #16213e;
-    --bg-tertiary: #0f1729;
-    --text-primary: #eaeaea;
-    --text-secondary: #a0a0a0;
-    --text-muted: #666;
-    --accent: #6c63ff;
-    --accent-hover: #5a52d9;
-    --accent-subtle: rgba(108, 99, 255, 0.2);
-    --accent-light: #8b85ff;   /* link color on themed surfaces (lighter on dark themes, darker on light ones) */
-    --on-accent: #ffffff;      /* text/icons sitting on an accent-colored background */
-    --user-bubble: var(--accent); /* follows the accent color (may be a deeper shade in some themes) */
-    --user-bubble-text: #ffffff;  /* always chosen to contrast with --user-bubble */
-    --assistant-bubble: #2d2d44;
-    --border-color: #2d2d44;
-    --error: #ff6b6b;
-    --on-error: #2a1214;       /* text sitting on an --error background (light coral needs a dark label) */
-    --success: #51cf66;
-    --warning: #ffd43b;
-    --info: #4dabf7;
+    /* Default theme: Parchment (Warm Light) */
+    --bg-primary: #f4ede0;
+    --bg-secondary: #fbf7ee;
+    --bg-tertiary: #e8decb;
+    --text-primary: #33281b;
+    --text-secondary: #685843;
+    --text-muted: #7d6c55;
+    --accent: #9c4a2f;
+    --accent-hover: #863d25;
+    --accent-subtle: rgba(156, 74, 47, 0.13);
+    --accent-light: #863d25;     /* link color on themed surfaces */
+    --on-accent: #ffffff;        /* text/icons sitting on an accent-colored background */
+    --user-bubble: #9c4a2f;      /* follows the accent color (may be a deeper shade in dark themes) */
+    --user-bubble-text: #ffffff; /* always chosen to contrast with --user-bubble */
+    --assistant-bubble: #ebe1cd;
+    --border-color: #d9ccb3;
+
+    /* Semantic & diff colors (tuned for light surfaces by default; overridden in dark themes) */
+    --error: #c93b3b;
+    --on-error: #ffffff;
+    --success: #247a3f;
+    --warning: #9a5b00;
+    --info: #1d6fc2;
+    --diff-add: #1f7a38;
+    --diff-del: #c4362e;
+
+    /* Theme-aware subtle surface tints (blockquotes, table headers/striping) */
+    --surface-tint: rgba(45, 34, 20, 0.045);
+    --surface-tint-strong: rgba(45, 34, 20, 0.085);
 
     --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
     --font-chat: var(--font-main);
@@ -45,9 +58,9 @@
     --sidebar-width: 220px;
     --status-bar-height: 56px;
     --input-height: 80px;
-    --chat-max-width: 780px; /* shared by the message column and the composer */
-    --section-max-width: 720px; /* shared by every main-area view (section lists, container pages, settings, persona editor) */
-    --list-max-height: 22rem; /* cap on a collapsible list body (container-page sections, persona groups) before it scrolls inside itself */
+    --chat-max-width: 780px;     /* shared by the message column and the composer */
+    --section-max-width: 720px;  /* shared by every main-area view (section lists, container pages, settings, persona editor) */
+    --list-max-height: 22rem;    /* cap on a collapsible list body before it scrolls inside itself */
 
     /* Corner radii — softer/rounder; text buttons use --radius-full (pills) */
     --radius-sm: 6px;
@@ -55,49 +68,27 @@
     --radius-lg: 18px;
     --radius-full: 9999px;
 
-    /* Elevation — subtle for resting surfaces, deeper for floating ones */
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
-    --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+    /* Elevation & subtle tactile depth (light defaults; dark themes override) */
+    --shadow-xs: 0 1px 2px rgba(45, 34, 20, 0.06);
+    --shadow-sm: 0 1px 3px rgba(45, 34, 20, 0.08);
+    --shadow: 0 4px 8px rgba(45, 34, 20, 0.1);
+    --shadow-lg: 0 8px 32px rgba(45, 34, 20, 0.16);
+    --shadow-btn: 0 1px 2px rgba(45, 34, 20, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --shadow-btn-secondary: 0 1px 2px rgba(45, 34, 20, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.45);
 
     /* Code backgrounds (themed; syntax token colors come from highlight.js) */
-    --code-bg: rgba(0, 0, 0, 0.4);
-    --code-inline-bg: rgba(0, 0, 0, 0.3);
+    --code-bg: #ebe2d0;
+    --code-inline-bg: rgba(51, 40, 27, 0.07);
 
     /* Scrollbar thumb (track uses --bg-tertiary) */
-    --scrollbar-thumb: #3a3f5c;
-    --scrollbar-thumb-hover: #4a4f72;
+    --scrollbar-thumb: #c8bba2;
+    --scrollbar-thumb-hover: #b3a386;
 
     /* Avatar sizes */
     --avatar-small: 80px;
     --avatar-medium: 120px;
     --avatar-large: 180px;
     --avatar-xlarge: 240px;
-}
-
-/* ===== Themes (device-local; applied via data-theme on <html>) ===== */
-/* Midnight is the default (:root above). Each theme overrides the palette,
-   including its own default accent; a custom accent picked by the user is set
-   inline by JS and wins over all of these. Every theme must keep the
-   --user-bubble / --user-bubble-text pair readable (>= ~4.5:1). */
-[data-theme="light"] {
-    --bg-primary: #f4f6fb;
-    --bg-secondary: #ffffff;
-    --bg-tertiary: #eaecf3;
-    --text-primary: #1b1d29;
-    --text-secondary: #565a6e;
-    --text-muted: #8a8fa3;
-    --accent-subtle: rgba(108, 99, 255, 0.12);
-    --accent-light: #5a52d9; /* links darken (not lighten) on light surfaces */
-    --assistant-bubble: #eceefb;
-    --border-color: #d9dded;
-    --shadow-sm: 0 1px 3px rgba(20, 22, 40, 0.06);
-    --shadow: 0 4px 6px rgba(20, 22, 40, 0.08);
-    --shadow-lg: 0 8px 32px rgba(20, 22, 40, 0.14);
-    --code-bg: #eef0f6;
-    --code-inline-bg: rgba(27, 29, 41, 0.06);
-    --scrollbar-thumb: #c2c7d6;
-    --scrollbar-thumb-hover: #a9afc4;
 }
 
 /* Theme cross-fade: transitions enabled only briefly while switching themes
@@ -113,119 +104,251 @@
     }
 }
 
-/* Slate — graphite neutrals with a cool steel-blue accent. The accent is a
-   bright pastel (dark text on it); user bubbles use a deeper steel shade so
-   white text stays readable. */
-[data-theme="slate"] {
-    --bg-primary: #1e2229;
-    --bg-secondary: #262b33;
-    --bg-tertiary: #171a20;
-    --text-primary: #e6e8ec;
-    --text-secondary: #9aa1ad;
-    --text-muted: #6b7280;
-    --accent: #7aa2f7;
-    --accent-hover: #6690e8;
-    --accent-subtle: rgba(122, 162, 247, 0.16);
-    --accent-light: #8fb3f9;
-    --on-accent: #10161f;
-    --user-bubble: #3b5b8c;
-    --user-bubble-text: #ffffff;
-    --assistant-bubble: #2b313b;
-    --border-color: #343a45;
-    --scrollbar-thumb: #3a414d;
-    --scrollbar-thumb-hover: #4b5360;
-}
+/* ===== Light Themes (4 total: Parchment default + Alabaster, Camellia, Celadon) ===== */
 
-/* Forest — deep evergreen dark theme with a moss/emerald accent. */
-[data-theme="forest"] {
-    --bg-primary: #17211a;
-    --bg-secondary: #1d2a21;
-    --bg-tertiary: #101812;
-    --text-primary: #e3ebe4;
-    --text-secondary: #9db2a2;
-    --text-muted: #6a7d6f;
-    --accent: #52b788;
-    --accent-hover: #429b72;
-    --accent-subtle: rgba(82, 183, 136, 0.16);
-    --accent-light: #74c9a0;
-    --on-accent: #0c1810;
-    --user-bubble: #2d6a4f;
-    --user-bubble-text: #ffffff;
-    --assistant-bubble: #223227;
-    --border-color: #2e4234;
-    --scrollbar-thumb: #3a5243;
-    --scrollbar-thumb-hover: #4a6754;
-}
-
-/* Ocean — deep sea navy-teal dark theme with a bright cyan accent. */
-[data-theme="ocean"] {
-    --bg-primary: #0f1c26;
-    --bg-secondary: #142838;
-    --bg-tertiary: #0a141c;
-    --text-primary: #dce8f0;
-    --text-secondary: #92a7b8;
-    --text-muted: #5f7383;
-    --accent: #35c0ce;
-    --accent-hover: #2ba9b6;
-    --accent-subtle: rgba(53, 192, 206, 0.15);
-    --accent-light: #64d2dd;
-    --on-accent: #07181c;
-    --user-bubble: #175f75;
-    --user-bubble-text: #ffffff;
-    --assistant-bubble: #182f3d;
-    --border-color: #233a49;
-    --scrollbar-thumb: #2e4a5c;
-    --scrollbar-thumb-hover: #3c5d72;
-}
-
-/* Parchment — warm cream reading theme with a terracotta accent. */
-[data-theme="parchment"] {
-    --bg-primary: #f3ecdd;
-    --bg-secondary: #faf5ea;
-    --bg-tertiary: #e9dfc9;
-    --text-primary: #3b3021;
-    --text-secondary: #71624b;
-    --text-muted: #9d8f74;
-    --accent: #9c4a2f;
-    --accent-hover: #863f28;
-    --accent-subtle: rgba(156, 74, 47, 0.12);
-    --accent-light: #8a4229;
+/* Alabaster — crisp gallery paper with a cobalt-indigo accent. */
+[data-theme="alabaster"] {
+    --bg-primary: #f5f6f8;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #e9ecf2;
+    --text-primary: #1b1f27;
+    --text-secondary: #525a69;
+    --text-muted: #6b7485;
+    --accent: #3b5bdb;
+    --accent-hover: #324ec2;
+    --accent-subtle: rgba(59, 91, 219, 0.12);
+    --accent-light: #324ec2;
     --on-accent: #ffffff;
-    --user-bubble: #9c4a2f;
+    --user-bubble: #3b5bdb;
     --user-bubble-text: #ffffff;
-    --assistant-bubble: #ece3cd;
-    --border-color: #dcd0b6;
-    --shadow-sm: 0 1px 3px rgba(75, 60, 35, 0.08);
-    --shadow: 0 4px 6px rgba(75, 60, 35, 0.1);
-    --shadow-lg: 0 8px 32px rgba(75, 60, 35, 0.16);
-    --code-bg: #ece4d0;
-    --code-inline-bg: rgba(59, 48, 33, 0.07);
-    --scrollbar-thumb: #cbbc9c;
-    --scrollbar-thumb-hover: #b5a583;
+    --assistant-bubble: #eaedf5;
+    --border-color: #d8dde8;
+    --surface-tint: rgba(27, 31, 39, 0.04);
+    --surface-tint-strong: rgba(27, 31, 39, 0.075);
+    --shadow-xs: 0 1px 2px rgba(20, 24, 40, 0.05);
+    --shadow-sm: 0 1px 3px rgba(20, 24, 40, 0.07);
+    --shadow: 0 4px 8px rgba(20, 24, 40, 0.09);
+    --shadow-lg: 0 8px 32px rgba(20, 24, 40, 0.14);
+    --shadow-btn: 0 1px 2px rgba(20, 24, 40, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --shadow-btn-secondary: 0 1px 2px rgba(20, 24, 40, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    --code-bg: #eef0f6;
+    --code-inline-bg: rgba(27, 31, 39, 0.06);
+    --scrollbar-thumb: #c2c7d6;
+    --scrollbar-thumb-hover: #a9afc4;
 }
 
-/* Rosé — soft blush light theme with a deep rose accent. */
-[data-theme="rose"] {
-    --bg-primary: #f9f1f3;
-    --bg-secondary: #fffafb;
-    --bg-tertiary: #f0e3e7;
-    --text-primary: #38262f;
-    --text-secondary: #6f5a64;
-    --text-muted: #a18d96;
-    --accent: #b02a5b;
-    --accent-hover: #96234d;
-    --accent-subtle: rgba(176, 42, 91, 0.11);
-    --accent-light: #9c2451;
+/* Camellia — soft petal-linen light theme with a carmine-rose accent. */
+[data-theme="camellia"] {
+    --bg-primary: #f8f1f3;
+    --bg-secondary: #fffbfc;
+    --bg-tertiary: #eee0e5;
+    --text-primary: #36242c;
+    --text-secondary: #6a515c;
+    --text-muted: #816571;
+    --accent: #a83258;
+    --accent-hover: #91284a;
+    --accent-subtle: rgba(168, 50, 88, 0.12);
+    --accent-light: #91284a;
     --on-accent: #ffffff;
-    --user-bubble: #b02a5b;
+    --user-bubble: #a83258;
     --user-bubble-text: #ffffff;
-    --assistant-bubble: #f3e1e8;
-    --border-color: #e6d2da;
-    --shadow-sm: 0 1px 3px rgba(60, 30, 45, 0.06);
-    --shadow: 0 4px 6px rgba(60, 30, 45, 0.08);
+    --assistant-bubble: #f2e2e7;
+    --border-color: #e3cfd6;
+    --surface-tint: rgba(54, 36, 44, 0.045);
+    --surface-tint-strong: rgba(54, 36, 44, 0.085);
+    --shadow-xs: 0 1px 2px rgba(60, 30, 45, 0.05);
+    --shadow-sm: 0 1px 3px rgba(60, 30, 45, 0.07);
+    --shadow: 0 4px 8px rgba(60, 30, 45, 0.09);
     --shadow-lg: 0 8px 32px rgba(60, 30, 45, 0.14);
+    --shadow-btn: 0 1px 2px rgba(60, 30, 45, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --shadow-btn-secondary: 0 1px 2px rgba(60, 30, 45, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.55);
     --code-bg: #f3e7eb;
-    --code-inline-bg: rgba(56, 38, 47, 0.07);
+    --code-inline-bg: rgba(54, 36, 44, 0.07);
     --scrollbar-thumb: #d8c2cb;
     --scrollbar-thumb-hover: #c5aab6;
+}
+
+/* Celadon — soft botanical sage-mist paper with a deep jade accent. */
+[data-theme="celadon"] {
+    --bg-primary: #eef3ef;
+    --bg-secondary: #f8fbf9;
+    --bg-tertiary: #e1eae3;
+    --text-primary: #1f2b23;
+    --text-secondary: #4c5e52;
+    --text-muted: #637569;
+    --accent: #2d6a4f;
+    --accent-hover: #255841;
+    --accent-subtle: rgba(45, 106, 79, 0.12);
+    --accent-light: #255841;
+    --on-accent: #ffffff;
+    --user-bubble: #2d6a4f;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #e4ede6;
+    --border-color: #cddad0;
+    --surface-tint: rgba(31, 43, 35, 0.045);
+    --surface-tint-strong: rgba(31, 43, 35, 0.085);
+    --shadow-xs: 0 1px 2px rgba(24, 40, 30, 0.05);
+    --shadow-sm: 0 1px 3px rgba(24, 40, 30, 0.07);
+    --shadow: 0 4px 8px rgba(24, 40, 30, 0.09);
+    --shadow-lg: 0 8px 32px rgba(24, 40, 30, 0.14);
+    --shadow-btn: 0 1px 2px rgba(24, 40, 30, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --shadow-btn-secondary: 0 1px 2px rgba(24, 40, 30, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    --code-bg: #e4ece6;
+    --code-inline-bg: rgba(31, 43, 35, 0.07);
+    --scrollbar-thumb: #b9c9bd;
+    --scrollbar-thumb-hover: #a1b5a6;
+}
+
+/* ===== Dark Themes (4 total: Espresso, Nocturne, Verdant, Abyssal) ===== */
+
+/* Espresso — warm roasted-umber dark theme with an amber-ochre accent (dark twin to Parchment). */
+[data-theme="espresso"] {
+    --bg-primary: #1b1714;
+    --bg-secondary: #241e1a;
+    --bg-tertiary: #13100e;
+    --text-primary: #ede4d8;
+    --text-secondary: #afa192;
+    --text-muted: #857768;
+    --accent: #d98a4b;
+    --accent-hover: #c5783b;
+    --accent-subtle: rgba(217, 138, 75, 0.16);
+    --accent-light: #e8a168;
+    --on-accent: #1a120b;
+    --user-bubble: #8c4b22;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #2b241f;
+    --border-color: #382f28;
+    --error: #ff6b6b;
+    --on-error: #2a1214;
+    --success: #51cf66;
+    --warning: #ffd43b;
+    --info: #4dabf7;
+    --diff-add: #3fb950;
+    --diff-del: #f85149;
+    --surface-tint: rgba(255, 240, 220, 0.045);
+    --surface-tint-strong: rgba(255, 240, 220, 0.09);
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
+    --shadow: 0 4px 8px rgba(0, 0, 0, 0.34);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+    --shadow-btn: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    --shadow-btn-secondary: 0 1px 2px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --code-bg: rgba(0, 0, 0, 0.35);
+    --code-inline-bg: rgba(0, 0, 0, 0.28);
+    --scrollbar-thumb: #453a31;
+    --scrollbar-thumb-hover: #584a3f;
+}
+
+/* Nocturne — deep ink-slate dark theme with a soft periwinkle accent. */
+[data-theme="nocturne"] {
+    --bg-primary: #181b24;
+    --bg-secondary: #212531;
+    --bg-tertiary: #11141b;
+    --text-primary: #e6e9f2;
+    --text-secondary: #9aa2b6;
+    --text-muted: #727b91;
+    --accent: #7b84f7;
+    --accent-hover: #6770e8;
+    --accent-subtle: rgba(123, 132, 247, 0.16);
+    --accent-light: #9aa1fa;
+    --on-accent: #0f1221;
+    --user-bubble: #4952b8;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #262b3a;
+    --border-color: #303647;
+    --error: #ff6b6b;
+    --on-error: #2a1214;
+    --success: #51cf66;
+    --warning: #ffd43b;
+    --info: #4dabf7;
+    --diff-add: #3fb950;
+    --diff-del: #f85149;
+    --surface-tint: rgba(230, 235, 255, 0.045);
+    --surface-tint-strong: rgba(230, 235, 255, 0.09);
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
+    --shadow: 0 4px 8px rgba(0, 0, 0, 0.34);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+    --shadow-btn: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    --shadow-btn-secondary: 0 1px 2px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --code-bg: rgba(0, 0, 0, 0.35);
+    --code-inline-bg: rgba(0, 0, 0, 0.28);
+    --scrollbar-thumb: #394054;
+    --scrollbar-thumb-hover: #49526b;
+}
+
+/* Verdant — deep pine botanical dark theme with a sage-emerald accent. */
+[data-theme="verdant"] {
+    --bg-primary: #161f19;
+    --bg-secondary: #1d2921;
+    --bg-tertiary: #101712;
+    --text-primary: #e2ebe4;
+    --text-secondary: #99b09f;
+    --text-muted: #728978;
+    --accent: #57b889;
+    --accent-hover: #469e74;
+    --accent-subtle: rgba(87, 184, 137, 0.16);
+    --accent-light: #76cca2;
+    --on-accent: #0c1810;
+    --user-bubble: #2c664a;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #223127;
+    --border-color: #2e4134;
+    --error: #ff6b6b;
+    --on-error: #2a1214;
+    --success: #51cf66;
+    --warning: #ffd43b;
+    --info: #4dabf7;
+    --diff-add: #3fb950;
+    --diff-del: #f85149;
+    --surface-tint: rgba(225, 245, 230, 0.045);
+    --surface-tint-strong: rgba(225, 245, 230, 0.09);
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
+    --shadow: 0 4px 8px rgba(0, 0, 0, 0.34);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+    --shadow-btn: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    --shadow-btn-secondary: 0 1px 2px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --code-bg: rgba(0, 0, 0, 0.35);
+    --code-inline-bg: rgba(0, 0, 0, 0.28);
+    --scrollbar-thumb: #395042;
+    --scrollbar-thumb-hover: #496554;
+}
+
+/* Abyssal — deep sea-slate coastal dark theme with a seafoam cyan accent. */
+[data-theme="abyssal"] {
+    --bg-primary: #101b24;
+    --bg-secondary: #162633;
+    --bg-tertiary: #0b131a;
+    --text-primary: #dce7ef;
+    --text-secondary: #90a6b7;
+    --text-muted: #6d8496;
+    --accent: #3bbbc9;
+    --accent-hover: #2fa3b0;
+    --accent-subtle: rgba(59, 187, 201, 0.15);
+    --accent-light: #67ced9;
+    --on-accent: #07181c;
+    --user-bubble: #185d72;
+    --user-bubble-text: #ffffff;
+    --assistant-bubble: #1a2e3d;
+    --border-color: #243a4b;
+    --error: #ff6b6b;
+    --on-error: #2a1214;
+    --success: #51cf66;
+    --warning: #ffd43b;
+    --info: #4dabf7;
+    --diff-add: #3fb950;
+    --diff-del: #f85149;
+    --surface-tint: rgba(215, 238, 250, 0.045);
+    --surface-tint-strong: rgba(215, 238, 250, 0.09);
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
+    --shadow: 0 4px 8px rgba(0, 0, 0, 0.34);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+    --shadow-btn: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    --shadow-btn-secondary: 0 1px 2px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --code-bg: rgba(0, 0, 0, 0.35);
+    --code-inline-bg: rgba(0, 0, 0, 0.28);
+    --scrollbar-thumb: #2e4a5c;
+    --scrollbar-thumb-hover: #3c5d72;
 }
