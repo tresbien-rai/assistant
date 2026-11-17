@@ -79,7 +79,7 @@
     gap: 8px;
 }
 
-/* Chats "Next chat starts with" defaults strip (UIP-04) */
+/* Chats "Next chat starts with" defaults strip (UIP-04 / UIP-08) */
 .chats-next-strip {
     display: flex;
     align-items: center;
@@ -87,10 +87,11 @@
     flex-wrap: wrap;
     gap: 8px;
     padding: 8px 12px;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     background: var(--bg-secondary);
+    box-shadow: var(--shadow-xs);
 }
 
 .chats-next-label {
@@ -128,6 +129,10 @@
 .chats-next-pill:hover {
     border-color: var(--accent);
     background: var(--bg-tertiary);
+}
+
+.chats-next-pill.home {
+    background: var(--surface-tint);
 }
 
 .chats-next-pill.model {
@@ -174,6 +179,126 @@
     height: 13px;
     opacity: 0.7;
     flex: 0 0 auto;
+}
+
+/* Chats search + persona filter toolbar (UIP-08) */
+.chats-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.chats-toolbar[hidden] {
+    display: none;
+}
+
+.chats-search-wrap {
+    position: relative;
+    flex: 1 1 200px;
+    min-width: 160px;
+}
+
+.chats-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+input.chats-search {
+    width: 100%;
+    height: 34px;
+    padding: 0 30px 0 32px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+}
+
+input.chats-search:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.chats-search-clear {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.chats-search-clear[hidden] {
+    display: none;
+}
+
+.chats-search-clear:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.chats-persona-filter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    max-width: 100%;
+}
+
+.chats-filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    max-width: 180px;
+    padding: 0 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.chats-filter-pill:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.chats-filter-pill.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.chats-filter-pill-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Quieter sibling of .section-new-btn for secondary actions (Import). */
@@ -487,32 +612,11 @@
     transition: background-color 0.2s, color 0.2s;
 }
 
-/* ===== Persona-grouped chat list (home) ===== */
-.persona-group {
-    margin-bottom: 4px;
-}
-
-.persona-group-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 8px 10px;
-    background: none;
-    border: none;
-    border-radius: var(--radius-md);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.persona-group-header:hover {
-    background-color: var(--bg-tertiary);
-}
-
+/* Shared chevron rotation (used by Chats home/project groups and collapsible container sections) */
 .group-chevron {
     width: 14px;
     height: 14px;
+    color: var(--text-muted);
     flex: 0 0 auto;
     transition: transform 0.15s;
 }
@@ -521,35 +625,207 @@
     transform: rotate(-90deg);
 }
 
-.persona-group-name {
-    flex: 1;
-    min-width: 0;
-    text-align: left;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* ===== Home-grouped chat list (Chats view, UIP-08) ===== */
+.chats-home-group {
+    margin-bottom: 14px;
 }
 
-.persona-group-count {
+.chats-home-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 4px;
+}
+
+.chats-home-toggle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    margin-left: -6px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.15s;
+}
+
+.chats-home-toggle:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.chats-home-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--text-secondary);
+    flex: 0 0 auto;
+}
+
+.chats-home-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chats-group-count {
     font-size: var(--text-xs);
+    font-weight: 500;
     color: var(--text-muted);
     flex: 0 0 auto;
 }
 
-/* Capped like the container-page sections, so a persona with 60 chats doesn't
-   bury every other persona below it. Same token, same behaviour. */
-.persona-group-body {
-    max-height: var(--list-max-height);
-    overflow-y: auto;
-    overflow-x: hidden;
+.chats-group-new-btn {
+    flex: 0 0 auto;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--accent);
+    font-family: var(--font-main);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: var(--shadow-btn-secondary);
+    transition: border-color 0.15s, background-color 0.15s, transform 0.1s;
 }
 
-/* Slightly indent chat rows under a persona header */
-.persona-group-body .conversation-item {
-    margin-left: 8px;
+.chats-group-new-btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-subtle);
+}
+
+.chats-group-new-btn:active {
+    transform: translateY(0.5px);
+    box-shadow: none;
+}
+
+.chats-home-body[hidden],
+.chats-project-body[hidden] {
+    display: none;
+}
+
+.chats-project-sub {
+    margin-top: 6px;
+}
+
+.chats-project-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 4px 3px 14px;
+}
+
+.chats-project-toggle {
+    flex: 1;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: none;
+    padding: 3px 6px;
+    margin-left: -6px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-family: var(--font-main);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.chats-project-toggle:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.chats-project-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chats-sub-new-btn {
+    flex: 0 0 auto;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-family: var(--font-main);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s;
+}
+
+.chats-sub-new-btn:hover {
+    background: var(--accent-subtle);
+}
+
+.conversation-item.indented {
+    margin-left: 14px;
+}
+
+.chats-step-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 2px 0 4px 10px;
+}
+
+.chats-step-actions.indented {
+    margin-left: 24px;
+}
+
+.chats-step-btn {
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-family: var(--font-main);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.chats-step-btn:hover {
+    background: var(--accent-subtle);
+}
+
+.chats-step-btn.quiet {
+    color: var(--text-muted);
+}
+
+.chats-step-btn.quiet:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.chats-filter-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 4px;
 }
 
 /* Small persona avatar on group headers and workspace chat rows */
@@ -659,6 +935,27 @@
 
     .chats-next-pill {
         max-width: 170px;
+    }
+
+    .chats-next-pill.home {
+        max-width: 220px;
+    }
+
+    .chats-search-wrap {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .chats-home-toggle,
+    .chats-project-toggle,
+    .chats-filter-pill,
+    .chats-step-btn {
+        min-height: 36px;
+    }
+
+    .chats-group-new-btn,
+    .chats-sub-new-btn {
+        min-height: 34px;
     }
 }
 
@@ -807,6 +1104,30 @@
 
 .context-menu-item:hover {
     background-color: var(--bg-tertiary);
+}
+
+.context-menu-check-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.context-menu .context-menu-check-item.active::after {
+    float: none;
+    margin-left: 0;
+    flex-shrink: 0;
+}
+
+.context-menu-check-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.context-menu-item.context-menu-indent {
+    padding-left: 26px;
 }
 
 .context-menu-item.danger {

@@ -36,9 +36,8 @@ import { displayError } from '../components/errors.js';
 import { confirmDialog } from '../components/dialogs.js';
 
 /**
- * Switch the active persona (from the top-bar persona popover). With the home
- * chat list grouped by persona, this just sets the active persona, makes sure
- * its group is expanded, and shows the home view scrolled to that group.
+ * Switch the active persona (from the top-bar or Chats persona popover), then
+ * land on the home Chats view with that persona active for the next chat.
  * @param {string} personaId
  */
 export async function switchPersona(personaId) {
@@ -46,21 +45,15 @@ export async function switchPersona(personaId) {
 
     state.activePersonaId = personaId;
     applyPersonaModelSettings(getActivePersona()); // fixed mode loads its settings
-    state.ui.collapsedPersonaGroups.delete(personaId);
 
-    // Leaving any workspace so the persona's grouped chats are actually visible
-    // (inside a workspace the list is workspace-scoped, not persona-grouped).
     if (state.activeProjectId) {
         state.activeProjectId = null;
         UiPrefs.set('activeProject', null);
     }
 
     savePersonas();
+    state.ui.mainView = { type: 'chats' };
     await updateUI();
-    navigate({ type: 'chats' });
-
-    const groupEl = document.querySelector(`.persona-group[data-persona-id="${CSS.escape(personaId)}"]`);
-    if (groupEl) groupEl.scrollIntoView({ block: 'nearest' });
 }
 
 /**

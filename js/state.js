@@ -87,17 +87,25 @@ export const state = {
     ui: {
         // Main-area router (WR-07): the single content surface shows exactly one
         // view. The sidebar is a section rail that navigates between these.
-        //   { type: 'chats' }                 unfiled chats list
+        //   { type: 'chats' }                 all chats list (grouped by home)
         //   { type: 'workspaces' }            all workspaces list
         //   { type: 'workspace', id }         a workspace page (instr/files/projects/chats)
         //   { type: 'project', id }           a project page
         //   { type: 'chat', id }              an open conversation
         // Settings/Personas are reached via the rail too (interim: modal/popover).
         mainView: { type: 'chats' },
-        // Persona group ids collapsed in the chats list (session-only).
-        collapsedPersonaGroups: new Set(),
+        // Home/project groups collapsed in the Chats view (keys: `ws:<id>`, `proj:<id>`, `__unfiled__`).
+        collapsedChatGroups: new Set(),
+        // Per-group visible row limit in the Chats view (default 4, expanded in +10 steps).
+        expandedChatLimits: new Map(),
+        // Live filter state for the Chats view (session-only).
+        chatsSearch: '',
+        chatsPersonaFilter: 'all',
+        // Target container for the Chats view's "New chat" action (`null` = unfiled,
+        // or `{ workspaceId }` / `{ projectId }`).
+        nextChatHome: null,
         // Collapsed list sections on container pages, keyed `<kind>:<id>:<what>`
-        // (session-only, matching the persona groups above).
+        // (session-only, matching the chat groups above).
         collapsedSections: new Set()
     },
     currentExpression: 'neutral',
