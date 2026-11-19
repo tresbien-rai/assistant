@@ -82,7 +82,7 @@ This is the part most likely to trip you up, so go slowly.
 ## Step 3 — Create the Railway project
 
 1. Go to <https://railway.app/> and sign in with GitHub.
-2. **New Project → Deploy from GitHub repo** → pick **`tresbien-rai/assistant`**.
+2. **New Project → Deploy from GitHub repo** → pick **`tresbien-rai/solier`**.
    - If Railway can't see the repo, click "Configure GitHub App" and grant access to it.
 3. Railway will create a service and try a first build. It's fine if this first attempt
    isn't perfect — we still need to add env vars and the volume. The build settings are
@@ -227,12 +227,15 @@ clearing the old bookmark). Remember: an existing logged-in browser keeps workin
 cookie and hides the problem — always test a domain change in a private window or a second
 device.
 
-### Custom domain (e.g. `assistant.yourname.com`)
+### Custom domain (Solier uses `solier.app`, registered at Cloudflare)
 
 Same two updates as above, plus DNS setup first:
 
 1. **Railway → Settings → Networking → Custom Domain** → enter your domain. Railway gives
-   you a **CNAME** target; add that record at your domain registrar. Wait until Railway
+   you a **CNAME** target and a **TXT** record named `_railway-verify` (proves ownership);
+   add both at your DNS host. At Cloudflare, use `@` as the CNAME name for the bare domain
+   and set it to **DNS only (grey cloud)**: with the orange-cloud proxy on, Railway's
+   certificate often gets stuck validating. Wait until Railway
    shows the domain as **provisioned** (DNS propagation + automatic SSL cert — usually
    minutes, up to a couple of hours).
 2. Set `GOOGLE_REDIRECT_URI` to the custom domain's `/api/auth/google/callback`.

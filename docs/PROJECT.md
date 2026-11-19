@@ -75,6 +75,11 @@ sides edit; every file keeps a revision history.
   provider module yet.
 - **Deployed on:** Railway (Hobby), one Express service serving API + frontend.
   See [`docs/DEPLOY_RAILWAY.md`](DEPLOY_RAILWAY.md).
+- **Where it lives (all named Solier since 2026-11-18):** GitHub
+  `tresbien-rai/solier`; Railway project *Solier*, service *Solier*, in the
+  *Web Projects* workspace; live at **https://solier.app** (domain registered at
+  Cloudflare, DNS only) with `solier.up.railway.app` as Railway's own address.
+  The live `GOOGLE_REDIRECT_URI` must match whichever address you sign in on.
 - **Name:** "**Solier**" (`솔리에` / `ソリエ`, formerly *Tessera*) — Old French for
   a *solar*, the private sunlit upper room of a medieval house used for quiet
   reading, writing, and conversation (also echoing *atelier* and *sommelier*).
@@ -508,7 +513,7 @@ Things that cost real time. Most were silent — nothing errored.
 Setting up another computer (e.g. the laptop) to work exactly like the PC:
 1. Install Git, Node.js (LTS) and the Claude desktop app; sign in to GitHub
    (`gh auth login`) so the private repo can be cloned and pushed.
-2. Clone `tresbien-rai/assistant`, then `cd server && npm install`.
+2. Clone `tresbien-rai/solier`, then `cd server && npm install`.
 3. Copy `server/.env` from the PC **by hand** (USB stick or a password
    manager — never email, chat or git). It holds `JWT_SECRET`,
    `ENCRYPTION_KEY` and the Google OAuth client. The values must match the
