@@ -79,7 +79,9 @@ sides edit; every file keeps a revision history.
   `tresbien-rai/solier`; Railway project *Solier*, service *Solier*, in the
   *Web Projects* workspace; live at **https://solier.app** (domain registered at
   Cloudflare, DNS only) with `solier.up.railway.app` as Railway's own address.
-  The live `GOOGLE_REDIRECT_URI` must match whichever address you sign in on.
+  The live `GOOGLE_REDIRECT_URI` points at `solier.app`, so sign-in always
+  finishes there; a new redirect URI can take a few minutes to start working at
+  Google (`redirect_uri_mismatch` until then).
 - **Name:** "**Solier**" (`솔리에` / `ソリエ`, formerly *Tessera*) — Old French for
   a *solar*, the private sunlit upper room of a medieval house used for quiet
   reading, writing, and conversation (also echoing *atelier* and *sommelier*).
