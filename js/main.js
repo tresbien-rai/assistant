@@ -1829,6 +1829,7 @@ const OAUTH_ERROR_MESSAGES = {
     invalid_state: 'Sign-in security check failed. Please try again.',
     no_code: 'Sign-in did not complete. Please try again.',
     oauth_failed: 'Sign-in failed. Please try again in a moment.',
+    not_allowed: 'This Google account doesn\'t have access.',
     session_expired: 'Your session expired. Please sign in again.',
     init_failed: 'Could not load the app. Your browser data may be unavailable — try a different browser or clear this site\'s data.',
 };

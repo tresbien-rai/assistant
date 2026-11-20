@@ -18,15 +18,27 @@ const { authenticate, generateToken } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
+const { isSignInAllowed } = require('../utils/signInAllowlist');
 
 const router = express.Router();
 
-// Google OAuth2 client
-const oauth2Client = new google.auth.OAuth2(
-  config.google.clientId,
-  config.google.clientSecret,
-  config.google.redirectUri
-);
+const allowlist = {
+  allowedEmails: config.google.allowedEmails,
+  isDev: config.google.allowEmptyAllowlist,
+};
+if (allowlist.allowedEmails.size === 0 && !allowlist.isDev) {
+  logger.warn('ALLOWED_EMAILS is empty: Google sign-in will refuse every account');
+}
+
+// A fresh OAuth2 client per use: the callback sets credentials on it, and a
+// shared client would let two simultaneous sign-ins read each other's profile.
+function createOAuthClient() {
+  return new google.auth.OAuth2(
+    config.google.clientId,
+    config.google.clientSecret,
+    config.google.redirectUri
+  );
+}
 
 // OAuth scopes
 const SCOPES = [
@@ -97,7 +109,7 @@ router.get('/google', (req, res) => {
     maxAge: 10 * 60 * 1000, // 10 minutes
   });
 
-  const authUrl = oauth2Client.generateAuthUrl({
+  const authUrl = createOAuthClient().generateAuthUrl({
     access_type: 'offline', // Get refresh token
     scope: SCOPES,
     state,
@@ -138,6 +150,7 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
 
   try {
     // Exchange authorization code for tokens
+    const oauth2Client = createOAuthClient();
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 
@@ -148,6 +161,15 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
     const { data: profile } = await oauth2.userinfo.get();
 
     logger.info({ googleId: profile.id, email: profile.email }, 'User profile retrieved');
+
+    // Only allowlisted accounts get in — checked before any user row or token
+    // is written, so a refused account leaves nothing behind.
+    if (!isSignInAllowed(profile, allowlist)) {
+      logger.warn({ email: profile.email }, 'Sign-in refused: account not on the allowlist');
+      // Best effort: withdraw the Drive grant the refused account just gave us.
+      await oauth2Client.revokeToken(tokens.access_token).catch(() => {});
+      return res.redirect('/?error=not_allowed');
+    }
 
     // Encrypt Drive tokens for storage
     const encryptedAccessToken = tokens.access_token ? encrypt(tokens.access_token) : null;

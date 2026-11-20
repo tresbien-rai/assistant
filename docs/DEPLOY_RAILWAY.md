@@ -143,6 +143,7 @@ In the service's **Variables** tab, add these (Raw Editor lets you paste them al
 | `GOOGLE_CLIENT_ID` | *(from Step 2)* |
 | `GOOGLE_CLIENT_SECRET` | *(from Step 2)* |
 | `GOOGLE_REDIRECT_URI` | `https://YOUR-APP.up.railway.app/api/auth/google/callback` |
+| `ALLOWED_EMAILS` | the Google accounts allowed to sign in, comma-separated. **Required**: empty means nobody gets in |
 
 Notes:
 - **`NODE_ENV=production` is required**, not optional. It turns on login-cookie security
