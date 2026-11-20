@@ -46,6 +46,8 @@ google.auth.OAuth2.prototype.getToken = async () => ({
   tokens: { access_token: 'access', refresh_token: 'refresh' },
 });
 google.oauth2 = () => ({ userinfo: { get: async () => ({ data: nextProfile }) } });
+const revoked = [];
+google.auth.OAuth2.prototype.revokeToken = async token => { revoked.push(token); };
 
 async function main() {
   console.log('='.repeat(60));
@@ -78,6 +80,21 @@ async function main() {
     assert.strictEqual(isSignInAllowed({ email: 'a@x.com', verified_email: true }, empty), true);
   });
 
+  await check('config: an empty list stays closed when NODE_ENV is missing', () => {
+    // A child process with no NODE_ENV and no .env to load (cwd = tmpDir).
+    const { spawnSync } = require('node:child_process');
+    const env = { ...process.env };
+    delete env.NODE_ENV;
+    delete env.ALLOWED_EMAILS;
+    const configPath = JSON.stringify(path.join(__dirname, '..', 'config.js'));
+    const out = spawnSync(process.execPath, ['-e',
+      `const c = require(${configPath}); console.log(JSON.stringify([c.isDev, c.google.allowEmptyAllowlist]))`,
+    ], { cwd: tmpDir, env, encoding: 'utf8' });
+    assert.strictEqual(out.status, 0, out.stderr);
+    // isDev still defaults to true, but the allowlist must not open with it.
+    assert.deepStrictEqual(JSON.parse(out.stdout.trim().split('\n').pop()), [true, false]);
+  });
+
   console.log('\n2. the OAuth callback route...');
   const express = require('express');
   const cookieParser = require('cookie-parser');
@@ -106,6 +123,7 @@ async function main() {
       assert.strictEqual(res.headers.get('location'), '/?error=not_allowed');
       assert.ok(!/(^|;\s*)token=/.test(res.headers.get('set-cookie') || ''), 'no session cookie');
       assert.strictEqual(dal.findUserByGoogleId('g-stranger'), undefined);
+      assert.deepStrictEqual(revoked, ['access'], 'the refused grant is revoked');
     });
 
     await check('an allowlisted account signs in and gets a session', async () => {

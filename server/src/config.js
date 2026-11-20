@@ -4,6 +4,7 @@
  */
 
 require('dotenv').config();
+const { parseAllowedEmails } = require('./utils/signInAllowlist');
 
 /**
  * The product's display name — the ONE place the brand is written (BR-01).
@@ -55,9 +56,12 @@ const config = {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/auth/google/callback',
-    // Google accounts allowed to sign in (comma-separated). Outside development
-    // an empty list lets nobody in — see utils/signInAllowlist.js.
-    allowedEmails: process.env.ALLOWED_EMAILS || '',
+    // Google accounts allowed to sign in (ALLOWED_EMAILS, comma-separated) —
+    // see utils/signInAllowlist.js. An empty list lets everyone in ONLY when
+    // NODE_ENV is explicitly 'development'; a missing NODE_ENV (which isDev
+    // treats as development) must not open the live site.
+    allowedEmails: parseAllowedEmails(process.env.ALLOWED_EMAILS),
+    allowEmptyAllowlist: process.env.NODE_ENV === 'development',
   },
 
   // Database
