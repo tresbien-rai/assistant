@@ -18,8 +18,15 @@ const { authenticate, generateToken } = require('../middleware/authenticate');
 const { asyncHandler } = require('../middleware/errorHandler');
 const AppError = require('../utils/AppError');
 const { logger } = require('../utils/logger');
+const { parseAllowedEmails, isSignInAllowed } = require('../utils/signInAllowlist');
 
 const router = express.Router();
+
+// Accounts allowed to sign in, parsed once at startup.
+const allowedEmails = parseAllowedEmails(config.google.allowedEmails);
+if (allowedEmails.size === 0 && !config.isDev) {
+  logger.warn('ALLOWED_EMAILS is empty: Google sign-in will refuse every account');
+}
 
 // Google OAuth2 client
 const oauth2Client = new google.auth.OAuth2(
@@ -148,6 +155,13 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
     const { data: profile } = await oauth2.userinfo.get();
 
     logger.info({ googleId: profile.id, email: profile.email }, 'User profile retrieved');
+
+    // Only allowlisted accounts get in — checked before any user row or token
+    // is written, so a refused account leaves nothing behind.
+    if (!isSignInAllowed(profile, { allowedEmails, isDev: config.isDev })) {
+      logger.warn({ email: profile.email }, 'Sign-in refused: account not on the allowlist');
+      return res.redirect('/?error=not_allowed');
+    }
 
     // Encrypt Drive tokens for storage
     const encryptedAccessToken = tokens.access_token ? encrypt(tokens.access_token) : null;

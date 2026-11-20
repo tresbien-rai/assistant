@@ -55,6 +55,9 @@ const config = {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/auth/google/callback',
+    // Google accounts allowed to sign in (comma-separated). Outside development
+    // an empty list lets nobody in — see utils/signInAllowlist.js.
+    allowedEmails: process.env.ALLOWED_EMAILS || '',
   },
 
   // Database

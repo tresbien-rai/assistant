@@ -543,10 +543,15 @@ Setting up another computer (e.g. the laptop) to work exactly like the PC:
     live site, which rejects it. The two environments differ on this one value.
   - That localhost URI listed under *Authorized redirect URIs* on the OAuth
     client, next to the Railway one. A missing one shows `redirect_uri_mismatch`.
-  - The account on the consent screen's test-user list. The app stays in
-    *Testing* until release (the user's call), so only listed accounts can
-    sign in — and Google expires every account's sign-in after 7 days, so the
-    weekly symptom is a Drive error until you sign out and back in.
+  - **Who may sign in is decided by the server**, not Google: the
+    `ALLOWED_EMAILS` variable (comma-separated) on Railway lists the user's
+    main account and the test account. Outside development an empty list lets
+    nobody in (fails closed); locally it can stay empty. Refused accounts land
+    on the login screen with "doesn't have access" and leave no user row.
+    With that in place the OAuth app can be *In production* rather than
+    *Testing*, which ends Google's 7-day sign-in expiry (whose symptom was a
+    Drive error until you signed out and back in). While it is still in
+    *Testing*, the account must also be on the consent screen's test-user list.
 
   If the preview is still on the dev user, go to `/api/auth/google` directly.
   **Leave the preview running when handing the pane to the user:** if it's
